@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Server-Configuration>
+
+<server>
+<user-role>
+
+	<role name="Administrator">
+		<member username="webcenter" />
+	</role>
+	
+	<user username="Administrator" password="change me" display="Charles Lee" />
+	
+</user-role>
+</server>

@@ -1,0 +1,19 @@
+INSTALLATION GUID FOR JBOSS
+===========================
+
+Login Configuration:
+
+Open the "login-config.xml" file in editing mode from ${JBOSS_HOME}\server\default\conf.
+Add the following element as child element in the <policy> element.
+
+<!-- Security domain for connecting to App-X Server -->
+<application-policy name="AppXRealm">
+  <authentication>
+    <login-module code="org.jboss.resource.security.ConfiguredIdentityLoginModule" flag="required">
+      <module-option name="principal">webcenter</module-option>
+      <module-option name="userName">webcenter</module-option>
+      <module-option name="password">oicu812</module-option>
+      <module-option name="managedConnectionFactoryName">jboss.jca:service=NoTxCM,name=AppxJcaConnectionFactory</module-option>
+    </login-module>
+  </authentication>
+</application-policy>

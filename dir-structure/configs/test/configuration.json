@@ -1,0 +1,40 @@
+{
+  "configurations": [
+  {
+    "job": {
+      "name": "Clean File Directory",
+      "class": "reveila.util.task.CleanFileDirectoryJob",
+      "version": "1",
+      "arguments": [
+        {
+          "name": "LastRun",
+          "type": "java.lang.Long",
+          "value": "-1"
+        },
+        {
+          "name": "DirsToClean",
+          "type": "java.lang.String",
+          "value": "C:\\IDE\\Projects\\spring-boot-gradle-project\\dir-structure\\data\\tmp"
+        }
+      ]
+    }
+  },
+
+  {
+    "service": {
+      "name": "Task Manager",
+      "description": "System task manager",
+      "class": "reveila.util.task.TaskManager",
+      "id": "C7aANahAlE+aWzatydv/jw==",
+      "start": "true",
+      "arguments": [
+        {
+          "name": "jobConfigurationDirectory",
+          "type": "java.lang.String",
+          "value": "${system.home}\\configs\\jobs"
+        }
+      ]
+    }
+  }
+]
+}

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.example.ApplicationTests" tests="1" skipped="0" failures="0" errors="0" timestamp="2025-07-01T06:15:38" hostname="TX16PRO" time="0.3">
+  <properties/>
+  <testcase name="contextLoads()" classname="com.example.ApplicationTests" time="0.3"/>
+  <system-out><![CDATA[01:15:35.768 [Test worker] DEBUG org.springframework.boot.test.context.SpringBootTestContextBootstrapper - Neither @ContextConfiguration nor @ContextHierarchy found for test class [ApplicationTests]: using SpringBootContextLoader
+01:15:35.777 [Test worker] DEBUG org.springframework.test.context.support.AbstractContextLoader - Could not detect default resource locations for test class [com.example.ApplicationTests]: no resource found for suffixes {-context.xml, Context.groovy}.
+01:15:35.813 [Test worker] DEBUG org.springframework.boot.test.context.SpringBootTestContextBootstrapper - Using ContextCustomizers for test class [ApplicationTests]: [DisableObservabilityContextCustomizer, PropertyMappingContextCustomizer, Customizer, ExcludeFilterContextCustomizer, DuplicateJsonObjectContextCustomizer, MockitoContextCustomizer, TestRestTemplateContextCustomizer]
+01:15:35.965 [Test worker] DEBUG org.springframework.test.context.util.TestContextSpringFactoriesUtils - Skipping candidate TestExecutionListener [org.springframework.test.context.transaction.TransactionalTestExecutionListener] due to a missing dependency. Specify custom TestExecutionListener classes or make the default TestExecutionListener classes and their required dependencies available. Offending class: [org/springframework/transaction/interceptor/TransactionAttributeSource]
+01:15:35.968 [Test worker] DEBUG org.springframework.test.context.util.TestContextSpringFactoriesUtils - Skipping candidate TestExecutionListener [org.springframework.test.context.jdbc.SqlScriptsTestExecutionListener] due to a missing dependency. Specify custom TestExecutionListener classes or make the default TestExecutionListener classes and their required dependencies available. Offending class: [org/springframework/transaction/interceptor/TransactionAttribute]
+01:15:35.970 [Test worker] DEBUG org.springframework.boot.test.context.SpringBootTestContextBootstrapper - Using TestExecutionListeners for test class [ApplicationTests]: [ServletTestExecutionListener, DirtiesContextBeforeModesTestExecutionListener, ApplicationEventsTestExecutionListener, MockitoTestExecutionListener, DependencyInjectionTestExecutionListener, DirtiesContextTestExecutionListener, EventPublishingTestExecutionListener, RestDocsTestExecutionListener, MockRestServiceServerResetTestExecutionListener, MockMvcPrintOnlyOnFailureTestExecutionListener, WebDriverTestExecutionListener, MockWebServiceServerTestExecutionListener, ResetMocksTestExecutionListener]
+01:15:35.973 [Test worker] DEBUG org.springframework.test.context.support.AbstractDirtiesContextTestExecutionListener - Before test class: class [ApplicationTests], class annotated with @DirtiesContext [false] with mode [null]
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+ :: Spring Boot ::                (v3.0.0)
+
+2025-07-01T01:15:36.418-05:00  INFO 48036 --- [    Test worker] com.example.ApplicationTests             : Starting ApplicationTests using Java 21.0.7 with PID 48036 (started by Charles Lee in C:\IDE\Projects\spring-boot-gradle-project)
+2025-07-01T01:15:36.419-05:00 DEBUG 48036 --- [    Test worker] com.example.ApplicationTests             : Running with Spring Boot v3.0.0, Spring v6.0.2
+2025-07-01T01:15:36.420-05:00  INFO 48036 --- [    Test worker] com.example.ApplicationTests             : No active profile set, falling back to 1 default profile: "default"
+2025-07-01T01:15:38.009-05:00  INFO 48036 --- [    Test worker] com.example.ApplicationTests             : Started ApplicationTests in 1.961 seconds (process running for 3.752)
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,17 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Debug Spring Boot Application",
+            "request": "launch",
+            "mainClass": "spring.Application",
+            "projectName": "spring-boot-gradle-project",
+            "console": "integratedTerminal",
+            "args": "system.properties.url=file:///C:/IDE/Projects/spring-boot-gradle-project/dir-structure/configs/system.properties"
+        }
+    ]
+}

@@ -1,0 +1,12 @@
+This document describes the required Java command line arguments for launching App-X.
+You need to have the system environment variable APPX_HOME defined on your system.
+The following example is for launching App-X within the Eclipse environment.
+To run in other environment, change the environment variable notation appropriately.
+
+Program Arguments
+=================
+system.init.url=file:/${env_var:APPX_HOME}\conf\system.properties
+
+JVM Arguments
+=================
+-Djava.rmi.server.codebase="file:/${env_var:APPX_HOME}\lib\appx.jar file:/${env_var:APPX_HOME}\lib\appx-remote.jar" -Djava.rmi.server.hostname="localhost" -Djava.security.policy="file:/${env_var:APPX_HOME}\conf\java.policy" -Djava.security.auth.login.config="file:/${env_var:APPX_HOME}\conf\java.login.config" -Djava.util.logging.config.file="${env_var:APPX_HOME}\conf\logging.properties"

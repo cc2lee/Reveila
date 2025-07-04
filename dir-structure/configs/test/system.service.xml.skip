@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+	<service name="Task Manager" id="C7aANahAlE+aWzatydv/jw==" start="true"
+		description="System task manager"
+		class="reveila.util.task.TaskManager">
+
+		<arguments>
+			<argument name="jobConfigurationDirectory" type="java.lang.String">
+			<value>${system.home}\configs\jobs</value>
+			</argument>
+		</arguments>
+	
+	</service>
+
+</configuration>

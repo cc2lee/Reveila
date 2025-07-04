@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!-- Definition of Relations                                                       -->
+<!--                                                                               -->
+<!-- Reference: The attribute value is a reference to the value of an attribute in -->
+<!--     another entity, where referential integrity is checked. Reference has an  -->
+<!--     important attribute "exclusive". If this attribute is set to "true",      -->
+<!--     deleting the record will result in the deletion of the referenced record. -->
+<!--                                                                               -->
+<!-- Referenced-by: The value of this attribute is referenced by an attribute in   -->
+<!--     another entity. Modification of this value, including deletion of the     -->
+<!--     record, requires that the referencing attribute in other entities be      -->
+<!--     re-assigned or the referencing entities be deleted first.                 -->
+<!--                                                                               -->
+<!-- Look-up: The value of this attribute may or may not map to the value of a     -->
+<!--     given attribute in another entity, hencing that referential integrity is  -->
+<!--     not checked.                                                              -->
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<store>
+
+	<entity name="system-properties" stored-name="test_system_properties"
+		description="System Properties" source="default">
+	
+		<attribute name="name" stored-name="name" type="java.lang.String" length="25"
+			description="System Property Name" allow-null="false" key="true"/>
+		<attribute name="value" stored-name="value" type="java.lang.String" length="250"
+			description="System Property Value" allow-null="true"/>
+	</entity>
+	
+	<entity name="users" stored-name="test_users" description="System Users">
+		<attribute name="id" stored-name="id" key="true"
+			type="java.lang.String" length="50" auto-value="false" mutable="true"
+			description="Unique User ID" allow-null="false">
+			<referenced-by entity="group-members" attribute="user-id"/>
+		</attribute>
+		<attribute name="display-name" stored-name="display_name" type="java.lang.String"
+			length="50" description="Display Name"/>
+		<attribute name="state" stored-name="state" type="java.lang.Integer"
+			description="State of the User" allow-null="false">
+			<!-- Specify static valid value list -->
+			<valid-values>
+				<valid-value value="0" description="Active"/>
+				<valid-value value="1" description="Disabled"/>
+			</valid-values>
+		</attribute>
+	</entity>
+	
+	<entity name="groups" stored-name="test_groups" description="System User Groups">
+		<attribute name="id" stored-name="id" type="java.lang.String" length="50"
+			description="Unique Group ID" allow-null="false" key="true"/>
+		<attribute name="display-name" stored-name="display_name" type="java.lang.String"
+			length="50" description="Display Name"/>
+		<attribute name="state" stored-name="state" type="java.lang.Integer"
+			description="State of the User" allow-null="false">
+			<valid-values>
+				<valid-value value="0" description="Active"/>
+				<valid-value value="1" description="Disabled"/>
+			</valid-values>
+		</attribute>
+	</entity>
+	
+	<entity name="group-members" stored-name="test_group_members" description="Group Members">
+		<attribute name="user-id" stored-name="user_id" type="java.lang.String" length="50"
+			description="User ID" allow-null="false" key="true">
+			<reference entity="users" attribute="id"/>
+		</attribute>
+		<attribute name="group-id" stored-name="group_id" type="java.lang.String" length="50"
+			description="Group ID" allow-null="false" key="true">
+			<reference entity="groups" attribute="id"/>
+		</attribute>
+	</entity>
+	
+</store>

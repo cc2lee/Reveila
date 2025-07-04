@@ -1,0 +1,4 @@
+JVM arguments for Eclipse
+=========================
+
+-Djava.rmi.server.codebase="file:/${workspace_loc:App-X Server/deploy}/lib/appx-client.jar file:/${workspace_loc:App-X Server/deploy}/lib/appx-remote.jar" -Djava.rmi.server.hostname="localhost" -Djava.security.auth.login.config="file:/${workspace_loc:App-X Server/deploy}/conf/java.login.config" -Djava.util.logging.config.file="${workspace_loc:App-X Server/deploy}/conf/logging.properties"
