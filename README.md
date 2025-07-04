@@ -1,6 +1,6 @@
 # Spring Boot Gradle Project
 
-A lightweight Java application container that allows you to plug in any plain Java object and expose its methods as RESTful APIs through simple JSON configuration. It can be deployed as a standalone application or within a Docker image. Use cases range from rapid backend service development to mobile applications that require a runtime kernel.
+A service oriented, event driven Java container that allows plug-in of any Java object and exposes its methods as RESTful APIs through simple JSON configuration. It can run standalone or in Docker. It’s designed for rapid service development or integration of stubborn legacy applications. Its lightweight nature also makes it ideal for mobile apps.
 
 ## Project Structure
 
