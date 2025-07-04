@@ -64,7 +64,6 @@ To run the tests, use the following command:
 
 ## License
 
-Software Copyright License
 Copyright (c) 2025 Charles Lee, Reveila LLC
 
 This software is provided for viewing purposes only on GitHub.
