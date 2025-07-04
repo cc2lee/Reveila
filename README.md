@@ -1,6 +1,6 @@
 # Spring Boot Gradle Project
 
-This is a simple Spring Boot application built using Gradle. 
+A lightweight Java application container that allows you to plug in any plain Java object and expose its methods as RESTful APIs through simple JSON configuration. It can be deployed as a standalone application or within a Docker image. Use cases range from rapid backend service development to mobile applications that require a runtime kernel.
 
 ## Project Structure
 
