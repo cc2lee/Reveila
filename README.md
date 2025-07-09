@@ -53,7 +53,7 @@ spring-boot-gradle-project
 
 ## Usage
 
-Once the application is running, you can access it at `http://localhost:8080`.
+Once the application is running, you can access it at `http://localhost:8080/reveila`.
 
 ## Running Tests
 
