@@ -1,87 +1,107 @@
 # Spring Boot Gradle Project
 
-A service oriented, event driven Java container that allows plug-in of any Java object and exposes its methods as RESTful APIs through simple JSON configuration. It can run standalone or in Docker. It’s designed for rapid service development or integration of stubborn legacy applications. Its lightweight nature also makes it ideal for mobile apps.
-
-## Project Structure
-
-```
-spring-boot-gradle-project
-├── src
-│   ├── main
-│   │   ├── java
-│   │   │   └── com
-│   │   │       └── example
-│   │   │           └── Application.java
-│   │   └── resources
-│   │       └── application.properties
-│   └── test
-│       └── java
-│           └── com
-│               └── example
-│                   └── ApplicationTests.java
-├── build.gradle
-├── settings.gradle
-└── README.md
-```
+This is a sample Spring Boot application built with Gradle, demonstrating a multi-project setup and a RESTful API. The application includes a `reveila` subproject which provides various utility services.
 
 ## Prerequisites
 
-- Java 11 or higher
-- Gradle 6.0 or higher
+- Java Development Kit (JDK) 17 or later.
 
-## Setup Instructions
+## Building the Project
 
-1. Clone the repository:
-   ```
-   git clone <repository-url>
-   ```
+This project uses the Gradle wrapper, so you don't need to have Gradle installed on your system.
 
-2. Navigate to the project directory:
-   ```
-   cd spring-boot-gradle-project
-   ```
+To build the project, run the following command from the root directory:
 
-3. Build the project:
-   ```
-   ./gradlew build
-   ```
+```bash
+# For Linux/macOS
+./gradlew build
 
-4. Run the application:
-   ```
-   ./gradlew bootRun
-   ```
-
-## Usage
-
-Once the application is running, you can access it at `http://localhost:8080/reveila`.
-
-## Running Tests
-
-To run the tests, use the following command:
-```
-./gradlew test
+# For Windows
+gradlew.bat build
 ```
 
-## License
+This will compile the code, run the tests, and create an executable JAR file in the `build/libs/` directory.
 
-Copyright (c) 2025 Charles Lee, Reveila LLC
+## Running the Application
 
-This software is provided for viewing purposes only on GitHub.
+Once the project is built, you can run the application using the following command:
 
-You are permitted to:
+```bash
+java -jar build/libs/spring-boot-gradle-project-0.0.1-SNAPSHOT.jar
+```
 
-View the source code on the designated GitHub repository.
+The server will start on port 8080 by default.
 
-You are expressly NOT permitted to:
+## Configuration
 
-Use, modify, reproduce, distribute, or create derivative works of this software for any commercial purpose whatsoever.
+The application can be configured via environment variables. The following variables are supported:
 
-Use, modify, reproduce, distribute, or create derivative works of this software for any non-commercial purpose without explicit written permission from the copyright holder.
+| Variable        | Description                  | Default Value                        |
+|-----------------|------------------------------|--------------------------------------|
+| `DB_URL`        | The database connection URL. | `jdbc:mysql://localhost:3306/mydb`   |
+| `DB_USERNAME`   | The database username.       | `root`                               |
+| `DB_PASSWORD`   | The database password.       | `password`                           |
 
-Distribute or sublicense the software or any derivative works.
+To run the application with custom database settings, you can set these environment variables before launching the JAR file.
 
-Remove or alter any copyright or other proprietary notices from the software.
+**Example (Linux/macOS):**
+```bash
+export DB_URL=jdbc:mysql://prod-db.example.com:3306/production
+export DB_USERNAME=prod_user
+export DB_PASSWORD=supersecret
+java -jar build/libs/spring-boot-gradle-project-0.0.1-SNAPSHOT.jar
+```
 
-THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+**Example (Windows Command Prompt):**
+```bash
+set DB_URL=jdbc:mysql://prod-db.example.com:3306/production
+set DB_USERNAME=prod_user
+set DB_PASSWORD=supersecret
+java -jar build/libs/spring-boot-gradle-project-0.0.1-SNAPSHOT.jar
+```
 
-By viewing or accessing this software, you agree to the terms of this license.
+## API Endpoints
+
+The following endpoints are available under the `/api` base path.
+
+### Echo Service
+
+- **GET /api/echo**
+  - Echoes back a message. The `Reveila` subproject mock is used here.
+  - **Query Parameter:** `name` (optional, defaults to "World")
+  - **Example:**
+    ```bash
+    curl "http://localhost:8080/api/echo?name=Gemini"
+    ```
+
+### Greetings
+
+- **POST /api/greetings**
+  - Creates a new greeting.
+  - **Example:**
+    ```bash
+    curl -X POST -H "Content-Type: application/json" -d '{"content":"Hello, REST!"}' http://localhost:8080/api/greetings
+    ```
+
+- **PUT /api/greetings/{id}**
+  - Updates an existing greeting.
+  - **Example:**
+    ```bash
+    curl -X PUT -H "Content-Type: application/json" -d '{"content":"Updated Greeting"}' http://localhost:8080/api/greetings/123
+    ```
+
+- **DELETE /api/greetings/{id}**
+  - Deletes a greeting.
+  - **Example:**
+    ```bash
+    curl -X DELETE http://localhost:8080/api/greetings/123
+    ```
+
+### File Upload
+
+- **POST /api/upload**
+  - Uploads a single file.
+  - **Example:**
+    ```bash
+    curl -X POST -F "file=@./README.md" http://localhost:8080/api/upload
+    ```
