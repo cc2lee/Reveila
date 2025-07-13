@@ -16,12 +16,17 @@
 *.ear
 
 # Gradle
-.gradle
+/.gradle/
 /build/
 
 # IDE
-.idea/
-.vscode/
+/.idea/
+/.vscode/
+/bin/
+
+# Maven
+/target/
 
 # Local configurations
 runtime-directory/
+
