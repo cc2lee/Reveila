@@ -1,25 +1,21 @@
 package reveila.remoting;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 /**
- * A framework-agnostic remote client using Java's built-in HttpClient.
+ * An example of a framework-agnostic remote client using Java's built-in HttpClient.
+ * <p>
+ * This class has no Spring dependencies and could live in the core `reveila` module.
+ * Notice the increased complexity for tasks that Spring's `RestTemplate` and
+ * `WebServiceTemplate` handle automatically, such as object serialization/deserialization
+ * and SOAP envelope management.
  */
 public class AgnosticRemoteClient {
-
-    private final HttpClient httpClient;
-
-    public AgnosticRemoteClient() {
-        // The client is reusable and thread-safe.
-        this.httpClient = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_1_1)
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
-    }
 
     /**
      * Performs a basic GET request and returns the response body as a string.
@@ -29,22 +25,30 @@ public class AgnosticRemoteClient {
      * @throws Exception if the request fails.
      */
     public String get(String url) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .GET()
-                .build();
+        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+        conn.setRequestMethod("GET");
+        conn.setConnectTimeout(10000);
+        conn.setReadTimeout(10000);
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() >= 400) {
-            throw new RuntimeException("HTTP GET failed with status code: " + response.statusCode());
+        int responseCode = conn.getResponseCode();
+        if (responseCode >= 400) {
+            throw new RuntimeException("HTTP GET failed with status code: " + responseCode);
         }
 
-        return response.body();
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+            String inputLine;
+            StringBuilder content = new StringBuilder();
+            while ((inputLine = in.readLine()) != null) {
+                content.append(inputLine);
+            }
+            return content.toString();
+        }
     }
 
     /**
      * Performs a basic SOAP request.
+     * <p>
+     * Note how we must manually set headers that WebServiceTemplate would handle.
      *
      * @param endpointUrl The SOAP endpoint.
      * @param soapAction  The SOAPAction header.
@@ -53,20 +57,27 @@ public class AgnosticRemoteClient {
      * @throws Exception if the request fails.
      */
     public String invokeSoap(String endpointUrl, String soapAction, String requestXml) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(endpointUrl))
-                .header("Content-Type", "text/xml;charset=UTF-8")
-                .header("SOAPAction", soapAction)
-                .POST(HttpRequest.BodyPublishers.ofString(requestXml))
-                .build();
+        HttpURLConnection conn = (HttpURLConnection) new URL(endpointUrl).openConnection();
+        conn.setRequestMethod("POST");
+        conn.setConnectTimeout(10000);
+        conn.setReadTimeout(10000);
+        conn.setRequestProperty("Content-Type", "text/xml;charset=UTF-8");
+        conn.setRequestProperty("SOAPAction", soapAction);
+        conn.setDoOutput(true);
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() >= 400) {
-            // TODO: A real implementation would need to parse the SOAP Fault here.
-            throw new RuntimeException("SOAP call failed with status code: " + response.statusCode());
+        try (OutputStream os = conn.getOutputStream()) {
+            byte[] input = requestXml.getBytes(StandardCharsets.UTF_8);
+            os.write(input, 0, input.length);
         }
 
-        return response.body();
+        int responseCode = conn.getResponseCode();
+        if (responseCode >= 400) {
+            // A real implementation would need to parse the SOAP Fault here.
+            throw new RuntimeException("SOAP call failed with status code: " + responseCode);
+        }
+
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            return in.lines().collect(java.util.stream.Collectors.joining("\n"));
+        }
     }
 }
