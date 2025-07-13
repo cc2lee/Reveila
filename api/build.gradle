@@ -3,14 +3,32 @@ plugins {
     id 'org.springframework.boot'
 }
 
+group = 'reveila.spring'
+version = '0.0.1-SNAPSHOT'
+
 dependencies {
-    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    // Project dependency on the core 'reveila' library
     implementation project(':reveila')
 
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    // For the generic SOAP client (WebServiceTemplate)
+    implementation 'org.springframework.boot:spring-boot-starter-web-services'
+
+    // For the generic REST client (RestTemplate)
+    // This is included in spring-boot-starter-web, which is appropriate here.
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    // Provides a more robust HTTP client implementation for WebServiceTemplate's message sender.
+    // The version is managed by the Spring Boot BOM.
+    implementation 'org.apache.httpcomponents.client5:httpclient5'
+
+    // Required by XmlUtil for JSON/XML conversions.
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml'
+
     // Apache HttpClient 5 for PATCH support
     testImplementation 'org.apache.httpcomponents.client5:httpclient5'
     testImplementation("org.junit.jupiter:junit-jupiter:5.9.2")
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

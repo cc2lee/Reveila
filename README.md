@@ -80,7 +80,7 @@ The following endpoints are available under the `/api` base path.
   - Creates a new greeting.
   - **Example:**
     ```bash
-    curl -X POST -H "Content-Type: application/json" -d '{"content":"Hello, REST!"}' http://localhost:8080/api/greetings
+    curl -X POST -H "Content-Type: application/json" -d '{"content":"A new greeting"}' http://localhost:8080/api/greetings
     ```
 
 - **PUT /api/greetings/{id}**
@@ -105,3 +105,27 @@ The following endpoints are available under the `/api` base path.
     ```bash
     curl -X POST -F "file=@./README.md" http://localhost:8080/api/upload
     ```
+
+## Core Utilities (`reveila` subproject)
+
+The `reveila` subproject contains reusable components.
+
+### `RemoteCall` Component
+
+A unified client for making generic remote REST and SOAP calls. You can inject this component into any of your services to simplify communication with external APIs.
+
+**REST Example:**
+```java
+@Autowired
+private RemoteCall remoteCall;
+
+public void fetchUser() {
+    ResponseEntity<User> response = remoteCall.get("https://api.example.com/users/1", User.class);
+    User user = response.getBody();
+}
+```
+
+**SOAP Example:**
+```java
+String responseXml = remoteCall.invokeSoap("http://service.example.com", "urn:myAction", "<soap:Envelope>...</soap:Envelope>");
+```
