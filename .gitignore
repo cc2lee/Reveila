@@ -24,4 +24,4 @@
 .vscode/
 
 # Local configurations
-dir-structure/
+runtime-directory/
