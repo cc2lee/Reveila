@@ -1,10 +1,22 @@
 plugins {
+    // Use the java-library plugin for library modules
     id 'java-library'
-    id 'io.spring.dependency-management'
+}
+
+sourceSets {
+    main {
+        resources {
+            srcDir 'runtime-directory/configs'
+        }
+    }
 }
 
 dependencies {
-    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml'
-    api 'com.fasterxml.jackson.core:jackson-databind'
+    // This dependency provides com.fasterxml.jackson.dataformat.xml.XmlMapper
+    // and is declared as 'api' because its types are exposed through the public
+    // XmlUtil class, making it part of this library's public API.
+    api 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml'
+
+    // Add the SLF4J API for logging within the library.
     implementation 'org.slf4j:slf4j-api'
 }

@@ -7,6 +7,8 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FilenameFilter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Iterator;
 import java.util.List;
 
@@ -300,4 +302,8 @@ public final class FileUtil {
         
     }
 
+	public static String fileContentToString(String filePath) throws IOException {
+		String content = new String(Files.readAllBytes(Paths.get(filePath)), java.nio.charset.StandardCharsets.UTF_8);
+		return content;
+	}
 }

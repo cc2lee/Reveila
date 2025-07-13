@@ -1,0 +1,31 @@
+[
+  {
+    "service": {
+      "start": true,
+      "name": "Echo Service",
+      "id": "",
+      "class": "reveila.service.EchoService",
+      "version": "1",
+      "arguments": [
+        {
+          "name": "reverse",
+          "type": "java.lang.Boolean",
+          "value": false
+        },
+        {
+          "name": "repeat",
+          "type": "java.lang.Integer",
+          "value": 5
+        }
+      ]
+    }
+  },
+  {
+    "service": {
+      "name": "Task Manager",
+      "id": "",
+      "class": "reveila.util.task.TaskManager",
+      "version": "1"
+    }
+  }
+]

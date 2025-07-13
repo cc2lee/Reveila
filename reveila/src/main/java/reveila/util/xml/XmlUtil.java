@@ -13,6 +13,8 @@ import java.io.StringWriter;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Objects;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -41,6 +43,9 @@ import com.fasterxml.jackson.dataformat.xml.XmlMapper;
  * Utility for manipulating XML files and org.w3c.dom.Document object.
  */
 public final class XmlUtil {
+
+	// XmlMapper is thread-safe, so we can reuse a single instance for performance.
+	private static final XmlMapper XML_MAPPER = new XmlMapper();
 	
 	/**
 	 * Returns an org.w3c.dom.Document object created from the specified XML file.
@@ -128,29 +133,35 @@ public final class XmlUtil {
 	 * Performs a depth-first search to find the first child node of the specified
 	 * parent that is either a text node or a CDATA section node.
 	 *
-	 * @param parentNode the starting {@link Node} to search from
+	 * @param parentNode the starting {@link Node} whose children will be searched
 	 * @return the first {@link Node} found that is a text node or CDATA section node,
 	 *         or {@code null} if none is found
 	 */
 	public static Node getTextNode(final Node parentNode) {
-		if (parentNode == null) {
+		if (parentNode == null || !parentNode.hasChildNodes()) {
 			return null;
 		}
-		
-		NodeList nodeList = parentNode.getChildNodes();
-		for (int i = 0; i < nodeList.getLength(); i++) {
-			Node child = nodeList.item(i);
-			short nodeType = child.getNodeType();
 
-			// If it's a text or CDATA node, we've found it.
+		// Use an iterative approach with a stack to avoid StackOverflowError on deep trees.
+		Deque<Node> stack = new ArrayDeque<>();
+		// Add children to the stack in reverse order to process them from left-to-right.
+		NodeList children = parentNode.getChildNodes();
+		for (int i = children.getLength() - 1; i >= 0; i--) {
+			stack.push(children.item(i));
+		}
+
+		while (!stack.isEmpty()) {
+			Node node = stack.pop();
+			short nodeType = node.getNodeType();
+
 			if (nodeType == Node.TEXT_NODE || nodeType == Node.CDATA_SECTION_NODE) {
-				return child;
+				return node;
 			}
-			// If it's an element, recurse into it.
-			if (nodeType == Node.ELEMENT_NODE) {
-				Node found = getTextNode(child);
-				if (found != null) {
-					return found;
+
+			if (nodeType == Node.ELEMENT_NODE && node.hasChildNodes()) {
+				NodeList grandChildren = node.getChildNodes();
+				for (int i = grandChildren.getLength() - 1; i >= 0; i--) {
+					stack.push(grandChildren.item(i));
 				}
 			}
 		}
@@ -202,8 +213,7 @@ public final class XmlUtil {
 
 	public static Element toXmlElement(final JsonNode jsonNode) throws IOException, ParserConfigurationException, SAXException {
 		// Convert JsonNode to XML string
-    	XmlMapper xmlMapper = new XmlMapper();
-    	String xml = xmlMapper.writeValueAsString(jsonNode);
+    	String xml = XML_MAPPER.writeValueAsString(jsonNode);
     	DocumentBuilderFactory factory = createSecureDocumentBuilderFactory();
     	DocumentBuilder builder = factory.newDocumentBuilder();
     	Document doc = builder.parse(new java.io.ByteArrayInputStream(xml.getBytes()));
@@ -214,8 +224,7 @@ public final class XmlUtil {
 		// Convert the XML Node to a String
 		String xmlString = XmlUtil.nodeToString(xmlNode);
 		// Parse the XML String into a JsonNode
-		XmlMapper xmlMapper = new XmlMapper();
-		return xmlMapper.readTree(xmlString.getBytes());
+		return XML_MAPPER.readTree(xmlString.getBytes());
 	}
 
 	/**

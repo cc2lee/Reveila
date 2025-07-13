@@ -1,36 +1,8 @@
 plugins {
-    id 'org.springframework.boot' version '3.3.1' apply false
+    // Make the Spring Boot plugin available to the build script classpath.
+    // This allows access to its constants, like the BOM coordinates.
+    id 'org.springframework.boot' version '3.2.5' apply false
     id 'io.spring.dependency-management' version '1.1.5' apply false
-}
- 
-group = 'com.reveila'
-version = '0.0.1-SNAPSHOT'
-
-subprojects {
-    // This configuration will be applied to all subprojects that have the java or java-library plugin.
-    plugins.withId('io.spring.dependency-management') {
-        dependencyManagement {
-            imports {
-                // Import the Spring Boot BOM to manage dependency versions for all subprojects.
-                mavenBom "org.springframework.boot:spring-boot-dependencies:3.3.1"
-            }
-        }
-    }
-
-    plugins.withId('java') {
-        java {
-            toolchain {
-                languageVersion = JavaLanguageVersion.of(17)
-            }
-        }
-
-        // Explicitly define source sets to help IDEs. This is the default convention.
-        sourceSets {
-            main {
-                java.srcDirs = ['src/main/java']
-            }
-        }
-    }
 }
 
 allprojects {
@@ -39,6 +11,13 @@ allprojects {
     }
 }
 
-wrapper {
-    gradleVersion = '8.8'
+subprojects {
+    apply plugin: 'io.spring.dependency-management'
+
+    dependencyManagement {
+        imports {
+            // Use the Spring Boot BOM to manage all dependency versions consistently.
+            mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
+        }
+    }
 }

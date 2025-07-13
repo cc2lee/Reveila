@@ -51,10 +51,7 @@ public final class Reveila {
 
 	private void shutdown() {
 		synchronized (this) {
-			System.out.println();
-			System.out.println();
-			System.out.println("Shutting down system...");
-
+			logOrPrint("\n\nShutting down system...", Level.INFO);
 			boolean error = false;
 
 			if (this.systemContext != null) {
@@ -62,15 +59,12 @@ public final class Reveila {
 					systemContext.destruct();
 				} catch (Exception e) {					
 					error = true;
-					logOrPrint("System shutdown failed: " + e.getMessage(), Level.SEVERE);
-					e.printStackTrace();
+					logOrPrint("System shutdown failed: " + e.getMessage(), Level.SEVERE, e);
 				}
 			}
 
 			if (!error) {
-				logOrPrint("System shut down successfully", Level.INFO);
-				System.out.println();
-				System.out.println();
+				logOrPrint("System shut down successfully\n\n", Level.INFO);
 			}
 		}
 	}
@@ -80,16 +74,17 @@ public final class Reveila {
 	 * By default, this method looks for the "system.properties" file
 	 * on the classpath to load the system properties.
 	 * Alternatively, a command-line argument can be specified, in the form of
-	 * "system.init.url={url}", to load system properties
+	 * "system.init.url=url", to load system properties
 	 * from the URL specified. Any system property can also be specified as
 	 * commmand-line argument in the same format using the keys defined in the
-	 * system.properties file, in this case, the value from the command-line will will
+	 * system.properties file, in this case, the value from the command-line will
 	 * overwrite the value defined in the system.properties file.
 	 */
 	public void start(String[] args) throws Exception {
-		Logo.print();
+		
 		RuntimeUtil.addShutdownHook(this::shutdown);
-
+		Logo.print();
+		
 		this.properties = loadProperties(processArguments(args));
 		this.logger = configureLogging(this.properties);
 		initializeClassLoader(this.properties);
@@ -134,6 +129,16 @@ public final class Reveila {
 	}
 
 	private Properties loadProperties(Properties cmdArgs) throws IOException, ConfigurationException {
+
+		// retrieve OS environment variables
+		Properties envs = new Properties();
+		Map<String, String> m = System.getenv();
+		// Use a modern for-each loop for better readability.
+		for (Map.Entry<String, String> entry : m.entrySet()) {
+			envs.put(entry.getKey().toLowerCase(), entry.getValue());
+		}
+
+		// load properties from system.properties file
 		String urlStr = cmdArgs.getProperty(Constants.S_SYSTEM_PROPERTIES_URL);
 		URL url;
 		try {
@@ -155,8 +160,11 @@ public final class Reveila {
 			loadedProps.load(stream);
 		}
 
-		loadedProps.putAll(cmdArgs);
-		return loadedProps;
+		Properties combined = new Properties();
+		combined.putAll(envs);
+		combined.putAll(loadedProps);
+		combined.putAll(cmdArgs);
+		return combined;
 	}
 
 	private Logger configureLogging(Properties props) throws IOException {
@@ -244,10 +252,25 @@ public final class Reveila {
 	}
 
 	private void initializeSystemContext(Properties props) throws Exception {
-		FileManager rootFileManager = new FileManager(
-				FileUtil.createDirectory(props.getProperty(Constants.S_SYSTEM_FILE_STORE)),
-				FileUtil.createDirectory(props.getProperty(Constants.S_SYSTEM_TMP_FILE_STORE))
-		);
+
+		String home = props.getProperty(Constants.S_SYSTEM_HOME, 
+							System.getProperty("user.dir") + File.separator + "Reveila");
+		
+		String fileStore = props.getProperty(Constants.S_SYSTEM_FILE_STORE);
+		if (fileStore == null || fileStore.isBlank()) {
+			fileStore = home + File.separator + "data";
+			props.setProperty(Constants.S_SYSTEM_FILE_STORE, fileStore);
+		}
+		FileUtil.createDirectory(fileStore);
+
+		String tempFileStore = props.getProperty(Constants.S_SYSTEM_TMP_FILE_STORE);
+		if (tempFileStore == null || tempFileStore.isBlank()) {
+			tempFileStore = home + File.separator + "temp";
+			props.setProperty(Constants.S_SYSTEM_TMP_FILE_STORE, tempFileStore);
+		}
+		FileUtil.createDirectory(tempFileStore);
+
+		FileManager rootFileManager = new FileManager(fileStore, tempFileStore);
 		this.fileManagers.put(this, rootFileManager);
 
 		this.eventManager = new EventManager();
@@ -296,6 +319,15 @@ public final class Reveila {
 			this.logger.log(level, message);
 		} else {
 			System.out.println(message);
+		}
+	}
+
+	private void logOrPrint(String message, Level level, Throwable throwable) {
+		if (this.logger != null) {
+			this.logger.log(level, message, throwable);
+		} else {
+			System.err.println(message);
+			throwable.printStackTrace(System.err);
 		}
 	}
 }

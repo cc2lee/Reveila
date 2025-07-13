@@ -1,0 +1,20 @@
+[ {
+  "job" : {
+    "name" : "Clean File Directory",
+    "class" : "reveila.util.task.CleanFileDirectoryJob",
+    "version" : "1",
+    "arguments" : [ {
+      "name" : "LastRun",
+      "type" : "java.lang.String",
+      "value" : "2025-07-02 15:30:45"
+    }, {
+      "name" : "DirsToClean",
+      "type" : "java.lang.String",
+      "value" : "C:\\IDE\\Projects\\spring-boot-gradle-project\\dir-structure\\temp"
+    }, {
+      "name" : "Delay",
+      "type" : "java.lang.Long",
+      "value" : 1000
+    } ]
+  }
+} ]

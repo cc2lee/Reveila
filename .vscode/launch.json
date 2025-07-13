@@ -5,23 +5,24 @@
             "type": "java",
             "name": "Application",
             "request": "launch",
-            "mainClass": "reveila.spring.Application",
-            "projectName": ""
+            "mainClass": "reveila.spring.Application"
         },
         {
             "type": "java",
-            "name": "Spring Boot - Application",
+            "name": "Application",
             "request": "launch",
             "mainClass": "reveila.spring.Application",
-            "projectName": "spring-boot-gradle-project",
-            "args": "",
-            "vmArgs": [
-                "-Xmx2048m",
-                "-Dspring.profiles.active=dev",
-                "-XX:+EnableDynamicAgentLoading"
-            ],
+            "projectName": "api"
+        },
+        {
+            "type": "java",
+            "name": "Debug Spring Boot - API",
+            "request": "launch",
+            "mainClass": "reveila.spring.Application",
+            "projectName": "Reveila-Suite",
+            "vmArgs": "-Xmx2048m -Dspring.profiles.active=dev",
             "classPaths": [
-                "${workspaceFolder}/reveila/dir-structure/configs"
+                "${workspaceFolder}/reveila/runtime-directory/configs"
             ]
         }
     ]

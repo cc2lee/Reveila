@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.logging.Logger;
 
 import reveila.error.ConfigurationException;
+import reveila.system.Constants;
 import reveila.system.JsonConfiguration;
 import reveila.system.MetaObject;
 import reveila.system.Service;
@@ -49,6 +50,14 @@ public class TaskManager extends Service {
                     }
                     
                     logger.info("Task Manager started at " + TimeFormat.getInstance().format(start));
+
+                    if (jobConfigurationDirectory == null || jobConfigurationDirectory.isBlank()) {
+                        jobConfigurationDirectory = systemContext.getProperties().getProperty(Constants.S_SYSTEM_JOB_CONFIG_DIR);
+                        if (jobConfigurationDirectory == null || jobConfigurationDirectory.isBlank()) {
+                            String homeDir = systemContext.getProperties().getProperty(Constants.S_SYSTEM_HOME);
+                            jobConfigurationDirectory = homeDir + File.separator + "configs" + File.separator + "jobs";
+                        }
+                    }
                     
                     File[] files = FileUtil.listFilesWithExtension(jobConfigurationDirectory, "json");
                     if (files == null) {

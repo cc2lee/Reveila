@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectWriter;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -67,4 +68,29 @@ public final class JsonUtil {
     public static void toJsonFile(Object data, String filePath) throws IOException {
         PRETTY_WRITER.writeValue(new File(filePath), data);
     }
+
+    // Recursively find all values for a given key in a (possibly nested) Map
+	public static List<Object> findValuesByKey(Map<String, Object> map, String key) {
+		List<Object> results = new ArrayList<>();
+		findValuesByKeyHelper(map, key, results);
+		return results;
+	}
+
+	private static void findValuesByKeyHelper(Map<?, ?> map, String key, List<Object> results) {
+		for (Map.Entry<?, ?> entry : map.entrySet()) {
+			if (entry.getKey().equals(key)) {
+				results.add(entry.getValue());
+			}
+			Object value = entry.getValue();
+			if (value instanceof Map<?, ?>) {
+				findValuesByKeyHelper((Map<?, ?>) value, key, results);
+			} else if (value instanceof List) {
+				for (Object item : (List<?>) value) {
+					if (item instanceof Map<?, ?>) {
+						findValuesByKeyHelper((Map<?, ?>) item, key, results);
+					}
+				}
+			}
+		}
+	}
 }

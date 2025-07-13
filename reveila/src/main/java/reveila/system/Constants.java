@@ -29,6 +29,7 @@ public final class Constants {
 	public static final String S_SYSTEM_PROPERTIES_FILE_NAME = "system.properties";
 	public static final String S_SYSTEM_CRYPTOGRAPHER_SECRETKEY = "system.cryptographer.secretkey";
 	public static final String S_SYSTEM_CONFIGURATION_FORMAT= "system.configuration.format";
+	public static final String S_SYSTEM_JOB_CONFIG_DIR = "system.job.config.dir";
 	
 	/*
 	 * **************************************************
@@ -82,5 +83,28 @@ public final class Constants {
 	public static final String C_PROPERTIES = "properties";
 	public static final String C_LIB_DIR_NAME = "libs";
     public static final String LOG_DIR_NAME = "logs";
+    
 	
+	public final class DataStoreConstants {
+		
+		public static final String ENTITY = "entity";
+		public static final String ATTRIBUTE = "attribute";
+		public static final String REFERENCE = "reference";
+		public static final String REFERENCED_BY = "referenced-by";
+		public static final String STORED_NAME = "stored-name";
+		public static final String CHARSET = "charset";
+		public static final String AUTO_VALUE = "auto-value";
+		public static final String MUTABLE = "mutable";
+		public static final String KEY = "key";
+		public static final String TYPE = "type";
+		public static final String LENGTH = "length";
+		public static final String PRECISION = "precision";
+		public static final String MULTI_VALUE = "multi-value";
+		public static final String PATTERN = "pattern";
+		public static final String ENCRYPTED = "encrypted";
+		public static final String VALID_VALUES = "valid-values";
+		public static final String ALLOW_NULL = "allow-null";
+		public static final String DEFAULT_VALUE = "default-value";
+	}
+
 }
