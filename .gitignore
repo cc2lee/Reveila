@@ -23,6 +23,8 @@
 /.idea/
 /.vscode/
 /bin/
+/api/build/
+/reveila/build/
 
 # Maven
 /target/
@@ -30,3 +32,16 @@
 # Local configurations
 runtime-directory/
 
+.gradle/8.8/executionHistory/executionHistory.bin
+.gradle/8.8/executionHistory/executionHistory.lock
+.gradle/8.8/fileHashes/fileHashes.bin
+.gradle/8.8/fileHashes/fileHashes.lock
+.gradle/8.8/fileHashes/resourceHashesCache.bin
+.gradle/buildOutputCleanup/buildOutputCleanup.lock
+api/build/reports/tests/test/index.html
+api/build/reports/tests/test/classes/reveila.spring.ApplicationTests.html
+api/build/reports/tests/test/packages/reveila.spring.html
+api/build/test-results/test/binary/output.bin
+api/build/test-results/test/binary/results.bin
+reveila/build/resources/main/system.properties
+reveila/runtime-directory/configs/system.properties
