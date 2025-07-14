@@ -10,5 +10,6 @@ plugins {
 
 rootProject.name = 'Reveila-Suite'
 
-include 'api'
 include 'reveila'
+include 'api'
+include 'mobile'

@@ -1,8 +1,10 @@
 package reveila.remoting;
 
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.Reader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -25,24 +27,15 @@ public class AgnosticRemoteClient {
      * @throws Exception if the request fails.
      */
     public String get(String url) throws Exception {
-        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-        conn.setRequestMethod("GET");
-        conn.setConnectTimeout(10000);
-        conn.setReadTimeout(10000);
+        HttpURLConnection conn = createConnection(url, "GET");
 
         int responseCode = conn.getResponseCode();
         if (responseCode >= 400) {
-            throw new RuntimeException("HTTP GET failed with status code: " + responseCode);
+            String errorDetails = readStream(conn.getErrorStream());
+            throw new RuntimeException("HTTP GET failed with status code: " + responseCode + ". Details: " + errorDetails);
         }
 
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
-            String inputLine;
-            StringBuilder content = new StringBuilder();
-            while ((inputLine = in.readLine()) != null) {
-                content.append(inputLine);
-            }
-            return content.toString();
-        }
+        return readStream(conn.getInputStream());
     }
 
     /**
@@ -57,10 +50,7 @@ public class AgnosticRemoteClient {
      * @throws Exception if the request fails.
      */
     public String invokeSoap(String endpointUrl, String soapAction, String requestXml) throws Exception {
-        HttpURLConnection conn = (HttpURLConnection) new URL(endpointUrl).openConnection();
-        conn.setRequestMethod("POST");
-        conn.setConnectTimeout(10000);
-        conn.setReadTimeout(10000);
+        HttpURLConnection conn = createConnection(endpointUrl, "POST");
         conn.setRequestProperty("Content-Type", "text/xml;charset=UTF-8");
         conn.setRequestProperty("SOAPAction", soapAction);
         conn.setDoOutput(true);
@@ -72,12 +62,30 @@ public class AgnosticRemoteClient {
 
         int responseCode = conn.getResponseCode();
         if (responseCode >= 400) {
-            // A real implementation would need to parse the SOAP Fault here.
-            throw new RuntimeException("SOAP call failed with status code: " + responseCode);
+            String errorDetails = readStream(conn.getErrorStream());
+            throw new RuntimeException("SOAP call failed with status code: " + responseCode + ". Details: " + errorDetails);
         }
 
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
-            return in.lines().collect(java.util.stream.Collectors.joining("\n"));
+        return readStream(conn.getInputStream());
+    }
+
+    private HttpURLConnection createConnection(String urlString, String method) throws java.io.IOException {
+        URL url = new URL(urlString);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod(method);
+        conn.setConnectTimeout(15000); // Increased timeout slightly
+        conn.setReadTimeout(15000);
+        return conn;
+    }
+
+    private String readStream(InputStream stream) throws java.io.IOException {
+        if (stream == null) {
+            return "No error details available from the server.";
+        }
+        // Use try-with-resources to ensure the stream is closed
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            // Using streams for a more concise way to read all lines
+            return reader.lines().collect(java.util.stream.Collectors.joining("\n"));
         }
     }
 }

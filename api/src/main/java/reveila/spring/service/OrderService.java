@@ -1,40 +1,43 @@
 package reveila.spring.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import reveila.spring.remoting.RemoteCall;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import reveila.remoting.AgnosticRemoteClient;
 import reveila.util.xml.XmlUtil;
 
-import java.util.Map;
-
 /**
- * An example service demonstrating how to use the RemoteCall component.
+ * An example service demonstrating how to use the {@link AgnosticRemoteClient} component.
  */
 @Service
 public class OrderService {
 
-    private final RemoteCall remoteCall;
+    private final AgnosticRemoteClient remoteClient;
+    private final ObjectMapper objectMapper;
 
     /**
-     * To get an instance of RemoteCall, you inject it via the constructor.
-     * Spring automatically provides the managed RemoteCall bean.
+     * To get an instance of AgnosticRemoteClient, you inject it via the constructor.
+     * Spring automatically provides the managed AgnosticRemoteClient bean.
      *
-     * @param remoteCall The singleton instance of RemoteCall managed by Spring.
+     * @param remoteClient The singleton instance of AgnosticRemoteClient managed by Spring.
+     * @param objectMapper The singleton instance of ObjectMapper managed by Spring.
      */
     @Autowired
-    public OrderService(RemoteCall remoteCall) {
-        this.remoteCall = remoteCall;
+    public OrderService(AgnosticRemoteClient remoteClient, ObjectMapper objectMapper) {
+        this.remoteClient = remoteClient;
+        this.objectMapper = objectMapper;
     }
 
     /**
      * Fetches product details using a RESTful GET call.
      */
-    public Map<String, Object> getProductDetails(String productId) {
+    public ProductDetailsDTO getProductDetails(String productId) throws Exception {
         String url = "https://api.example.com/products/" + productId;
-        ResponseEntity<Map> response = remoteCall.get(url, Map.class);
-        return response.getBody();
+        String responseJson = remoteClient.get(url);
+        return objectMapper.readValue(responseJson, ProductDetailsDTO.class);
     }
 
     /**
@@ -52,7 +55,7 @@ public class OrderService {
            </soap:Body>
         </soap:Envelope>""", customerId, productId, quantity);
 
-        String responseXml = remoteCall.invokeSoap(endpointUrl, soapAction, requestXml);
+        String responseXml = remoteClient.invokeSoap(endpointUrl, soapAction, requestXml);
         JsonNode responseJson = XmlUtil.toJsonNode(XmlUtil.getDocument(new java.io.ByteArrayInputStream(responseXml.getBytes())));
         return responseJson.at("/Envelope/Body/submitOrderResponse/orderId").asText();
     }
