@@ -6,6 +6,8 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.Reader;
 import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
@@ -69,8 +71,8 @@ public class AgnosticRemoteClient {
         return readStream(conn.getInputStream());
     }
 
-    private HttpURLConnection createConnection(String urlString, String method) throws java.io.IOException {
-        URL url = new URL(urlString);
+    private HttpURLConnection createConnection(String urlString, String method) throws java.io.IOException, URISyntaxException {
+        URL url = new URI(urlString).toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod(method);
         conn.setConnectTimeout(15000); // Increased timeout slightly

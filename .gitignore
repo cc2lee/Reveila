@@ -23,7 +23,6 @@
 .vscode/
 
 # Local compiled classes and builds
-bin/
 build/
 api/build/
 reveila/build/
