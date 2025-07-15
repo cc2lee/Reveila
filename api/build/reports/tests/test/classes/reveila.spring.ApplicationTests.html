@@ -41,7 +41,7 @@
 </td>
 <td>
 <div class="infoBox" id="duration">
-<div class="counter">1.879s</div>
+<div class="counter">2.150s</div>
 <p>duration</p>
 </div>
 </td>
@@ -82,47 +82,47 @@
 </thead>
 <tr>
 <td class="success">contextLoads()</td>
-<td class="success">0.009s</td>
+<td class="success">0.015s</td>
 <td class="success">passed</td>
 </tr>
 <tr>
 <td class="success">createGreetingShouldReturnCreated()</td>
-<td class="success">0.020s</td>
+<td class="success">0.032s</td>
 <td class="success">passed</td>
 </tr>
 <tr>
 <td class="success">deleteGreetingShouldReturnNoContent()</td>
-<td class="success">0.035s</td>
+<td class="success">0.029s</td>
 <td class="success">passed</td>
 </tr>
 <tr>
 <td class="success">echoShouldReturnMessageFromService()</td>
-<td class="success">0.027s</td>
+<td class="success">0.041s</td>
 <td class="success">passed</td>
 </tr>
 <tr>
 <td class="success">echoShouldReturnServiceUnavailableWhenProxyIsMissing()</td>
-<td class="success">1.541s</td>
+<td class="success">1.727s</td>
 <td class="success">passed</td>
 </tr>
 <tr>
 <td class="success">handleFileUploadShouldReturnOk()</td>
-<td class="success">0.071s</td>
+<td class="success">0.106s</td>
 <td class="success">passed</td>
 </tr>
 <tr>
 <td class="success">handleMultipleFileUploadShouldReturnOk()</td>
-<td class="success">0.022s</td>
+<td class="success">0.039s</td>
 <td class="success">passed</td>
 </tr>
 <tr>
 <td class="success">patchGreetingShouldReturnOk()</td>
-<td class="success">0.023s</td>
+<td class="success">0.022s</td>
 <td class="success">passed</td>
 </tr>
 <tr>
 <td class="success">updateGreetingShouldReturnOk()</td>
-<td class="success">0.131s</td>
+<td class="success">0.139s</td>
 <td class="success">passed</td>
 </tr>
 </table>
@@ -139,22 +139,22 @@
  =========|_|==============|___/=/_/_/_/
  :: Spring Boot ::                (v3.2.5)
 
-2025-07-14T08:53:41.330-05:00  INFO 24036 --- [Reveila-Suite] [    Test worker] reveila.spring.ApplicationTests          : Starting ApplicationTests using Java 21.0.7 with PID 24036 (started by Charles Lee in C:\IDE\Projects\Reveila-Suite\api)
-2025-07-14T08:53:41.333-05:00 DEBUG 24036 --- [Reveila-Suite] [    Test worker] reveila.spring.ApplicationTests          : Running with Spring Boot v3.2.5, Spring v6.1.6
-2025-07-14T08:53:41.335-05:00  INFO 24036 --- [Reveila-Suite] [    Test worker] reveila.spring.ApplicationTests          : No active profile set, falling back to 1 default profile: &quot;default&quot;
-2025-07-14T08:53:43.822-05:00  WARN 24036 --- [Reveila-Suite] [    Test worker] trationDelegate$BeanPostProcessorChecker : Bean 'org.springframework.ws.config.annotation.DelegatingWsConfiguration' of type [org.springframework.ws.config.annotation.DelegatingWsConfiguration$$SpringCGLIB$$0] is not eligible for getting processed by all BeanPostProcessors (for example: not eligible for auto-proxying). The currently created BeanPostProcessor [annotationActionEndpointMapping] is declared through a non-static factory method on that class; consider declaring it as static instead.
-2025-07-14T08:53:43.923-05:00  INFO 24036 --- [Reveila-Suite] [    Test worker] .w.s.a.s.AnnotationActionEndpointMapping : Supporting [WS-Addressing August 2004, WS-Addressing 1.0]
-2025-07-14T08:53:44.437-05:00  INFO 24036 --- [Reveila-Suite] [    Test worker] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 0 (http)
-2025-07-14T08:53:44.464-05:00  INFO 24036 --- [Reveila-Suite] [    Test worker] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
-2025-07-14T08:53:44.466-05:00  INFO 24036 --- [Reveila-Suite] [    Test worker] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.20]
-2025-07-14T08:53:44.604-05:00  INFO 24036 --- [Reveila-Suite] [    Test worker] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
-2025-07-14T08:53:44.607-05:00  INFO 24036 --- [Reveila-Suite] [    Test worker] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 3243 ms
-2025-07-14T08:53:45.226-05:00  INFO 24036 --- [Reveila-Suite] [    Test worker] o.s.ws.soap.saaj.SaajSoapMessageFactory  : Creating SAAJ 1.3 MessageFactory with SOAP 1.1 Protocol
-2025-07-14T08:53:45.739-05:00  INFO 24036 --- [Reveila-Suite] [    Test worker] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 62191 (http) with context path ''
-2025-07-14T08:53:45.754-05:00  INFO 24036 --- [Reveila-Suite] [    Test worker] reveila.spring.ApplicationTests          : Started ApplicationTests in 4.841 seconds (process running for 6.555)
-2025-07-14T08:53:46.065-05:00  INFO 24036 --- [Reveila-Suite] [o-auto-1-exec-1] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
-2025-07-14T08:53:46.066-05:00  INFO 24036 --- [Reveila-Suite] [o-auto-1-exec-1] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
-2025-07-14T08:53:46.069-05:00  INFO 24036 --- [Reveila-Suite] [o-auto-1-exec-1] o.s.web.servlet.DispatcherServlet        : Completed initialization in 2 ms
+2025-07-14T17:52:51.835-05:00  INFO 33884 --- [Reveila-Suite] [    Test worker] reveila.spring.ApplicationTests          : Starting ApplicationTests using Java 21.0.7 with PID 33884 (started by Charles Lee in C:\IDE\Projects\Reveila-Suite\api)
+2025-07-14T17:52:51.841-05:00 DEBUG 33884 --- [Reveila-Suite] [    Test worker] reveila.spring.ApplicationTests          : Running with Spring Boot v3.2.5, Spring v6.1.6
+2025-07-14T17:52:51.850-05:00  INFO 33884 --- [Reveila-Suite] [    Test worker] reveila.spring.ApplicationTests          : No active profile set, falling back to 1 default profile: &quot;default&quot;
+2025-07-14T17:52:55.669-05:00  WARN 33884 --- [Reveila-Suite] [    Test worker] trationDelegate$BeanPostProcessorChecker : Bean 'org.springframework.ws.config.annotation.DelegatingWsConfiguration' of type [org.springframework.ws.config.annotation.DelegatingWsConfiguration$$SpringCGLIB$$0] is not eligible for getting processed by all BeanPostProcessors (for example: not eligible for auto-proxying). The currently created BeanPostProcessor [annotationActionEndpointMapping] is declared through a non-static factory method on that class; consider declaring it as static instead.
+2025-07-14T17:52:55.874-05:00  INFO 33884 --- [Reveila-Suite] [    Test worker] .w.s.a.s.AnnotationActionEndpointMapping : Supporting [WS-Addressing August 2004, WS-Addressing 1.0]
+2025-07-14T17:52:57.303-05:00  INFO 33884 --- [Reveila-Suite] [    Test worker] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port 0 (http)
+2025-07-14T17:52:57.360-05:00  INFO 33884 --- [Reveila-Suite] [    Test worker] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2025-07-14T17:52:57.361-05:00  INFO 33884 --- [Reveila-Suite] [    Test worker] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/10.1.20]
+2025-07-14T17:52:57.611-05:00  INFO 33884 --- [Reveila-Suite] [    Test worker] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring embedded WebApplicationContext
+2025-07-14T17:52:57.614-05:00  INFO 33884 --- [Reveila-Suite] [    Test worker] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 5710 ms
+2025-07-14T17:52:58.831-05:00  INFO 33884 --- [Reveila-Suite] [    Test worker] o.s.ws.soap.saaj.SaajSoapMessageFactory  : Creating SAAJ 1.3 MessageFactory with SOAP 1.1 Protocol
+2025-07-14T17:52:59.896-05:00  INFO 33884 --- [Reveila-Suite] [    Test worker] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port 60907 (http) with context path ''
+2025-07-14T17:52:59.924-05:00  INFO 33884 --- [Reveila-Suite] [    Test worker] reveila.spring.ApplicationTests          : Started ApplicationTests in 8.715 seconds (process running for 11.197)
+2025-07-14T17:53:00.425-05:00  INFO 33884 --- [Reveila-Suite] [o-auto-1-exec-2] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2025-07-14T17:53:00.426-05:00  INFO 33884 --- [Reveila-Suite] [o-auto-1-exec-2] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2025-07-14T17:53:00.427-05:00  INFO 33884 --- [Reveila-Suite] [o-auto-1-exec-2] o.s.web.servlet.DispatcherServlet        : Completed initialization in 1 ms
 </pre>
 </span>
 </div>
@@ -176,7 +176,7 @@ WARNING: Dynamic loading of agents will be disallowed by default in a future rel
 <input id="line-wrapping-toggle" type="checkbox" autocomplete="off"/>
 </label>
 </div>Generated by 
-<a href="http://www.gradle.org">Gradle 8.8</a> at Jul 14, 2025, 8:53:47 AM</p>
+<a href="http://www.gradle.org">Gradle 8.8</a> at Jul 14, 2025, 5:53:02 PM</p>
 </div>
 </div>
 </body>

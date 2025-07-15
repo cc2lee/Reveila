@@ -30,4 +30,7 @@ build/
 target/
 
 # Local configurations
+local.properties
 
+# IDE module files
+*.iml
