@@ -21,6 +21,7 @@
 # IDE
 .idea/
 .vscode/
+bin/
 
 # Local compiled classes and builds
 build/
