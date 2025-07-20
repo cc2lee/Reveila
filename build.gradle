@@ -1,8 +1,8 @@
 plugins {
     // Make the Spring Boot plugin available to the build script classpath.
     // This allows access to its constants, like the BOM coordinates.
-    id 'org.springframework.boot' version '3.2.5' apply false
-    id 'io.spring.dependency-management' version '1.1.5' apply false
+    id 'org.springframework.boot' version "${springBootVersion}" apply false
+    id 'io.spring.dependency-management' version '1.1.5' apply false // This version is compatible with Spring Boot 3.3.x
 }
 
 allprojects {

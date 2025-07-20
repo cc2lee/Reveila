@@ -6,6 +6,11 @@ plugins {
 group = 'reveila.spring'
 version = '0.0.1-SNAPSHOT'
 
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
 dependencies {
 
     // Project dependency on the core 'reveila' library
@@ -23,6 +28,7 @@ dependencies {
     implementation 'org.apache.httpcomponents.client5:httpclient5'
 
     // Required by XmlUtil for JSON/XML conversions.
+    // The version is managed by the Spring Boot dependency management plugin.
     implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml'
 
     // Apache HttpClient 5 for PATCH support

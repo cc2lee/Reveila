@@ -1,6 +1,19 @@
+/*
+ * This file is required for the :reveila project to declare its own
+ * dependencies, which are then included when the :app project is built.
+ */
 plugins {
-    // Use the java-library plugin for library modules
     id 'java-library'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+// The Jackson library is hosted on Maven Central. This tells Gradle where to look.
+repositories {
+    mavenCentral()
 }
 
 sourceSets {
@@ -12,11 +25,15 @@ sourceSets {
 }
 
 dependencies {
-    // This dependency provides com.fasterxml.jackson.dataformat.xml.XmlMapper
-    // and is declared as 'api' because its types are exposed through the public
-    // XmlUtil class, making it part of this library's public API.
-    api 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml'
+    // To ensure this library can be used by both the Spring backend and the Android app
+    // without causing dependency conflicts, we declare dependency versions explicitly.
+    // These versions are aligned with the Spring Boot 3.3.1 BOM used by the :api project.
 
-    // Add the SLF4J API for logging within the library.
-    implementation 'org.slf4j:slf4j-api'
+    // This dependency is required by XmlUtil.java for XML/JSON conversion.
+    // It is declared as 'implementation' to prevent its API from leaking to consumers.
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.17.1'
+
+    // This dependency is required for logging. The version is now managed by the
+    // Spring Boot BOM for the backend build, but must be explicit for the mobile build.
+    implementation 'org.slf4j:slf4j-api:2.0.13'
 }
