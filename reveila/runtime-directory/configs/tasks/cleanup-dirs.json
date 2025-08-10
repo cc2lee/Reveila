@@ -1,15 +1,15 @@
 [
     {
-        "component": {
-            "id": "temp-directory-cleanup-job",
-            "name": "Temp Directory Cleanup Job",
+        "task": {
+            "enable": false,
+            "name": "File Directory Cleanup Job",
             "class": "reveila.util.task.CleanFileDirectoryJob",
-            "description": "A job that periodically cleans out temporary file directories.",
+            "description": "A job that can be scheduled to run at set intervals to clean out files in the configured directories.",
             "arguments": [
                 {
                     "name": "dirs",
                     "type": "java.lang.String[]",
-                    "value": ["C:\\IDE\\Projects\\Reveila-Suite\\reveila\\runtime-directory\\temp", "C:\\IDE\\Docs\\Temp"]
+                    "value": []
                 },
                 {
                     "name": "excludeFilters",
