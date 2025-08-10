@@ -1,21 +1,19 @@
 package reveila.system;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Handler;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import reveila.crypto.Cryptographer;
+import reveila.platform.PlatformAdapter;
 import reveila.util.event.EventManager;
-import reveila.util.io.FileManager;
+import reveila.util.io.StorageManager;
 
 
 /**
@@ -26,17 +24,15 @@ import reveila.util.io.FileManager;
  */
 public final class SystemContext {
 
-	private final Properties properties;
-	private final EventManager eventManager;
-	private final Logger logger;
-	private final Map<Object, FileManager> fileManagers;
+	private Properties properties;
+	private EventManager eventManager;
+	private Logger logger;
+	private Map<Object, StorageManager> storageManagers = new ConcurrentHashMap<>();
+	private Map<String, Logger> loggersByName = new ConcurrentHashMap<>();
 	private Cryptographer cryptographer;
-
-	private final Path fileHome;
-	private final Path tempFileHome;
-
-	private final Map<String, Proxy> proxiesByName = new ConcurrentHashMap<>();
-	private final Map<Class<?>, Proxy> proxiesByClass = new ConcurrentHashMap<>();
+	private Map<String, Proxy> proxiesByName = new ConcurrentHashMap<>();
+	private Map<Class<?>, Proxy> proxiesByClass = new ConcurrentHashMap<>();
+	private PlatformAdapter platformAdapter;
 
 	public Cryptographer getCryptographer() {
 		return cryptographer;
@@ -46,22 +42,24 @@ public final class SystemContext {
 		return properties;
 	}
 
-	public FileManager getFileManager(Proxy object) throws IOException {
+	public StorageManager getStorageManager(Proxy proxy) throws IOException {
 		
-		Objects.requireNonNull(object, "Argument 'object' must not be null");
+		Objects.requireNonNull(proxy, "Argument 'object' must not be null");
 
-		FileManager fileManager = fileManagers.get(object);
-		if (fileManager == null) {
-			// Create a new file manager for the object
-			// The file manager is used to manage the files related to the object
-			Path objectFileHome = fileHome.resolve(object.getName());
-			Path objectTempHome = tempFileHome.resolve(object.getName());
-			
-			Files.createDirectories(objectFileHome);
-			Files.createDirectories(objectTempHome);
-			fileManager = new FileManager(objectFileHome.toString(), objectTempHome.toString());
+		StorageManager storageManager = storageManagers.get(proxy);
+		if (storageManager == null) {
+			// Use double-checked locking to ensure thread-safe, lazy initialization.
+			synchronized (this.storageManagers) {
+				// Check again in case another thread created the manager while we were waiting for the lock.
+				storageManager = storageManagers.get(proxy);
+				if (storageManager == null) {
+					// Each Proxy object has its own storage manager
+					storageManager = new StorageManager(platformAdapter, proxy);
+					storageManagers.put(proxy, storageManager);
+				}
+			}
 		}
-		return fileManager;
+		return storageManager;
 	}
 
 	public EventManager getEventManager() {
@@ -69,34 +67,34 @@ public final class SystemContext {
 	}
 
 	public Logger getLogger(Object object) {
-		if (object != null && object instanceof Proxy) {
-			return Logger.getLogger(this.logger.getName() + "." + ((Proxy)object).getName());
-		} else {
-			return this.logger;
+		if (object instanceof Proxy) {
+			String proxyName = ((Proxy) object).getName();
+			// Use computeIfAbsent for a concise, thread-safe way to get or create the logger.
+			return this.loggersByName.computeIfAbsent(proxyName,
+					name -> Logger.getLogger(this.logger.getName() + "." + name));
 		}
+		return this.logger; // Return the root logger for non-proxy objects or null
 	}
 	
 	public SystemContext(
 			Properties properties,
-			Map<Object, FileManager> fileManagers,
 			EventManager eventManager,
 			Logger logger,
-			Cryptographer cryptographer) {
+			Cryptographer cryptographer,
+			PlatformAdapter platformAdapter) {
 
 		this.properties = new Properties(Objects.requireNonNull(properties, "Argument 'properties' must not be null"));
-		this.fileManagers = Objects.requireNonNull(fileManagers, "Argument 'fileManagers' must not be null");
 		this.eventManager = Objects.requireNonNull(eventManager, "Argument 'eventManager' must not be null");
 		this.logger = Objects.requireNonNull(logger, "Argument 'logger' must not be null");
 		this.cryptographer = Objects.requireNonNull(cryptographer, "Argument 'cryptographer' must not be null");
-
-		this.fileHome = Paths.get(this.properties.getProperty(Constants.S_SYSTEM_FILE_STORE, "data/files"));
-		this.tempFileHome = Paths.get(this.properties.getProperty(Constants.S_SYSTEM_TMP_FILE_STORE, "data/temp"));
+		this.platformAdapter = Objects.requireNonNull(platformAdapter, "Argument 'platformAdapter' must not be null");
 	}
 
-	public void register(Proxy proxy) throws Exception {
+	public synchronized void register(Proxy proxy) throws Exception {
 		Objects.requireNonNull(proxy, "Argument 'proxy' must not be null");
 
-		Class<?> implClass = Class.forName(proxy.getImplementationClassName());
+		//Class<?> implClass = Class.forName(proxy.getImplementationClassName());
+		Class<?> implClass = proxy.getImplementationClass();
 		String proxyName = proxy.getName();
 
 		if (proxiesByClass.containsKey(implClass) || proxiesByName.containsKey(proxyName)) {
@@ -110,46 +108,52 @@ public final class SystemContext {
 		logger.info("Registered component: " + proxyName);
 	}
 
-	public void unregister(Proxy proxy) throws Exception {
+	public synchronized void unregister(Proxy proxy) throws Exception {
 		Objects.requireNonNull(proxy, "Argument 'proxy' must not be null");
 
 		proxiesByName.remove(proxy.getName());
-		proxiesByClass.remove(Class.forName(proxy.getImplementationClassName()));
+		//proxiesByClass.remove(Class.forName(proxy.getImplementationClassName()));
+		proxiesByClass.remove(proxy.getImplementationClass());
 		eventManager.removeEventReceiver(proxy);
-		fileManagers.remove(proxy);
+		storageManagers.remove(proxy);
+		loggersByName.remove(proxy.getName());
 		logger.info("Unregistered component: " + proxy.getName());
 	}
 
 	public void destruct() {
-		// Use a copy of the values to avoid ConcurrentModificationException if kill() modifies the map
+		// First, gracefully stop all stoppable services.
+		// This is done before unregistering to allow services to interact during shutdown.
+		logger.info("Stopping all components...");
 		for (Proxy proxy : List.copyOf(proxiesByName.values())) {
 			try {
-				proxy.kill();
+				proxy.stop();
 			} catch (Exception e) {
-				logger.severe(
-						"Failed to destruct object: " + proxy.getImplementationClassName() + " - " + e.getMessage());
+				logger.log(Level.SEVERE, "Failed to stop component: " + proxy.getName(), e);
+			}
+		}
+
+		// Then, kill (unregister) all proxies.
+		for (Proxy proxy : List.copyOf(proxiesByName.values())) {
+			try {
+				this.unregister(proxy);
+				proxy.cleanup();
+			} catch (Exception e) {
+				logger.log(Level.SEVERE, "Failed to unregister or clean up component: " + proxy.getName(), e);
 			}
 		}
 
 		proxiesByName.clear();
 		proxiesByClass.clear();
+		loggersByName.clear();
 		eventManager.clear();
-		fileManagers.clear();
+		storageManagers.clear();
 		properties.clear();
 		cryptographer = null;
 		logger.info("System context destructed.");
-
-		for (Handler handler : logger.getHandlers()) {
-			handler.close();
-		}
 	}
 
 	public Optional<Proxy> getProxy(String name) {
 		return Optional.ofNullable(this.proxiesByName.get(name));
-	}
-
-	public Optional<Proxy> getProxy(Class<?> clazz) {
-		return Optional.ofNullable(this.proxiesByClass.get(clazz));
 	}
 
 }

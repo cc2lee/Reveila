@@ -1,6 +1,6 @@
 package reveila.util;
 
-import java.util.*;
+import java.util.Properties;
 
 /**
  * @author Charles Lee
@@ -11,6 +11,23 @@ public class StringUtil {
 	
 	private static final int KEY_BEGIN_TAG = 0;
 	private static final int KEY_END_TAG = 1;
+
+	public static Properties splitCommandlineArguments(String[] strArray, String delimiter) {
+		Properties cmdArgs = new Properties();
+		if (strArray != null) {
+			for (String arg : strArray) {
+				String[] parts = arg.split(delimiter, 2);
+				if (parts.length == 2 && !parts[0].isEmpty()) {
+					cmdArgs.put(parts[0], parts[1]);
+				} else {
+					// It's good practice to warn about arguments that don't fit the expected format.
+					// Since the logger isn't configured yet, System.err is the best option.
+					System.err.println("Warning: Ignoring malformed command-line argument: " + arg);
+				}
+			}
+		}
+		return cmdArgs;
+	}
 
 	/**
 	 * Tests if a string is null or has the length of 0.

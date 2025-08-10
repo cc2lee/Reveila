@@ -1,11 +1,13 @@
 {
     "version": "0.2.0",
     "configurations": [
+
         {
-            "type": "java",
-            "name": "Application",
-            "request": "launch",
-            "mainClass": "reveila.spring.Application"
+            "name": "Debug Android Hermes",
+            "request": "attach",
+            "type": "reactnativedirect",
+            "cwd": "${workspaceFolder}/mobile/template",
+            "platform": "android"
         },
         {
             "type": "java",
@@ -24,6 +26,58 @@
             "classPaths": [
                 "${workspaceFolder}/reveila/runtime-directory/configs"
             ]
+        },
+
+        // Launch Android app for debugging
+        {
+            "name": "Launch Android",
+            "type": "android-debug",
+            "request": "launch",
+            "target": "select",
+            "mode": "java", // Change to 'dual', or `java` or `native` to attach only Java or Native debugger.
+            "packageName": "com.reveila.android", // Package name for your app.
+            "launchActivity": ".MainActivity",  // Activity to launch
+            "native": {
+                "symbolSearchPaths": [
+                    "${workspaceFolder}/mobile/template/android/app/build/intermediates/cxx/Debug/p682u211/obj/${command:abi}/",
+                ],
+            },
+            "java": {
+                "sourcePaths": ["${workspaceFolder}/mobile/template/android/app/src/main/java"]
+            }
+        },
+
+        // Attach to running Android app
+        {
+            "name": "Attach Android",
+            "type": "android-debug",
+            "request": "attach",
+            "target": "select",
+            "pid": "${command:pickAndroidProcess}",
+            "mode": "java", // Change to 'dual', or `java` or `native` to attach only Java or Native debugger.
+            "packageName": "com.reveila.android", // Package name for your app.
+            "native": {
+                "symbolSearchPaths": [
+                    "${workspaceFolder}/mobile/template/android/app/build/intermediates/cxx/Debug/p682u211/obj/${command:abi}/",
+                ],
+            },
+            "java": {
+                "sourcePaths": ["${workspaceFolder}/mobile/template/android/app/src/main/java"]
+            }
+        },
+
+        // Profile Android app
+        {
+            "name": "Profile Android",
+            "type": "android-profile",
+            "request": "launch",
+            "target": "select",
+            "packageName": "com.reveila", // Package name for your app.
+            "native": {
+                "symbolSearchPaths": [
+                    "${workspaceFolder}/mobile/template/android/app/build/intermediates/cxx/Debug/p682u211/obj/${command:abi}/",
+                ],
+            },
         }
     ]
 }

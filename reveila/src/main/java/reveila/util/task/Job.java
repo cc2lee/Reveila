@@ -1,6 +1,5 @@
 package reveila.util.task;
 
-import java.io.File;
 import java.util.logging.Logger;
 
 import reveila.system.SystemContext;
@@ -10,44 +9,20 @@ import reveila.system.SystemContext;
  */
 public abstract class Job implements Runnable {
 
-	public static final int SUCCESSFUL				= 201;
-	public static final int COMPLETED_WITH_ERRORS	= 202;
-	public static final int FAILED					= 203;
-	public static final int ABORTED					= 204;
-	public static final int IN_PROGRESS				= 205;
-
-	protected JobException exception;
-	protected int status = -1;
-	protected double percentageCompleted = -1.0;
-	protected String message;
+	protected volatile JobException exception;
+	protected volatile JobStatus status = JobStatus.PENDING;
+	protected volatile double percentageCompleted = -1.0;
+	protected volatile String message;
 	
 	protected SystemContext systemContext;
-	protected long lastRun = -1L;
-	protected long interval = -1L;
 	protected Logger logger;
-	protected String configFilePath;
 	
-	public Job(String configFilePath) {
-		File file = new File(configFilePath);
-		if (!file.exists()) {
-			throw new IllegalArgumentException(
-				"File does not exist: " + file.getAbsolutePath());
-		} else if (!file.canWrite()) {
-            throw new IllegalArgumentException(
-				"File is not writable: " + file.getAbsolutePath());
-        }
-        this.configFilePath = configFilePath;
-	}
+	protected Job() {}
 
-	public long getLastRun() {
-		return lastRun;
-	}
-
-	public void setLastRun(long lastRun) {
-		this.lastRun = lastRun;
-	}
-
-	public void setSystemContext(SystemContext systemContext) {
+	/**
+	 * Sets the system context for the job. This is package-private to restrict its use to the framework.
+	 */
+	void setSystemContext(SystemContext systemContext) {
 		logger = systemContext.getLogger(this);
 		this.systemContext = systemContext;
 	}
@@ -56,19 +31,23 @@ public abstract class Job implements Runnable {
 		return exception;
 	}
 	
+	public synchronized void setException(JobException exception) {
+		this.exception = exception;
+	}
+
 	public double getPercentageCompleted() {
 		return percentageCompleted;
 	}
 
-	public void setPercentageCompleted(double percentageCompleted) {
+	public synchronized void setPercentageCompleted(double percentageCompleted) {
 		this.percentageCompleted = percentageCompleted;
 	}
 
-	public int getStatus() {
+	public JobStatus getStatus() {
 		return status;
 	}
 
-	public void setStatus(int status) {
+	public synchronized void setStatus(JobStatus status) {
 		this.status = status;
 	}
 
@@ -76,9 +55,9 @@ public abstract class Job implements Runnable {
 		return message;
 	}
 
-	public void setMessage(String message) {
+	public synchronized void setMessage(String message) {
 		this.message = message;
 	}
 
-	public void run() {}
+	public abstract void run();
 }

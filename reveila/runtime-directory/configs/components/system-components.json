@@ -1,31 +1,50 @@
 [
   {
-    "service": {
+    "component": {
       "start": true,
       "name": "Echo Service",
-      "id": "",
+      "id": "echo-service",
       "class": "reveila.service.EchoService",
       "version": "1",
       "arguments": [
         {
           "name": "reverse",
-          "type": "java.lang.Boolean",
+          "type": "boolean",
           "value": false
         },
         {
           "name": "repeat",
-          "type": "java.lang.Integer",
-          "value": 5
+          "type": "int",
+          "value": 2
         }
       ]
     }
   },
   {
-    "service": {
+    "component": {
+      "id": "task-manager-service",
       "name": "Task Manager",
-      "id": "",
       "class": "reveila.util.task.TaskManager",
-      "version": "1"
+      "description": "A service that manages and executes scheduled background jobs.",
+      "start": true,
+      "thread-safe": true,
+      "arguments": [
+        {
+          "name": "interval",
+          "type": "long",
+          "value": 30000
+        },
+        {
+          "name": "jobThreadPoolSize",
+          "type": "int",
+          "value": 3
+        },
+        {
+          "name": "initialDelay",
+          "type": "long",
+          "value": 60000
+        }
+      ]
     }
   }
 ]

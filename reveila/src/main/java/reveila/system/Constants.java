@@ -13,9 +13,10 @@ public final class Constants {
 	 * **************************************************
 	 */
 	public static final String S_SERVER_NAME = "server.name";
+	public static final String S_SYSTEM_VERSION = "system.version";
 	public static final String S_SYSTEM_MODE = "system.mode";
     public static final String S_SYSTEM_HOME = "system.home";
-	public static final String S_SYSTEM_DEBUG = "system.debug";
+	public static final String S_SYSTEM_OS = "system.os";
 	public static final String S_SYSTEM_LOGGING_FILE = "system.logging.file";
 	public static final String S_SYSTEM_LOGGING_LEVEL = "system.logging.level";
 	public static final String S_SYSTEM_ACCOUNT = "system.account";
@@ -23,14 +24,22 @@ public final class Constants {
 	public static final String S_SYSTEM_FILE_STORE = "system.data.file.store";
 	public static final String S_SYSTEM_TMP_FILE_STORE = "system.data.file.temp";
 	public static final String S_SERVER_DISPLAY_NAME = "server.display.name";
-	public static final String S_SERVICE_LOADER_TIMEOUT = "service.loader.timeout";
-	public static final String S_SERVICE_LOADER_COUNT = "service.loader.count";
 	public static final String S_SYSTEM_PROPERTIES_URL = "system.properties.url";
 	public static final String S_SYSTEM_PROPERTIES_FILE_NAME = "system.properties";
 	public static final String S_SYSTEM_CRYPTOGRAPHER_SECRETKEY = "system.cryptographer.secretkey";
+	public static final String S_SYSTEM_CHARSET = "system.charset";
+	public static final String S_SYSTEM_STRICT_MODE = "system.strict.mode";
 	public static final String S_SYSTEM_CONFIGURATION_FORMAT= "system.configuration.format";
-	public static final String S_SYSTEM_JOB_CONFIG_DIR = "system.job.config.dir";
-	
+	public static final String S_SYSTEM_LOGGING_FILE_LIMIT = "system.logging.file.limit";
+	public static final String S_SYSTEM_LOGGING_FILE_COUNT = "system.logging.file.count";
+	public static final String S_SYSTEM_LOGGER_NAME = "system.logger.name";
+	public static final String S_SYSTEM_LOG_DIR = "system.log.dir";
+	public static final String S_SYSTEM_LIB_DIR = "system.lib.dir";
+	public static final String S_SYSTEM_DATA_DIR = "system.data.dir";
+	public static final String S_SYSTEM_TMP_DIR = "system.tmp.dir";
+	public static final String S_SYSTEM_TMP_DATA_DIR = "system.tmp.data.dir";
+	public static final String S_SYSTEM_CONFIGURATION_FILE_URL = "system.configuration.file.url";
+	public static final String S_SYSTEM_CONFIGURATION_FILE_NAME = "system.configuration.file.name";
 	/*
 	 * **************************************************
 	 * used in configuration files
@@ -74,15 +83,28 @@ public final class Constants {
 	public static final String C_CONFIGURATION_FILE_URL = "configuration-file-url";
 	public static final String C_COMPONENTS = "components";
 	public static final String C_OBJECT = "object";
+	public static final String C_COMPONENT = "component";
 	public static final String C_ID = "id";
 	public static final String C_ARGUMENT = "argument";
 	public static final String C_TYPE = "type";
-	public static final String C_DEPENDS = "depends";
+    public static final String C_DEPENDS = "depends";
+    public static final String C_BIN_DIR_NAME = "bin";
+    public static final String C_CONFIGS_DIR_NAME = "configs";
+    public static final String C_COMPONENTS_DIR_NAME = "components";
+    public static final String C_JOBS_DIR_NAME = "jobs";
+    public static final String C_DATA_DIR_NAME = "data";
+    public static final String C_DOCS_DIR_NAME = "docs";
+    public static final String C_TEMP_DIR_NAME = "temp";
 	public static final String C_PREREQUISITES = "prerequisites";
 	public static final String C_PREREQUISITE = "prerequisite";
 	public static final String C_PROPERTIES = "properties";
 	public static final String C_LIB_DIR_NAME = "libs";
-    public static final String LOG_DIR_NAME = "logs";
+    public static final String C_LOG_DIR_NAME = "logs";
+    public static final String C_JOB_ARG_LASTRUN = "LastRun";
+    public static final String C_JOB_ARG_DELAY = "Delay";
+    public static final String C_JOB_DATE_FORMAT = "yyyy-MM-dd HH:mm:ss";
+	public static final Object C_ENABLE = "enable";
+    public static final Object TASK = "task";
     
 	
 	public final class DataStoreConstants {

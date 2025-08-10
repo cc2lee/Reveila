@@ -6,6 +6,8 @@
  */
 package reveila.util;
 
+import java.net.InetAddress;
+
 /**
  * @author Charles Lee
  *
@@ -32,19 +34,13 @@ public class GUID {
 	public static final String getGUID(Object obj) {
 		StringBuffer tmpBuffer = new StringBuffer(16);
 		if (hexServerIP == null) {
-			java.net.InetAddress localInetAddress = null;
+			byte[] serverIP = null;
 			try {
-				// get the inet address
-				localInetAddress = java.net.InetAddress.getLocalHost();
+				serverIP = InetAddress.getLocalHost().getAddress();
 			}
-			catch (java.net.UnknownHostException uhe) {
-				System.err.println(GUID.class.getName() +
-						": Could not get the local IP address using InetAddress.getLocalHost()!");
-				// TODO: find a better way to get around this...
-				uhe.printStackTrace();
-				return null;
+			catch (Exception e) {
+				serverIP = new byte[] { (byte) 192, (byte) 168, (byte) 1, (byte) 1 };
 			}
-			byte[] serverIP = localInetAddress.getAddress();
 			hexServerIP = hexFormat(getInt(serverIP), 8);
 		}
 		String hashcode = hexFormat(System.identityHashCode(obj), 8);

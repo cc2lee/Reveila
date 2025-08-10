@@ -2,22 +2,48 @@ package reveila.service;
 
 import java.util.Map;
 
-import reveila.util.IdGenerator;
 import reveila.system.MetaObject;
-import reveila.system.Service;
+import reveila.system.Proxy;
+import reveila.util.IdGenerator;
 
 /**
  * A service class providing business logic for the REST endpoints.
  * This class is designed to be instantiated and invoked via the Reveila proxy system.
  */
-public class EchoService extends Service {
+public class EchoService extends Proxy {
 
-    public EchoService(MetaObject objectDescriptor) throws Exception {
+    private boolean reverse = false;
+    private int repeat = 0;
+
+    public EchoService(MetaObject objectDescriptor) {
         super(objectDescriptor);
     }
 
+    public void setReverse(boolean reverse) {
+        this.reverse = reverse;
+    }
+
+    public void setRepeat(int repeat) {
+        this.repeat = repeat;
+    }
+
     public String echo(String name) {
-        return "Echo from service: " + name;
+        String textToEcho = name;
+        if (this.reverse) {
+            // Reverse the string using StringBuilder
+            textToEcho = new StringBuilder(name).reverse().toString();
+        }
+        if (this.repeat > 0) {
+            StringBuilder repeated = new StringBuilder();
+            for (int i = 0; i < this.repeat; i++) {
+                repeated.append(textToEcho);
+                if (i < this.repeat - 1) {
+                    repeated.append(", ");
+                }
+            }
+            textToEcho = repeated.toString();
+        }
+        return "Echo: " + textToEcho;
     }
 
     /**

@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
+import reveila.error.ConfigurationException;
+
 import java.util.Map;
 
 @ControllerAdvice
@@ -21,6 +23,18 @@ public class RestExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(ConfigurationException.class)
+    protected ResponseEntity<Object> handleConfigurationException(ConfigurationException ex, WebRequest request) {
+        log.warn("Configuration error (component not found): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", ex.getMessage()));
+    }
+
+    @ExceptionHandler(NoSuchMethodException.class)
+    protected ResponseEntity<Object> handleNoSuchMethodException(NoSuchMethodException ex, WebRequest request) {
+        log.warn("Method not found error: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", ex.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)

@@ -1,30 +1,42 @@
-# Spring Boot Gradle Project
+# Reveila Suite
 
-This is a sample Spring Boot application built with Gradle, demonstrating a multi-project setup and a RESTful API. The application includes a `reveila` subproject which provides various utility services.
+This repository contains the full Reveila Suite, a multi-project application consisting of a Spring Boot backend and a React Native mobile client.
 
-## Prerequisites
+## Project Structure
 
-- Java Development Kit (JDK) 17 or later.
+The repository is organized as a monorepo with the following key components:
 
-## Building the Project
+-   `./`: The root contains the Spring Boot application that serves the main API.
+-   `./reveila`: A shared Java library subproject used by the Spring Boot backend.
+-   `./mobile`: The React Native mobile application.
 
-This project uses the Gradle wrapper, so you don't need to have Gradle installed on your system.
+---
 
-To build the project, run the following command from the root directory:
+## 1. Backend (Spring Boot)
+
+The backend is a standard Spring Boot application that provides a RESTful API.
+
+### Prerequisites
+
+-   Java Development Kit (JDK) 17 or later.
+
+### Building the Backend
+
+This project uses the Gradle wrapper. To build the project, run the following command from the root directory:
 
 ```bash
-# For Linux/macOS
+# For Linux/macOS:
 ./gradlew build
 
-# For Windows
+# For Windows:
 gradlew.bat build
 ```
 
-This will compile the code, run the tests, and create an executable JAR file in the `build/libs/` directory.
+This will compile the code, run tests, and create an executable JAR file in the `build/libs/` directory.
 
-## Running the Application
+### Running the Backend
 
-Once the project is built, you can run the application using the following command:
+Once built, you can run the application using:
 
 ```bash
 java -jar build/libs/spring-boot-gradle-project-0.0.1-SNAPSHOT.jar
@@ -32,100 +44,43 @@ java -jar build/libs/spring-boot-gradle-project-0.0.1-SNAPSHOT.jar
 
 The server will start on port 8080 by default.
 
-## Configuration
+### Backend API Endpoints
 
-The application can be configured via environment variables. The following variables are supported:
+The following endpoints are available under the `/api` base path:
 
-| Variable        | Description                  | Default Value                        |
-|-----------------|------------------------------|--------------------------------------|
-| `DB_URL`        | The database connection URL. | `jdbc:mysql://localhost:3306/mydb`   |
-| `DB_USERNAME`   | The database username.       | `root`                               |
-| `DB_PASSWORD`   | The database password.       | `password`                           |
+-   **GET /api/echo**: Echoes back a message.
+-   **POST /api/greetings**: Creates a new greeting.
+-   **PUT /api/greetings/{id}**: Updates an existing greeting.
+-   **DELETE /api/greetings/{id}**: Deletes a greeting.
+-   **POST /api/upload**: Uploads a single file.
 
-To run the application with custom database settings, you can set these environment variables before launching the JAR file.
+---
 
-**Example (Linux/macOS):**
+## 2. Mobile Client (React Native)
+
+The mobile application is built with React Native and communicates with the backend service. It features a native Android background service that acts as the core engine. For more details on the mobile architecture, see `mobile/README.md`.
+
+### Prerequisites
+
+-   Node.js and the React Native development environment. Please follow the official setup guide.
+-   Android Studio and a configured Android device or emulator.
+
+### Running the Mobile App
+
+Navigate to the `mobile` directory to run the application.
+
 ```bash
-export DB_URL=jdbc:mysql://prod-db.example.com:3306/production
-export DB_USERNAME=prod_user
-export DB_PASSWORD=supersecret
-java -jar build/libs/spring-boot-gradle-project-0.0.1-SNAPSHOT.jar
+cd mobile
 ```
 
-**Example (Windows Command Prompt):**
+Then, follow these steps:
+
 ```bash
-set DB_URL=jdbc:mysql://prod-db.example.com:3306/production
-set DB_USERNAME=prod_user
-set DB_PASSWORD=supersecret
-java -jar build/libs/spring-boot-gradle-project-0.0.1-SNAPSHOT.jar
+# 1. Start the Metro bundler in one terminal
+npx react-native start
+
+# 2. In a separate terminal, build and run the Android app
+npx react-native run-android
 ```
 
-## API Endpoints
-
-The following endpoints are available under the `/api` base path.
-
-### Echo Service
-
-- **GET /api/echo**
-  - Echoes back a message. The `Reveila` subproject mock is used here.
-  - **Query Parameter:** `name` (optional, defaults to "World")
-  - **Example:**
-    ```bash
-    curl "http://localhost:8080/api/echo?name=Gemini"
-    ```
-
-### Greetings
-
-- **POST /api/greetings**
-  - Creates a new greeting.
-  - **Example:**
-    ```bash
-    curl -X POST -H "Content-Type: application/json" -d '{"content":"A new greeting"}' http://localhost:8080/api/greetings
-    ```
-
-- **PUT /api/greetings/{id}**
-  - Updates an existing greeting.
-  - **Example:**
-    ```bash
-    curl -X PUT -H "Content-Type: application/json" -d '{"content":"Updated Greeting"}' http://localhost:8080/api/greetings/123
-    ```
-
-- **DELETE /api/greetings/{id}**
-  - Deletes a greeting.
-  - **Example:**
-    ```bash
-    curl -X DELETE http://localhost:8080/api/greetings/123
-    ```
-
-### File Upload
-
-- **POST /api/upload**
-  - Uploads a single file.
-  - **Example:**
-    ```bash
-    curl -X POST -F "file=@./README.md" http://localhost:8080/api/upload
-    ```
-
-## Core Utilities (`reveila` subproject)
-
-The `reveila` subproject contains reusable components.
-
-### `RemoteCall` Component
-
-A unified client for making generic remote REST and SOAP calls. You can inject this component into any of your services to simplify communication with external APIs.
-
-**REST Example:**
-```java
-@Autowired
-private RemoteCall remoteCall;
-
-public void fetchUser() {
-    ResponseEntity<User> response = remoteCall.get("https://api.example.com/users/1", User.class);
-    User user = response.getBody();
-}
-```
-
-**SOAP Example:**
-```java
-String responseXml = remoteCall.invokeSoap("http://service.example.com", "urn:myAction", "<soap:Envelope>...</soap:Envelope>");
-```
+The mobile app is configured to communicate with the backend running on `localhost`. Ensure the backend service is running before you test features that require API calls.

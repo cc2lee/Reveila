@@ -1,9 +1,3 @@
-/*
- * Created on May 18, 2004
- *
- * To change the template for this generated file go to
- * Window&gt;Preferences&gt;Java&gt;Code Generation&gt;Code and Comments
- */
 package reveila.system;
 
 import java.net.URL;
@@ -11,32 +5,37 @@ import java.net.URLClassLoader;
 import java.net.URLStreamHandlerFactory;
 
 /**
+ * A specialized {@link URLClassLoader} for loading components (e.g., from JAR files)
+ * at runtime. This class provides a named class loader for the Reveila component system,
+ * allowing for dynamic extension of the application's classpath.
+ * 
  * @author Charles Lee
- *
- * To change the template for this generated type comment go to
- * Window&gt;Preferences&gt;Java&gt;Code Generation&gt;Code and Comments
  */
 public class ComponentClassLoader extends URLClassLoader {
 
 	/**
-	 * @param urls
+	 * Constructs a new ComponentClassLoader for the given URLs.
+	 * @param urls the URLs from which to load classes and resources
 	 */
 	public ComponentClassLoader(URL[] urls) {
 		super(urls);
 	}
 
 	/**
-	 * @param urls
-	 * @param parent
+	 * Constructs a new ComponentClassLoader for the given URLs and parent class loader.
+	 * @param urls the URLs from which to load classes and resources
+	 * @param parent the parent class loader for delegation
 	 */
 	public ComponentClassLoader(URL[] urls, ClassLoader parent) {
 		super(urls, parent);
 	}
 
 	/**
-	 * @param urls
-	 * @param parent
-	 * @param factory
+	 * Constructs a new ComponentClassLoader for the specified URLs, parent class loader,
+	 * and URL stream handler factory.
+	 * @param urls the URLs from which to load classes and resources
+	 * @param parent the parent class loader for delegation
+	 * @param factory the URLStreamHandlerFactory to use when creating new URLs
 	 */
 	public ComponentClassLoader(
 		URL[] urls,
@@ -45,9 +44,4 @@ public class ComponentClassLoader extends URLClassLoader {
 		super(urls, parent, factory);
 	}
 	
-	@Override
-	protected Class<?> findClass(String name) throws ClassNotFoundException {
-		return super.findClass(name);
-	}
-
 }
