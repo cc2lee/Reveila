@@ -2,35 +2,30 @@
     "version": "0.2.0",
     "configurations": [
 
-        {
+        { // Launch Android Hermes app for debugging
             "name": "Debug Android Hermes",
             "request": "attach",
             "type": "reactnativedirect",
             "cwd": "${workspaceFolder}/mobile/template",
             "platform": "android"
         },
-        {
+        
+        { // Launch Reveila Spring Boot API project for debugging
             "type": "java",
-            "name": "Application",
+            "name": "Debug Reveila API",
             "request": "launch",
             "mainClass": "reveila.spring.Application",
-            "projectName": "api"
-        },
-        {
-            "type": "java",
-            "name": "Debug Spring Boot - API",
-            "request": "launch",
-            "mainClass": "reveila.spring.Application",
-            "projectName": "Reveila-Suite",
+            "projectName": "api",
             "vmArgs": "-Xmx2048m -Dspring.profiles.active=dev",
             "classPaths": [
                 "${workspaceFolder}/reveila/runtime-directory/configs"
             ]
         },
-
-        // Launch Android app for debugging
-        {
-            "name": "Launch Android",
+        
+        // https://github.com/nisargjhaveri/vscode-android-debug
+        // https://marketplace.visualstudio.com/items?itemName=nisargjhaveri.android-debug
+        { // Launch Android app for debugging
+            "name": "Launch Android Debugger",
             "type": "android-debug",
             "request": "launch",
             "target": "select",
@@ -47,9 +42,10 @@
             }
         },
 
-        // Attach to running Android app
-        {
-            "name": "Attach Android",
+        // https://github.com/nisargjhaveri/vscode-android-debug
+        // https://marketplace.visualstudio.com/items?itemName=nisargjhaveri.android-debug
+        { // Attach debugger to running Android app
+            "name": "Attach Android Debugger",
             "type": "android-debug",
             "request": "attach",
             "target": "select",
@@ -66,13 +62,14 @@
             }
         },
 
-        // Profile Android app
-        {
-            "name": "Profile Android",
+        // https://github.com/nisargjhaveri/vscode-android-debug
+        // https://marketplace.visualstudio.com/items?itemName=nisargjhaveri.android-debug
+        { // Profile Android app
+            "name": "Profile Android App",
             "type": "android-profile",
             "request": "launch",
             "target": "select",
-            "packageName": "com.reveila", // Package name for your app.
+            "packageName": "com.reveila.android", // Package name for the Android app
             "native": {
                 "symbolSearchPaths": [
                     "${workspaceFolder}/mobile/template/android/app/build/intermediates/cxx/Debug/p682u211/obj/${command:abi}/",
