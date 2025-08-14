@@ -15,6 +15,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 /**
  * A system component that can invoke methods on a remote Reveila instance via its REST API.
@@ -74,8 +75,10 @@ public class RemoteInvoker extends Proxy {
         Request request = new Request.Builder().url(url).post(body).build();
 
         try (Response response = client.newCall(request).execute()) {
-            // Read the body once, as it can only be consumed once.
-            String responseBodyString = response.body() != null ? response.body().string() : null;
+            // The response body can only be consumed once. We read it into a string
+            // to allow logging it in case of an error.
+            final ResponseBody responseBody = response.body();
+            final String responseBodyString = responseBody != null ? responseBody.string() : null;
 
             if (!response.isSuccessful()) {
                 throw new IOException("Remote invocation failed with HTTP code " + response.code() + " for " + url + ". Body: " + responseBodyString);
