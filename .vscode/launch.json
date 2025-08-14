@@ -16,10 +16,7 @@
             "request": "launch",
             "mainClass": "reveila.spring.Application",
             "projectName": "api",
-            "vmArgs": "-Xmx2048m -Dspring.profiles.active=dev",
-            "classPaths": [
-                "${workspaceFolder}/reveila/runtime-directory/configs"
-            ]
+            "vmArgs": "-Xmx2048m -Dspring.profiles.active=dev"
         },
         
         // https://github.com/nisargjhaveri/vscode-android-debug
@@ -75,6 +72,24 @@
                     "${workspaceFolder}/mobile/template/android/app/build/intermediates/cxx/Debug/p682u211/obj/${command:abi}/",
                 ],
             },
+        },
+
+        {
+            "type": "java",
+            "name": "Vaadin Application",
+            "request": "launch",
+            "mainClass": "com.reveila.web.Application",
+            "projectName": "reveila-web-app"
+        },
+        
+        {
+            "type": "java",
+            "name": "Debug Vaadin Application using Hotswap Agent",
+            "request": "launch",
+            "javaExec": "C:\\IDE\\JetBrains\\jbr_jcef-17.0.14-windows-x64-b1367.22\\bin\\java.exe",
+            "mainClass": "com.reveila.web.Application",
+            "vmArgs": "-XX:+AllowEnhancedClassRedefinition -XX:+ClassUnloading -XX:HotswapAgent=fatjar"
         }
+        
     ]
 }

@@ -1,6 +1,5 @@
 package reveila.spring.service;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -25,7 +24,6 @@ public class OrderService {
      * @param remoteClient The singleton instance of AgnosticRemoteClient managed by Spring.
      * @param objectMapper The singleton instance of ObjectMapper managed by Spring.
      */
-    @Autowired
     public OrderService(AgnosticRemoteClient remoteClient, ObjectMapper objectMapper) {
         this.remoteClient = remoteClient;
         this.objectMapper = objectMapper;

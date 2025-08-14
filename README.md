@@ -16,9 +16,11 @@ The repository is organized as a monorepo with the following key components:
 
 The backend is a standard Spring Boot application that provides a RESTful API.
 
+
 ### Prerequisites
 
 -   Java Development Kit (JDK) 17 or later.
+
 
 ### Building the Backend
 
@@ -34,36 +36,95 @@ gradlew.bat build
 
 This will compile the code, run tests, and create an executable JAR file in the `build/libs/` directory.
 
+
 ### Running the Backend
 
 Once built, you can run the application using:
 
 ```bash
-java -jar build/libs/spring-boot-gradle-project-0.0.1-SNAPSHOT.jar
+java -jar build/libs/reveila.jar
 ```
 
 The server will start on port 8080 by default.
 
-### Backend API Endpoints
 
-The following endpoints are available under the `/api` base path:
+### Interacting with the Reveila Backend API
 
--   **GET /api/echo**: Echoes back a message.
--   **POST /api/greetings**: Creates a new greeting.
--   **PUT /api/greetings/{id}**: Updates an existing greeting.
--   **DELETE /api/greetings/{id}**: Deletes a greeting.
--   **POST /api/upload**: Uploads a single file.
+Reveila backend provides a generic REST API endpoint. Instead of having a unique URL for every action, the application uses a single endpoint to invoke methods on backend components.
 
----
+#### API Endpoint
+
+-   **URL**: `/api/components/{componentName}/invoke`
+-   **Method**: `POST`
+-   **Description**: Invokes a method on a specified backend component.
+
+#### Request Body
+
+The body of the `POST` request must be a JSON object with the following structure:
+
+```json
+{
+  "methodName": "theMethodToCall",
+  "args": [ "argument1", 123, { "some": "object" } ]
+}
+```
+
+-   `methodName`: The name of the method you want to execute on the component.
+-   `args`: An array of arguments to pass to the method.
+
+#### Example: Calling an `EchoService`
+
+Here is a TypeScript example of how to call an `echo` method on a component named `EchoService` using the `fetch` API. You would typically place such logic in a dedicated service file within your React Native project.
+
+```typescript
+import Config from './config'; // A simple configuration file
+
+async function invokeEcho(message: string): Promise<string> {
+  const componentName = 'EchoService';
+  const requestPayload = {
+    methodName: 'echo',
+    args: [message] // The arguments must be in an array
+  };
+
+  try {
+    const response = await fetch(`${Config.API_BASE_URL}/api/components/${componentName}/invoke`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(requestPayload)
+    });
+
+    if (!response.ok) {
+      // The backend provides structured error messages
+      const errorData = await response.json();
+      console.error(`API Error: ${response.status}`, errorData.error);
+      throw new Error(`Request failed: ${errorData.error || response.statusText}`);
+    }
+
+    // The 'echo' method returns a simple string, so we read it as text
+    const result = await response.text();
+    console.log('Success! Server responded with:', result);
+    return result;
+
+  } catch (error) {
+    console.error('Failed to invoke component:', error);
+    throw error; // Re-throw the error for the caller to handle
+  }
+}
+```
 
 ## 2. Mobile Client (React Native)
 
 The mobile application is built with React Native and communicates with the backend service. It features a native Android background service that acts as the core engine. For more details on the mobile architecture, see `mobile/README.md`.
 
+
 ### Prerequisites
 
 -   Node.js and the React Native development environment. Please follow the official setup guide.
 -   Android Studio and a configured Android device or emulator.
+
 
 ### Running the Mobile App
 
