@@ -4,6 +4,7 @@
 package reveila;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -90,18 +91,28 @@ public final class Reveila {
 	}
 
 	private void printLogo() {
+
         System.out.println();
+
+		BufferedReader reader = null;
         try (InputStream is = this.platformAdapter.getInputStream(PlatformAdapter.CONF_STORAGE, "logo.txt")) {
             if (is == null) {
                 System.out.println("Reveila"); // Fallback if logo resource is not found
             } else {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
-                    reader.lines().forEach(System.out::println);
-                }
+            	reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+            	reader.lines().forEach(System.out::println);
             }
         } catch (Exception e) {
             // Log a warning or handle the exception if the logo fails to load
             System.err.println("Warning: Could not load logo resource file.");
+        } finally {
+            if (reader != null) {
+                try {
+                    reader.close();
+                } catch (IOException e) {
+                    // Ignore
+                }
+            }
         }
 
         String version = this.properties.getProperty(Constants.S_SYSTEM_VERSION, "Unknown Version");
@@ -162,17 +173,15 @@ public final class Reveila {
 
 		for (String fileName : componentFiles) {
 			if (fileName.toLowerCase(Locale.ROOT).endsWith(".json")) {
-				InputStream is = null;
-				try {
-					is = this.platformAdapter.getInputStream(PlatformAdapter.CONF_STORAGE, fileName);
+				try (InputStream is = this.platformAdapter.getInputStream(PlatformAdapter.CONF_STORAGE, fileName)) {
 					logger.info("Loading components from: " + fileName);
 					JsonConfiguration group = new JsonConfiguration(is, this.logger);
 					List<MetaObject> list = group.read();
 					for (MetaObject item : list) {
-						// The Proxy class handles both stateful (singleton) and stateless (prototype) lifecycles.
-						Proxy proxy = new Proxy(item);
-						proxy.setSystemContext(this.systemContext);
 						if (item.isStartOnLoad()) {
+							// The Proxy class handles both stateful (singleton) and stateless (prototype) lifecycles.
+							Proxy proxy = new Proxy(item);
+							proxy.setSystemContext(this.systemContext);
 							logger.info("Starting component on load: " + item.getName());
 							proxy.start();
 						}
@@ -183,10 +192,6 @@ public final class Reveila {
 						throw new ConfigurationException("Failed to load components from " + fileName, e);
 					} else {
 						logger.log(Level.SEVERE, "Failed to load components from " + fileName + ". Continuing in non-strict mode.", e);
-					}
-				} finally {
-					if (is != null) {
-						is.close();
 					}
 				}
 			}

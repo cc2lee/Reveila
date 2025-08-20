@@ -1,32 +1,17 @@
 package reveila.util.task;
 
-import java.util.logging.Logger;
-
-import reveila.system.SystemContext;
+import reveila.system.AbstractService;
 
 /**
  * @author Charles Lee
  */
-public abstract class Job implements Runnable {
+public abstract class Job extends AbstractService implements Runnable {
 
 	protected volatile JobException exception;
 	protected volatile JobStatus status = JobStatus.PENDING;
 	protected volatile double percentageCompleted = -1.0;
 	protected volatile String message;
 	
-	protected SystemContext systemContext;
-	protected Logger logger;
-	
-	protected Job() {}
-
-	/**
-	 * Sets the system context for the job. This is package-private to restrict its use to the framework.
-	 */
-	void setSystemContext(SystemContext systemContext) {
-		logger = systemContext.getLogger(this);
-		this.systemContext = systemContext;
-	}
-
 	public JobException getException() {
 		return exception;
 	}

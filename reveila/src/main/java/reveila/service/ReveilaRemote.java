@@ -1,9 +1,4 @@
-package reveila.service.system;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import reveila.error.ConfigurationException;
-import reveila.system.MetaObject;
-import reveila.system.Proxy;
+package reveila.service;
 
 import java.io.IOException;
 import java.util.Map;
@@ -16,34 +11,35 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import reveila.error.ConfigurationException;
+import reveila.system.AbstractService;
+import reveila.util.json.JsonUtil;
 
 /**
  * A system component that can invoke methods on a remote Reveila instance via its REST API.
  * This acts as a proxy, allowing any Reveila client (mobile or backend) to interact
  * with another Reveila instance, enabling clustered or distributed setups.
  */
-public class RemoteInvoker extends Proxy {
+public class ReveilaRemote extends AbstractService {
 
     public static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
+    // OkHttpClient is thread-safe and designed to be shared.
+    // Making it static ensures a single instance is reused across all invocations,
+    // which is more efficient as it allows for connection pooling.
+    private static final OkHttpClient client = new OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .writeTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build();
+    
     private String remoteBaseUrl;
-    private OkHttpClient client;
-    private ObjectMapper objectMapper;
 
     /**
-     * Constructor for instantiation by the Reveila engine.
-     * @param metaObject The component's configuration metadata.
+     * No-arg constructor for instantiation by the Reveila engine.
      */
-    public RemoteInvoker(MetaObject metaObject) {
-        super(metaObject);
-        // Initialization of client and objectMapper can be done here.
-        // The remoteBaseUrl will be set via setter injection.
-        this.client = new OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .writeTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(30, TimeUnit.SECONDS)
-                .build();
-        this.objectMapper = new ObjectMapper();
+    public ReveilaRemote() {
+        super();
     }
 
     /**
@@ -63,14 +59,14 @@ public class RemoteInvoker extends Proxy {
     /**
      * Invokes a method on a remote Reveila instance.
      */
-    public Object invokeRemote(String componentName, String methodName, Object[] args) throws IOException {
+    public Object invoke(String componentName, String methodName, Object[] args) throws IOException {
         if (this.remoteBaseUrl == null) {
             throw new IllegalStateException("RemoteInvoker is not configured. The 'EndPointURL' argument is missing in the component configuration.");
         }
         String url = remoteBaseUrl + "/api/components/" + componentName + "/invoke";
 
         Map<String, Object> requestPayload = Map.of("methodName", methodName, "args", args);
-        String jsonBody = objectMapper.writeValueAsString(requestPayload);
+        String jsonBody = JsonUtil.toJsonString(requestPayload);
         RequestBody body = RequestBody.create(jsonBody, JSON);
         Request request = new Request.Builder().url(url).post(body).build();
 
@@ -84,7 +80,8 @@ public class RemoteInvoker extends Proxy {
                 throw new IOException("Remote invocation failed with HTTP code " + response.code() + " for " + url + ". Body: " + responseBodyString);
             }
 
-            return (responseBodyString == null || responseBodyString.isEmpty()) ? null : objectMapper.readValue(responseBodyString, Object.class);
+            return (responseBodyString == null || responseBodyString.isEmpty()) ? null : JsonUtil.toObject(responseBodyString, Object.class);
         }
     }
+
 }

@@ -9,8 +9,8 @@ import java.util.EventObject;
  * dispatching abstract events to anonymous event listeners. It is up to the
  * event listener to decide which event to consume.
  */
-public interface Eventable {
+public interface EventWatcher {
 
-	public void consumeEvent(EventObject evtObj) throws Exception;
+	public void onEvent(EventObject evtObj) throws Exception;
 
 }

@@ -1,21 +1,18 @@
 package reveila.util.json;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectWriter;
-
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
+
 /**
- * A utility class for JSON serialization and deserialization using Jackson.
+ * A utility class for JSON serialization and deserialization.
  * <p>
  * This class provides static methods to convert between JSON strings/files and Java objects.
- * It reuses a single {@link ObjectMapper} instance for performance, as it is thread-safe.
  */
 public final class JsonUtil {
 
@@ -31,20 +28,47 @@ public final class JsonUtil {
     private JsonUtil() {
     }
 
-    public static Map<String, Object> parseJsonFileToMap(String filePath) throws IOException {
-        return MAPPER.readValue(new File(filePath), MAP_TYPE_REFERENCE);
+    /**
+     * Method to deserialize JSON content from given JSON content String.
+     */
+    public static <T> T toObject(String content, Class<T> valueType) throws JsonProcessingException {
+        try {
+            return MAPPER.readValue(content, valueType);
+        } catch (Exception e) {
+            throw new JsonProcessingException(e.getMessage(), e);
+        }
+    }
+
+    public static Map<String, Object> parseJsonFileToMap(String filePath) throws JsonProcessingException {
+        try {
+            return MAPPER.readValue(new File(filePath), MAP_TYPE_REFERENCE);
+        } catch (Exception e) {
+            throw new JsonProcessingException(e.getMessage(), e);
+        }
     }
 
     public static Map<String, Object> parseJsonStringToMap(String json) throws JsonProcessingException {
-        return MAPPER.readValue(json, MAP_TYPE_REFERENCE);
+        try {
+            return MAPPER.readValue(json, MAP_TYPE_REFERENCE);
+        } catch (Exception e) {
+            throw new JsonProcessingException(e.getMessage(), e);
+        }
     }
 
-    public static List<Map<String, Object>> parseJsonFileToList(String filePath) throws IOException {
-        return MAPPER.readValue(new File(filePath), LIST_OF_MAPS_TYPE_REFERENCE);
+    public static List<Map<String, Object>> parseJsonFileToList(String filePath) throws JsonProcessingException {
+        try {
+            return MAPPER.readValue(new File(filePath), LIST_OF_MAPS_TYPE_REFERENCE);
+        } catch (Exception e) {
+            throw new JsonProcessingException(e.getMessage(), e);
+        }
     }
 
-    public static List<Map<String, Object>> parseJsonStringToList(String json) throws IOException {
-        return MAPPER.readValue(json, LIST_OF_MAPS_TYPE_REFERENCE);
+    public static List<Map<String, Object>> parseJsonStringToList(String json) throws JsonProcessingException {
+        try {
+            return MAPPER.readValue(json, LIST_OF_MAPS_TYPE_REFERENCE);
+        } catch (Exception e) {
+            throw new JsonProcessingException(e.getMessage(), e);
+        }
     }
 
     /**
@@ -55,7 +79,11 @@ public final class JsonUtil {
      * @throws JsonProcessingException if a problem occurs during serialization.
      */
     public static String toJsonString(Object data) throws JsonProcessingException {
-        return MAPPER.writeValueAsString(data);
+        try {
+            return MAPPER.writeValueAsString(data);
+        } catch (Exception e) {
+            throw new JsonProcessingException(e.getMessage(), e);
+        }
     }
 
     /**
@@ -63,10 +91,14 @@ public final class JsonUtil {
      *
      * @param data     The object to serialize.
      * @param filePath The path to the output file.
-     * @throws IOException if a problem occurs during file writing or serialization.
+     * @throws JsonProcessingException if a problem occurs during file writing or serialization.
      */
-    public static void toJsonFile(Object data, String filePath) throws IOException {
-        PRETTY_WRITER.writeValue(new File(filePath), data);
+    public static void toJsonFile(Object data, String filePath) throws JsonProcessingException {
+        try {
+            PRETTY_WRITER.writeValue(new File(filePath), data);
+        } catch (Exception e) {
+            throw new JsonProcessingException(e.getMessage(), e);
+        }
     }
 
     // Recursively find all values for a given key in a (possibly nested) Map

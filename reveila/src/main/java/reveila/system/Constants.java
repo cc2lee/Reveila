@@ -84,7 +84,6 @@ public final class Constants {
 	public static final String C_COMPONENTS = "components";
 	public static final String C_OBJECT = "object";
 	public static final String C_COMPONENT = "component";
-	public static final String C_ID = "id";
 	public static final String C_ARGUMENT = "argument";
 	public static final String C_TYPE = "type";
     public static final String C_DEPENDS = "depends";

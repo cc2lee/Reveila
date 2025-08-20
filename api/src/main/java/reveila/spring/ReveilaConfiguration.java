@@ -27,7 +27,7 @@ public class ReveilaConfiguration {
      */
     @Bean
     public ApplicationRunner reveilaRunner(Reveila reveila, ApplicationArguments args) {
-        return runnerArgs -> reveila.start(new reveila.platform.WindowsPlatformAdapter(splitArgs(args.getSourceArgs())));
+        return runnerArgs -> reveila.start(new reveila.platform.DefaultPlatformAdapter(splitArgs(args.getSourceArgs())));
     }
 
     private Properties splitArgs(String[] args) throws ConfigurationException {

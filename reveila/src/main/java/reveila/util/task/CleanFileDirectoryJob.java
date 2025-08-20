@@ -20,7 +20,7 @@ public class CleanFileDirectoryJob extends Job {
 		boolean errorsOccurred = false;
 
 		if (dirs == null || dirs.length == 0) {
-			logger.info("No directories configured to clean, skipping job.");
+			systemContext.getLogger(this).info("No directories configured to clean, skipping job.");
 			setStatus(JobStatus.SUCCESSFUL);
 			setPercentageCompleted(100.0);
 			return;
@@ -28,12 +28,12 @@ public class CleanFileDirectoryJob extends Job {
 		
 		for (String dir : dirs) {
 			try {
-				logger.info("Cleaning directory: " + dir);
+				systemContext.getLogger(this).info("Cleaning directory: " + dir);
 				File[] files = new File(dir).listFiles();
 				if (files != null) {
 					for (File file : files) {
 						if (shouldExclude(file)) {
-							logger.fine("Skipping excluded file: " + file.getAbsolutePath());
+							systemContext.getLogger(this).fine("Skipping excluded file: " + file.getAbsolutePath());
 							continue;
 						}
 						FileUtil.delete(file, true);
@@ -41,7 +41,7 @@ public class CleanFileDirectoryJob extends Job {
 				}
 			} catch (Exception e) {
 				// Log the full exception for better diagnostics, without swallowing the exception type.
-				logger.log(Level.SEVERE, "Failed to clean directory: " + dir, e);
+				systemContext.getLogger(this).log(Level.SEVERE, "Failed to clean directory: " + dir, e);
 				errorsOccurred = true;
 			}
 		}

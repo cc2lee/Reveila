@@ -59,8 +59,8 @@ public final class XmlUtil {
 		
 		DocumentBuilder builder = factory.newDocumentBuilder();
 		builder.setErrorHandler(new XmlErrorHandler());
-		
-		return builder.parse(inStream);
+		Document doc = builder.parse(inStream);
+		return doc;
 	}
 	
 	public static Document getDocument(final InputStream in)

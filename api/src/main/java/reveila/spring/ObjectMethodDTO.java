@@ -1,9 +1,10 @@
 package reveila.spring;
 
 /**
- * A Data Transfer Object for a generic component invocation request.
+ * A Data Transfer Object for Reveila component invocation request.
  */
-public class InvokeRequest {
+public class ObjectMethodDTO {
+
     private String methodName;
     private Object[] args;
 

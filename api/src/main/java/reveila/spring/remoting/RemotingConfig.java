@@ -5,8 +5,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestTemplate;
 
-import reveila.remoting.AgnosticRemoteClient;
-
 /**
  * Configures and provides beans for remote communication clients.
  * <p>
@@ -22,8 +20,4 @@ public class RemotingConfig {
         return builder.build();
     }
 
-    @Bean
-    public AgnosticRemoteClient agnosticRemoteClient() {
-        return new AgnosticRemoteClient();
-    }
 }

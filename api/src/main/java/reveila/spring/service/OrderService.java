@@ -3,10 +3,14 @@ package reveila.spring.service;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
-import reveila.remoting.AgnosticRemoteClient;
+import reveila.remoting.HttpUrl;
+import reveila.remoting.SimpleSoapClient;
+import reveila.util.json.JsonUtil;
 import reveila.util.xml.XmlUtil;
+
+import java.io.ByteArrayInputStream;
+import org.w3c.dom.Document;
 
 /**
  * An example service demonstrating how to use the {@link AgnosticRemoteClient} component.
@@ -14,19 +18,8 @@ import reveila.util.xml.XmlUtil;
 @Service
 public class OrderService {
 
-    private final AgnosticRemoteClient remoteClient;
-    private final ObjectMapper objectMapper;
-
-    /**
-     * To get an instance of AgnosticRemoteClient, you inject it via the constructor.
-     * Spring automatically provides the managed AgnosticRemoteClient bean.
-     *
-     * @param remoteClient The singleton instance of AgnosticRemoteClient managed by Spring.
-     * @param objectMapper The singleton instance of ObjectMapper managed by Spring.
-     */
-    public OrderService(AgnosticRemoteClient remoteClient, ObjectMapper objectMapper) {
-        this.remoteClient = remoteClient;
-        this.objectMapper = objectMapper;
+    public OrderService() {
+        super();
     }
 
     /**
@@ -34,8 +27,8 @@ public class OrderService {
      */
     public ProductDetailsDTO getProductDetails(String productId) throws Exception {
         String url = "https://api.example.com/products/" + productId;
-        String responseJson = remoteClient.get(url);
-        return objectMapper.readValue(responseJson, ProductDetailsDTO.class);
+        String responseJson = HttpUrl.get(url);
+        return JsonUtil.toObject(responseJson, ProductDetailsDTO.class);
     }
 
     /**
@@ -53,8 +46,12 @@ public class OrderService {
            </soap:Body>
         </soap:Envelope>""", customerId, productId, quantity);
 
-        String responseXml = remoteClient.invokeSoap(endpointUrl, soapAction, requestXml);
-        JsonNode responseJson = XmlUtil.toJsonNode(XmlUtil.getDocument(new java.io.ByteArrayInputStream(responseXml.getBytes())));
+        final String responseXml = SimpleSoapClient.invokeSoap(endpointUrl, soapAction, requestXml);
+        final Document xmlDoc;
+        try (ByteArrayInputStream is = new ByteArrayInputStream(responseXml.getBytes())) {
+            xmlDoc = XmlUtil.getDocument(is);
+        }
+        final JsonNode responseJson = XmlUtil.toJsonNode(xmlDoc);
         return responseJson.at("/Envelope/Body/submitOrderResponse/orderId").asText();
     }
 }

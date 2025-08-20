@@ -2,8 +2,7 @@
   {
     "component": {
       "start": true,
-      "name": "Echo Service",
-      "id": "echo-service",
+      "name": "EchoService",
       "class": "reveila.service.EchoService",
       "version": "1",
       "arguments": [
@@ -15,7 +14,7 @@
         {
           "name": "repeat",
           "type": "int",
-          "value": 2
+          "value": 1
         }
       ]
     }
@@ -24,8 +23,7 @@
     "component": {
       "start": true,
       "name": "RemoteInvoker",
-      "id": "",
-      "class": "reveila.service.system.RemoteInvoker",
+      "class": "reveila.service.RemoteInvoker",
       "version": "1",
       "arguments": [
         {
@@ -38,12 +36,11 @@
   },
   {
     "component": {
-      "id": "task-manager-service",
-      "name": "Task Manager",
-      "class": "reveila.util.task.TaskManager",
-      "description": "A service that manages and executes scheduled background jobs.",
       "start": true,
+      "name": "TaskManager",
+      "class": "reveila.service.TaskManager",
       "thread-safe": true,
+      "description": "A service that executes scheduled background jobs.",
       "arguments": [
         {
           "name": "interval",

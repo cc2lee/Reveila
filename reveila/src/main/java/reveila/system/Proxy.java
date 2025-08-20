@@ -6,12 +6,12 @@ import java.util.Objects;
 
 import reveila.system.lifecycle.Startable;
 import reveila.system.lifecycle.Stoppable;
-import reveila.util.event.Eventable;
+import reveila.util.event.EventWatcher;
 
 /**
  * @author Charles Lee
  */
-public class Proxy implements Eventable {
+public final class Proxy implements EventWatcher, Startable, Stoppable {
 
 	protected MetaObject metaObject;
 	protected SystemContext systemContext;
@@ -178,14 +178,24 @@ public class Proxy implements Eventable {
 			if (this.singletonInstance == null) {
 				synchronized (this) {
 					if (this.singletonInstance == null) {
-						this.singletonInstance = this.metaObject.newObject(this.systemContext.getLogger(this));
+						Object target = this.metaObject.newObject(this.systemContext.getLogger(this));
+						// After refactoring, services need the SystemContext injected so they can
+						// access system resources like the logger or event manager.
+						if (target instanceof AbstractService) {
+							((AbstractService) target).setSystemContext(this.systemContext);
+						}
+						this.singletonInstance = target;
 					}
 				}
 			}
 			return this.singletonInstance;
 		} else {
 			// Prototype lifecycle: create a new instance for every call.
-			return this.metaObject.newObject(this.systemContext.getLogger(this));
+			Object target = this.metaObject.newObject(this.systemContext.getLogger(this));
+			if (target instanceof AbstractService) {
+				((AbstractService) target).setSystemContext(this.systemContext);
+			}
+			return target;
 		}
 	}
 
@@ -222,11 +232,11 @@ public class Proxy implements Eventable {
 	}
 
 	@Override
-	public void consumeEvent(EventObject evtObj) throws Exception {
-		/*
-		 * By default, this method does nothing. Subclasses can override this
-		 * method to provide specific event handling logic.
-		 */
+	public void onEvent(EventObject evtObj) throws Exception {
+		Object target = getTargetObject();
+		if (target instanceof EventWatcher) {
+			((EventWatcher) target).onEvent(evtObj);
+		}
 	}
 
 	public String getName() {

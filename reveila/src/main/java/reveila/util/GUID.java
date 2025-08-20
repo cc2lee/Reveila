@@ -7,6 +7,7 @@
 package reveila.util;
 
 import java.net.InetAddress;
+import java.util.UUID;
 
 /**
  * @author Charles Lee
@@ -25,6 +26,10 @@ public class GUID {
 
 	/* Initialize the secure random instance. */
 	private static final java.security.SecureRandom seeder = new java.security.SecureRandom();
+
+	public static final String getGUID() {
+		return UUID.randomUUID().toString();
+	}
 
 	/**
 	 * Creates a 32 byte GUID (Globally Unique ID) for the given <code>Object obj</code>.

@@ -1,4 +1,4 @@
-package reveila.util.task;
+package reveila.service;
 
 import java.io.File;
 import java.time.Instant;
@@ -15,13 +15,18 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import reveila.system.AbstractService;
 import reveila.system.Constants;
 import reveila.system.JsonConfiguration;
 import reveila.system.MetaObject;
-import reveila.system.Proxy;
 import reveila.util.io.FileUtil;
+import reveila.util.task.Job;
+import reveila.util.task.JobEvent;
+import reveila.util.task.JobEventType;
+import reveila.util.task.JobException;
+import reveila.util.task.JobStatus;
 
-public class TaskManager extends Proxy implements Runnable {
+public class TaskManager extends AbstractService implements Runnable {
 
     private String jobConfigDir;
     private Thread workerThread;
@@ -31,8 +36,8 @@ public class TaskManager extends Proxy implements Runnable {
     private int jobThreadPoolSize = 5; // Default to 5 concurrent jobs
     private ExecutorService jobExecutor;
 
-    public TaskManager(MetaObject objectDescriptor) {
-        super(objectDescriptor);
+    public TaskManager() {
+        super();
     }
 
     @Override

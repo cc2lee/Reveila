@@ -31,7 +31,6 @@ public final class SystemContext {
 	private Map<String, Logger> loggersByName = new ConcurrentHashMap<>();
 	private Cryptographer cryptographer;
 	private Map<String, Proxy> proxiesByName = new ConcurrentHashMap<>();
-	private Map<Class<?>, Proxy> proxiesByClass = new ConcurrentHashMap<>();
 	private PlatformAdapter platformAdapter;
 
 	public Cryptographer getCryptographer() {
@@ -44,7 +43,7 @@ public final class SystemContext {
 
 	public StorageManager getStorageManager(Proxy proxy) throws IOException {
 		
-		Objects.requireNonNull(proxy, "Argument 'object' must not be null");
+		Objects.requireNonNull(proxy, "Argument 'proxy' must not be null");
 
 		StorageManager storageManager = storageManagers.get(proxy);
 		if (storageManager == null) {
@@ -93,18 +92,15 @@ public final class SystemContext {
 	public synchronized void register(Proxy proxy) throws Exception {
 		Objects.requireNonNull(proxy, "Argument 'proxy' must not be null");
 
-		//Class<?> implClass = Class.forName(proxy.getImplementationClassName());
-		Class<?> implClass = proxy.getImplementationClass();
 		String proxyName = proxy.getName();
 
-		if (proxiesByClass.containsKey(implClass) || proxiesByName.containsKey(proxyName)) {
+		if (proxiesByName.containsKey(proxyName)) {
 			throw new IllegalStateException(
-					"A proxy with name '" + proxyName + "' or implementation class '" + implClass.getName() + "' is already registered.");
+					"A proxy with name '" + proxyName + "' is already registered.");
 		}
 
 		proxiesByName.put(proxyName, proxy);
-		proxiesByClass.put(implClass, proxy);
-		eventManager.addEventReceiver(proxy);
+		eventManager.addEventWatcher(proxy);
 		logger.info("Registered component: " + proxyName);
 	}
 
@@ -112,9 +108,7 @@ public final class SystemContext {
 		Objects.requireNonNull(proxy, "Argument 'proxy' must not be null");
 
 		proxiesByName.remove(proxy.getName());
-		//proxiesByClass.remove(Class.forName(proxy.getImplementationClassName()));
-		proxiesByClass.remove(proxy.getImplementationClass());
-		eventManager.removeEventReceiver(proxy);
+		eventManager.removeEventWatcher(proxy);
 		storageManagers.remove(proxy);
 		loggersByName.remove(proxy.getName());
 		logger.info("Unregistered component: " + proxy.getName());
@@ -143,7 +137,6 @@ public final class SystemContext {
 		}
 
 		proxiesByName.clear();
-		proxiesByClass.clear();
 		loggersByName.clear();
 		eventManager.clear();
 		storageManagers.clear();

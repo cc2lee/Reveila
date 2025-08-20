@@ -11,8 +11,9 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.context.annotation.Bean;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
@@ -25,10 +26,23 @@ import reveila.error.ConfigurationException;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, classes = reveila.spring.Application.class)
 class ApplicationTests {
 
+    @TestConfiguration
+    static class TestConfig {
+        /**
+         * The @MockBean annotation is deprecated. The recommended approach is to use
+         * a @TestConfiguration to explicitly define the mock as a bean. This makes
+         * the test setup clearer and avoids potential side effects of @MockBean.
+         */
+        @Bean
+        public Reveila reveila() {
+            return Mockito.mock(Reveila.class);
+        }
+    }
+
     @Autowired
     private TestRestTemplate restTemplate;
 
-    @MockBean
+    @Autowired
     private Reveila reveila;
 
     @BeforeEach
@@ -65,7 +79,7 @@ class ApplicationTests {
     }
 
     private <T> ResponseEntity<T> invokeComponent(String componentName, String methodName, Object[] args, Class<T> responseType) {
-        InvokeRequest request = new InvokeRequest();
+        ObjectMethodDTO request = new ObjectMethodDTO();
         request.setMethodName(methodName);
         request.setArgs(args);
         return restTemplate.postForEntity("/api/components/{componentName}/invoke", request, responseType, componentName);
@@ -81,7 +95,7 @@ class ApplicationTests {
     @Test
     void invokeShouldReturnNotFoundWhenComponentIsMissing() {
         // Arrange
-        InvokeRequest request = new InvokeRequest();
+        ObjectMethodDTO request = new ObjectMethodDTO();
         request.setMethodName("anyMethod");
 
         // Act
@@ -100,7 +114,7 @@ class ApplicationTests {
     @Test
     void invokeShouldReturnBadRequestWhenMethodIsMissing() {
         // Arrange
-        InvokeRequest request = new InvokeRequest();
+        ObjectMethodDTO request = new ObjectMethodDTO();
         request.setMethodName("nonExistentMethod");
 
         // Act

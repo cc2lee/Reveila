@@ -27,12 +27,12 @@ import reveila.util.io.FileUtil;
 /**
  * An implementation of {@link PlatformAdapter} for the Windows platform.
  */
-public class WindowsPlatformAdapter implements PlatformAdapter {
+public class DefaultPlatformAdapter implements PlatformAdapter {
 
     private Properties properties;
     private Logger logger;
 
-    public WindowsPlatformAdapter(Properties commandLineArgs) throws Exception {
+    public DefaultPlatformAdapter(Properties commandLineArgs) throws Exception {
         super();
         loadProperties(commandLineArgs);
         this.logger = configureLogging(this.properties);

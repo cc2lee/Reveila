@@ -1,22 +1,22 @@
 package reveila.service;
 
+import java.util.EventObject;
 import java.util.Map;
 
-import reveila.system.MetaObject;
-import reveila.system.Proxy;
-import reveila.util.IdGenerator;
+import reveila.system.AbstractService;
+import reveila.util.GUID;
 
 /**
  * A service class providing business logic for the REST endpoints.
  * This class is designed to be instantiated and invoked via the Reveila proxy system.
  */
-public class EchoService extends Proxy {
+public class EchoService extends AbstractService {
 
     private boolean reverse = false;
     private int repeat = 0;
 
-    public EchoService(MetaObject objectDescriptor) {
-        super(objectDescriptor);
+    public EchoService() {
+        super();
     }
 
     public void setReverse(boolean reverse) {
@@ -53,7 +53,7 @@ public class EchoService extends Proxy {
      */
     public Map<String, Object> createGreeting(Map<String, Object> greeting) {
         // In a real app, you would save the greeting. Here, we just echo it back.
-        String newId = IdGenerator.createId();
+        String newId = GUID.getGUID();
         return Map.of(
             "id", newId,
             "content", greeting.get("content")
@@ -84,5 +84,17 @@ public class EchoService extends Proxy {
 
     public String handleMultipleFileUpload(String[] filenames) {
         return "Uploaded via service: " + String.join(", ", filenames);
+    }
+
+    @Override
+    public void stop() throws Exception {
+    }
+
+    @Override
+    public void start() throws Exception {
+    }
+
+    @Override
+    public void onEvent(EventObject evtObj) throws Exception {
     }
 }

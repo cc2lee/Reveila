@@ -4,17 +4,16 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
-import java.util.UUID;
 
 import reveila.error.ConfigurationException;
 import reveila.util.json.JsonUtil;
@@ -47,14 +46,6 @@ public class JsonConfiguration {
         this.metaObjects = parse();
     }
 
-    private void ensureIdExists(Map<String, Object> componentMap) {
-        // If an 'id' is not present in the configuration, generate a unique one.
-        Object id = componentMap.get(Constants.C_ID);
-        if (id == null || (id instanceof String && ((String) id).isBlank())) {
-            componentMap.put(Constants.C_ID, UUID.randomUUID().toString());
-        }
-    }
-
     public List<MetaObject> read() {
         // The read method now simply returns a copy of the already-parsed list.
         return new ArrayList<>(this.metaObjects);
@@ -85,7 +76,6 @@ public class JsonConfiguration {
                 }
 
                 if (componentMap != null) {
-                    ensureIdExists(componentMap);
                     // We pass "component" as the type to ensure that when written back, it uses the new standard.
                     parsedObjects.add(new MetaObject(componentMap, Constants.C_COMPONENT));
                 } else {
