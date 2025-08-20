@@ -11,9 +11,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.web.client.TestRestTemplate;
-import org.springframework.context.annotation.Bean;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
@@ -26,23 +25,10 @@ import reveila.error.ConfigurationException;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, classes = reveila.spring.Application.class)
 class ApplicationTests {
 
-    @TestConfiguration
-    static class TestConfig {
-        /**
-         * The @MockBean annotation is deprecated. The recommended approach is to use
-         * a @TestConfiguration to explicitly define the mock as a bean. This makes
-         * the test setup clearer and avoids potential side effects of @MockBean.
-         */
-        @Bean
-        public Reveila reveila() {
-            return Mockito.mock(Reveila.class);
-        }
-    }
-
     @Autowired
     private TestRestTemplate restTemplate;
 
-    @Autowired
+    @MockBean
     private Reveila reveila;
 
     @BeforeEach
@@ -79,7 +65,7 @@ class ApplicationTests {
     }
 
     private <T> ResponseEntity<T> invokeComponent(String componentName, String methodName, Object[] args, Class<T> responseType) {
-        ObjectMethodDTO request = new ObjectMethodDTO();
+        MethodDTO request = new MethodDTO();
         request.setMethodName(methodName);
         request.setArgs(args);
         return restTemplate.postForEntity("/api/components/{componentName}/invoke", request, responseType, componentName);
@@ -95,7 +81,7 @@ class ApplicationTests {
     @Test
     void invokeShouldReturnNotFoundWhenComponentIsMissing() {
         // Arrange
-        ObjectMethodDTO request = new ObjectMethodDTO();
+        MethodDTO request = new MethodDTO();
         request.setMethodName("anyMethod");
 
         // Act
@@ -114,7 +100,7 @@ class ApplicationTests {
     @Test
     void invokeShouldReturnBadRequestWhenMethodIsMissing() {
         // Arrange
-        ObjectMethodDTO request = new ObjectMethodDTO();
+        MethodDTO request = new MethodDTO();
         request.setMethodName("nonExistentMethod");
 
         // Act
@@ -135,37 +121,37 @@ class ApplicationTests {
         Map<String, Object> greetingMap = Map.of("content", "Hello, World!");
 
         // Act
-        ResponseEntity<Greeting> response = invokeComponent("EchoService", "createGreeting", new Object[]{greetingMap}, Greeting.class);
+        ResponseEntity<StringContentDTO> response = invokeComponent("EchoService", "createGreeting", new Object[]{greetingMap}, StringContentDTO.class);
 
         // Assert
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody())
             .isNotNull()
-            .extracting(Greeting::getContent)
+            .extracting(StringContentDTO::getContent)
             .isEqualTo("Hello, World!");
     }
 
     @Test
     void updateGreetingShouldReturnOk() throws Exception {
         Map<String, Object> greetingMap = Map.of("content", "Updated Greeting");
-        ResponseEntity<Greeting> response = invokeComponent("EchoService", "updateGreeting", new Object[]{"123", greetingMap}, Greeting.class);
+        ResponseEntity<StringContentDTO> response = invokeComponent("EchoService", "updateGreeting", new Object[]{"123", greetingMap}, StringContentDTO.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody())
             .isNotNull()
-            .extracting(Greeting::getContent)
+            .extracting(StringContentDTO::getContent)
             .isEqualTo("Updated greeting 123 with: Updated Greeting");
     }
 
     @Test
     void patchGreetingShouldReturnOk() throws Exception {
         Map<String, Object> updates = Map.of("content", "Patched Content");
-        ResponseEntity<Greeting> response = invokeComponent("EchoService", "patchGreeting", new Object[]{"123", updates}, Greeting.class);
+        ResponseEntity<StringContentDTO> response = invokeComponent("EchoService", "patchGreeting", new Object[]{"123", updates}, StringContentDTO.class);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody())
             .isNotNull()
-            .extracting(Greeting::getContent)
+            .extracting(StringContentDTO::getContent)
             .isEqualTo("Patched greeting 123 with: {content=Patched Content}");
     }
 

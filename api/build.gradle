@@ -13,6 +13,12 @@ java {
 
 dependencies {
 
+    // Spring Boot Starter for Data JPA
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+    // H2 Database for in-memory testing
+    runtimeOnly 'com.h2database:h2'
+
     // Project dependency on the core 'reveila' library
     implementation project(':reveila')
 

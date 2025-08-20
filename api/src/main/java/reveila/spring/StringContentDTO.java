@@ -1,15 +1,16 @@
 package reveila.spring;
 
 /**
- * A Data Transfer Object for greeting requests and responses.
+ * A Data Transfer Object for string content
  */
-public class Greeting {
+public class StringContentDTO {
+    
     private String content;
 
-    public Greeting() {
+    public StringContentDTO() {
     }
 
-    public Greeting(String content) {
+    public StringContentDTO(String content) {
         this.content = content;
     }
 

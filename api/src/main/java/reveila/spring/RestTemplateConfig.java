@@ -1,4 +1,4 @@
-package reveila.spring.remoting;
+package reveila.spring;
 
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
@@ -13,7 +13,7 @@ import org.springframework.web.client.RestTemplate;
  * you provide elsewhere in your application.
  */
 @Configuration
-public class RemotingConfig {
+public class RestTemplateConfig {
 
     @Bean
     public RestTemplate restTemplate(RestTemplateBuilder builder) {

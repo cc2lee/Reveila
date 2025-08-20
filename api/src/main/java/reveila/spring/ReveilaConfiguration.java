@@ -2,13 +2,12 @@ package reveila.spring;
 
 import java.util.Properties;
 
-import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import reveila.Reveila;
-import reveila.error.ConfigurationException;
 
 
 @Configuration
@@ -26,11 +25,17 @@ public class ReveilaConfiguration {
      * Starts the Reveila engine after the Spring application context is loaded.
      */
     @Bean
-    public ApplicationRunner reveilaRunner(Reveila reveila, ApplicationArguments args) {
-        return runnerArgs -> reveila.start(new reveila.platform.DefaultPlatformAdapter(splitArgs(args.getSourceArgs())));
+    public ApplicationRunner reveilaRunner(Reveila reveila, ApplicationContext context) {
+        return args -> {
+            try {
+                reveila.start(new SpringPlatformAdapter(context, splitArgs(args.getSourceArgs())));
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to start Reveila with SpringPlatformAdapter", e);
+            }
+        };
     }
 
-    private Properties splitArgs(String[] args) throws ConfigurationException {
+    private Properties splitArgs(String[] args) {
 		Properties cmdArgs = new Properties();
 		if (args != null) {
 			for (String arg : args) {

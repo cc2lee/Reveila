@@ -27,11 +27,15 @@ public final class SystemContext {
 	private Properties properties;
 	private EventManager eventManager;
 	private Logger logger;
-	private Map<Object, StorageManager> storageManagers = new ConcurrentHashMap<>();
+	private Map<Proxy, StorageManager> storageManagers = new ConcurrentHashMap<>();
 	private Map<String, Logger> loggersByName = new ConcurrentHashMap<>();
 	private Cryptographer cryptographer;
 	private Map<String, Proxy> proxiesByName = new ConcurrentHashMap<>();
 	private PlatformAdapter platformAdapter;
+
+	public PlatformAdapter getPlatformAdapter() {
+		return platformAdapter;
+	}
 
 	public Cryptographer getCryptographer() {
 		return cryptographer;
@@ -43,7 +47,7 @@ public final class SystemContext {
 
 	public StorageManager getStorageManager(Proxy proxy) throws IOException {
 		
-		Objects.requireNonNull(proxy, "Argument 'proxy' must not be null");
+		Objects.requireNonNull(proxy, "Argument 'proxy' must not be null.");
 
 		StorageManager storageManager = storageManagers.get(proxy);
 		if (storageManager == null) {
@@ -146,6 +150,7 @@ public final class SystemContext {
 	}
 
 	public Optional<Proxy> getProxy(String name) {
+		Objects.requireNonNull(name, "Component name cannot be null when getting a proxy.");
 		return Optional.ofNullable(this.proxiesByName.get(name));
 	}
 

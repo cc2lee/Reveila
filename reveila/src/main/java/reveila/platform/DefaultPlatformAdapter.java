@@ -118,7 +118,7 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
         try {
             url = new java.net.URI(urlStr).toURL();
         } catch (Exception e) {
-            url = ClassLoader.getSystemResource(Constants.S_SYSTEM_PROPERTIES_FILE_NAME);
+            url = DefaultPlatformAdapter.class.getClassLoader().getResource(Constants.S_SYSTEM_PROPERTIES_FILE_NAME);
         }
 
         if (url == null) {

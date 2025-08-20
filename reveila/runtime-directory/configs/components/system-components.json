@@ -1,6 +1,15 @@
 [
   {
     "component": {
+      "name": "DataService",
+      "class": "reveila.spring.service.SpringDataService",
+      "description": "Data service implementation for the Spring environment.",
+      "thread-safe": true,
+      "start": true
+    }
+  },
+  {
+    "component": {
       "start": true,
       "name": "EchoService",
       "class": "reveila.service.EchoService",
@@ -22,8 +31,8 @@
   {
     "component": {
       "start": true,
-      "name": "RemoteInvoker",
-      "class": "reveila.service.RemoteInvoker",
+      "name": "ReveilaRemote",
+      "class": "reveila.service.ReveilaRemote",
       "version": "1",
       "arguments": [
         {

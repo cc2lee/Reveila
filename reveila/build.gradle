@@ -16,14 +16,6 @@ repositories {
     mavenCentral()
 }
 
-sourceSets {
-    main {
-        resources {
-            srcDir 'runtime-directory/configs'
-        }
-    }
-}
-
 dependencies {
     // To ensure this library can be used by both the Spring backend and the Android app
     // without causing dependency conflicts, we declare dependency versions explicitly.

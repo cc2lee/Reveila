@@ -26,7 +26,7 @@ import reveila.system.SystemContext;
 import reveila.util.TimeFormat;
 import reveila.util.event.EventManager;
 
-public final class Reveila {
+public class Reveila {
 
 	private PlatformAdapter platformAdapter;
 	private Properties properties;
