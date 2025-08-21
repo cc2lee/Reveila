@@ -46,7 +46,7 @@ public class TaskManager extends AbstractService implements Runnable {
         if (jobConfigDir == null || jobConfigDir.isBlank()) {
             String homeDir = systemContext.getProperties().getProperty(Constants.S_SYSTEM_HOME);
                 jobConfigDir = homeDir + File.separator + Constants.C_CONFIGS_DIR_NAME 
-                    + File.separator + Constants.C_JOBS_DIR_NAME;
+                    + File.separator + Constants.C_JOB_DIR_NAME;
         }
 
         // Use a ThreadFactory to name worker threads for easier debugging.

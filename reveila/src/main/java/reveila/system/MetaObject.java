@@ -103,30 +103,10 @@ public class MetaObject {
 		return (List<Map<String, Object>>)this.data.get(Constants.C_ARGUMENTS);
 	}
 
-	@SuppressWarnings("unchecked")
-	public void setArgument(String name, Object value) {
-		List<Map<String, Object>> list = (List<Map<String, Object>>)this.data.get(Constants.C_ARGUMENTS);
-		if (list == null) {
-			// If there's no arguments list, we cannot set an argument.
-			throw new IllegalArgumentException("Cannot set argument '" + name + "' because no arguments are defined.");
-		}
-		boolean found = false;
-		for (Map<String, Object> map : list) {
-			if (name.equals(map.get(Constants.C_NAME))) {
-				map.put(Constants.C_VALUE, value);
-				found = true;
-				break; // Assume argument names are unique and exit after finding.
-			}
-		}
-		if (!found) {
-			throw new IllegalArgumentException("Argument '" + name + "' not found in component configuration.");
-		}
-	}
-
 	public Object newObject(Logger logger) throws Exception {
 		Class<?> clazz = Class.forName(getImplementationClassName());
 		Object object = instantiateObject(clazz);
-		injectProperties(object, clazz, logger);
+		setArguments(object, clazz, logger);
 		return object;
 	}
 
@@ -145,7 +125,7 @@ public class MetaObject {
 		}
 	}
 
-	private void injectProperties(Object target, Class<?> targetClass, Logger logger) throws Exception {
+	private void setArguments(Object target, Class<?> targetClass, Logger logger) throws Exception {
 		List<Map<String, Object>> arguments = getArguments();
 		if (arguments == null || arguments.isEmpty()) {
 			return;

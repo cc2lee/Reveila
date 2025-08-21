@@ -65,14 +65,8 @@ public class JsonConfiguration {
 
                 if (wrapper.containsKey(Constants.C_COMPONENT)) {
                     componentMap = (Map<String, Object>) wrapper.get(Constants.C_COMPONENT);
-                } else if (wrapper.containsKey(Constants.C_SERVICE)) {
-                    componentMap = (Map<String, Object>) wrapper.get(Constants.C_SERVICE);
-                    this.logger.warning("The 'service' key is deprecated and will be removed in a future version. Please use 'component' instead.");
-                } else if (wrapper.containsKey(Constants.C_OBJECT)) {
-                    componentMap = (Map<String, Object>) wrapper.get(Constants.C_OBJECT);
-                    this.logger.warning("The 'object' key is deprecated and will be removed in a future version. Please use 'component' instead.");
-                } else if (wrapper.containsKey(Constants.TASK)) {
-                    componentMap = (Map<String, Object>) wrapper.get(Constants.TASK);
+                } else if (wrapper.containsKey(Constants.C_TASK)) {
+                    componentMap = (Map<String, Object>) wrapper.get(Constants.C_TASK);
                 }
 
                 if (componentMap != null) {

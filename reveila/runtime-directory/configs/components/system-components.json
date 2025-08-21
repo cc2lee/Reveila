@@ -4,6 +4,9 @@
       "name": "DataService",
       "class": "reveila.spring.service.SpringDataService",
       "description": "Data service implementation for the Spring environment.",
+      "provider": "Reveila LLC",
+      "author": "Charles Lee",
+      "license-token": "",
       "thread-safe": true,
       "start": true
     }

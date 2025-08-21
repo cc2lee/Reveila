@@ -122,7 +122,8 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
         }
 
         if (url == null) {
-            throw new ConfigurationException("Could not find the system.properties file. Please ensure it is available in the classpath or specified URL.");
+            throw new ConfigurationException(Constants.S_SYSTEM_PROPERTIES_FILE_NAME + 
+                " not found. Please ensure it is available in the classpath or passed in as JVM argument.");
         } else {
             return url.openStream();
         }
@@ -133,7 +134,7 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
             overwrites = new Properties();
         }
 
-        // Load properties from the system.properties file
+        // Load properties from the reveila.properties file
         properties = new Properties();
 
 		InputStream stream = null;
@@ -175,10 +176,6 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
         if (value == null || value.isBlank()) {
             properties.setProperty(Constants.S_SYSTEM_LOGGER_NAME, "reveila");
         }
-        value = properties.getProperty(Constants.S_SYSTEM_LIB_DIR);
-        if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.S_SYSTEM_LIB_DIR, getSystemHome() + File.separator + "libs" /*System.getProperty("java.library.path")*/ );
-        }
         value = properties.getProperty(Constants.S_SYSTEM_DATA_DIR);
         if (value == null || value.isBlank()) {
             properties.setProperty(Constants.S_SYSTEM_DATA_DIR, getSystemHome() + File.separator + "data" /*System.getProperty("user.home") + File.separator + "reveila" + File.separator + "data"*/ );
@@ -187,18 +184,9 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
         if (value == null || value.isBlank()) {
             properties.setProperty(Constants.S_SYSTEM_TMP_DATA_DIR, getSystemHome() + File.separator + "temp" /*System.getProperty("java.io.tmpdir") + File.separator + "reveila" + File.separator + "temp"*/ );
         }
-        value = properties.getProperty(Constants.S_SYSTEM_LOG_DIR);
+        value = properties.getProperty(Constants.S_SYSTEM_PROPERTIES_FILE_NAME);
         if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.S_SYSTEM_LOG_DIR, getSystemHome() + File.separator + "logs" /*System.getProperty("user.home") + File.separator + "reveila" + File.separator + "logs"*/ );
-        }
-        value = properties.getProperty(Constants.S_SYSTEM_CONFIGURATION_FILE_NAME);
-        if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.S_SYSTEM_CONFIGURATION_FILE_NAME, "system.properties");
-        }
-        value = properties.getProperty(Constants.S_SYSTEM_CONFIGURATION_FILE_URL);
-        if (value == null || value.isBlank()) {
-            File f = new File(getSystemHome(), "configs" + File.separator + properties.getProperty(Constants.S_SYSTEM_CONFIGURATION_FILE_NAME));
-            properties.setProperty(Constants.S_SYSTEM_CONFIGURATION_FILE_URL, f.toURI().toURL().toString());
+            properties.setProperty(Constants.S_SYSTEM_PROPERTIES_FILE_NAME, Constants.S_SYSTEM_PROPERTIES_FILE_NAME);
         }
     }
 

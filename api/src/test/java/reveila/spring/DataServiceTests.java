@@ -51,6 +51,7 @@ public class DataServiceTests {
     }
 
     @Test
+    @SuppressWarnings("null")
     void shouldSaveAndFindEntity() {
         // Arrange: Create a product to save
         Map<String, Object> product = Map.of("name", "Laptop", "price", 1200.50);
@@ -102,6 +103,7 @@ public class DataServiceTests {
     }
 
     @Test
+    @SuppressWarnings("null")
     void shouldFindAllWithPagination() {
         // Arrange: Save a few products
         invoke("DataService", "save", new Object[]{"products", Map.of("name", "Product A", "price", 10)}, new ParameterizedTypeReference<Map<String, Object>>() {});
@@ -133,9 +135,12 @@ public class DataServiceTests {
     }
 
     @Test
+    @SuppressWarnings("null")
     void shouldDeleteEntity() {
         // Arrange: Save a product
         ResponseEntity<Map<String, Object>> saveResponse = invoke("DataService", "save", new Object[]{"products", Map.of("name", "To be deleted", "price", 99)}, new ParameterizedTypeReference<>() {});
+        assertThat(saveResponse).isNotNull();
+        assertThat(saveResponse.getBody()).isNotNull();
         String savedId = (String) saveResponse.getBody().get("id");
 
         // Act: Delete the product
