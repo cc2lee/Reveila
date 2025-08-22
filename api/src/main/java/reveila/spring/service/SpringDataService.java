@@ -48,7 +48,7 @@ public class SpringDataService extends AbstractDataService {
             Object idObject = data.get("id");
  
             // If an ID is provided, treat it as an update. Otherwise, it's a new entity.
-            if (idObject instanceof String id && !id.trim().isEmpty()) {
+            if (idObject != null && idObject instanceof String id && !id.trim().isEmpty()) {
                 entity = repository.findById(id)
                     .orElseThrow(() -> new IllegalArgumentException("Entity with id " + id + " not found for update."));
                 // Optional: Check if the entity type matches
