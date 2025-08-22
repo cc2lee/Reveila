@@ -36,6 +36,3 @@ local.properties
 
 # IDE module files
 *.iml
-
-reveila/runtime-directory/logs/Reveila-Spring.log.lck
-reveila/runtime-directory/logs/Reveila-Spring.log.1
