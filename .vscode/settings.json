@@ -6,6 +6,6 @@
         "mobile/template/app/src/main/java"
     ],
     "java.project.referencedLibraries": [
-        "reveila/runtime-directory/configs"
+        //"reveila/runtime-directory/configs"
     ]
 }
