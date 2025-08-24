@@ -1,16 +1,21 @@
 {
     "version": "0.2.0",
     "configurations": [
-
-        { // Launch Android Hermes app for debugging
+        {
+            "type": "java",
+            "name": "MongoDB",
+            "request": "launch",
+            "mainClass": "reveila.util.db.MongoDB",
+            "projectName": "reveila"
+        },
+        {
             "name": "Debug Android Hermes",
             "request": "attach",
             "type": "reactnativedirect",
             "cwd": "${workspaceFolder}/mobile/template",
             "platform": "android"
         },
-        
-        { // Launch Reveila Spring Boot API project for debugging
+        {
             "type": "java",
             "name": "Debug Reveila API",
             "request": "launch",
@@ -18,62 +23,56 @@
             "projectName": "api",
             "vmArgs": "-Xmx2048m -Dspring.profiles.active=dev"
         },
-        
-        // https://github.com/nisargjhaveri/vscode-android-debug
-        // https://marketplace.visualstudio.com/items?itemName=nisargjhaveri.android-debug
-        { // Launch Android app for debugging
+        {
             "name": "Launch Android Debugger",
             "type": "android-debug",
             "request": "launch",
             "target": "select",
-            "mode": "java", // Change to 'dual', or `java` or `native` to attach only Java or Native debugger.
-            "packageName": "com.reveila.android", // Package name for your app.
-            "launchActivity": ".MainActivity",  // Activity to launch
+            "mode": "java",
+            "packageName": "com.reveila.android",
+            "launchActivity": ".MainActivity",
             "native": {
                 "symbolSearchPaths": [
-                    "${workspaceFolder}/mobile/template/android/app/build/intermediates/cxx/Debug/p682u211/obj/${command:abi}/",
-                ],
+                    "${workspaceFolder}/mobile/template/android/app/build/intermediates/cxx/Debug/p682u211/obj/${command:abi}/"
+                ]
             },
             "java": {
-                "sourcePaths": ["${workspaceFolder}/mobile/template/android/app/src/main/java"]
+                "sourcePaths": [
+                    "${workspaceFolder}/mobile/template/android/app/src/main/java"
+                ]
             }
         },
-
-        // https://github.com/nisargjhaveri/vscode-android-debug
-        // https://marketplace.visualstudio.com/items?itemName=nisargjhaveri.android-debug
-        { // Attach debugger to running Android app
+        {
             "name": "Attach Android Debugger",
             "type": "android-debug",
             "request": "attach",
             "target": "select",
             "pid": "${command:pickAndroidProcess}",
-            "mode": "java", // Change to 'dual', or `java` or `native` to attach only Java or Native debugger.
-            "packageName": "com.reveila.android", // Package name for your app.
+            "mode": "java",
+            "packageName": "com.reveila.android",
             "native": {
                 "symbolSearchPaths": [
-                    "${workspaceFolder}/mobile/template/android/app/build/intermediates/cxx/Debug/p682u211/obj/${command:abi}/",
-                ],
+                    "${workspaceFolder}/mobile/template/android/app/build/intermediates/cxx/Debug/p682u211/obj/${command:abi}/"
+                ]
             },
             "java": {
-                "sourcePaths": ["${workspaceFolder}/mobile/template/android/app/src/main/java"]
+                "sourcePaths": [
+                    "${workspaceFolder}/mobile/template/android/app/src/main/java"
+                ]
             }
         },
-
-        // https://github.com/nisargjhaveri/vscode-android-debug
-        // https://marketplace.visualstudio.com/items?itemName=nisargjhaveri.android-debug
-        { // Profile Android app
+        {
             "name": "Profile Android App",
             "type": "android-profile",
             "request": "launch",
             "target": "select",
-            "packageName": "com.reveila.android", // Package name for the Android app
+            "packageName": "com.reveila.android",
             "native": {
                 "symbolSearchPaths": [
-                    "${workspaceFolder}/mobile/template/android/app/build/intermediates/cxx/Debug/p682u211/obj/${command:abi}/",
-                ],
-            },
+                    "${workspaceFolder}/mobile/template/android/app/build/intermediates/cxx/Debug/p682u211/obj/${command:abi}/"
+                ]
+            }
         },
-
         {
             "type": "java",
             "name": "Vaadin Application",
@@ -81,7 +80,6 @@
             "mainClass": "com.reveila.web.Application",
             "projectName": "reveila-web-app"
         },
-        
         {
             "type": "java",
             "name": "Debug Vaadin Application using Hotswap Agent",
@@ -90,6 +88,5 @@
             "mainClass": "com.reveila.web.Application",
             "vmArgs": "-XX:+AllowEnhancedClassRedefinition -XX:+ClassUnloading -XX:HotswapAgent=fatjar"
         }
-        
     ]
 }

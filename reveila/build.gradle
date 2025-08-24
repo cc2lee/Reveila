@@ -17,6 +17,11 @@ repositories {
 }
 
 dependencies {
+
+    // MongoDB driver
+    implementation(platform("org.mongodb:mongodb-driver-bom:5.5.1"))
+    implementation 'org.mongodb:mongodb-driver-sync'
+
     // To ensure this library can be used by both the Spring backend and the Android app
     // without causing dependency conflicts, we declare dependency versions explicitly.
     // These versions are aligned with the Spring Boot 3.3.1 BOM used by the :api project.
@@ -34,4 +39,7 @@ dependencies {
     // This dependency is required for logging. The version is now managed by the
     // Spring Boot BOM for the backend build, but must be explicit for the mobile build.
     implementation 'org.slf4j:slf4j-api:2.0.13'
+
+    // SLF4J simple implementation for logging
+    implementation 'org.slf4j:slf4j-simple:2.0.13'
 }

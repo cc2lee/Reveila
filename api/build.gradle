@@ -19,6 +19,9 @@ dependencies {
     // H2 Database for in-memory testing
     runtimeOnly 'com.h2database:h2'
 
+    // Spring Boot Starter for MongoDB
+    implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
+
     // Project dependency on the core 'reveila' library
     implementation project(':reveila')
 
