@@ -15,6 +15,8 @@ import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
+import jakarta.persistence.EntityManagerFactory;
+
 @Configuration
 @EnableTransactionManagement
 @EnableJpaRepositories(
@@ -53,6 +55,13 @@ public class PrimaryDbConfig {
     @Bean(name = "primaryTransactionManager")
     public PlatformTransactionManager primaryTransactionManager(
             @Qualifier("primaryEntityManagerFactory") LocalContainerEntityManagerFactoryBean primaryEntityManagerFactory) {
-        return new JpaTransactionManager(primaryEntityManagerFactory.getObject());
+        EntityManagerFactory emf = primaryEntityManagerFactory.getObject();
+        if (emf != null) {
+            // Now it's safe to use emf
+            return new JpaTransactionManager(emf);
+        } else {
+            // Handle the error, maybe throw an exception
+            throw new IllegalStateException("EntityManagerFactory cannot be null");
+        }
     }
 }

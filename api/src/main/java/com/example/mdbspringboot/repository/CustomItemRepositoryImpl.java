@@ -22,12 +22,7 @@ public class CustomItemRepositoryImpl implements CustomItemRepository {
 		update.set("quantity", newQuantity);
 		
 		UpdateResult result = mongoTemplate.updateFirst(query, update, GroceryItem.class);
-		
-		if(result == null)
-			System.out.println("No documents updated");
-		else
-			System.out.println(result.getModifiedCount() + " document(s) updated..");
-
+		System.out.println(result.getModifiedCount() + " document(s) updated..");
 	}
 
 }
