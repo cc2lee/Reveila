@@ -1,10 +1,6 @@
 package reveila.spring;
 
-/**
- * A Data Transfer Object for string content
- */
 public class StringContentDTO {
-    
     private String content;
 
     public StringContentDTO() {
