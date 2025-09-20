@@ -1,4 +1,4 @@
-package reveila.util.db;
+package reveila.adapters.mongo;
 
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
@@ -13,16 +13,16 @@ import com.mongodb.client.MongoDatabase;
 import org.bson.Document;
 //import static com.mongodb.client.model.Filters.eq;
 
-public class MongoDB {
+public class MongoDB implements AutoCloseable {
 
     public static void main(String[] args) {
-        MongoDB mongoDB = new MongoDB(
+        try (MongoDB mongoDB = new MongoDB(
             "mongodb+srv://cc2lee:4DNC9GMenknPbhnh@cluster0.emzc59r.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0",
             "admin"
-        );
-        mongoDB.connect();
-        mongoDB.test();
-        mongoDB.close();
+        )) {
+            mongoDB.connect();
+            mongoDB.test();
+        }
     }
 
     private String databaseName; // = "admin";
@@ -91,14 +91,10 @@ public class MongoDB {
         }
     }
 
+    @Override
     public void close() {
         if (mongoClient != null) {
             mongoClient.close();
         }
-    }
-
-    @Override
-    protected void finalize() throws Throwable {
-        close();
     }
 }

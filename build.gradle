@@ -1,23 +1,26 @@
 plugins {
-    // Make the Spring Boot plugin available to the build script classpath.
-    // This allows access to its constants, like the BOM coordinates.
+    id 'java'
     id 'org.springframework.boot' version "${springBootVersion}" apply false
-    id 'io.spring.dependency-management' version '1.1.5' apply false // This version is compatible with Spring Boot 3.3.x
+    id 'com.osacky.doctor' version '0.9.0'
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(17)) // For JDK 17
+    }
 }
 
 allprojects {
-    repositories {
-        mavenCentral()
-    }
+    
 }
 
-subprojects {
-    apply plugin: 'io.spring.dependency-management'
+dependencies {
+    implementation(project(':reveila'))
+    implementation(project(':api'))
+    implementation(project(':app'))
+    //implementation(project(':vue-project'))
 
-    dependencyManagement {
-        imports {
-            // Use the Spring Boot BOM to manage all dependency versions consistently.
-            mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
-        }
-    }
+    //implementation("com.android.tools.build:gradle:8.4.0")
+    //implementation("com.facebook.react:react-native-gradle-plugin:0.80.2")
+    //implementation("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.20")
 }

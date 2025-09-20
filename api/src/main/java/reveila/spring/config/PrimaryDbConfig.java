@@ -20,7 +20,7 @@ import jakarta.persistence.EntityManagerFactory;
 @Configuration
 @EnableTransactionManagement
 @EnableJpaRepositories(
-        basePackages = "reveila.spring.repository.jpa",
+        basePackages = {"reveila.spring.repository.jpa", "reveila.spring.service"},
         entityManagerFactoryRef = "primaryEntityManagerFactory",
         transactionManagerRef = "primaryTransactionManager"
 )
@@ -46,7 +46,7 @@ public class PrimaryDbConfig {
             @Qualifier("primaryDataSource") DataSource primaryDataSource) {
         return builder
                 .dataSource(primaryDataSource)
-                .packages("reveila.spring.model.jpa")
+                .packages("reveila.spring.model.jpa", "reveila.spring.service")
                 .persistenceUnit("primary")
                 .build();
     }
