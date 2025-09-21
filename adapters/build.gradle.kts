@@ -28,7 +28,10 @@ dependencies {
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.1")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.1")
 
+    // This dependency is exported to consumers, that is to say found on their compile classpath.
     // api(libs.commons.math3)
+
+    // This dependency is used internally, and not exposed to consumers on their own compile classpath.
     // implementation(libs.guava)
 
     // MongoDB driver
@@ -39,7 +42,7 @@ dependencies {
 // Apply a specific Java toolchain to ease working on different environments.
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+        languageVersion = JavaLanguageVersion.of(17)
     }
 }
 

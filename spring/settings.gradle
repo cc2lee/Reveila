@@ -1,0 +1,6 @@
+rootProject.name = "spring"
+includeBuild("../reveila") {
+    dependencySubstitution {
+        substitute(module("com.reveila:reveila")).using(project(":"))
+    }
+}
