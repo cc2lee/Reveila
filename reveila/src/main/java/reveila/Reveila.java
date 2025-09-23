@@ -116,7 +116,7 @@ public class Reveila {
         }
 
         String version = this.properties.getProperty(Constants.S_SYSTEM_VERSION, "Unknown Version");
-        System.out.println("Version " + version);
+        System.out.println(version);
         System.out.println();
     }
 

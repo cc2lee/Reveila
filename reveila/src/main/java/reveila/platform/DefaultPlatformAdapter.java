@@ -40,11 +40,6 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     }
 
     @Override
-    public int getHostType() {
-        return PlatformAdapter.WINDOWS;
-    }
-
-    @Override
     public String getHostDescription() {
         String osName = System.getProperty("os.name");
         String osVersion = System.getProperty("os.version");
@@ -166,7 +161,7 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
         }
         value = properties.getProperty(Constants.S_SYSTEM_VERSION);
         if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.S_SYSTEM_VERSION, "1.0.0");
+            properties.setProperty(Constants.S_SYSTEM_VERSION, "Standard Edition");
         }
         value = properties.getProperty(Constants.S_SYSTEM_STRICT_MODE);
         if (value == null || value.isBlank()) {
