@@ -219,7 +219,20 @@ public class Reveila {
 
 		// Use the new flexible invoke method on the Proxy.
 		// This method finds the target method by name and argument count.
-		return proxy.invoke(methodName, params);
+		try {
+			return proxy.invoke(methodName, params);
+		} catch (Exception e) {
+			if (e instanceof java.lang.reflect.InvocationTargetException) {
+				// The invoked method threw an exception. Print the underlying cause.
+				Throwable cause = ((java.lang.reflect.InvocationTargetException) e).getTargetException();
+				System.err.println("The invoked method threw an exception: " + cause.getMessage());
+				cause.printStackTrace();
+			} else {
+				System.err.println("An exception occurred during invocation: " + e.getMessage());
+				e.printStackTrace();
+			}
+			throw e;
+		}
 	}
 
 }

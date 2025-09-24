@@ -10,6 +10,10 @@ java {
 	}
 }
 
+tasks.withType<JavaCompile> {
+    options.compilerArgs.add("-parameters")
+}
+
 repositories {
     /*
     // Add local directory as a Maven repository

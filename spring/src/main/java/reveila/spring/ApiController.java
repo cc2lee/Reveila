@@ -21,7 +21,7 @@ public class ApiController {
 
     @PostMapping("/components/{componentName}/invoke")
     public ResponseEntity<?> invokeComponent(
-            @PathVariable String componentName,
+            @PathVariable("componentName") String componentName,
             @RequestBody MethodDTO request) throws Exception {
         Object result = reveila.invoke(componentName, request.getMethodName(), request.getArgs());
         return ResponseEntity.ok(result);

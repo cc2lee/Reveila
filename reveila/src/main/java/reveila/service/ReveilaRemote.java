@@ -59,7 +59,14 @@ public class ReveilaRemote extends AbstractService {
     /**
      * Invokes a method on a remote Reveila instance.
      */
-    public Object invoke(String componentName, String methodName, Object[] args) throws IOException {
+    public Object invoke(Object... remoteCallArgs) throws IOException {
+        if (remoteCallArgs.length != 3) {
+            throw new IllegalArgumentException("Exactly 3 arguments are required: componentName, methodName, and args");
+        }
+        String componentName = (String) remoteCallArgs[0];
+        String methodName = (String) remoteCallArgs[1];
+        Object[] args = (Object[]) remoteCallArgs[2];
+
         if (this.remoteBaseUrl == null) {
             throw new IllegalStateException("RemoteInvoker is not configured. The 'EndPointURL' argument is missing in the component configuration.");
         }
@@ -81,6 +88,10 @@ public class ReveilaRemote extends AbstractService {
             }
 
             return (responseBodyString == null || responseBodyString.isEmpty()) ? null : JsonUtil.toObject(responseBodyString, Object.class);
+        } catch (IOException e) {
+            System.err.println("Error invoking remote service at " + url + ": " + e.getMessage());
+            e.printStackTrace();
+            throw e;
         }
     }
 

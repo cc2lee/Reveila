@@ -3,6 +3,7 @@ package reveila.system;
 import java.lang.reflect.Method;
 import java.util.EventObject;
 import java.util.Objects;
+import java.util.logging.Logger;
 
 import reveila.system.lifecycle.Startable;
 import reveila.system.lifecycle.Stoppable;
@@ -36,6 +37,11 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 	 * @throws Exception if object creation, method lookup, or invocation fails
 	 */
 	public synchronized Object invoke(final String methodName, final Object[] args) throws Exception {
+		Logger logger = systemContext.getLogger(this);
+		if (logger != null) {
+			logger.info("Invoking proxy method '" + methodName + "' on component '" + getName() + "' with " + ((args == null) ? 0 : args.length) + " arguments.");
+		}
+
 		Object object = getTargetObject();
 		int numArgs = (args == null) ? 0 : args.length;
 
