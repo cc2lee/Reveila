@@ -18,7 +18,7 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 	protected SystemContext systemContext;
 	private volatile Class<?> implementationClass;
 	private volatile Object singletonInstance;
-	
+
 	public Proxy(MetaObject metaObject) {
 		if (metaObject == null) {
 			throw new IllegalArgumentException("Argument must not be null");
@@ -32,55 +32,88 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 	 * This version finds the method based on its name and the number of arguments.
 	 *
 	 * @param methodName the name of the method to invoke
-	 * @param args the arguments to pass to the method
+	 * @param args       the arguments to pass to the method
 	 * @return the result of the invoked method
 	 * @throws Exception if object creation, method lookup, or invocation fails
 	 */
 	public synchronized Object invoke(final String methodName, final Object[] args) throws Exception {
 		Logger logger = systemContext.getLogger(this);
 		if (logger != null) {
-			logger.info("Invoking proxy method '" + methodName + "' on component '" + getName() + "' with " + ((args == null) ? 0 : args.length) + " arguments.");
+			logger.info("Invoking proxy method '" + methodName + "' on component '" + getName() + "' with "
+					+ ((args == null) ? 0 : args.length) + " arguments.");
 		}
 
 		Object object = getTargetObject();
 		int numArgs = (args == null) ? 0 : args.length;
 
-		// Find a suitable method by matching name, arg count, and parameter types.
 		Method methodToInvoke = findBestMethod(object.getClass(), methodName, args);
 
 		if (methodToInvoke == null) {
 			throw new NoSuchMethodException(
-					"No suitable method with name '" + methodName + "' and " + numArgs + " arguments found for provided types in " + object.getClass().getName());
+					"No suitable method with name '" + methodName + "' and " + numArgs
+							+ " arguments found for provided types in " + object.getClass().getName());
 		}
 
-		// Coerce arguments to match the method's parameter types, especially for numbers.
-		Object[] coercedArgs = coerceArguments(methodToInvoke.getParameterTypes(), args);
+		Object[] coercedArgs = coerceArguments(methodToInvoke, args);
 
-		return methodToInvoke.invoke(object, coercedArgs);
+		// For varargs methods, we must cast the argument array to Object to prevent
+		// it from being unpacked by the reflection engine.
+		if (methodToInvoke.isVarArgs()) {
+			return methodToInvoke.invoke(object, (Object) coercedArgs);
+		} else {
+			return methodToInvoke.invoke(object, coercedArgs);
+		}
 	}
 
 	/**
 	 * Finds the best-matching method for a given name and arguments.
-	 * This implementation finds the first method that is compatible with the argument types.
+	 * This implementation finds the first method that is compatible with the
+	 * argument types.
 	 *
 	 * @param targetClass The class to search for methods.
-	 * @param methodName The name of the method.
-	 * @param args The arguments that will be passed.
+	 * @param methodName  The name of the method.
+	 * @param args        The arguments that will be passed.
 	 * @return A matching Method object, or null if none is found.
 	 */
 	protected Method findBestMethod(Class<?> targetClass, String methodName, Object[] args) {
 		int numArgs = (args == null) ? 0 : args.length;
 
 		for (Method method : targetClass.getMethods()) {
-			if (method.getName().equals(methodName) && method.getParameterCount() == numArgs) {
-				if (numArgs == 0) {
-					return method; // No args, perfect match.
-				}
+			if (!method.getName().equals(methodName)) {
+				continue;
+			}
 
-				if (areTypesCompatible(method.getParameterTypes(), args)) {
-					// This is the first compatible method found. A more advanced implementation
-					// could score multiple matches and pick the "best" one.
-					return method;
+			if (method.isVarArgs()) {
+				Class<?>[] paramTypes = method.getParameterTypes();
+				if (numArgs >= paramTypes.length - 1) {
+					// Check fixed params
+					boolean compatible = true;
+					for (int i = 0; i < paramTypes.length - 1; i++) {
+						if (!isAssignable(paramTypes[i], args[i] == null ? null : args[i].getClass())) {
+							compatible = false;
+							break;
+						}
+					}
+					if (!compatible)
+						continue;
+
+					// Check varargs params
+					Class<?> varargComponentType = paramTypes[paramTypes.length - 1].getComponentType();
+					for (int i = paramTypes.length - 1; i < numArgs; i++) {
+						if (!isAssignable(varargComponentType, args[i] == null ? null : args[i].getClass())) {
+							compatible = false;
+							break;
+						}
+					}
+
+					if (compatible)
+						return method;
+				}
+			} else { // Not a varargs method
+				if (method.getParameterCount() == numArgs) {
+					if (areTypesCompatible(method.getParameterTypes(), args)) {
+						return method;
+					}
 				}
 			}
 		}
@@ -88,7 +121,8 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 	}
 
 	/**
-	 * Checks if the provided arguments are compatible with the target parameter types.
+	 * Checks if the provided arguments are compatible with the target parameter
+	 * types.
 	 */
 	protected boolean areTypesCompatible(Class<?>[] paramTypes, Object[] args) {
 		for (int i = 0; i < paramTypes.length; i++) {
@@ -116,6 +150,11 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 	 * that come from the React Native bridge (usually as Double).
 	 */
 	protected boolean isAssignable(Class<?> targetType, Class<?> sourceType) {
+		// A null argument is assignable to any non-primitive target type.
+		if (sourceType == null) {
+			return !targetType.isPrimitive();
+		}
+
 		// Check if types are directly assignable (e.g., List can accept an ArrayList).
 		if (targetType.isAssignableFrom(sourceType)) {
 			return true;
@@ -124,49 +163,67 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 		// Handle numeric conversions, as React Native sends all numbers as Double.
 		if (sourceType == Double.class) {
 			return targetType == int.class || targetType == Integer.class
-				|| targetType == long.class || targetType == Long.class
-				|| targetType == float.class || targetType == Float.class;
+					|| targetType == long.class || targetType == Long.class
+					|| targetType == float.class || targetType == Float.class;
 		}
 
 		// Handle primitive wrapper types (e.g., int.class can accept an Integer).
 		if (targetType.isPrimitive()) {
 			try {
 				// Every wrapper class (Integer, Boolean, etc.) has a static field
-				// 'TYPE' that holds its corresponding primitive class (int.class, boolean.class).
+				// 'TYPE' that holds its corresponding primitive class (int.class,
+				// boolean.class).
 				return sourceType.getField("TYPE").get(null).equals(targetType);
 			} catch (Exception e) {
-				// This will fail if sourceType is not a wrapper type; fall through to return false.
+				// This will fail if sourceType is not a wrapper type; fall through to return
+				// false.
 			}
 		}
 
 		return false;
 	}
 
+	private Object coerceArg(Class<?> paramType, Object arg) {
+		if (arg instanceof Double) {
+			Double d = (Double) arg;
+			if (paramType == int.class || paramType == Integer.class) {
+				return d.intValue();
+			} else if (paramType == long.class || paramType == Long.class) {
+				return d.longValue();
+			} else if (paramType == float.class || paramType == Float.class) {
+				return d.floatValue();
+			}
+		}
+		return arg;
+	}
+
 	/**
-	* Coerces arguments to fit the target parameter types, primarily for numeric narrowing.
-	*/
-	protected Object[] coerceArguments(Class<?>[] paramTypes, Object[] args) {
+	 * Coerces arguments to fit the target parameter types, primarily for numeric
+	 * narrowing.
+	 */
+	protected Object[] coerceArguments(Method method, Object[] args) {
 		if (args == null || args.length == 0) {
 			return args;
 		}
-		Object[] coerced = new Object[args.length];
-		for (int i = 0; i < args.length; i++) {
-			Object arg = args[i];
-			Class<?> paramType = paramTypes[i];
 
-			if (arg instanceof Double) {
-				Double d = (Double) arg;
-				if (paramType == int.class || paramType == Integer.class) {
-					coerced[i] = d.intValue();
-				} else if (paramType == long.class || paramType == Long.class) {
-					coerced[i] = d.longValue();
-				} else if (paramType == float.class || paramType == Float.class) {
-					coerced[i] = d.floatValue();
-				} else {
-					coerced[i] = arg; // It's a Double, and the param is a Double.
-				}
-			} else {
-				coerced[i] = arg; // Not a Double, no coercion needed.
+		Class<?>[] paramTypes = method.getParameterTypes();
+		Object[] coerced = new Object[args.length];
+
+		if (method.isVarArgs()) {
+			int fixedParamCount = paramTypes.length - 1;
+			// Coerce fixed parameters
+			for (int i = 0; i < fixedParamCount; i++) {
+				coerced[i] = coerceArg(paramTypes[i], args[i]);
+			}
+			// Coerce vararg parameters
+			Class<?> varargComponentType = paramTypes[fixedParamCount].getComponentType();
+			for (int i = fixedParamCount; i < args.length; i++) {
+				coerced[i] = coerceArg(varargComponentType, args[i]);
+			}
+		} else {
+			// Non-varargs, original logic
+			for (int i = 0; i < args.length; i++) {
+				coerced[i] = coerceArg(paramTypes[i], args[i]);
 			}
 		}
 		return coerced;
@@ -175,6 +232,7 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 	/**
 	 * Gets the target object for method invocation. For a standard Proxy, this
 	 * creates a new instance on every call, making it stateless.
+	 * 
 	 * @return A new object instance.
 	 * @throws Exception if object creation fails.
 	 */
@@ -205,7 +263,7 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 		}
 	}
 
-   	public void setSystemContext(SystemContext context) throws Exception {
+	public void setSystemContext(SystemContext context) throws Exception {
 		if (this.systemContext != null) {
 			throw new IllegalStateException("SystemContext has already been set for this proxy and cannot be changed.");
 		}
@@ -218,7 +276,7 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 		// Ensures the component object is instantiated before starting.
 		Object target = getTargetObject();
 		if (target instanceof Startable) {
-    		((Startable) target).start();
+			((Startable) target).start();
 		}
 	}
 
@@ -230,7 +288,8 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 	}
 
 	/**
-	 * Cleans up the proxy's internal state, severing its connection to the system context.
+	 * Cleans up the proxy's internal state, severing its connection to the system
+	 * context.
 	 * This is package-private to restrict its use to the framework.
 	 */
 	void cleanup() {
@@ -246,8 +305,8 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 	}
 
 	public String getName() {
-        return this.metaObject.getName();
-    }
+		return this.metaObject.getName();
+	}
 
 	public String getImplementationClassName() {
 		return this.metaObject.getImplementationClassName();

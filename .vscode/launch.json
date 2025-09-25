@@ -3,17 +3,18 @@
     "configurations": [
         {
             "type": "java",
-            "name": "Application",
+            "name": "Reveila Spring",
             "request": "launch",
             "mainClass": "reveila.spring.Application",
-            "projectName": "spring"
+            "projectName": "spring",
+            "vmArgs": "-Xmx2048m -Dspring.profiles.active=dev"
         },
         {
             "type": "java",
             "name": "MongoDB",
             "request": "launch",
-            "mainClass": "reveila.util.db.MongoDB",
-            "projectName": "reveila"
+            "mainClass": "reveila.adapters.mongo.MongoDB",
+            "projectName": "adapters"
         },
         {
             "name": "Debug Android Hermes",
@@ -23,15 +24,7 @@
             "platform": "android"
         },
         {
-            "type": "java",
-            "name": "Debug Reveila API",
-            "request": "launch",
-            "mainClass": "reveila.spring.Application",
-            "projectName": "api",
-            "vmArgs": "-Xmx2048m -Dspring.profiles.active=dev"
-        },
-        {
-            "name": "Launch Android Debugger",
+            "name": "Reveila Android",
             "type": "android-debug",
             "request": "launch",
             "target": "select",
