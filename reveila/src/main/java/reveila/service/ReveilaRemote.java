@@ -1,8 +1,8 @@
 package reveila.service;
 
 import java.io.IOException;
+import java.net.URL;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.MediaType;
@@ -13,6 +13,8 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 import reveila.error.ConfigurationException;
 import reveila.system.AbstractService;
+import reveila.system.Cluster;
+import reveila.system.Constants;
 import reveila.util.json.JsonUtil;
 
 /**
@@ -21,7 +23,7 @@ import reveila.util.json.JsonUtil;
  * with another Reveila instance, enabling clustered or distributed setups.
  */
 public class ReveilaRemote extends AbstractService {
-
+    
     public static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     // OkHttpClient is thread-safe and designed to be shared.
@@ -33,8 +35,6 @@ public class ReveilaRemote extends AbstractService {
             .readTimeout(30, TimeUnit.SECONDS)
             .build();
     
-    private String remoteBaseUrl;
-
     /**
      * No-arg constructor for instantiation by the Reveila engine.
      */
@@ -43,16 +43,23 @@ public class ReveilaRemote extends AbstractService {
     }
 
     /**
-     * Sets the endpoint URL for the remote Reveila instance.
+     * Sets the endpoint URL for a remote Reveila instance.
      * This method is called by the Reveila engine during component initialization
-     * based on the 'arguments' in the component's configuration.
+     * and can be called repeatedly based on the 'arguments' in the component's configuration.
+     * Under the hood, this method adds the URL to a pool of URLs tracked as a cluster.
+     * The Reveila invocation logic selects the most efficient node from this cluster to route requests.
      *
-     * @param EndPointURL The base URL of the remote Reveila instance.
+     * @param urlAndPriority The base URL of the Reveila instance followed by a space and a priority integer.
      */
-    public void setEndPointURL(String EndPointURL) throws ConfigurationException {
-        this.remoteBaseUrl = Objects.toString(EndPointURL, null);
-        if (remoteBaseUrl == null || remoteBaseUrl.trim().isEmpty()) {
-            throw new ConfigurationException("The 'EndPointURL' argument is required for the RemoteInvoker component.");
+    public void setEndPointURL(String urlAndPriority) throws ConfigurationException {
+        try {
+            String[] array = urlAndPriority.split(",");
+            String priority = array[1].trim();
+            URL url = new URL(array[0].trim());
+            Cluster.addNode(Integer.parseInt(priority), url);
+        } catch (Exception e) {
+            throw new ConfigurationException("Invalid end-point URL format. Expected format: <URL> <priority>" + "\n" 
+                + "Error details: " + e.getMessage(), e);
         }
     }
 
@@ -72,55 +79,77 @@ public class ReveilaRemote extends AbstractService {
         return invoke(new Object[]{componentName, methodName, arg1, arg2, arg3});
     }
 
-    /**
-     * Invokes a method on a remote Reveila instance.
+    /*
+     * Invokes a method on a remote Reveila component.
+     * The first argument can optionally be a URL object specifying the target Reveila instance.
+     * If no URL is provided, the method uses the best available node from the Cluster.
+     * The next two arguments must be the component name and method name, followed by any method
+     * parameters as an array or individual arguments.
      */
     public Object invoke(Object... remoteCallArgs) throws IOException {
-        if (remoteCallArgs.length < 2) {
-            throw new IllegalArgumentException("The remote 'invoke' requires at least 2 arguments: componentName, and methodName");
+        if (remoteCallArgs == null || remoteCallArgs.length < 2) {
+            throw new IllegalArgumentException(
+                "The remote 'invoke' requires at least 2 arguments: componentName, and methodName");
         }
-        String componentName = (String) remoteCallArgs[0];
-        String methodName = (String) remoteCallArgs[1];
-        Object[] args;
-        if (remoteCallArgs.length == 3 && remoteCallArgs[2] instanceof Object[]) {
-            args = (Object[]) remoteCallArgs[2];
+
+        long startTime = System.currentTimeMillis();
+        int argOffset = 2;
+        String componentName;
+        String methodName;
+        URL baseUrl;
+
+        if (remoteCallArgs[0] instanceof URL) {
+            baseUrl = (URL) remoteCallArgs[0];
+            argOffset = 3;
+            componentName = (String) remoteCallArgs[1];
+            methodName = (String) remoteCallArgs[2];
         } else {
-            args = new Object[remoteCallArgs.length - 2];
-            if (remoteCallArgs.length > 2) {
-                System.arraycopy(remoteCallArgs, 2, args, 0, remoteCallArgs.length - 2);
+            baseUrl = Cluster.getBestNodeUrl();
+            if (baseUrl == null) {
+                throw new IllegalStateException("No 'EndPointURL' argument specified in the component configuration. "
+                + "To use ReveilaRemote, you must specify at least one valid end-point URL.");
+            }
+            componentName = (String) remoteCallArgs[0];
+            methodName = (String) remoteCallArgs[1];
+        }
+        
+        Object[] args;
+        if (remoteCallArgs.length > argOffset && remoteCallArgs[argOffset] instanceof Object[]) {
+            args = (Object[]) remoteCallArgs[argOffset];
+        } else {
+            args = new Object[remoteCallArgs.length - argOffset];
+            if (remoteCallArgs.length > argOffset) {
+                System.arraycopy(remoteCallArgs, argOffset, args, 0, remoteCallArgs.length - argOffset);
             }
         }
 
-        if (this.remoteBaseUrl == null) {
-            throw new IllegalStateException("RemoteInvoker is not configured. The 'EndPointURL' argument is missing in the component configuration.");
+        String url = baseUrl.toExternalForm();
+        if (!url.endsWith("/")) {
+            url += "/";
         }
-        String url = remoteBaseUrl + "/api/components/" + componentName + "/invoke";
+        url += "api/components/" + componentName + "/invoke";
 
         Map<String, Object> requestPayload = Map.of("methodName", methodName, "args", args);
         String jsonBody = JsonUtil.toJsonString(requestPayload);
         RequestBody body = RequestBody.create(jsonBody, JSON);
         Request request = new Request.Builder().url(url).post(body).build();
 
-        // Log the request details
-        System.out.println("Invoking remote service at " + url);
-        System.out.println("Request body: " + jsonBody);
+        // Log the remote call
+        systemContext.getLogger(this).info("Remote invocation: URL: " + url + " target component: " + componentName + " target method: " + methodName);
+        Response response = client.newCall(request).execute();
+        // The response body can only be consumed once. We read it into a string
+        // to allow logging it in case of an error.
+        final ResponseBody responseBody = response.body();
+        final String responseBodyString = responseBody != null ? responseBody.string() : null;
 
-        try (Response response = client.newCall(request).execute()) {
-            // The response body can only be consumed once. We read it into a string
-            // to allow logging it in case of an error.
-            final ResponseBody responseBody = response.body();
-            final String responseBodyString = responseBody != null ? responseBody.string() : null;
-
-            if (!response.isSuccessful()) {
-                throw new IOException("Remote invocation failed with HTTP code " + response.code() + " for " + url + ". Body: " + responseBodyString);
-            }
-
-            return (responseBodyString == null || responseBodyString.isEmpty()) ? null : JsonUtil.toObject(responseBodyString, Object.class);
-        } catch (IOException e) {
-            System.err.println("Error invoking remote service at " + url + ": " + e.getMessage());
-            e.printStackTrace();
-            throw e;
+        long timeUsed = System.currentTimeMillis() - startTime;
+        if (!response.isSuccessful()) {
+            Cluster.track(timeUsed + Constants.PENALTY_UNIT, baseUrl); // Penalize failed calls
+            throw new IOException("Remote invocation failed with HTTP code " + response.code() + " for " + url
+                    + ". Body: " + responseBodyString);
         }
+        Cluster.track(timeUsed, baseUrl);
+        return (responseBodyString == null || responseBodyString.isEmpty()) ? null
+                : JsonUtil.toObject(responseBodyString, Object.class);
     }
-
 }

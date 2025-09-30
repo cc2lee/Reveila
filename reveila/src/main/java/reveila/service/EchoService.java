@@ -14,6 +14,15 @@ public class EchoService extends AbstractService {
 
     private boolean reverse = false;
     private int repeat = 0;
+    private long delayMs = 0;
+
+    public long getDelayMs() {
+        return delayMs;
+    }
+
+    public void setDelayMs(long delayMs) {
+        this.delayMs = delayMs;
+    }
 
     public EchoService() {
         super();
@@ -28,6 +37,13 @@ public class EchoService extends AbstractService {
     }
 
     public String echo(String name) {
+
+        try {
+            Thread.sleep(this.delayMs);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
         String textToEcho = name;
         if (this.reverse) {
             // Reverse the string using StringBuilder
@@ -43,7 +59,7 @@ public class EchoService extends AbstractService {
             }
             textToEcho = repeated.toString();
         }
-        return "Echo: " + textToEcho;
+        return textToEcho;
     }
 
     /**

@@ -1,199 +1,137 @@
 package reveila.service;
 
-import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.EventObject;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import reveila.platform.PlatformAdapter;
 import reveila.system.AbstractService;
 import reveila.system.Constants;
 import reveila.system.JsonConfiguration;
 import reveila.system.MetaObject;
-import reveila.util.io.FileUtil;
-import reveila.util.task.Job;
-import reveila.util.task.JobEvent;
-import reveila.util.task.JobEventType;
-import reveila.util.task.JobException;
-import reveila.util.task.JobStatus;
+import reveila.system.Proxy;
 
 public class TaskManager extends AbstractService implements Runnable {
 
-    private String jobConfigDir;
-    private Thread workerThread;
-    private volatile boolean stop = false;
     private long interval = 60000; // 1 minute
-    private long initialDelay = 0; // Default to no delay
-    private int jobThreadPoolSize = 5; // Default to 5 concurrent jobs
-    private ExecutorService jobExecutor;
-
+    private long initialDelay = 60000; // Default to 1 minute
+    
     public TaskManager() {
         super();
     }
 
     @Override
-    public void start() throws Exception {
-        // Resolve job directory once at the start.
-        if (jobConfigDir == null || jobConfigDir.isBlank()) {
-            String homeDir = systemContext.getProperties().getProperty(Constants.S_SYSTEM_HOME);
-                jobConfigDir = homeDir + File.separator + Constants.C_CONFIGS_DIR_NAME 
-                    + File.separator + Constants.C_JOB_DIR_NAME;
-        }
+    public void onEvent(EventObject evtObj) throws Exception {
+        // Not used in this implementation because this class is also the task runner.
+        // The run() method is called by the PlatformAdapter's scheduling mechanism.
+    }
 
-        // Use a ThreadFactory to name worker threads for easier debugging.
-        final ThreadFactory threadFactory = new ThreadFactory() {
-            private final AtomicInteger count = new AtomicInteger(0);
-            @Override
-            public Thread newThread(Runnable r) {
-                return new Thread(r, "TaskManager-Job-" + count.incrementAndGet());
-            }
-        };
-        this.jobExecutor = Executors.newFixedThreadPool(jobThreadPoolSize, threadFactory);
-        this.workerThread = new Thread(this, "TaskManager-Scheduler");
-        this.workerThread.start();
+    @Override
+    public void start() throws Exception {
+        PlatformAdapter platformAdapter = this.systemContext.getPlatformAdapter();
+        Logger logger = this.systemContext.getLogger(this);
+        if (platformAdapter == null) {
+            throw new IllegalStateException("PlatformAdapter is not set in SystemContext.");
+        }
+        if (logger == null) {
+            throw new IllegalStateException("Logger is not found for " + this.getClass().getName() + ".");
+        }
+        platformAdapter.runTask(this, this.initialDelay, this.interval, this);
+        logger.info("Task Manager started with interval: " + this.interval + " ms and initial delay: " + this.initialDelay + " ms.");
+    }
+
+    private String[] getTaskConfFiles() throws IOException {
+        PlatformAdapter platformAdapter = this.systemContext.getPlatformAdapter();
+        return platformAdapter.listTaskConfigs();
     }
 
     @Override
     public void run() {
-        Logger logger = systemContext.getLogger(TaskManager.this);
-        logger.info("Task Manager thread started. Monitoring task configuration directory: " + jobConfigDir);
-
-        // Add an initial delay if configured, to allow the main application to fully initialize.
-        if (initialDelay > 0) {
-            try {
-                logger.info("Task Manager waiting for initial delay: " + initialDelay + "ms");
-                Thread.sleep(initialDelay);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt(); // Preserve the interrupted status
-                logger.warning("Task Manager initial delay interrupted, stopping.");
-                return; // Exit if interrupted during initial delay
-            }
-        }
-
-        while (!stop) {
-            try {
-                checkAndRunJobs(logger);
-                Thread.sleep(interval);
-            } catch (InterruptedException e) {
-                // Interrupted, likely by stop(). The loop condition will handle termination.
-                Thread.currentThread().interrupt(); // Preserve the interrupted status
-            } catch (Exception e) {
-                // Catch any other unexpected errors to prevent the manager from dying.
-                logger.log(Level.SEVERE, "Unexpected error in TaskManager main loop", e);
-            }
-        }
-        logger.info("Task Manager thread stopped.");
-    }
-
-    private void checkAndRunJobs(Logger logger) {
-        File[] files = FileUtil.listFilesWithExtension(jobConfigDir, "json");
-        if (files == null) {
-            logger.warning("Failed to access or list files in task definitions directory: " + jobConfigDir);
+        Logger logger = this.systemContext.getLogger(this);
+        PlatformAdapter platformAdapter = this.systemContext.getPlatformAdapter();
+        String[] paths;
+        try {
+            paths = getTaskConfFiles();
+        } catch (IOException e) {
+            logger.log(Level.SEVERE, "Failed to list task configuration files.", e);
+            return;
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, "Unexpected error occurred while listing task configuration files.", e);
             return;
         }
 
-        for (File f : files) {
-            try {
-                JsonConfiguration group = new JsonConfiguration(f.getAbsolutePath(), logger);
-                List<MetaObject> list = group.read();
+        if (paths == null || paths.length == 0) {
+			logger.info("No tasks found to run.");
+            return;
+		}
 
-                if (list != null) {
-                    for (MetaObject item : list) {
-                        processJob(item, logger);
+		for (String path : paths) {
+			if (path.toLowerCase(Locale.ROOT).endsWith(".json")) {
+                JsonConfiguration confGroup = null;
+				try (InputStream is = platformAdapter.getInputStream(PlatformAdapter.TASK_STORAGE, path)) {
+					logger.info("Loading tasks from: " + path);
+					confGroup = new JsonConfiguration(is, logger);
+					List<MetaObject> taskList = confGroup.read();
+					for (MetaObject task : taskList) {
+						if (task.isStartOnLoad()) { // enabled
+                            JobSchedule schedule = parseSchedule(task, logger);
+                            if (schedule == null || !schedule.isDue()) {
+                                continue; // Job is not due to run
+                            }
+
+                            // Update the last run time immediately before running the job.
+                            // This prevents the same job from being queued multiple times.
+                            if (schedule.lastRunMapObject != null) {
+                                String formatted = DateTimeFormatter.ofPattern(Constants.C_JOB_DATE_FORMAT)
+                                    .withZone(ZoneId.systemDefault())
+                                    .format(Instant.now());
+                                schedule.lastRunMapObject.put("value", formatted);
+                            }
+
+                            logger.info("Starting task: " + task.getName());
+							
+							Proxy proxy = new Proxy(task);
+                            try {
+                                proxy.setSystemContext(this.systemContext);
+							    proxy.start();
+                                proxy.invoke("run", null);
+                            } catch (Exception e) {
+                                logger.log(Level.SEVERE, "Task '" + task.getName() + "' failed during execution.", e);
+                            } finally {
+                                try {
+                                    proxy.stop();
+                                } catch (Exception e) {
+                                    // ignore,
+                                    // if successful, we don't care about stop errors
+                                    // if failed, it will be logged above
+                                }
+                            }
+						}
+					} // for each task
+                    
+				} catch (Exception e) {
+                    // try-with-resources handles closing the stream
+                    logger.log(Level.SEVERE, "Failed to load tasks from " + path + ".", e);
+				} finally {
+                    if (confGroup != null) {
+                        try (OutputStream os = platformAdapter.getOutputStream(PlatformAdapter.TASK_STORAGE, path)) {
+                            confGroup.writeToStream(os);
+                        } catch (Exception e) {
+                            logger.log(Level.SEVERE, "Failed to save tasks to " + path + ".", e);
+                        }
                     }
                 }
-                group.writeToFile();
-            } catch (Exception e) {
-                logger.log(Level.SEVERE, "Failed to process job configuration file: " + f.getAbsolutePath(), e);
-            }
-        }
-    }
-
-    private void processJob(MetaObject jobDefinition, Logger logger) {
-        if (!jobDefinition.isStartOnLoad()) {
-            logger.info("Job '" + jobDefinition.getName() + "' is not set to start on load. Skipping.");
-            return;
-        }
-        JobSchedule schedule = parseSchedule(jobDefinition, logger);
-        if (schedule == null || !schedule.isDue()) {
-            return; // Job is not due to run
-        }
-
-        // Update the last run time immediately before submitting the job.
-        // This prevents the same job from being queued multiple times.
-        if (schedule.lastRunMapObject != null) {
-            String formatted = DateTimeFormatter.ofPattern(Constants.C_JOB_DATE_FORMAT)
-                .withZone(ZoneId.systemDefault())
-                .format(Instant.now());
-            schedule.lastRunMapObject.put("value", formatted);
-        }
-
-        // Submit the job to run on the thread pool.
-        jobExecutor.submit(() -> {
-            Job job = null;
-            try {
-                Object object = jobDefinition.newObject(logger);
-                if (!(object instanceof Job)) {
-                    logger.warning("Component '" + jobDefinition.getName() + "' is not an instance of a Job. Skipping execution.");
-                    return;
-                }
-                job = (Job) object;
-                job.setSystemContext(this.systemContext);
-
-                fireJobEvent(new JobEvent(job, JobEventType.JOB_STARTED, System.currentTimeMillis()));
-                logger.info("Executing job: " + jobDefinition.getName());
-                job.run();
-                fireJobEvent(new JobEvent(job, JobEventType.JOB_FINISHED, System.currentTimeMillis()));
-            } catch (Exception e) {
-                logger.log(Level.SEVERE, "Failed to instantiate or run Job object: " + jobDefinition.getName(), e);
-                if (job != null) {
-                    job.setStatus(JobStatus.FAILED);
-                    job.setException(new JobException("Job execution failed unexpectedly.", e));
-                    fireJobEvent(new JobEvent(job, JobEventType.JOB_FAILED, System.currentTimeMillis()));
-                }
-            }
-        });
-    }
-
-    @Override
-    public void stop() {
-        stop = true;
-        // Gracefully shut down the job executor pool.
-        if (this.jobExecutor != null) {
-            this.jobExecutor.shutdown();
-            try {
-                if (!this.jobExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
-                    this.jobExecutor.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                this.jobExecutor.shutdownNow();
-            }
-        }
-        if (this.workerThread != null) {
-            // Interrupt the thread to wake it from sleep() and allow it to terminate gracefully.
-            this.workerThread.interrupt();
-        }
-    }
-
-    public String getJobConfigDir() {
-        return jobConfigDir;
-    }
-
-    public void setJobConfigDir(String jobConfigurationDirectory) {
-        this.jobConfigDir = jobConfigurationDirectory;
-    }
-
-    private void fireJobEvent(EventObject evt) {
-        systemContext.getEventManager().dispatchEvent(evt);
+			}
+		}
     }
 
     public void setInterval(long interval) {
@@ -204,12 +142,8 @@ public class TaskManager extends AbstractService implements Runnable {
         this.initialDelay = initialDelay;
     }
 
-    public void setJobThreadPoolSize(int jobThreadPoolSize) {
-        this.jobThreadPoolSize = jobThreadPoolSize;
-    }
-
-    private JobSchedule parseSchedule(MetaObject jobDefinition, Logger logger) {
-        List<Map<String, Object>> args = jobDefinition.getArguments();
+    private JobSchedule parseSchedule(MetaObject metaObject, Logger logger) {
+        List<Map<String, Object>> args = metaObject.getArguments();
         if (args == null) {
             return null;
         }
@@ -227,7 +161,7 @@ public class TaskManager extends AbstractService implements Runnable {
                     DateTimeFormatter formatter = DateTimeFormatter.ofPattern(Constants.C_JOB_DATE_FORMAT).withZone(ZoneId.systemDefault());
                     lastRun = Instant.from(formatter.parse(dateStr)).toEpochMilli();
                 } catch (Exception e) {
-                    logger.warning("Could not parse LastRun date for job '" + jobDefinition.getName() + "': " + dateStr);
+                    logger.warning("Could not parse LastRun date for job '" + metaObject.getName() + "': " + dateStr);
                     return null; // Invalid schedule
                 }
             } else if (Constants.C_JOB_ARG_DELAY.equalsIgnoreCase(argName)) {

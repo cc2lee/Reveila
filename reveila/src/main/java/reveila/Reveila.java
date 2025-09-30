@@ -7,9 +7,13 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.InetAddress;
+import java.net.URL;
+import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -18,6 +22,7 @@ import java.util.logging.Logger;
 import reveila.crypto.DefaultCryptographer;
 import reveila.error.ConfigurationException;
 import reveila.platform.PlatformAdapter;
+import reveila.system.Cluster;
 import reveila.system.Constants;
 import reveila.system.JsonConfiguration;
 import reveila.system.MetaObject;
@@ -32,14 +37,9 @@ public class Reveila {
 	private Properties properties;
 	private SystemContext systemContext;
 	private Logger logger;
-
-	public SystemContext getSystemContext() {
-		return systemContext;
-	}
-
-	/**
-	 * Made public to be accessible from the Android Service.
-	 */
+	private String localAddress;
+	private URL localUrl;
+	
 	public void shutdown() {
 		synchronized (this) {
 			System.out.println("\n\nShutting down system...");
@@ -55,8 +55,20 @@ public class Reveila {
 				}
 			}
 
+			if (this.platformAdapter != null) {
+				try {
+					this.platformAdapter.destruct();
+				} catch (Exception e) {
+					error = true;
+					System.err.println("Failed to destruct platform adapter: " + e.getMessage());
+					e.printStackTrace(System.err);
+				}
+			}
+
 			if (!error) {
 				System.out.println("System shut down successfully\n\n");
+			} else {
+				System.out.println("System shut down with errors. Check logs for details.\n\n");
 			}
 
 			// Close logger handlers at the very end of the shutdown sequence.
@@ -76,6 +88,8 @@ public class Reveila {
 		this.platformAdapter = platformAdapter;
 		this.properties = platformAdapter.getProperties();
 		this.logger = platformAdapter.getLogger();
+		this.localAddress = getLocalHost();
+		this.localUrl = new URL("http://" + this.localAddress + "/");
 		
 		printLogo();
 
@@ -83,6 +97,7 @@ public class Reveila {
 		long beginTime = System.currentTimeMillis();
 
 		createSystemContext(this.properties);
+		this.platformAdapter.setSystemContext(this.systemContext);
 		loadComponents();
 
 		logStartupCompletion(beginTime);
@@ -177,12 +192,12 @@ public class Reveila {
 					logger.info("Loading components from: " + fileName);
 					JsonConfiguration group = new JsonConfiguration(is, this.logger);
 					List<MetaObject> list = group.read();
-					for (MetaObject item : list) {
-						if (item.isStartOnLoad()) {
+					for (MetaObject mObj : list) {
+						if (mObj.isStartOnLoad()) {
+							logger.info("Starting component on load: " + mObj.getName());
 							// The Proxy class handles both stateful (singleton) and stateless (prototype) lifecycles.
-							Proxy proxy = new Proxy(item);
+							Proxy proxy = new Proxy(mObj);
 							proxy.setSystemContext(this.systemContext);
-							logger.info("Starting component on load: " + item.getName());
 							proxy.start();
 						}
 					}
@@ -209,30 +224,71 @@ public class Reveila {
 	 * @throws Exception if the component or method is not found, or if invocation fails.
 	 */
 	public Object invoke(String componentName, String methodName, Object[] params) throws Exception {
+		return invoke(componentName, methodName, params, localAddress);
+	}
+
+	public Object invoke(String componentName, String methodName, Object[] params, String callerIp) throws Exception {
+		long startTime = System.currentTimeMillis();
 		if (systemContext == null) {
 			throw new IllegalStateException("SystemContext is not initialized. Cannot invoke component.");
 		}
 
-		// Find the proxy for the requested component.
-		Proxy proxy = systemContext.getProxy(componentName)
-				.orElseThrow(() -> new ConfigurationException("Component '" + componentName + "' not found."));
-
-		// Use the new flexible invoke method on the Proxy.
-		// This method finds the target method by name and argument count.
-		try {
-			return proxy.invoke(methodName, params);
-		} catch (Exception e) {
-			if (e instanceof java.lang.reflect.InvocationTargetException) {
-				// The invoked method threw an exception. Print the underlying cause.
-				Throwable cause = ((java.lang.reflect.InvocationTargetException) e).getTargetException();
-				System.err.println("The invoked method threw an exception: " + cause.getMessage());
-				cause.printStackTrace();
-			} else {
-				System.err.println("An exception occurred during invocation: " + e.getMessage());
-				e.printStackTrace();
-			}
-			throw e;
+		if (callerIp != null 
+				&& this.localAddress != null 
+				&& !callerIp.equalsIgnoreCase(this.localAddress)) {
+			logger.info("Received remote invocation request from " + callerIp + " for target: " + componentName + ", method: " + methodName);
 		}
+
+		Proxy proxy = null;
+		URL url = Cluster.getBestNodeUrl();
+		
+		if (url != null 
+				&& !url.getHost().equalsIgnoreCase("localhost") 
+				&& !url.getHost().equals(this.localAddress)) {
+			Optional<Proxy> remoteProxy= systemContext.getProxy(Constants.S_SYSTEM_REMOTE_SERVICE);
+			if (remoteProxy.isPresent()) {
+				proxy = remoteProxy.get();
+			}
+		}
+
+		boolean penalize = false;
+		if (proxy != null) { // Send the request to the remote server
+			try {
+				Object result = proxy.invoke("invoke", new Object[]{url, componentName, methodName, params});
+				Cluster.track(System.currentTimeMillis() - startTime, url); // Track remote invocation time
+				return result;
+			} catch (Exception e) {
+				penalize = true;
+				logger.severe("Remote invocation failed. Falling back to local invocation. Error: " + e.getMessage());
+				e.printStackTrace(System.err);
+			}
+		}
+		
+		// Local invocation if no better remote option, or remote invocation failed
+		Optional<Proxy> localProxy = systemContext.getProxy(componentName);
+		if (localProxy.isPresent()) {
+			proxy = localProxy.get();
+		} else {
+			throw new ConfigurationException("Component '" + componentName + "' not found.");
+		}
+		Object result = proxy.invoke(methodName, params);
+		long timeUsed = System.currentTimeMillis() - startTime;
+		Cluster.track(timeUsed, localUrl); // Track local invocation time
+		if (penalize) {
+			Cluster.track(timeUsed + Constants.PENALTY_UNIT, url); // Penalize the remote node for failure
+		}
+		return result;
 	}
 
+	private String getLocalHost() {
+		String address = null;
+        try {
+            InetAddress localHost = InetAddress.getLocalHost();
+            address = localHost.getHostAddress();
+        } catch (UnknownHostException e) {
+			logger.info("Unable to retrieve local IP address. Invocation time tracking is disabled. Error: " + e.getMessage());
+        }
+
+		return address;
+    }
 }

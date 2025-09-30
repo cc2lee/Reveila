@@ -5,9 +5,9 @@ import java.util.logging.Level;
 
 import reveila.util.io.FileUtil;
 
-public class CleanFileDirectoryJob extends Job {
+public class DeleteFiles extends AbstractTask {
 
-	public CleanFileDirectoryJob() {
+	public DeleteFiles() {
 		// The base Job class now has a no-arg constructor.
 	}
 
@@ -16,13 +16,8 @@ public class CleanFileDirectoryJob extends Job {
 	
 	@Override
 	public void run() {
-		setStatus(JobStatus.IN_PROGRESS);
-		boolean errorsOccurred = false;
-
 		if (dirs == null || dirs.length == 0) {
 			systemContext.getLogger(this).info("No directories configured to clean, skipping job.");
-			setStatus(JobStatus.SUCCESSFUL);
-			setPercentageCompleted(100.0);
 			return;
 		}
 		
@@ -40,20 +35,10 @@ public class CleanFileDirectoryJob extends Job {
 					}
 				}
 			} catch (Exception e) {
-				// Log the full exception for better diagnostics, without swallowing the exception type.
 				systemContext.getLogger(this).log(Level.SEVERE, "Failed to clean directory: " + dir, e);
-				errorsOccurred = true;
+				e.printStackTrace();
 			}
 		}
-		
-		if (errorsOccurred) {
-			setStatus(JobStatus.COMPLETED_WITH_ERRORS);
-			setMessage("Completed with one or more errors. Check logs for details.");
-		} else {
-			setStatus(JobStatus.SUCCESSFUL);
-			setMessage("All configured directories cleaned successfully.");
-		}
-		setPercentageCompleted(100.0);
 	}
 
 	public void setDirs(String[] filePaths) {

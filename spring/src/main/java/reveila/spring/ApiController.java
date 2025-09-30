@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import reveila.Reveila;
+import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/api")
@@ -23,8 +24,13 @@ public class ApiController {
     @PostMapping("/components/{componentName}/invoke")
     public ResponseEntity<?> invokeComponent(
             @PathVariable("componentName") String componentName,
-            @RequestBody MethodDTO request) throws Exception {
-        Object result = reveila.invoke(componentName, request.getMethodName(), request.getArgs());
+            @RequestBody MethodDTO request,
+            HttpServletRequest httpRequest) throws Exception {
+        
+        Object[] args = request.getArgs();
+        String callerIp = httpRequest.getRemoteAddr();
+
+        Object result = reveila.invoke(componentName, request.getMethodName(), args, callerIp);
         String jsonResponse = objectMapper.writeValueAsString(result);
         return ResponseEntity.ok(jsonResponse);
     }

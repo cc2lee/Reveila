@@ -1,6 +1,34 @@
 [
   {
     "component": {
+      "name": "RatedService.Default",
+      "class": "reveila.service.RatedService",
+      "description": "A service that manages multiple service providers and selects the best one based on ratings.",
+      "provider": "Reveila LLC",
+      "author": "Charles Lee",
+      "license-token": "",
+      "thread-safe": true,
+      "start": true,
+      "arguments": [
+        {
+          "name": "InitialPoints",
+          "type": "java.lang.String",
+          "value": "AIImageTransformer, 10000"
+        }
+      ]
+    }
+  },
+  {
+    "component": {
+      "name": "AIImageTransformer",
+      "class": "reveila.service.AIImageTransformer",
+      "description": "A service that transforms images using AI algorithms.",
+      "thread-safe": false,
+      "start": true
+    }
+  },
+  {
+    "component": {
       "name": "DataService",
       "class": "reveila.spring.service.SpringDataService",
       "description": "Data service implementation for the Spring environment.",
@@ -34,14 +62,14 @@
   {
     "component": {
       "start": true,
-      "name": "ReveilaRemote",
+      "name": "system.remote.service",
       "class": "reveila.service.ReveilaRemote",
       "version": "1",
       "arguments": [
         {
           "name": "EndPointURL",
-          "type": "String",
-          "value": "http://10.0.2.2:8080"
+          "type": "java.lang.String",
+          "value": "http://10.0.2.2:8080, 1"
         }
       ]
     }

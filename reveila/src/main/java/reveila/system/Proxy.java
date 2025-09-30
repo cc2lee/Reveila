@@ -7,6 +7,8 @@ import java.util.logging.Logger;
 
 import reveila.system.lifecycle.Startable;
 import reveila.system.lifecycle.Stoppable;
+import reveila.util.ExceptionList;
+import reveila.util.ReflectionMethod;
 import reveila.util.event.EventWatcher;
 
 /**
@@ -46,7 +48,7 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 		Object object = getTargetObject();
 		int numArgs = (args == null) ? 0 : args.length;
 
-		Method methodToInvoke = findBestMethod(object.getClass(), methodName, args);
+		Method methodToInvoke = ReflectionMethod.findBestMethod(object.getClass(), methodName, args);
 
 		if (methodToInvoke == null) {
 			throw new NoSuchMethodException(
@@ -54,7 +56,7 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 							+ " arguments found for provided types in " + object.getClass().getName());
 		}
 
-		Object[] coercedArgs = coerceArguments(methodToInvoke, args);
+		Object[] coercedArgs = ReflectionMethod.coerceArguments(methodToInvoke, args);
 
 		// For varargs methods, we must cast the argument array to Object to prevent
 		// it from being unpacked by the reflection engine.
@@ -65,168 +67,15 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 		}
 	}
 
-	/**
-	 * Finds the best-matching method for a given name and arguments.
-	 * This implementation finds the first method that is compatible with the
-	 * argument types.
-	 *
-	 * @param targetClass The class to search for methods.
-	 * @param methodName  The name of the method.
-	 * @param args        The arguments that will be passed.
-	 * @return A matching Method object, or null if none is found.
-	 */
-	protected Method findBestMethod(Class<?> targetClass, String methodName, Object[] args) {
-		int numArgs = (args == null) ? 0 : args.length;
-
-		for (Method method : targetClass.getMethods()) {
-			if (!method.getName().equals(methodName)) {
-				continue;
-			}
-
-			if (method.isVarArgs()) {
-				Class<?>[] paramTypes = method.getParameterTypes();
-				if (numArgs >= paramTypes.length - 1) {
-					// Check fixed params
-					boolean compatible = true;
-					for (int i = 0; i < paramTypes.length - 1; i++) {
-						if (!isAssignable(paramTypes[i], args[i] == null ? null : args[i].getClass())) {
-							compatible = false;
-							break;
-						}
-					}
-					if (!compatible)
-						continue;
-
-					// Check varargs params
-					Class<?> varargComponentType = paramTypes[paramTypes.length - 1].getComponentType();
-					for (int i = paramTypes.length - 1; i < numArgs; i++) {
-						if (!isAssignable(varargComponentType, args[i] == null ? null : args[i].getClass())) {
-							compatible = false;
-							break;
-						}
-					}
-
-					if (compatible)
-						return method;
-				}
-			} else { // Not a varargs method
-				if (method.getParameterCount() == numArgs) {
-					if (areTypesCompatible(method.getParameterTypes(), args)) {
-						return method;
-					}
-				}
-			}
+	private Object newInstance() throws Exception {
+		Object target = this.metaObject.newObject(this.systemContext.getLogger(this));
+		if (target instanceof AbstractService) {
+			((AbstractService) target).setSystemContext(this.systemContext);
 		}
-		return null; // No suitable method found.
-	}
-
-	/**
-	 * Checks if the provided arguments are compatible with the target parameter
-	 * types.
-	 */
-	protected boolean areTypesCompatible(Class<?>[] paramTypes, Object[] args) {
-		for (int i = 0; i < paramTypes.length; i++) {
-			Object arg = args[i];
-			Class<?> paramType = paramTypes[i];
-
-			if (arg == null) {
-				// A null argument can't be passed to a primitive parameter.
-				if (paramType.isPrimitive()) {
-					return false;
-				}
-				continue; // Null is compatible with any non-primitive type.
-			}
-
-			// Check for direct assignability and numeric compatibility.
-			if (!isAssignable(paramType, arg.getClass())) {
-				return false;
-			}
+		if (target instanceof Startable) {
+			((Startable) target).start();
 		}
-		return true;
-	}
-
-	/**
-	 * A helper to check for assignability, with special handling for numeric types
-	 * that come from the React Native bridge (usually as Double).
-	 */
-	protected boolean isAssignable(Class<?> targetType, Class<?> sourceType) {
-		// A null argument is assignable to any non-primitive target type.
-		if (sourceType == null) {
-			return !targetType.isPrimitive();
-		}
-
-		// Check if types are directly assignable (e.g., List can accept an ArrayList).
-		if (targetType.isAssignableFrom(sourceType)) {
-			return true;
-		}
-
-		// Handle numeric conversions, as React Native sends all numbers as Double.
-		if (sourceType == Double.class) {
-			return targetType == int.class || targetType == Integer.class
-					|| targetType == long.class || targetType == Long.class
-					|| targetType == float.class || targetType == Float.class;
-		}
-
-		// Handle primitive wrapper types (e.g., int.class can accept an Integer).
-		if (targetType.isPrimitive()) {
-			try {
-				// Every wrapper class (Integer, Boolean, etc.) has a static field
-				// 'TYPE' that holds its corresponding primitive class (int.class,
-				// boolean.class).
-				return sourceType.getField("TYPE").get(null).equals(targetType);
-			} catch (Exception e) {
-				// This will fail if sourceType is not a wrapper type; fall through to return
-				// false.
-			}
-		}
-
-		return false;
-	}
-
-	private Object coerceArg(Class<?> paramType, Object arg) {
-		if (arg instanceof Double) {
-			Double d = (Double) arg;
-			if (paramType == int.class || paramType == Integer.class) {
-				return d.intValue();
-			} else if (paramType == long.class || paramType == Long.class) {
-				return d.longValue();
-			} else if (paramType == float.class || paramType == Float.class) {
-				return d.floatValue();
-			}
-		}
-		return arg;
-	}
-
-	/**
-	 * Coerces arguments to fit the target parameter types, primarily for numeric
-	 * narrowing.
-	 */
-	protected Object[] coerceArguments(Method method, Object[] args) {
-		if (args == null || args.length == 0) {
-			return args;
-		}
-
-		Class<?>[] paramTypes = method.getParameterTypes();
-		Object[] coerced = new Object[args.length];
-
-		if (method.isVarArgs()) {
-			int fixedParamCount = paramTypes.length - 1;
-			// Coerce fixed parameters
-			for (int i = 0; i < fixedParamCount; i++) {
-				coerced[i] = coerceArg(paramTypes[i], args[i]);
-			}
-			// Coerce vararg parameters
-			Class<?> varargComponentType = paramTypes[fixedParamCount].getComponentType();
-			for (int i = fixedParamCount; i < args.length; i++) {
-				coerced[i] = coerceArg(varargComponentType, args[i]);
-			}
-		} else {
-			// Non-varargs, original logic
-			for (int i = 0; i < args.length; i++) {
-				coerced[i] = coerceArg(paramTypes[i], args[i]);
-			}
-		}
-		return coerced;
+		return target;
 	}
 
 	/**
@@ -238,62 +87,59 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 	 */
 	protected Object getTargetObject() throws Exception {
 		if (this.metaObject.isThreadSafe()) {
-			// Singleton lifecycle: create once and reuse.
 			if (this.singletonInstance == null) {
 				synchronized (this) {
 					if (this.singletonInstance == null) {
-						Object target = this.metaObject.newObject(this.systemContext.getLogger(this));
-						// After refactoring, services need the SystemContext injected so they can
-						// access system resources like the logger or event manager.
-						if (target instanceof AbstractService) {
-							((AbstractService) target).setSystemContext(this.systemContext);
-						}
-						this.singletonInstance = target;
+						this.singletonInstance = newInstance();
 					}
 				}
 			}
 			return this.singletonInstance;
 		} else {
-			// Prototype lifecycle: create a new instance for every call.
-			Object target = this.metaObject.newObject(this.systemContext.getLogger(this));
-			if (target instanceof AbstractService) {
-				((AbstractService) target).setSystemContext(this.systemContext);
-			}
-			return target;
+			return newInstance();
 		}
 	}
 
-	public void setSystemContext(SystemContext context) throws Exception {
+	public void setSystemContext(SystemContext context) {
 		if (this.systemContext != null) {
 			throw new IllegalStateException("SystemContext has already been set for this proxy and cannot be changed.");
 		}
 
 		this.systemContext = Objects.requireNonNull(context, "SystemContext cannot be null.");
-		this.systemContext.register(this);
 	}
 
 	public void start() throws Exception {
-		// Ensures the component object is instantiated before starting.
-		Object target = getTargetObject();
-		if (target instanceof Startable) {
-			((Startable) target).start();
-		}
+		this.systemContext.register(this);
+		// Test instantiation to catch configuration errors early.
+		// For singleton components, this also starts the instance.
+		getTargetObject();
 	}
 
 	public void stop() throws Exception {
-		// Only stop the component if it is a singleton and has been instantiated.
+		ExceptionList exceptions = new ExceptionList();
+		// First, gracefully stop any stoppable instance.
 		if (this.singletonInstance != null && this.singletonInstance instanceof Stoppable) {
-			((Stoppable) this.singletonInstance).stop();
+			try {
+				((Stoppable) this.singletonInstance).stop();
+			} catch (Exception e) {
+				exceptions.addException(e);
+			}
 		}
-	}
+		
+		try {
+			this.systemContext.unregister(this);
+		} catch (Exception e) {
+			exceptions.addException(e);
+		}
 
-	/**
-	 * Cleans up the proxy's internal state, severing its connection to the system
-	 * context.
-	 * This is package-private to restrict its use to the framework.
-	 */
-	void cleanup() {
+		// Finally, clean up internal state.
 		this.systemContext = null;
+		this.singletonInstance = null;
+		this.metaObject = null;
+
+		if (!exceptions.getExceptions().isEmpty()) {
+			throw exceptions;
+		}
 	}
 
 	@Override

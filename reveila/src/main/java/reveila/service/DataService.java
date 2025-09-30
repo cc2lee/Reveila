@@ -3,6 +3,8 @@ package reveila.service;
 import java.util.Map;
 import java.util.Optional;
 
+import reveila.util.Page;
+
 /**
  * Defines the contract for a generic data access service.
  * Implementations will handle the specific storage mechanism (e.g., Spring Data, Android SQLite).

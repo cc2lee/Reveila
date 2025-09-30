@@ -1,3 +1,5 @@
+C:\IDE\Android\SDK/emulator/emulator @Medium_Phone
+
 Gradle Wrapper Update:
     ./gradlew wrapper --gradle-version <your-desired-version>
 

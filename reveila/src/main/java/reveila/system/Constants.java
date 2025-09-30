@@ -30,7 +30,10 @@ public final class Constants {
 	public static final String S_SYSTEM_LOGGER_NAME = "system.logger.name";
 	public static final String S_SYSTEM_DATA_DIR = "system.data.file.store";
 	public static final String S_SYSTEM_TMP_DATA_DIR = "system.data.file.temp";
-	public static final String S_SYSTEM_SEVER_DOMAIN = "system.domain";
+	public static final String S_SYSTEM_REMOTE_SERVICE = "system.remote.service";
+
+	public static final long PENALTY_UNIT = 5000;
+	public static final long DELAY_TIME_UNIT = 5000; // 5 seconds
 	
 	/*
 	 * **************************************************

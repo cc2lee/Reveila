@@ -134,7 +134,6 @@ public final class SystemContext {
 		for (Proxy proxy : List.copyOf(proxiesByName.values())) {
 			try {
 				this.unregister(proxy);
-				proxy.cleanup();
 			} catch (Exception e) {
 				logger.log(Level.SEVERE, "Failed to unregister or clean up component: " + proxy.getName(), e);
 			}

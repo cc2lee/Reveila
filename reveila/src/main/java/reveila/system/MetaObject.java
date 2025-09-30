@@ -1,11 +1,14 @@
 package reveila.system;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 
+import reveila.error.ConfigurationException;
 import reveila.util.GUID;
 
 import java.util.Objects;
@@ -53,20 +56,20 @@ public class MetaObject {
 	 * @return {@code true} if the component should be started on load, {@code false} otherwise.
 	 */
 	public boolean isStartOnLoad() {
-		Object start = this.data.get(Constants.C_START);
-		if (start == null) {
-			start = this.data.get(Constants.C_ENABLE);
+		Object value = this.data.get(Constants.C_START);
+		if (value == null) {
+			value = this.data.get(Constants.C_ENABLE);
 		}
 
-		if (start == null) {
+		if (value == null) {
 			return false;
 		}
 
-		if (start instanceof Boolean) {
-			return (Boolean) start;
+		if (value instanceof Boolean) {
+			return (Boolean) value;
 		}
 		
-		return "true".equalsIgnoreCase(String.valueOf(start));
+		return "true".equalsIgnoreCase(String.valueOf(value));
 	}
 
 	public String getName() {
@@ -103,62 +106,44 @@ public class MetaObject {
 		return (List<Map<String, Object>>)this.data.get(Constants.C_ARGUMENTS);
 	}
 
-	public Object newObject(Logger logger) throws Exception {
+	public Object newObject(Logger logger) 
+		throws ClassNotFoundException, InstantiationException, IllegalAccessException, IllegalArgumentException, 
+			InvocationTargetException, NoSuchMethodException, SecurityException, ConfigurationException {
 		Class<?> clazz = Class.forName(getImplementationClassName());
-		Object object = instantiateObject(clazz);
+		Object object;
+		try {
+			object = clazz.getDeclaredConstructor(String.class).newInstance(getName());
+		} catch (NoSuchMethodException e) {
+			object = clazz.getDeclaredConstructor().newInstance();
+		}
 		setArguments(object, clazz, logger);
 		return object;
 	}
 
-	private Object instantiateObject(Class<?> clazz) throws Exception {
-		try {
-			// Prefer constructor that accepts MetaObject for dependency injection.
-			return clazz.getDeclaredConstructor(MetaObject.class).newInstance(this);
-		} catch (NoSuchMethodException e) {
-			// Fallback to default constructor.
-			Object object = clazz.getDeclaredConstructor().newInstance();
-			if (object instanceof Proxy) {
-				// If the component is itself a Proxy, ensure its MetaObject is set.
-				((Proxy) object).setMetaObject(this);
-			}
-			return object;
-		}
-	}
-
-	private void setArguments(Object target, Class<?> targetClass, Logger logger) throws Exception {
+	private void setArguments(Object target, Class<?> targetClass, Logger logger) 
+			throws ConfigurationException, ClassNotFoundException {
+		
 		List<Map<String, Object>> arguments = getArguments();
 		if (arguments == null || arguments.isEmpty()) {
-			return;
+			return; // no arguments to set
 		}
 
 		for (Map<String, Object> argMap : arguments) {
 			String name = (String) argMap.get(Constants.C_NAME);
 			String typeName = (String) argMap.get(Constants.C_TYPE); // e.g., "java.lang.String" or "int"
 			Object value = argMap.get(Constants.C_VALUE);
-
-			if (name == null || name.isBlank() || typeName == null || typeName.isBlank()) {
-				logger.warning("Skipping malformed argument configuration in " + getName() + ": " + argMap);
-				continue;
-			}
-
-			Class<?> paramType;
-			try {
-				paramType = getClassForName(typeName);
-			} catch (ClassNotFoundException e) {
-				logger.warning("Class '" + typeName + "' not found for property '" + name + "' in component '" + getName()
-						+ "'. Skipping property injection.");
-				continue;
-			}
-
+			Class<?> paramType = getClassForName(typeName);
 			String setterName = "set" + name.substring(0, 1).toUpperCase() + name.substring(1);
-
 			try {
 				Method method = targetClass.getMethod(setterName, paramType);
 				Object coercedValue = coerceValue(value, paramType);
 				method.invoke(target, coercedValue);
-			} catch (NoSuchMethodException e) {
-				logger.warning("Setter not found for property '" + name + "'. Searched for method '" + setterName + "("
-						+ paramType.getSimpleName() + ")' in class " + targetClass.getName() + "'.");
+			} catch (Exception e) {
+				throw new ConfigurationException(
+						"Failed to set property '" + name + "' using method '" + setterName + "("
+								+ paramType.getSimpleName() + ")' in class " + targetClass.getName() + "'. Error: "
+								+ e.getMessage(),
+						e);
 			}
 		}
 	}

@@ -4,10 +4,8 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -15,31 +13,17 @@ import java.util.Objects;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
-import reveila.error.ConfigurationException;
+import reveila.util.json.JsonException;
 import reveila.util.json.JsonUtil;
 
 public class JsonConfiguration {
     
     private List<MetaObject> metaObjects;
-    private Path configPath; // Can be null if created from a stream
     private final String jsonContent;
     private final Logger logger;
 
-    public JsonConfiguration (String configFilePath, Logger logger) throws ConfigurationException, IOException {
-        Objects.requireNonNull(configFilePath, "Configuration file path must not be null.");
+    public JsonConfiguration(InputStream inputStream, Logger logger) throws IOException, JsonException {
         this.logger = Objects.requireNonNull(logger, "Logger must not be null.");
-        this.configPath = Paths.get(configFilePath);
-
-        if (!Files.exists(this.configPath)) {
-            throw new ConfigurationException("File does not exist: " + this.configPath.toAbsolutePath());
-        }
-        this.jsonContent = Files.readString(this.configPath);
-        this.metaObjects = parse();
-    }
-
-    public JsonConfiguration(InputStream inputStream, Logger logger) throws IOException, ConfigurationException {
-        this.logger = Objects.requireNonNull(logger, "Logger must not be null.");
-        this.configPath = null; // No original file path when reading from a stream
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
             this.jsonContent = reader.lines().collect(Collectors.joining(System.lineSeparator()));
         }
@@ -52,7 +36,7 @@ public class JsonConfiguration {
     }
 
     @SuppressWarnings("unchecked")
-    private List<MetaObject> parse() throws IOException, ConfigurationException {
+    private List<MetaObject> parse() throws JsonException {
         // This assumes a method exists in JsonUtil to parse a string.
         // This is a reasonable assumption for a JSON utility class.
         List<Map<String, Object>> rawObjectList = JsonUtil.parseJsonStringToList(this.jsonContent);
@@ -85,24 +69,17 @@ public class JsonConfiguration {
         this.metaObjects.add(metaObject);
     }
 
-    public void writeToFile() throws IOException {
-        if (this.configPath == null) {
-            throw new IOException("Cannot write to file because the configuration was not loaded from a file path.");
+    public synchronized void remove(MetaObject metaObject) {
+        if (metaObject == null) {
+            return;
         }
-        writeToFile(this.configPath.toString());
+        this.metaObjects.remove(metaObject);
     }
 
-    public synchronized void writeToFile(String file) throws IOException {
-        Path outputPath = Paths.get(file);
-        Path parentDir = outputPath.getParent();
-
-        if (parentDir != null && !Files.exists(parentDir)) {
-            Files.createDirectories(parentDir);
-        }
-
+    public synchronized void writeToStream(OutputStream outputStream) throws IOException, JsonException {
         List<Map<String, Object>> listToSave = this.metaObjects.stream()
-                .map(MetaObject::toWrapperMap)
+            .map(MetaObject::toWrapperMap)
                 .collect(Collectors.toList());
-        JsonUtil.toJsonFile(listToSave, file);
+        JsonUtil.writeToStream(listToSave, outputStream);
     }
 }

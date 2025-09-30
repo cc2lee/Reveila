@@ -1,4 +1,4 @@
-package reveila.service;
+package reveila.util;
 
 import java.util.Collections;
 import java.util.List;

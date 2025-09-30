@@ -10,9 +10,17 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.FileHandler;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -22,21 +30,42 @@ import java.util.logging.SimpleFormatter;
 import reveila.Reveila;
 import reveila.error.ConfigurationException;
 import reveila.system.Constants;
+import reveila.system.JsonConfiguration;
+import reveila.system.MetaObject;
+import reveila.system.SystemContext;
+import reveila.util.ExceptionList;
+import reveila.util.event.EventWatcher;
 import reveila.util.io.FileUtil;
+import reveila.util.task.AbstractTask;
+import reveila.util.task.TaskEvent;
 
 /**
  * An implementation of {@link PlatformAdapter} for the Windows platform.
  */
 public class DefaultPlatformAdapter implements PlatformAdapter {
 
+    private SystemContext systemContext;
     private Properties properties;
     private Logger logger;
+    private int jobThreadPoolSize = 5; // Default to 5 concurrent jobs
+    private ScheduledExecutorService scheduler;
+    private static Timer timer = new Timer();
 
     public DefaultPlatformAdapter(Properties commandLineArgs) throws Exception {
         super();
         loadProperties(commandLineArgs);
         this.logger = configureLogging(this.properties);
         setURLClassLoader(this.properties);
+
+        // ThreadFactory with named worker threads for easier debugging
+        final ThreadFactory threadFactory = new ThreadFactory() {
+            private final AtomicInteger count = new AtomicInteger(0);
+            @Override
+            public Thread newThread(Runnable r) {
+                return new Thread(r, "TaskManager-Job-" + count.incrementAndGet());
+            }
+        };
+        this.scheduler = Executors.newScheduledThreadPool(jobThreadPoolSize, threadFactory);
     }
 
     @Override
@@ -346,5 +375,59 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     @Override
     public Properties getProperties() {
         return this.properties;
+    }
+
+    @Override
+    public void runTask(Runnable task, long delaySeconds, long periodSeconds, EventWatcher listener) {
+        // Schedule the task to run after an initial delay of delaySeconds second,
+        // and then repeatedly every periodSeconds seconds.
+        scheduler.scheduleAtFixedRate(task, delaySeconds, periodSeconds, TimeUnit.SECONDS);
+        scheduler.scheduleAtFixedRate(() -> {
+            try {
+                task.run();
+                if (listener != null) {
+                    try {
+                        listener.onEvent(new TaskEvent(task, TaskEvent.COMPLETED, System.currentTimeMillis(),
+                                new ExceptionList()));
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            } catch (Throwable t) {
+                t.printStackTrace();
+                if (listener != null) {
+                    try {
+                        listener.onEvent(new TaskEvent(task, TaskEvent.FAILED, System.currentTimeMillis(),
+                                new ExceptionList(t)));
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }, delaySeconds, periodSeconds, TimeUnit.SECONDS);
+    }
+
+    @Override
+    public void setSystemContext(SystemContext context) {
+        if (context == null) {
+            throw new IllegalArgumentException("SystemContext cannot be null");
+        }
+        this.systemContext = context;
+    }
+
+    @Override
+    public void destruct() {
+        // Gracefully shut down the job executor pool.
+        if (this.scheduler != null) {
+            this.scheduler.shutdown();
+            try {
+                if (!this.scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
+                    this.scheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                this.scheduler.shutdownNow();
+            }
+        }
+        this.scheduler = null;
     }
 }
