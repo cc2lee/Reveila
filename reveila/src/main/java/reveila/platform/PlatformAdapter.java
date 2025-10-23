@@ -6,7 +6,6 @@ import java.io.OutputStream;
 import java.util.Properties;
 import java.util.logging.Logger;
 
-import reveila.system.SystemContext;
 import reveila.util.event.EventWatcher;
 
 /**
@@ -20,7 +19,6 @@ public interface PlatformAdapter {
     public static final int CONF_STORAGE = 2;
     public static final int TASK_STORAGE = 3;
 
-    public void setSystemContext(SystemContext context);
     public String getHostDescription();
     public Properties getProperties();
     public InputStream getInputStream(int storageType, String path) throws IOException;

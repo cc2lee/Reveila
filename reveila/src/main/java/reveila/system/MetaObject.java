@@ -1,17 +1,15 @@
 package reveila.system;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.logging.Logger;
 
 import reveila.error.ConfigurationException;
 import reveila.util.GUID;
-
-import java.util.Objects;
 
 public class MetaObject {
 
@@ -42,7 +40,7 @@ public class MetaObject {
 	 * @return {@code true} if the component is configured as thread-safe, {@code false} otherwise.
 	 */
 	public boolean isThreadSafe() {
-		Object threadSafe = this.data.get(Constants.C_THREAD_SAFE);
+		Object threadSafe = this.data.get(Constants.THREAD_SAFE);
 		if (threadSafe instanceof Boolean) {
 			return (Boolean) threadSafe;
 		}
@@ -56,9 +54,9 @@ public class MetaObject {
 	 * @return {@code true} if the component should be started on load, {@code false} otherwise.
 	 */
 	public boolean isStartOnLoad() {
-		Object value = this.data.get(Constants.C_START);
+		Object value = this.data.get(Constants.START);
 		if (value == null) {
-			value = this.data.get(Constants.C_ENABLE);
+			value = this.data.get(Constants.ENABLE);
 		}
 
 		if (value == null) {
@@ -73,37 +71,37 @@ public class MetaObject {
 	}
 
 	public String getName() {
-		String name = (String)this.data.get(Constants.C_NAME);
+		String name = (String)this.data.get(Constants.NAME);
 		if (name == null || name.isBlank()) {
 			name = GUID.getGUID(this);
-			this.data.put(Constants.C_NAME, name);
+			this.data.put(Constants.NAME, name);
 		}
 		return name;
 	}
 
 	public String getImplementationClassName() {
-		return (String)this.data.get(Constants.C_CLASS);
+		return (String)this.data.get(Constants.CLASS);
 	}
 
 	public String getDescription() {
-		return (String)this.data.get(Constants.C_DESCRIPTION);
+		return (String)this.data.get(Constants.DESCRIPTION);
 	}
 
 	public String getVersion() {
-		return (String)this.data.get(Constants.C_VERSION);
+		return (String)this.data.get(Constants.VERSION);
 	}
 
 	public String getAuthor() {
-		return (String)this.data.get(Constants.C_AUTHOR);
+		return (String)this.data.get(Constants.AUTHOR);
 	}
 
 	public String getLicense() {
-		return (String)this.data.get(Constants.C_LICENSE_TOKEN);
+		return (String)this.data.get(Constants.LICENSE_TOKEN);
 	}
 
 	@SuppressWarnings("unchecked")
 	public List<Map<String, Object>> getArguments() {
-		return (List<Map<String, Object>>)this.data.get(Constants.C_ARGUMENTS);
+		return (List<Map<String, Object>>)this.data.get(Constants.ARGUMENTS);
 	}
 
 	public Object newObject(Logger logger) 
@@ -129,9 +127,9 @@ public class MetaObject {
 		}
 
 		for (Map<String, Object> argMap : arguments) {
-			String name = (String) argMap.get(Constants.C_NAME);
-			String typeName = (String) argMap.get(Constants.C_TYPE); // e.g., "java.lang.String" or "int"
-			Object value = argMap.get(Constants.C_VALUE);
+			String name = (String) argMap.get(Constants.NAME);
+			String typeName = (String) argMap.get(Constants.TYPE); // e.g., "java.lang.String" or "int"
+			Object value = argMap.get(Constants.VALUE);
 			Class<?> paramType = getClassForName(typeName);
 			String setterName = "set" + name.substring(0, 1).toUpperCase() + name.substring(1);
 			try {

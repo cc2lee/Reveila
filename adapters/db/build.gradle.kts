@@ -4,8 +4,21 @@
  */
 
 plugins {
-    // Apply the java-library plugin for API and implementation separation.
-    `java-library`
+    `java-library` // Apply the java-library plugin for API and implementation separation.
+    `maven-publish`
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            groupId = "com.reveila"
+            artifactId = "db-adapters"
+            from(components["java"])
+        }
+    }
+    repositories {
+        mavenLocal()
+    }
 }
 
 repositories {

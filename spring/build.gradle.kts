@@ -1,3 +1,7 @@
+group = "com.reveila"
+version = "1.0.0"
+description = "Reveila - Spring Boot"
+
 plugins {
 	java
     id("org.springframework.boot") version "3.5.6"
@@ -14,40 +18,29 @@ tasks.withType<JavaCompile> {
     options.compilerArgs.add("-parameters")
 }
 
-repositories {
-    /*
-    // Add local directory as a Maven repository
-    maven {
-        url = uri("C:/IDE/Projects/Reveila-Suite/mobile/template/node_modules/react-native") // Use absolute or relative path
-    }
-    */
-    google()
-    mavenCentral()
-}
-
-group = "com.reveila"
-version = "1.0.0-SNAPSHOT"
-description = "Spring Boot with Reveila"
-
 dependencies {
+
+    implementation("com.reveila:reveila:1.0.0")
+
+    // The Jackson dependency is required for XML/JSON conversion.
+    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.17.1")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.17.1")
+    implementation("com.fasterxml.jackson.core:jackson-annotations:2.17.1")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.17.1")
 
     implementation("org.springframework.boot:spring-boot-starter")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.apache.httpcomponents.client5:httpclient5")
+    
+    runtimeOnly("com.h2database:h2")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-data-mongodb")
 
-    implementation("org.springframework.boot:spring-boot-starter-web")
-    implementation("org.apache.httpcomponents.client5:httpclient5")
-    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-xml")
-
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.1")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.1")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.1")
-    testImplementation("org.springframework.boot:spring-boot-starter-test")
-    
-    implementation("com.reveila:reveila:1.0.0-SNAPSHOT")
-    runtimeOnly("com.h2database:h2")
-    
 }
 
 tasks.withType<org.springframework.boot.gradle.tasks.bundling.BootJar> {

@@ -62,12 +62,12 @@
   {
     "component": {
       "start": true,
-      "name": "system.remote.service",
+      "name": "remote.invocation.service",
       "class": "reveila.service.ReveilaRemote",
       "version": "1",
       "arguments": [
         {
-          "name": "EndPointURL",
+          "name": "BaseURL",
           "type": "java.lang.String",
           "value": "http://10.0.2.2:8080, 1"
         }

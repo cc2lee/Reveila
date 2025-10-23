@@ -91,7 +91,7 @@ public class TaskManager extends AbstractService implements Runnable {
                             // Update the last run time immediately before running the job.
                             // This prevents the same job from being queued multiple times.
                             if (schedule.lastRunMapObject != null) {
-                                String formatted = DateTimeFormatter.ofPattern(Constants.C_JOB_DATE_FORMAT)
+                                String formatted = DateTimeFormatter.ofPattern(Constants.JOB_DATE_FORMAT)
                                     .withZone(ZoneId.systemDefault())
                                     .format(Instant.now());
                                 schedule.lastRunMapObject.put("value", formatted);
@@ -154,17 +154,17 @@ public class TaskManager extends AbstractService implements Runnable {
 
         for (Map<String, Object> arg : args) {
             String argName = (String) arg.get("name");
-            if (Constants.C_JOB_ARG_LASTRUN.equalsIgnoreCase(argName)) {
+            if (Constants.JOB_ARG_LASTRUN.equalsIgnoreCase(argName)) {
                 lastRunMapObject = arg;
                 String dateStr = (String) arg.get("value");
                 try {
-                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern(Constants.C_JOB_DATE_FORMAT).withZone(ZoneId.systemDefault());
+                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern(Constants.JOB_DATE_FORMAT).withZone(ZoneId.systemDefault());
                     lastRun = Instant.from(formatter.parse(dateStr)).toEpochMilli();
                 } catch (Exception e) {
                     logger.warning("Could not parse LastRun date for job '" + metaObject.getName() + "': " + dateStr);
                     return null; // Invalid schedule
                 }
-            } else if (Constants.C_JOB_ARG_DELAY.equalsIgnoreCase(argName)) {
+            } else if (Constants.JOB_ARG_DELAY.equalsIgnoreCase(argName)) {
                 Object delayValue = arg.get("value");
                 if (delayValue instanceof Number) {
                     delay = ((Number) delayValue).longValue();

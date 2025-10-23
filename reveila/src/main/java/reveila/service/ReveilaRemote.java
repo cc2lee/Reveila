@@ -2,7 +2,11 @@ package reveila.service;
 
 import java.io.IOException;
 import java.net.URL;
+import java.util.Collections;
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.MediaType;
@@ -13,8 +17,8 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 import reveila.error.ConfigurationException;
 import reveila.system.AbstractService;
-import reveila.system.Cluster;
-import reveila.system.Constants;
+import reveila.system.NodePerformanceTracker;
+import reveila.util.json.JsonException;
 import reveila.util.json.JsonUtil;
 
 /**
@@ -34,6 +38,9 @@ public class ReveilaRemote extends AbstractService {
             .writeTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build();
+
+    private Map<URL, Number> configs = Collections.synchronizedMap(new TreeMap<URL, Number>());
+    private NodePerformanceTracker nodePerformanceTracker = NodePerformanceTracker.getInstance();
     
     /**
      * No-arg constructor for instantiation by the Reveila engine.
@@ -51,31 +58,46 @@ public class ReveilaRemote extends AbstractService {
      *
      * @param urlAndPriority The base URL of the Reveila instance followed by a space and a priority integer.
      */
-    public void setEndPointURL(String urlAndPriority) throws ConfigurationException {
+    public void setBaseURL(String urlAndPriority) throws ConfigurationException {
         try {
             String[] array = urlAndPriority.split(",");
             String priority = array[1].trim();
             URL url = new URL(array[0].trim());
-            Cluster.addNode(Integer.parseInt(priority), url);
+            configs.put(url, Integer.parseInt(priority));
         } catch (Exception e) {
             throw new ConfigurationException("Invalid end-point URL format. Expected format: <URL> <priority>" + "\n" 
                 + "Error details: " + e.getMessage(), e);
         }
     }
 
-    public Object invoke(String componentName, String methodName) throws IOException {
+    @Override
+    public synchronized void start() throws Exception {
+        super.start();
+        Set<Entry<URL, Number>> entrySet = configs.entrySet();
+        for (Entry<URL, Number> entry : entrySet) {
+            nodePerformanceTracker.track(entry.getValue(), entry.getKey());
+        }
+    }
+
+    @Override
+    public synchronized void stop() throws Exception {
+        super.stop();
+        nodePerformanceTracker.clear();
+    }
+
+    public Object invoke(String componentName, String methodName) throws IOException, JsonException {
         return invoke(new Object[]{componentName, methodName});
     }
 
-    public Object invoke(String componentName, String methodName, Object arg1) throws IOException {
+    public Object invoke(String componentName, String methodName, Object arg1) throws IOException, JsonException {
         return invoke(new Object[]{componentName, methodName, arg1});
     }
 
-    public Object invoke(String componentName, String methodName, Object arg1, Object arg2) throws IOException {
+    public Object invoke(String componentName, String methodName, Object arg1, Object arg2) throws IOException, JsonException {
         return invoke(new Object[]{componentName, methodName, arg1, arg2});
     }
 
-    public Object invoke(String componentName, String methodName, Object arg1, Object arg2, Object arg3) throws IOException {
+    public Object invoke(String componentName, String methodName, Object arg1, Object arg2, Object arg3) throws IOException, JsonException {
         return invoke(new Object[]{componentName, methodName, arg1, arg2, arg3});
     }
 
@@ -86,7 +108,7 @@ public class ReveilaRemote extends AbstractService {
      * The next two arguments must be the component name and method name, followed by any method
      * parameters as an array or individual arguments.
      */
-    public Object invoke(Object... remoteCallArgs) throws IOException {
+    public Object invoke(Object... remoteCallArgs) throws IOException, JsonException {
         if (remoteCallArgs == null || remoteCallArgs.length < 2) {
             throw new IllegalArgumentException(
                 "The remote 'invoke' requires at least 2 arguments: componentName, and methodName");
@@ -104,9 +126,9 @@ public class ReveilaRemote extends AbstractService {
             componentName = (String) remoteCallArgs[1];
             methodName = (String) remoteCallArgs[2];
         } else {
-            baseUrl = Cluster.getBestNodeUrl();
+            baseUrl = nodePerformanceTracker.getBestNodeUrl();
             if (baseUrl == null) {
-                throw new IllegalStateException("No 'EndPointURL' argument specified in the component configuration. "
+                throw new IllegalStateException("No 'BaseURL' argument specified in the component configuration. "
                 + "To use ReveilaRemote, you must specify at least one valid end-point URL.");
             }
             componentName = (String) remoteCallArgs[0];
@@ -144,11 +166,11 @@ public class ReveilaRemote extends AbstractService {
 
         long timeUsed = System.currentTimeMillis() - startTime;
         if (!response.isSuccessful()) {
-            Cluster.track(timeUsed + Constants.PENALTY_UNIT, baseUrl); // Penalize failed calls
+            nodePerformanceTracker.track(timeUsed + NodePerformanceTracker.DEFAULT_PENALTY_MS, baseUrl); // Penalize failed calls
             throw new IOException("Remote invocation failed with HTTP code " + response.code() + " for " + url
                     + ". Body: " + responseBodyString);
         }
-        Cluster.track(timeUsed, baseUrl);
+        nodePerformanceTracker.track(timeUsed, baseUrl);
         return (responseBodyString == null || responseBodyString.isEmpty()) ? null
                 : JsonUtil.toObject(responseBodyString, Object.class);
     }

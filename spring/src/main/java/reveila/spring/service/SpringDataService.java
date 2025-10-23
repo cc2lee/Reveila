@@ -20,6 +20,7 @@ import reveila.service.AbstractDataService;
 import reveila.spring.SpringPlatformAdapter;
 import reveila.util.Page;
 
+
 /**
  * A DataService implementation for the Spring environment.
  * This implementation uses Spring Data JPA to interact with a database.
@@ -69,7 +70,7 @@ public class SpringDataService extends AbstractDataService {
 
             GenericEntity savedEntity = repository.save(entity);
             return toMap(savedEntity);
-        } catch (JsonException e) {
+        } catch (Exception e) {
             throw new IllegalStateException("Failed to serialize entity data to JSON", e);
         }
     }
@@ -113,7 +114,7 @@ public class SpringDataService extends AbstractDataService {
             Map<String, Object> map = objectMapper.readValue(entity.getJsonData(), new TypeReference<>() {});
             map.put("id", entity.getId()); // Ensure the database-generated/persisted ID is in the map.
             return map;
-        } catch (JsonException e) {
+        } catch (JsonProcessingException e) {
             // This would indicate a data corruption issue if it fails.
             throw new IllegalStateException("Failed to deserialize entity JSON for id: " + entity.getId(), e);
         }

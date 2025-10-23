@@ -18,11 +18,12 @@ import java.util.Properties;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.concurrent.CompletableFuture;
 
 import reveila.crypto.DefaultCryptographer;
 import reveila.error.ConfigurationException;
 import reveila.platform.PlatformAdapter;
-import reveila.system.Cluster;
+import reveila.system.NodePerformanceTracker;
 import reveila.system.Constants;
 import reveila.system.JsonConfiguration;
 import reveila.system.MetaObject;
@@ -97,7 +98,6 @@ public class Reveila {
 		long beginTime = System.currentTimeMillis();
 
 		createSystemContext(this.properties);
-		this.platformAdapter.setSystemContext(this.systemContext);
 		loadComponents();
 
 		logStartupCompletion(beginTime);
@@ -130,8 +130,11 @@ public class Reveila {
             }
         }
 
-        String version = this.properties.getProperty(Constants.S_SYSTEM_VERSION, "Unknown Version");
-        System.out.println(version);
+        String version = this.properties.getProperty(Constants.SYSTEM_VERSION);
+		if (version != null && !version.isBlank()) {
+			System.out.println(version);
+		}
+        
         System.out.println();
     }
 
@@ -148,11 +151,7 @@ public class Reveila {
 	}
 
 	private String getDisplayName(Properties props) {
-		String displayName = props.getProperty(Constants.S_SERVER_DISPLAY_NAME);
-		if (displayName != null && !displayName.isBlank()) {
-			return displayName;
-		}
-		displayName = props.getProperty(Constants.S_SERVER_NAME);
+		String displayName = props.getProperty(Constants.SYSTEM_NAME);
 		if (displayName != null && !displayName.isBlank()) {
 			return displayName;
 		}
@@ -163,12 +162,12 @@ public class Reveila {
 		EventManager eventManager = new EventManager();
 		eventManager.setLogger(this.logger);
 
-		String secretKey = props.getProperty(Constants.S_SYSTEM_CRYPTOGRAPHER_SECRETKEY);
+		String secretKey = props.getProperty(Constants.CRYPTOGRAPHER_SECRETKEY);
 		if (secretKey == null || secretKey.isBlank()) {
-			throw new ConfigurationException("System property '" + Constants.S_SYSTEM_CRYPTOGRAPHER_SECRETKEY + "' is not set.");
+			throw new ConfigurationException("System property '" + Constants.CRYPTOGRAPHER_SECRETKEY + "' is not set.");
 		}
 
-		String charset = props.getProperty(Constants.S_SYSTEM_CHARSET);
+		String charset = props.getProperty(Constants.CHARACTER_ENCODING);
 		if (charset == null || charset.isBlank()) {
 			charset = StandardCharsets.UTF_8.name();
 		}
@@ -202,11 +201,13 @@ public class Reveila {
 						}
 					}
 				} catch (Exception e) {
-					boolean isStrictMode = "true".equalsIgnoreCase(this.properties.getProperty(Constants.S_SYSTEM_STRICT_MODE));
+					boolean isStrictMode = "true"
+							.equalsIgnoreCase(this.properties.getProperty(Constants.LAUNCH_STRICT_MODE));
 					if (isStrictMode) {
 						throw new ConfigurationException("Failed to load components from " + fileName, e);
 					} else {
-						logger.log(Level.SEVERE, "Failed to load components from " + fileName + ". Continuing in non-strict mode.", e);
+						logger.log(Level.SEVERE,
+								"Failed to load components from " + fileName + ". Continuing in non-strict mode.", e);
 					}
 				}
 			}
@@ -219,12 +220,37 @@ public class Reveila {
 	 *
 	 * @param componentName The name of the component to invoke.
 	 * @param methodName The name of the method to invoke.
-	* @param params The parameters to pass to the method.
+	 * @param params The parameters to pass to the method.
 	 * @return The result of the method invocation.
 	 * @throws Exception if the component or method is not found, or if invocation fails.
 	 */
 	public Object invoke(String componentName, String methodName, Object[] params) throws Exception {
 		return invoke(componentName, methodName, params, localAddress);
+	}
+
+	/**
+	 * Asynchronous version of the invoke method, returning a CompletableFuture.
+	 * This allows non-blocking calls from the caller.
+	 * Any thread that needs to synchronously obtain the result of a CompletableFuture
+	 * and is willing to block until the computation is complete, use:
+     *  try {
+	 *      future.join();
+	 *  } catch (Exception e) {
+	 *      // Handle exceptions if join() throws one
+	 *  }
+	 * @param componentName The name of the component to invoke.
+	 * @param methodName The name of the method to invoke.
+	 * @param params The parameters to pass to the method.
+	 * @return The result of the method invocation.
+	 */
+	public CompletableFuture<Object> invokeAsync(String componentName, String methodName, Object[] params) {
+		return CompletableFuture.supplyAsync(() -> {
+			try {
+				return invoke(componentName, methodName, params, localAddress);
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		}, Runnable::run);
 	}
 
 	public Object invoke(String componentName, String methodName, Object[] params, String callerIp) throws Exception {
@@ -240,12 +266,12 @@ public class Reveila {
 		}
 
 		Proxy proxy = null;
-		URL url = Cluster.getBestNodeUrl();
+		URL url = NodePerformanceTracker.getInstance().getBestNodeUrl();
 		
 		if (url != null 
 				&& !url.getHost().equalsIgnoreCase("localhost") 
 				&& !url.getHost().equals(this.localAddress)) {
-			Optional<Proxy> remoteProxy= systemContext.getProxy(Constants.S_SYSTEM_REMOTE_SERVICE);
+			Optional<Proxy> remoteProxy= systemContext.getProxy(Constants.REMOTE_INVOCATION_SERVICE);
 			if (remoteProxy.isPresent()) {
 				proxy = remoteProxy.get();
 			}
@@ -255,7 +281,7 @@ public class Reveila {
 		if (proxy != null) { // Send the request to the remote server
 			try {
 				Object result = proxy.invoke("invoke", new Object[]{url, componentName, methodName, params});
-				Cluster.track(System.currentTimeMillis() - startTime, url); // Track remote invocation time
+				NodePerformanceTracker.getInstance().track(System.currentTimeMillis() - startTime, url); // Track remote invocation time
 				return result;
 			} catch (Exception e) {
 				penalize = true;
@@ -273,9 +299,9 @@ public class Reveila {
 		}
 		Object result = proxy.invoke(methodName, params);
 		long timeUsed = System.currentTimeMillis() - startTime;
-		Cluster.track(timeUsed, localUrl); // Track local invocation time
+		NodePerformanceTracker.getInstance().track(timeUsed, localUrl); // Track local invocation time
 		if (penalize) {
-			Cluster.track(timeUsed + Constants.PENALTY_UNIT, url); // Penalize the remote node for failure
+			NodePerformanceTracker.getInstance().track(timeUsed + NodePerformanceTracker.DEFAULT_PENALTY_MS, url); // Penalize the remote node for failure
 		}
 		return result;
 	}

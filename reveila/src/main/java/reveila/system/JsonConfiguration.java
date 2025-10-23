@@ -47,15 +47,15 @@ public class JsonConfiguration {
                 
                 Map<String, Object> componentMap = null;
 
-                if (wrapper.containsKey(Constants.C_COMPONENT)) {
-                    componentMap = (Map<String, Object>) wrapper.get(Constants.C_COMPONENT);
-                } else if (wrapper.containsKey(Constants.C_TASK)) {
-                    componentMap = (Map<String, Object>) wrapper.get(Constants.C_TASK);
+                if (wrapper.containsKey(Constants.COMPONENT)) {
+                    componentMap = (Map<String, Object>) wrapper.get(Constants.COMPONENT);
+                } else if (wrapper.containsKey(Constants.TASK)) {
+                    componentMap = (Map<String, Object>) wrapper.get(Constants.TASK);
                 }
 
                 if (componentMap != null) {
                     // We pass "component" as the type to ensure that when written back, it uses the new standard.
-                    parsedObjects.add(new MetaObject(componentMap, Constants.C_COMPONENT));
+                    parsedObjects.add(new MetaObject(componentMap, Constants.COMPONENT));
                 } else {
                     this.logger.warning("Found an unknown or malformed entry in component configuration: " + wrapper);
                 }

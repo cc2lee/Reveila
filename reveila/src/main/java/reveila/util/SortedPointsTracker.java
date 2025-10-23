@@ -7,13 +7,10 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.NavigableMap;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.TreeMap;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 
-import reveila.system.Constants;
 import reveila.util.io.IOHelper;
 import reveila.util.json.JsonUtil;
 
@@ -27,16 +24,9 @@ public class SortedPointsTracker {
     private TreeMap<Long, String> treeMap = new TreeMap<>();
     private NavigableMap<Long, String> tracker = Collections.synchronizedNavigableMap(treeMap);
     private Map<String, Long> reverseLookup = Collections.synchronizedMap(new HashMap<String, Long>());
-    private static Timer timer = new Timer();
-
+    
     public SortedPointsTracker(String name) {
         this.name = name;
-        timer.scheduleAtFixedRate(new TimerTask() {
-                @Override
-                public synchronized void run() {
-                    // Maintenance task to run, e.g., decay points over time
-                }
-            }, Constants.DELAY_TIME_UNIT, Constants.DELAY_TIME_UNIT * 12); // Initial delay: 5s, interval: 60s
     }
 
     public synchronized String getBest() {

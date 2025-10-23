@@ -10,14 +10,11 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Properties;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,13 +27,9 @@ import java.util.logging.SimpleFormatter;
 import reveila.Reveila;
 import reveila.error.ConfigurationException;
 import reveila.system.Constants;
-import reveila.system.JsonConfiguration;
-import reveila.system.MetaObject;
-import reveila.system.SystemContext;
 import reveila.util.ExceptionList;
 import reveila.util.event.EventWatcher;
 import reveila.util.io.FileUtil;
-import reveila.util.task.AbstractTask;
 import reveila.util.task.TaskEvent;
 
 /**
@@ -44,25 +37,33 @@ import reveila.util.task.TaskEvent;
  */
 public class DefaultPlatformAdapter implements PlatformAdapter {
 
-    private SystemContext systemContext;
     private Properties properties;
     private Logger logger;
-    private int jobThreadPoolSize = 5; // Default to 5 concurrent jobs
+    private int jobThreadPoolSize = 5; // if not set in system.properties, default to 5
     private ScheduledExecutorService scheduler;
-    private static Timer timer = new Timer();
-
+    
     public DefaultPlatformAdapter(Properties commandLineArgs) throws Exception {
         super();
         loadProperties(commandLineArgs);
         this.logger = configureLogging(this.properties);
         setURLClassLoader(this.properties);
-
+        String threadPoolSizeStr = this.properties.getProperty(Constants.TASK_THREAD_POOL_SIZE);
+        if (threadPoolSizeStr != null && !threadPoolSizeStr.isBlank()) {
+            try {
+                this.jobThreadPoolSize = Integer.parseInt(threadPoolSizeStr);
+            } catch (NumberFormatException e) {
+                this.logger.warning("Invalid value for " + Constants.TASK_THREAD_POOL_SIZE + ": " + threadPoolSizeStr + 
+                    ". Using default of " + this.jobThreadPoolSize + ".");
+            }
+        }
+        this.logger.info("Task thread pool size set to: " + this.jobThreadPoolSize);
         // ThreadFactory with named worker threads for easier debugging
+
         final ThreadFactory threadFactory = new ThreadFactory() {
             private final AtomicInteger count = new AtomicInteger(0);
             @Override
             public Thread newThread(Runnable r) {
-                return new Thread(r, "TaskManager-Job-" + count.incrementAndGet());
+                return new Thread(r, "Task Executor - " + count.incrementAndGet());
             }
         };
         this.scheduler = Executors.newScheduledThreadPool(jobThreadPoolSize, threadFactory);
@@ -78,14 +79,14 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
 
     @Override
     public String[] listComponentConfigs() throws IOException {
-        File componentsDir = new File(getSystemHome(), "configs" + File.separator + "components");
+        File componentsDir = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + "components");
         File[] files = FileUtil.listFilesWithExtension(componentsDir.getAbsolutePath(), "json");
         return Arrays.stream(files).map(File::getName).toArray(String[]::new);
     }
 
     @Override
     public String[] listTaskConfigs() throws IOException {
-        File tasksDir = new File(getSystemHome(), "configs" + File.separator + "tasks");
+        File tasksDir = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + "tasks");
         File[] files = FileUtil.listFilesWithExtension(tasksDir.getAbsolutePath(), "json");
         return Arrays.stream(files).map(File::getName).toArray(String[]::new);
     }
@@ -117,7 +118,7 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     }
 
     private String getSystemHome() {
-        String systemHome = this.properties.getProperty(Constants.S_SYSTEM_HOME);
+        String systemHome = this.properties.getProperty(Constants.SYSTEM_HOME);
         if (systemHome == null || systemHome.isBlank()) {
             systemHome = System.getenv("REVEILA_HOME");
             if (systemHome == null || systemHome.isBlank()) {
@@ -130,7 +131,7 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
                     throw new RuntimeException("Failed to create home directory: " + systemHome);
                 }
             }
-            this.properties.setProperty(Constants.S_SYSTEM_HOME, systemHome);
+            this.properties.setProperty(Constants.SYSTEM_HOME, systemHome);
         }
         return systemHome;
     }
@@ -138,15 +139,15 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     public InputStream openPropertiesStream(Properties jvmArgs) throws IOException, ConfigurationException {
         
         URL url;
-        String urlStr = jvmArgs.getProperty(Constants.S_SYSTEM_PROPERTIES_URL);
+        String urlStr = jvmArgs.getProperty(Constants.SYSTEM_PROPERTIES_FILE_URL);
         try {
             url = new java.net.URI(urlStr).toURL();
         } catch (Exception e) {
-            url = DefaultPlatformAdapter.class.getClassLoader().getResource(Constants.S_SYSTEM_PROPERTIES_FILE_NAME);
+            url = DefaultPlatformAdapter.class.getClassLoader().getResource(Constants.SYSTEM_PROPERTIES_FILE_NAME);
         }
 
         if (url == null) {
-            throw new ConfigurationException(Constants.S_SYSTEM_PROPERTIES_FILE_NAME + 
+            throw new ConfigurationException(Constants.SYSTEM_PROPERTIES_FILE_NAME + 
                 " not found. Please ensure it is available in the classpath or passed in as JVM argument.");
         } else {
             return url.openStream();
@@ -176,48 +177,40 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
 		properties.putAll(overwrites);
 
         // Set default properties if not already set
-        String value = properties.getProperty(Constants.S_SYSTEM_HOME);
+        String value = properties.getProperty(Constants.SYSTEM_HOME);
         if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.S_SYSTEM_HOME, getSystemHome());
+            properties.setProperty(Constants.SYSTEM_HOME, getSystemHome());
         }
-        value = properties.getProperty(Constants.S_SYSTEM_OS);
+        value = properties.getProperty(Constants.PLATFORM_OS);
         if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.S_SYSTEM_OS, getHostDescription());
+            properties.setProperty(Constants.PLATFORM_OS, getHostDescription());
         }
-        value = properties.getProperty(Constants.S_SYSTEM_CHARSET);
+        value = properties.getProperty(Constants.CHARACTER_ENCODING);
         if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.S_SYSTEM_CHARSET, StandardCharsets.UTF_8.name());
+            properties.setProperty(Constants.CHARACTER_ENCODING, StandardCharsets.UTF_8.name());
         }
-        value = properties.getProperty(Constants.S_SYSTEM_VERSION);
+        value = properties.getProperty(Constants.LAUNCH_STRICT_MODE);
         if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.S_SYSTEM_VERSION, "Standard Edition");
+            properties.setProperty(Constants.LAUNCH_STRICT_MODE, "true");
         }
-        value = properties.getProperty(Constants.S_SYSTEM_STRICT_MODE);
+        value = properties.getProperty(Constants.SYSTEM_DATA_FILE_DIR);
         if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.S_SYSTEM_STRICT_MODE, "true");
+            properties.setProperty(Constants.SYSTEM_DATA_FILE_DIR, getSystemHome() + File.separator + "data" /*System.getProperty("user.home") + File.separator + "reveila" + File.separator + "data"*/ );
         }
-        value = properties.getProperty(Constants.S_SYSTEM_LOGGER_NAME);
+        value = properties.getProperty(Constants.SYSTEM_TEMP_FILE_DIR);
         if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.S_SYSTEM_LOGGER_NAME, "reveila");
+            properties.setProperty(Constants.SYSTEM_TEMP_FILE_DIR, getSystemHome() + File.separator + "temp" /*System.getProperty("java.io.tmpdir") + File.separator + "reveila" + File.separator + "temp"*/ );
         }
-        value = properties.getProperty(Constants.S_SYSTEM_DATA_DIR);
+        value = properties.getProperty(Constants.SYSTEM_PROPERTIES_FILE_NAME);
         if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.S_SYSTEM_DATA_DIR, getSystemHome() + File.separator + "data" /*System.getProperty("user.home") + File.separator + "reveila" + File.separator + "data"*/ );
-        }
-        value = properties.getProperty(Constants.S_SYSTEM_TMP_DATA_DIR);
-        if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.S_SYSTEM_TMP_DATA_DIR, getSystemHome() + File.separator + "temp" /*System.getProperty("java.io.tmpdir") + File.separator + "reveila" + File.separator + "temp"*/ );
-        }
-        value = properties.getProperty(Constants.S_SYSTEM_PROPERTIES_FILE_NAME);
-        if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.S_SYSTEM_PROPERTIES_FILE_NAME, Constants.S_SYSTEM_PROPERTIES_FILE_NAME);
+            properties.setProperty(Constants.SYSTEM_PROPERTIES_FILE_NAME, Constants.SYSTEM_PROPERTIES_FILE_NAME);
         }
     }
 
     private InputStream openConfigInputStream(String fileName) throws IOException {
-        File file = new File(getSystemHome(), "configs" + File.separator + fileName);
+        File file = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + fileName);
         if (!file.exists() || !file.isFile()) {
-            file = new File(getSystemHome(), "configs" + File.separator + "components" + File.separator + fileName);
+            file = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + "components" + File.separator + fileName);
         }
 
         if (!file.exists() || !file.isFile()) {
@@ -238,9 +231,9 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     }
 
     private OutputStream openConfigOutputStream(String fileName) throws IOException {
-        File file = new File(getSystemHome(), "configs" + File.separator + fileName);
+        File file = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + fileName);
         if (!file.exists() || !file.isFile()) {
-            file = new File(getSystemHome(), "configs" + File.separator + "components" + File.separator + fileName);
+            file = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + "components" + File.separator + fileName);
         }
 
         if (!file.exists() || !file.isFile()) {
@@ -261,14 +254,14 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     }
 
     private void setURLClassLoader(Properties props) throws ConfigurationException {
-		String systemHome = props.getProperty(Constants.S_SYSTEM_HOME);
+		String systemHome = props.getProperty(Constants.SYSTEM_HOME);
 		if (systemHome == null || systemHome.isBlank()) {
 			// This case should not be reachable as prepareRuntimeDirectories sets the property.
 			// Throwing an exception here is a safe fallback.
-			throw new ConfigurationException("System property '" + Constants.S_SYSTEM_HOME + "' was not set during directory preparation.");
+			throw new ConfigurationException("System property '" + Constants.SYSTEM_HOME + "' was not set during directory preparation.");
 		}
 
-		File libDir = new File(systemHome, Constants.C_LIB_DIR_NAME);
+		File libDir = new File(systemHome, Constants.LIB_DIR_NAME);
 		File[] jarFiles = libDir.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".jar"));
 		if (jarFiles == null) {
 			throw new ConfigurationException("Could not list files in lib directory: " + libDir.getAbsolutePath());
@@ -304,8 +297,7 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     }
 
     private Logger configureLogging(Properties props) throws IOException {
-		String loggerName = props.getProperty(Constants.S_SYSTEM_LOGGER_NAME, "reveila");
-		Logger newLogger = Logger.getLogger(loggerName);
+		Logger newLogger = Logger.getLogger(Reveila.class.getSimpleName());
 		newLogger.setUseParentHandlers(false); // Prevent propagation to root
 
 		// Remove default handlers from the root logger to prevent duplicate console output
@@ -316,55 +308,47 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
 
 		Handler fileHandler = createLogFileHandler(props);
 		newLogger.addHandler(fileHandler);
-
 		setLoggingLevel(newLogger, props);
-
-		// Final log message to confirm configuration
-		String logFilePath = props.getProperty(Constants.S_SYSTEM_LOGGING_FILE);
-		newLogger.info("Logging set to: " + new File(logFilePath).getAbsolutePath() + ", level=" + newLogger.getLevel());
-
 		return newLogger;
 	}
 
     private Handler createLogFileHandler(Properties props) throws IOException {
-		String logFilePath = props.getProperty(Constants.S_SYSTEM_LOGGING_FILE);
-		if (logFilePath == null || logFilePath.isBlank()) {
-			logFilePath = props.getProperty(Constants.S_SYSTEM_HOME) + File.separator + "logs" + File.separator + "default.log";
-			props.setProperty(Constants.S_SYSTEM_LOGGING_FILE, logFilePath);
-		}
+        String logFilePath = props.getProperty(Constants.SYSTEM_HOME) + File.separator + "logs" + File.separator
+                + "reveila.log";
+        File logFile = new File(logFilePath);
+        File logDir = logFile.getParentFile();
+        if (logDir != null && !logDir.exists()) {
+            logDir.mkdirs();
+        }
 
-		File logFile = new File(logFilePath.trim());
-		File logDir = logFile.getParentFile();
-		if (logDir != null && !logDir.exists()) {
-			logDir.mkdirs();
-		}
+        String limitStr = props.getProperty(Constants.LOG_FILE_SIZE, "0");
+        String countStr = props.getProperty(Constants.LOG_FILE_COUNT, "1");
+        int limit = 0;
+        int count = 1;
+        try {
+            limit = Integer.parseInt(limitStr);
+        } catch (NumberFormatException e) {
+            System.err.println("Warning: Invalid value for '" + Constants.LOG_FILE_SIZE
+                    + "'. Using 0 (disabling rotation).");
+        }
+        try {
+            count = Integer.parseInt(countStr);
+        } catch (NumberFormatException e) {
+            System.err.println(
+                    "Warning: Invalid value for '" + Constants.LOG_FILE_COUNT + "'. Using default of 1.");
+        }
 
-		String limitStr = props.getProperty(Constants.S_SYSTEM_LOGGING_FILE_LIMIT, "0");
-		String countStr = props.getProperty(Constants.S_SYSTEM_LOGGING_FILE_COUNT, "1");
-		int limit = 0;
-		int count = 1;
-		try {
-			limit = Integer.parseInt(limitStr);
-		} catch (NumberFormatException e) {
-			System.err.println("Warning: Invalid value for '" + Constants.S_SYSTEM_LOGGING_FILE_LIMIT + "'. Using 0 (disabling rotation).");
-		}
-		try {
-			count = Integer.parseInt(countStr);
-		} catch (NumberFormatException e) {
-			System.err.println("Warning: Invalid value for '" + Constants.S_SYSTEM_LOGGING_FILE_COUNT + "'. Using default of 1.");
-		}
+        Handler handler = (limit > 0)
+                ? new FileHandler(logFilePath, limit, Math.max(1, count), true)
+                : new FileHandler(logFilePath, true);
 
-		Handler handler = (limit > 0)
-				? new FileHandler(logFilePath, limit, Math.max(1, count), true)
-				: new FileHandler(logFilePath, true);
-
-		handler.setFormatter(new SimpleFormatter());
-		handler.setLevel(Level.ALL);
-		return handler;
-	}
+        handler.setFormatter(new SimpleFormatter());
+        handler.setLevel(Level.ALL);
+        return handler;
+    }
 
     private void setLoggingLevel(Logger logger, Properties props) {
-		String level = props.getProperty(Constants.S_SYSTEM_LOGGING_LEVEL, "ALL").trim().toUpperCase();
+		String level = props.getProperty(Constants.LOG_LEVEL, "ALL").trim().toUpperCase();
 		try {
 			logger.setLevel(Level.parse(level));
 		} catch (IllegalArgumentException e) {
@@ -405,14 +389,6 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
                 }
             }
         }, delaySeconds, periodSeconds, TimeUnit.SECONDS);
-    }
-
-    @Override
-    public void setSystemContext(SystemContext context) {
-        if (context == null) {
-            throw new IllegalArgumentException("SystemContext cannot be null");
-        }
-        this.systemContext = context;
     }
 
     @Override

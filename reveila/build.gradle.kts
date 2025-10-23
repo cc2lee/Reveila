@@ -1,10 +1,23 @@
+group "com.reveila"
+version "1.0.0"
+description = "Reveila - runtime"
+
 plugins {
-    java
+    `java-library`
+    `maven-publish`
 }
 
 java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17) // Specify Java version
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+        }
     }
 }
 
@@ -12,19 +25,9 @@ tasks.withType<JavaCompile> {
     options.compilerArgs.add("-parameters")
 }
 
-repositories {
-    /*
-    // Add local directory as a Maven repository
-    maven {
-        url = uri("C:/IDE/Projects/Reveila-Suite/mobile/template/node_modules/react-native") // Use absolute or relative path
-    }
-    */
-    google()
-    mavenCentral()
+tasks.withType<Test> {
+    useJUnitPlatform()
 }
-
-group "com.reveila" // Replace with your desired group ID
-version "1.0.0-SNAPSHOT" // Replace with your desired version
 
 dependencies {
     // This dependency is required by XmlUtil.java for XML/JSON conversion.
@@ -51,22 +54,4 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.1")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.1")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.1")
-}
-
-tasks.withType<Test> {
-    useJUnitPlatform()
-}
-
-tasks.register("reveila-build-task") {
-    // println("REGISTER("reveila-build-task"": This is executed during the configuration phase")
-}
-
-tasks.named("reveila-build-task") {
-    // println("reveila-build-task: This is executed during the configuration phase")
-    doFirst {
-        // println("reveila-build-task:doFirst: This is executed during the execution phase")
-    }
-    doLast {
-        // println("reveila-build-task:doLast: This is executed during the execution phase")
-    }
 }

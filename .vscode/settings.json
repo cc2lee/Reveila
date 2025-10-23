@@ -5,8 +5,8 @@
     "maven.terminal.useJavaHome": true,
     
     "java.project.sourcePaths": [
-        "api/src/main/java",
-        "mobile/template/android/app/src/main/java",
+        "spring/src/main/java",
+        "adapters/reveila-android/src/main/java",
         "reveila/src/main/java"
     ],
 
@@ -16,6 +16,7 @@
     // Set "org.gradle.java.home" in each project's "gradle.properties" file
     // to use different JDK for Gradle build. This setting here will take higher precedence.
     // "java.import.gradle.java.home": "C:/IDE/JDK/jdk-17.0.12",
+    
     "java.jdt.ls.java.home": "C:/IDE/JDK/jdk-17.0.12",
     "spring-boot.ls.java.home": "C:/IDE/JDK/jdk-17.0.12"
 }
