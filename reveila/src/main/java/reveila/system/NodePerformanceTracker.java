@@ -11,10 +11,13 @@ public class NodePerformanceTracker {
     public static final long DEFAULT_PENALTY_MS = 5000;
 	
     private int capacity = 1000;
-    private NavigableMap<Number, URL> tracker = Collections.synchronizedNavigableMap(new TreeMap<Number, URL>());
-    private static NodePerformanceTracker sharedInstance = new NodePerformanceTracker(1000);
+    private NavigableMap<Number, URL> tracker = null;
+    private static NodePerformanceTracker sharedInstance = null;
 
     public static NodePerformanceTracker getInstance() {
+        if (sharedInstance == null) {
+            sharedInstance = new NodePerformanceTracker();
+        }
         return sharedInstance;
     }
 
@@ -56,11 +59,7 @@ public class NodePerformanceTracker {
 
     public NodePerformanceTracker() {
         super();
-    }
-
-    public NodePerformanceTracker(int capacity) {
-        super();
-        this.capacity = capacity;
+        this.tracker = Collections.synchronizedNavigableMap(new TreeMap<Number, URL>());
     }
 
     public synchronized void clear() {

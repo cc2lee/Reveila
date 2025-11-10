@@ -3,10 +3,10 @@ package reveila.service;
 import java.io.IOException;
 import java.net.URL;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.MediaType;
@@ -39,7 +39,7 @@ public class ReveilaRemote extends AbstractService {
             .readTimeout(30, TimeUnit.SECONDS)
             .build();
 
-    private Map<URL, Number> configs = Collections.synchronizedMap(new TreeMap<URL, Number>());
+    private Map<URL, Number> configs = Collections.synchronizedMap(new HashMap<URL, Number>());
     private NodePerformanceTracker nodePerformanceTracker = NodePerformanceTracker.getInstance();
     
     /**
@@ -61,11 +61,13 @@ public class ReveilaRemote extends AbstractService {
     public void setBaseURL(String urlAndPriority) throws ConfigurationException {
         try {
             String[] array = urlAndPriority.split(",");
-            String priority = array[1].trim();
             URL url = new URL(array[0].trim());
-            configs.put(url, Integer.parseInt(priority));
+            Long priority = Long.parseLong(array[1].trim());
+            configs.put(url, priority);
         } catch (Exception e) {
-            throw new ConfigurationException("Invalid end-point URL format. Expected format: <URL> <priority>" + "\n" 
+            throw new ConfigurationException(
+                "Expected format for specifying a remote node URL: <URL>, <priority>" + "\n" 
+                + "Example: https://192.168.0.0:8080, 1" + "\n"
                 + "Error details: " + e.getMessage(), e);
         }
     }
@@ -164,9 +166,9 @@ public class ReveilaRemote extends AbstractService {
         final ResponseBody responseBody = response.body();
         final String responseBodyString = responseBody != null ? responseBody.string() : null;
 
-        long timeUsed = System.currentTimeMillis() - startTime;
+        Long timeUsed = System.currentTimeMillis() - startTime;
         if (!response.isSuccessful()) {
-            nodePerformanceTracker.track(timeUsed + NodePerformanceTracker.DEFAULT_PENALTY_MS, baseUrl); // Penalize failed calls
+            nodePerformanceTracker.track(Long.valueOf(timeUsed + NodePerformanceTracker.DEFAULT_PENALTY_MS), baseUrl); // Penalize failed calls
             throw new IOException("Remote invocation failed with HTTP code " + response.code() + " for " + url
                     + ". Body: " + responseBodyString);
         }

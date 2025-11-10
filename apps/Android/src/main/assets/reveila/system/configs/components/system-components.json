@@ -4,7 +4,6 @@
       "name": "RatedService.Default",
       "class": "reveila.service.RatedService",
       "description": "A service that manages multiple service providers and selects the best one based on ratings.",
-      "provider": "Reveila LLC",
       "author": "Charles Lee",
       "license-token": "",
       "thread-safe": true,
@@ -30,11 +29,8 @@
   {
     "component": {
       "name": "DataService",
-      "class": "reveila.spring.service.SpringDataService",
-      "description": "Data service implementation for the Spring environment.",
-      "provider": "Reveila LLC",
-      "author": "Charles Lee",
-      "license-token": "",
+      "class": "com.reveila.android.AndroidDataService",
+      "description": "Data service implementation for the Android environment.",
       "thread-safe": true,
       "start": true
     }
@@ -55,6 +51,11 @@
           "name": "repeat",
           "type": "int",
           "value": 1
+        },
+        {
+          "name": "delayMs",
+          "type": "long",
+          "value": 5000
         }
       ]
     }
@@ -69,7 +70,7 @@
         {
           "name": "BaseURL",
           "type": "java.lang.String",
-          "value": "http://10.0.2.2:8080, 1"
+          "value": "http://192.168.1.219:8080, 1"
         }
       ]
     }

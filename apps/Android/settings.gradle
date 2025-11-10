@@ -1,0 +1,33 @@
+pluginManagement {
+    includeBuild("../node_modules/@react-native/gradle-plugin")
+    resolutionStrategy {
+        eachPlugin {
+            if (requested.id.id == "com.android.application" || requested.id.id == "com.android.library") {
+                useVersion("8.11.0")
+            }
+        }
+    }
+}
+plugins { id("com.facebook.react.settings") }
+extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+rootProject.name = 'apps'
+include ':app'
+includeBuild('../node_modules/@react-native/gradle-plugin')
+
+// Include the reveila project build so its artifacts can be resolved
+includeBuild("../../reveila") {
+    dependencySubstitution {
+        // Substitute the external module with the local project
+        substitute(module("com.reveila:reveila:1.0.0")).using(project(":"))
+    }
+}
+
+includeBuild("../../adapters/reveila-android-adapter") {
+    dependencySubstitution {
+        substitute(module("com.reveila:android:1.0.0")).using(project(":"))
+    }
+}
+
+// Declare dependency on local project
+// include ':reveila-android'  // path is relative to this file's location
+//     project(':reveila-android').projectDir = new File(settingsDir, '../../adapters/reveila-android')

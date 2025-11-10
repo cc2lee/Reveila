@@ -40,6 +40,7 @@ public class Reveila {
 	private Logger logger;
 	private String localAddress;
 	private URL localUrl;
+	private boolean standaloneMode = true;
 	
 	public void shutdown() {
 		synchronized (this) {
@@ -96,6 +97,11 @@ public class Reveila {
 
 		logStartupBanner();
 		long beginTime = System.currentTimeMillis();
+
+		try {
+			this.standaloneMode = "true"
+				.equalsIgnoreCase(this.properties.getProperty(Constants.STANDALONE_MODE));
+		} catch (Exception e) {}
 
 		createSystemContext(this.properties);
 		loadComponents();
@@ -225,7 +231,7 @@ public class Reveila {
 	 * @throws Exception if the component or method is not found, or if invocation fails.
 	 */
 	public Object invoke(String componentName, String methodName, Object[] params) throws Exception {
-		return invoke(componentName, methodName, params, localAddress);
+		return invoke(componentName, methodName, params, null);
 	}
 
 	/**
@@ -246,7 +252,7 @@ public class Reveila {
 	public CompletableFuture<Object> invokeAsync(String componentName, String methodName, Object[] params) {
 		return CompletableFuture.supplyAsync(() -> {
 			try {
-				return invoke(componentName, methodName, params, localAddress);
+				return invoke(componentName, methodName, params, null);
 			} catch (Exception e) {
 				throw new RuntimeException(e);
 			}
@@ -254,55 +260,56 @@ public class Reveila {
 	}
 
 	public Object invoke(String componentName, String methodName, Object[] params, String callerIp) throws Exception {
+
+		// This method actually performs the invocation logic
+
 		long startTime = System.currentTimeMillis();
 		if (systemContext == null) {
 			throw new IllegalStateException("SystemContext is not initialized. Cannot invoke component.");
 		}
 
-		if (callerIp != null 
-				&& this.localAddress != null 
-				&& !callerIp.equalsIgnoreCase(this.localAddress)) {
-			logger.info("Received remote invocation request from " + callerIp + " for target: " + componentName + ", method: " + methodName);
+		if (callerIp != null && !callerIp.isBlank()) {
+			logger.info("Received invocation request from " + callerIp + " for target: " + componentName + ", method: " + methodName);
 		}
 
 		Proxy proxy = null;
-		URL url = NodePerformanceTracker.getInstance().getBestNodeUrl();
 		
-		if (url != null 
-				&& !url.getHost().equalsIgnoreCase("localhost") 
-				&& !url.getHost().equals(this.localAddress)) {
-			Optional<Proxy> remoteProxy= systemContext.getProxy(Constants.REMOTE_INVOCATION_SERVICE);
-			if (remoteProxy.isPresent()) {
-				proxy = remoteProxy.get();
+		if (standaloneMode == false) {
+			// Use the fastest node in the cluster to handle the request
+			URL url = NodePerformanceTracker.getInstance().getBestNodeUrl();
+
+			if (url != this.localUrl) {
+				Optional<Proxy> remoteProxy = systemContext.getProxy(Constants.REMOTE_INVOCATION_SERVICE);
+				if (remoteProxy.isPresent()) {
+					proxy = remoteProxy.get();
+					try {
+						startTime = System.currentTimeMillis();
+						Object result = proxy.invoke("invoke", new Object[] { url, componentName, methodName, params });
+						Long timeUsed = System.currentTimeMillis() - startTime;
+						NodePerformanceTracker.getInstance().track(timeUsed, url); // Track remote invocation time
+						return result;
+					} catch (Exception e) {
+						NodePerformanceTracker.getInstance().track(Long.valueOf(NodePerformanceTracker.DEFAULT_PENALTY_MS), url); // Penalize the remote node for failure
+						logger.severe(
+								"Remote invocation failed. Falling back to local invocation. Error: " + e.getMessage());
+						e.printStackTrace(System.err);
+					}
+				}
 			}
 		}
 
-		boolean penalize = false;
-		if (proxy != null) { // Send the request to the remote server
-			try {
-				Object result = proxy.invoke("invoke", new Object[]{url, componentName, methodName, params});
-				NodePerformanceTracker.getInstance().track(System.currentTimeMillis() - startTime, url); // Track remote invocation time
-				return result;
-			} catch (Exception e) {
-				penalize = true;
-				logger.severe("Remote invocation failed. Falling back to local invocation. Error: " + e.getMessage());
-				e.printStackTrace(System.err);
-			}
-		}
-		
-		// Local invocation if no better remote option, or remote invocation failed
+		// Use local invocation if standalone mode, or no better remote option, or remote invocation failed
 		Optional<Proxy> localProxy = systemContext.getProxy(componentName);
 		if (localProxy.isPresent()) {
 			proxy = localProxy.get();
 		} else {
 			throw new ConfigurationException("Component '" + componentName + "' not found.");
 		}
+
+		startTime = System.currentTimeMillis();
 		Object result = proxy.invoke(methodName, params);
-		long timeUsed = System.currentTimeMillis() - startTime;
-		NodePerformanceTracker.getInstance().track(timeUsed, localUrl); // Track local invocation time
-		if (penalize) {
-			NodePerformanceTracker.getInstance().track(timeUsed + NodePerformanceTracker.DEFAULT_PENALTY_MS, url); // Penalize the remote node for failure
-		}
+		Long timeUsed = System.currentTimeMillis() - startTime;
+		NodePerformanceTracker.getInstance().track(timeUsed, this.localUrl); // Track local invocation time
 		return result;
 	}
 

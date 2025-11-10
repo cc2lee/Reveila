@@ -57,4 +57,5 @@ public final class Constants {
     public static final String JOB_DATE_FORMAT = "yyyy-MM-dd HH:mm:ss";
 	public static final String TASK = "task";
     public static final String LIB_DIR_NAME = "libs";
+	public static final String STANDALONE_MODE = "standalone.mode";
 }
