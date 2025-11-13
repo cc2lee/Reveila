@@ -2,10 +2,6 @@ package reveila.system;
 
 import java.util.EventObject;
 
-import reveila.system.lifecycle.Startable;
-import reveila.system.lifecycle.Stoppable;
-import reveila.util.event.EventWatcher;
-
 public abstract class AbstractService implements EventWatcher, Startable, Stoppable {
 
     protected SystemContext systemContext;

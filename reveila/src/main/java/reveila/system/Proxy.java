@@ -3,13 +3,10 @@ package reveila.system;
 import java.lang.reflect.Method;
 import java.util.EventObject;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 
-import reveila.system.lifecycle.Startable;
-import reveila.system.lifecycle.Stoppable;
-import reveila.util.ExceptionList;
-import reveila.util.ReflectionMethod;
-import reveila.util.event.EventWatcher;
+import reveila.error.ExceptionList;
 
 /**
  * @author Charles Lee
@@ -27,6 +24,16 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 		}
 
 		this.metaObject = metaObject;
+	}
+
+	public CompletableFuture<Object> invokeAsync(final String methodName, final Object[] args) {
+		return CompletableFuture.supplyAsync(() -> {
+			try {
+				return invoke(methodName, args);
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
 	}
 
 	/**

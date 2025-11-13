@@ -54,7 +54,7 @@
         {
           "name": "repeat",
           "type": "int",
-          "value": 1
+          "value": 2
         }
       ]
     }
@@ -65,6 +65,7 @@
       "name": "remote.invocation.service",
       "class": "reveila.service.ReveilaRemote",
       "version": "1",
+      "//comment": "To set up a cluster of Reveila instances, add each URL as an argument. The URL is followed by a comma and priority as an integer (lower value means higher priority).",
       "arguments": [
         {
           "name": "BaseURL",

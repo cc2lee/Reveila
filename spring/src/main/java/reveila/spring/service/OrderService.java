@@ -4,9 +4,8 @@ import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
-import reveila.remoting.HttpUrl;
-import reveila.remoting.SimpleSoapClient;
-import reveila.util.json.JsonUtil;
+import reveila.service.HttpClient;
+import reveila.util.JsonUtil;
 import reveila.util.xml.XmlUtil;
 
 import java.io.ByteArrayInputStream;
@@ -18,6 +17,8 @@ import org.w3c.dom.Document;
 @Service
 public class OrderService {
 
+    private HttpClient httpClient = new HttpClient();
+
     public OrderService() {
         super();
     }
@@ -27,7 +28,7 @@ public class OrderService {
      */
     public ProductDetailsDTO getProductDetails(String productId) throws Exception {
         String url = "https://api.example.com/products/" + productId;
-        String responseJson = HttpUrl.get(url);
+        String responseJson = httpClient.invokeRest(url, "GET", null, null);
         return JsonUtil.toObject(responseJson, ProductDetailsDTO.class);
     }
 
@@ -46,7 +47,7 @@ public class OrderService {
            </soap:Body>
         </soap:Envelope>""", customerId, productId, quantity);
 
-        final String responseXml = SimpleSoapClient.invokeSoap(endpointUrl, soapAction, requestXml);
+        final String responseXml = httpClient.invokeSoap(endpointUrl, soapAction, requestXml);
         final Document xmlDoc;
         try (ByteArrayInputStream is = new ByteArrayInputStream(responseXml.getBytes())) {
             xmlDoc = XmlUtil.getDocument(is);

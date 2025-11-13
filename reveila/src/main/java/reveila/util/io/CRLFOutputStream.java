@@ -14,12 +14,7 @@ import java.io.OutputStream;
  * @author Charles Lee
  *
  * Convert lines into the canonical MIME format, that is,
- * terminate lines with CRLF.<p>
- *
- * This stream can be used with the Part.writeTo and Message.writeTo
- * methods to generate the canonical MIME format of the data for the
- * purpose of (e.g.) sending it via SMTP or computing a digital
- * signature.
+ * terminate lines with CRLF.
  */
 public class CRLFOutputStream extends FilterOutputStream {
 	

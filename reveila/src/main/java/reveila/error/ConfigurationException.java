@@ -6,9 +6,9 @@ package reveila.error;
  * Thrown by system codes to indicate a configuration error.
  */
  
-public class ConfigurationException extends Exception {
+public class ConfigurationException extends Exception implements ErrorCode {
 	
-	public static final String ERROR_CODE = "100";
+	public static final String ERROR_CODE = "500";
 
 	public ConfigurationException(String message) {
         super(message);

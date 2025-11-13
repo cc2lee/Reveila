@@ -25,10 +25,10 @@ public class RatedService extends AbstractService {
             String[] array = providerNameAndPoints.split(",");
             String providerName = array[0].trim();
             String points = array[1].trim();
-            pointsTracker.applyPoints(Long.parseLong(points), providerName);
+            pointsTracker.applyPoints(Long.valueOf(points), providerName);
         } catch (Exception e) {
             throw new ConfigurationException("Invalid service provider points initialization format. Expected format: <provider-name> <initial-points>" + "\n" 
-                + "Error details: " + e.getMessage(), e);
+                + "Error details: " + e.toString(), e);
         }
     }
 

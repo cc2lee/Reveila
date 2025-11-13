@@ -13,11 +13,11 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import reveila.platform.PlatformAdapter;
 import reveila.system.AbstractService;
 import reveila.system.Constants;
 import reveila.system.JsonConfiguration;
 import reveila.system.MetaObject;
+import reveila.system.PlatformAdapter;
 import reveila.system.Proxy;
 
 public class TaskManager extends AbstractService implements Runnable {

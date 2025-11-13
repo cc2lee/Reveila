@@ -8,6 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import reveila.Reveila;
+import reveila.system.RuntimeUtil;
 
 
 @Configuration
@@ -28,27 +29,11 @@ public class ReveilaConfiguration {
     public ApplicationRunner reveilaRunner(Reveila reveila, ApplicationContext context) {
         return args -> {
             try {
-                reveila.start(new SpringPlatformAdapter(context, splitArgs(args.getSourceArgs())));
+                reveila.start(new SpringPlatformAdapter(context, RuntimeUtil.getJvmArgsAsProperties(args.getSourceArgs())));
             } catch (Exception e) {
                 throw new IllegalStateException("Failed to start Reveila with SpringPlatformAdapter", e);
             }
         };
     }
 
-    private Properties splitArgs(String[] args) {
-		Properties cmdArgs = new Properties();
-		if (args != null) {
-			for (String arg : args) {
-				String[] parts = arg.split("=", 2);
-				if (parts.length == 2 && !parts[0].isEmpty()) {
-					cmdArgs.put(parts[0], parts[1]);
-				} else {
-					// It's good practice to warn about arguments that don't fit the expected format.
-					// Since the logger isn't configured yet, System.err is the best option.
-					System.err.println("Warning: Ignoring malformed command-line argument: " + arg);
-				}
-			}
-		}
-		return cmdArgs;
-	}
 }

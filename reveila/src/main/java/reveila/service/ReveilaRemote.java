@@ -17,9 +17,9 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 import reveila.error.ConfigurationException;
 import reveila.system.AbstractService;
+import reveila.system.JsonException;
 import reveila.system.NodePerformanceTracker;
-import reveila.util.json.JsonException;
-import reveila.util.json.JsonUtil;
+import reveila.util.JsonUtil;
 
 /**
  * A system component that can invoke methods on a remote Reveila instance via its REST API.
@@ -66,9 +66,9 @@ public class ReveilaRemote extends AbstractService {
             configs.put(url, priority);
         } catch (Exception e) {
             throw new ConfigurationException(
-                "Expected format for specifying a remote node URL: <URL>, <priority>" + "\n" 
-                + "Example: https://192.168.0.0:8080, 1" + "\n"
-                + "Error details: " + e.getMessage(), e);
+                "Error setting remote instance base URL. Check format: <URL>, <priority>" + "\n" 
+                + "Example: http://127.0.0.1:8080, 1" + "\n"
+                + "Error details: " + e.toString(), e);
         }
     }
 

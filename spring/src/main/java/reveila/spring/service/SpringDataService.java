@@ -18,7 +18,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import reveila.service.AbstractDataService;
 import reveila.spring.SpringPlatformAdapter;
-import reveila.util.Page;
+import reveila.util.io.Page;
 
 
 /**
@@ -75,9 +75,16 @@ public class SpringDataService extends AbstractDataService {
         }
     }
 
+    /** 
+     * @param entityName
+     * @param id
+     * @return Optional<Map<String, Object>>
+     */
     @Override
     public Optional<Map<String, Object>> findById(String entityName, String id) {
-        // The entityName isn't strictly needed if IDs are globally unique.
+        if (id == null || id.trim().isEmpty() || !repository.existsById(id)) {
+            return Optional.empty();
+        }
         return repository.findById(id).map(this::toMap);
     }
 

@@ -11,9 +11,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import reveila.crypto.Cryptographer;
-import reveila.platform.PlatformAdapter;
-import reveila.util.event.EventManager;
-import reveila.util.io.StorageManager;
 
 
 /**

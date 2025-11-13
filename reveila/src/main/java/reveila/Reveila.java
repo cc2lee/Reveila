@@ -22,15 +22,15 @@ import java.util.concurrent.CompletableFuture;
 
 import reveila.crypto.DefaultCryptographer;
 import reveila.error.ConfigurationException;
-import reveila.platform.PlatformAdapter;
 import reveila.system.NodePerformanceTracker;
+import reveila.system.PlatformAdapter;
 import reveila.system.Constants;
+import reveila.system.EventManager;
 import reveila.system.JsonConfiguration;
 import reveila.system.MetaObject;
 import reveila.system.Proxy;
 import reveila.system.SystemContext;
 import reveila.util.TimeFormat;
-import reveila.util.event.EventManager;
 
 public class Reveila {
 
@@ -237,17 +237,26 @@ public class Reveila {
 	/**
 	 * Asynchronous version of the invoke method, returning a CompletableFuture.
 	 * This allows non-blocking calls from the caller.
-	 * Any thread that needs to synchronously obtain the result of a CompletableFuture
-	 * and is willing to block until the computation is complete, use:
-     *  try {
-	 *      future.join();
-	 *  } catch (Exception e) {
-	 *      // Handle exceptions if join() throws one
-	 *  }
+	 * 
+	 * Blocking retrieval:
+	 * 
+	 * try {
+	 * 		Object result = future.get(); // This blocks the thread until the future is complete.
+	 * 		// Or with a timeout: Object result = future.get(5, TimeUnit.SECONDS);
+	 * } catch (Exception e) {
+	 *      // Handle exceptions
+	 * }
+	 * 
+	 * Non-blocking retrieval:
+	 * 
+	 * future.thenAccept(result -> {
+	 * 		System.out.println("Received result: " + result);
+	 * });
+	 * 
 	 * @param componentName The name of the component to invoke.
 	 * @param methodName The name of the method to invoke.
 	 * @param params The parameters to pass to the method.
-	 * @return The result of the method invocation.
+	 * @return The CompletableFuture result of the method invocation.
 	 */
 	public CompletableFuture<Object> invokeAsync(String componentName, String methodName, Object[] params) {
 		return CompletableFuture.supplyAsync(() -> {
@@ -256,7 +265,7 @@ public class Reveila {
 			} catch (Exception e) {
 				throw new RuntimeException(e);
 			}
-		}, Runnable::run);
+		});
 	}
 
 	public Object invoke(String componentName, String methodName, Object[] params, String callerIp) throws Exception {

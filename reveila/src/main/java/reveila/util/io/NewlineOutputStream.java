@@ -14,11 +14,7 @@ import java.io.OutputStream;
  * @author Charles Lee
  *
  * Convert the various newline conventions to the local platform's
- * newline convention.<p>
- *
- * This stream can be used with the Message.writeTo method to
- * generate a message that uses the local plaform's line terminator
- * for the purpose of (e.g.) saving the message to a local file.
+ * newline convention.
  */
 public class NewlineOutputStream extends FilterOutputStream {
 	

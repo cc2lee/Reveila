@@ -13,8 +13,7 @@ import java.util.Objects;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
-import reveila.util.json.JsonException;
-import reveila.util.json.JsonUtil;
+import reveila.util.JsonUtil;
 
 public class JsonConfiguration {
     

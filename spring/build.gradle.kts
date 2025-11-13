@@ -4,7 +4,7 @@ description = "Reveila - Spring Boot"
 
 plugins {
 	java
-    id("org.springframework.boot") version "3.5.6"
+    id("org.springframework.boot") version "3.5.7" // To update Spring Boot version, also update in Dockerfile
     id("io.spring.dependency-management") version "1.1.7"
 }
 
@@ -21,6 +21,7 @@ tasks.withType<JavaCompile> {
 dependencies {
 
     implementation("com.reveila:reveila:1.0.0")
+    implementation("com.reveila:standalone:1.0.0")
 
     // The Jackson dependency is required for XML/JSON conversion.
     implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.17.1")

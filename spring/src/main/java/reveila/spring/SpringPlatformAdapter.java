@@ -4,7 +4,7 @@ import java.util.Properties;
 
 import org.springframework.context.ApplicationContext;
 
-import reveila.platform.DefaultPlatformAdapter;
+import com.reveila.standalone.DefaultPlatformAdapter;
 
 /**
  * A custom PlatformAdapter that acts as a bridge to the Spring ApplicationContext.
@@ -20,6 +20,9 @@ public class SpringPlatformAdapter extends DefaultPlatformAdapter {
     }
 
     public <T> T getBean(Class<T> beanClass) {
+        if (beanClass == null) {
+            throw new IllegalArgumentException("Argument 'beanClass' must not be null.");
+        }
         return applicationContext.getBean(beanClass);
     }
 }

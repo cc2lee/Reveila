@@ -11,9 +11,6 @@ import java.util.TreeMap;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 
-import reveila.util.io.IOHelper;
-import reveila.util.json.JsonUtil;
-
 public class SortedPointsTracker {
 
     private String name;
@@ -58,7 +55,7 @@ public class SortedPointsTracker {
                     if (currentPoints == null) {
                         currentPoints = 0L;
                     }
-                    long newPoints = currentPoints + points;
+                    Long newPoints = currentPoints + points;
                     tracker.put(newPoints, name);
                     reverseLookup.put(name, newPoints);
                 }
@@ -68,7 +65,7 @@ public class SortedPointsTracker {
 
     public synchronized void write(OutputStream output) throws Exception {
         try {
-            IOHelper.writeAsJsonArray(output, new Map[] { treeMap, reverseLookup });
+            DataConversion.writeAsJsonArray(output, new Map[] { treeMap, reverseLookup });
         } catch (Exception e) {
             throw new Exception("Failed to write " + this.getClass().getSimpleName() + " to output stream: " + e.getMessage(), e);
         }
@@ -76,7 +73,7 @@ public class SortedPointsTracker {
 
     public synchronized void read(InputStream input) throws Exception {
         try {
-            Map<?, ?>[] mapArray = IOHelper.readJsonArray(input);
+            Map<?, ?>[] mapArray = DataConversion.readJsonArray(input);
             if (mapArray.length == 2) {
                 treeMap = JsonUtil.MAPPER.convertValue(mapArray[0], new TypeReference<TreeMap<Long, String>>() {});
                 tracker = Collections.synchronizedNavigableMap(treeMap);

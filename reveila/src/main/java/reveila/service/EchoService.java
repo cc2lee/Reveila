@@ -7,8 +7,8 @@ import reveila.system.AbstractService;
 import reveila.util.GUID;
 
 /**
- * A service class providing business logic for the REST endpoints.
- * This class is designed to be instantiated and invoked via the Reveila proxy system.
+ * A simple echo service that can reverse, repeat, and delay responses.
+ * Its main purpose is to demonstrate service functionality and for testing.
  */
 public class EchoService extends AbstractService {
 

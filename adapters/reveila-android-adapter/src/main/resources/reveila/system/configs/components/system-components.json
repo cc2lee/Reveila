@@ -12,18 +12,9 @@
         {
           "name": "InitialPoints",
           "type": "java.lang.String",
-          "value": "AIImageTransformer, 10000"
+          "value": "EchoService, 10000"
         }
       ]
-    }
-  },
-  {
-    "component": {
-      "name": "AIImageTransformer",
-      "class": "reveila.service.AIImageTransformer",
-      "description": "A service that transforms images using AI algorithms.",
-      "thread-safe": false,
-      "start": true
     }
   },
   {

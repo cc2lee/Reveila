@@ -10,7 +10,7 @@ package reveila.error;
  
 public class SystemException extends Exception implements ErrorCode {
 	
-	protected String errorCode = "10000";
+	protected String errorCode = "100";
 
 	public SystemException(String message) {
         super(message);
