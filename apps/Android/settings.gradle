@@ -22,12 +22,8 @@ includeBuild("../../reveila") {
     }
 }
 
-includeBuild("../../adapters/reveila-android-adapter") {
+includeBuild("../../adapters/android") {
     dependencySubstitution {
         substitute(module("com.reveila:android:1.0.0")).using(project(":"))
     }
 }
-
-// Declare dependency on local project
-// include ':reveila-android'  // path is relative to this file's location
-//     project(':reveila-android').projectDir = new File(settingsDir, '../../adapters/reveila-android')

@@ -20,7 +20,7 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.1.20" apply false
 }
 
-rootProject.name = "reveila-android-adapter"
+rootProject.name = "android"
 
 includeBuild("../../build-logic")
 includeBuild("../../reveila") {

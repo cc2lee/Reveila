@@ -44,11 +44,10 @@ android {
 
 repositories {
   flatDir {
-    dirs "libs" // Folder containing AAR files
+    dirs "libs" // Folder containing AAR or JAR files
   }
 }
 
 dependencies {
   implementation fileTree(dir: "libs", include: ["*.jar", "*.aar"])
-  implementation 'com.reveila:android:1.0.0'
 }

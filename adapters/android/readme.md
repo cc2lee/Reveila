@@ -10,22 +10,6 @@ In your Android library module, create a new Java/Kotlin class that implements R
 Override the createNativeModules method and add an instance of your ReactContextBaseJavaModule to the list of modules returned.
 Override the createViewManagers method if your library provides custom UI components.
 
-## Integrate the Library into your React Native Project:
-
-### Add the library as a dependency: 
-
-In your main React Native project's android/settings.gradle file, include your new library (
-Adjust path/to/your-library-module to the correct relative path from your android folder.)
-
-include ':reveila-android'  // path is relative to this file's location
-    project(':reveila-android').projectDir = new File(settingsDir, '../../adapters/reveila-android')
-
-In your main React Native project's android/app/build.gradle file, add the library as a dependency:
-
-dependencies {
-    implementation(project(':reveila-android-adapter'))
-}
-
 ### Register the package:
 
 In your main React Native project's MainActivity.java or MainApplication.java (depending on your project setup), add an instance of your ReactPackage to the list of packages returned by the getPackages() method.
@@ -44,12 +28,12 @@ JavaScript
 ****************************************************************************************************************
 
 
-I have completed the integration of the reveila-android-adapter into your expo-react-native project. Here's a summary of the changes:
+I have completed the integration of the android into your expo-react-native project. Here's a summary of the changes:
 
 Gradle Configuration:
 
-The reveila-android-adapter project has been included in apps/expo-react-native/android/settings.gradle.
-The reveila-android-adapter is now a dependency for your my-java-module in apps/expo-react-native/modules/my-java-module/android/build.gradle.
+The android project has been included in apps/expo-react-native/android/settings.gradle.
+The android is now a dependency for your my-java-module in apps/expo-react-native/modules/my-java-module/android/build.gradle.
 Native Module (Kotlin):
 
 The invokeAsync function has been added to ReveilaExpoModule.kt. It parses a JSON payload and calls the invoke method from the ReveilaService.

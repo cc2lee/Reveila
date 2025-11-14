@@ -8,6 +8,7 @@
 - npm run ios # you need to use macOS to build the iOS project - use the Expo app if you need to do iOS development without a Mac
 - npm run web
 - npx expo prebuild --clean # This deletes existing native directories and then regenerates them
+- npm run reset-project # To get a fresh app directory. The old app directory will become app-example.
 
 ## Manually start Android emulator
 

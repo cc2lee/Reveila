@@ -22,8 +22,9 @@ plugins {
 }
 
 rootProject.name = "adapters"
+
 include("db")
-include("reveila-android-adapter")
+include("android")
 
 includeBuild("../reveila") {
     dependencySubstitution {

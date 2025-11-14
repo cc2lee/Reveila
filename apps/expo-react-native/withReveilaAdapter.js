@@ -9,10 +9,10 @@ include ':reveila'
 project(':reveila').projectDir = new File('../../../reveila')
 `;
     }
-    if (!config.modResults.contents.includes("include ':reveila-android-adapter'")) {
+    if (!config.modResults.contents.includes("include ':android'")) {
       config.modResults.contents += `
-include ':reveila-android-adapter'
-project(':reveila-android-adapter').projectDir = new File('../../../adapters/reveila-android-adapter')
+include ':android'
+project(':android').projectDir = new File('../../../adapters/android')
 `;
     }
     return config;

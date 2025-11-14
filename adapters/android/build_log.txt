@@ -38,7 +38,7 @@
 > Task :verifyReleaseResources UP-TO-DATE
 > Task :assembleRelease UP-TO-DATE
 
-[Incubating] Problems report is available at: file:///C:/IDE/Projects/Reveila-Suite/adapters/reveila-android-adapter/build/reports/problems/problems-report.html
+[Incubating] Problems report is available at: file:///C:/IDE/Projects/Reveila-Suite/adapters/android/build/reports/problems/problems-report.html
 
 Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
 

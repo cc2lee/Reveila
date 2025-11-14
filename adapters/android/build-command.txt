@@ -1,2 +1,2 @@
-PS C:\IDE\Projects\Reveila-Suite\adapters\reveila-android-adapter> .\gradlew.bat assembleRelease --stacktrace > build_log.txt 2>&1
+PS C:\IDE\Projects\Reveila-Suite\adapters\android> .\gradlew.bat assembleRelease --stacktrace > build_log.txt 2>&1
 

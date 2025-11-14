@@ -5,6 +5,7 @@ description = "Reveila Android Platform Adapter Library"
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    id("maven-publish")
 }
 
 android {
@@ -37,9 +38,18 @@ android {
 
 publishing {
     publications {
-        create<MavenPublication>("maven") {
-            from(components["java"])
+        release(MavenPublication) {
+            groupId = 'com.reveila'
+            artifactId = 'android'
+            version = '1.0.0'
+
+            // Tell the publication to use the Android library component
+            from components.release // Or components.debug, depending on your build type
         }
+    }
+    
+    repositories { // Define repositories (e.g., Maven Local, remote Maven repository)
+        mavenLocal()
     }
 }
 
