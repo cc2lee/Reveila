@@ -7,6 +7,8 @@ import reveila.Reveila;
 
 public class ReveilaAdapterFacade {
 
+    private static final Gson gson = new Gson();
+
     public static String invoke(String payload) throws Exception {
         if (!ReveilaService.isRunning()) {
             throw new Exception("Reveila service is not running.");
@@ -17,7 +19,6 @@ public class ReveilaAdapterFacade {
         }
 
         // Parse the JSON payload
-        Gson gson = new Gson();
         java.util.Map<String, Object> request = gson.fromJson(payload, java.util.Map.class);
         String componentName = (String) request.get("componentName");
         String methodName = (String) request.get("methodName");

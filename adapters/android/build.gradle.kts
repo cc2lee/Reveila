@@ -1,3 +1,7 @@
+group "com.reveila"
+version "1.0.0"
+description = "Reveila Android Platform Adapter Library"
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -27,6 +31,14 @@ android {
             kotlin.srcDir("src/test/kotlin")
             java.srcDir("src/test/java")
             resources.srcDir("src/test/resources")
+        }
+    }
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
         }
     }
 }

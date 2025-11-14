@@ -1,0 +1,90 @@
+[
+  {
+    "component": {
+      "name": "RatedService.Default",
+      "class": "reveila.service.RatedService",
+      "description": "A service that manages multiple service providers and selects the best one based on ratings.",
+      "author": "Charles Lee",
+      "license-token": "",
+      "thread-safe": true,
+      "start": true,
+      "arguments": [
+        {
+          "name": "InitialPoints",
+          "type": "java.lang.String",
+          "value": "EchoService, 10000"
+        }
+      ]
+    }
+  },
+  {
+    "component": {
+      "name": "DataService",
+      "class": "com.reveila.android.AndroidDataService",
+      "description": "Data service implementation for the Android environment.",
+      "thread-safe": true,
+      "start": true
+    }
+  },
+  {
+    "component": {
+      "start": true,
+      "name": "EchoService",
+      "class": "reveila.service.EchoService",
+      "version": "1",
+      "arguments": [
+        {
+          "name": "reverse",
+          "type": "boolean",
+          "value": false
+        },
+        {
+          "name": "repeat",
+          "type": "int",
+          "value": 1
+        },
+        {
+          "name": "delayMs",
+          "type": "long",
+          "value": 5000
+        }
+      ]
+    }
+  },
+  {
+    "component": {
+      "start": true,
+      "name": "remote.invocation.service",
+      "class": "reveila.service.ReveilaRemote",
+      "version": "1",
+      "arguments": [
+        {
+          "name": "BaseURL",
+          "type": "java.lang.String",
+          "value": "http://192.168.1.219:8080, 1"
+        }
+      ]
+    }
+  },
+  {
+    "component": {
+      "start": true,
+      "name": "TaskManager",
+      "class": "reveila.service.TaskManager",
+      "thread-safe": true,
+      "description": "A service that executes scheduled background jobs.",
+      "arguments": [
+        {
+          "name": "interval",
+          "type": "long",
+          "value": 30000
+        },
+        {
+          "name": "initialDelay",
+          "type": "long",
+          "value": 60000
+        }
+      ]
+    }
+  }
+]

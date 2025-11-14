@@ -22,13 +22,11 @@ plugins {
 }
 
 rootProject.name = "adapters"
+include("db")
+include("reveila-android-adapter")
 
 includeBuild("../reveila") {
     dependencySubstitution {
-        // Substitute the external module with the local project
         substitute(module("com.reveila:reveila:1.0.0")).using(project(":"))
     }
 }
-
-include(":reveila-android")
-project(":reveila-android").projectDir = settings.rootDir.resolve("reveila-android")
