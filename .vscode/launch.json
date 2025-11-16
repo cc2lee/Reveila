@@ -2,6 +2,15 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Reveila Standalone (Gradle)",
+            "type": "java", // debugger type
+            "request": "launch",
+            "preLaunchTask": "Run Reveila Standalone (Gradle)", // Points to the "label" of the task defined in tasks.json
+            "mainClass": "com.reveila.standalone.App",
+            "projectName": "app",
+            "cwd": "${workspaceFolder}/standalone"
+        },
+        {
             "type": "java",
             "name": "Reveila Spring",
             "request": "launch",

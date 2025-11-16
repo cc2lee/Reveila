@@ -20,7 +20,6 @@ public final class Constants {
 	public static final String LOG_FILE_COUNT = "logging.file.count";
 	public static final String LOG_LEVEL = "logging.level";
 	public static final String LOGGER_NAME = "logger.name";
-	public static final String SYSTEM_PROPERTIES_FILE_URL = "system.properties.file.url";
 	public static final String SYSTEM_PROPERTIES_FILE_NAME = "reveila.properties";
 	public static final String CRYPTOGRAPHER_SECRETKEY = "cryptographer.secretkey";
 	public static final String CHARACTER_ENCODING = "text.character.encoding";

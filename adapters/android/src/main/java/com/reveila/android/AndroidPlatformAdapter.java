@@ -16,10 +16,10 @@ import java.util.logging.*;
 
 import reveila.Reveila;
 import reveila.error.ConfigurationException;
-import reveila.platform.PlatformAdapter;
+import reveila.system.PlatformAdapter;
 import reveila.system.Constants;
-import reveila.util.event.EventWatcher;
-import reveila.util.io.FileUtil;
+import reveila.system.EventWatcher;
+import reveila.util.FileUtil;
 import com.reveila.android.ReveilaSetup;
 
 /**

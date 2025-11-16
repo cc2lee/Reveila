@@ -1,7 +1,5 @@
 package reveila.spring;
 
-import java.util.Properties;
-
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;

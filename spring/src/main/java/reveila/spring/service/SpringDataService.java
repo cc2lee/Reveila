@@ -108,6 +108,9 @@ public class SpringDataService extends AbstractDataService {
 
     @Override
     public void deleteById(String entityName, String id) {
+        if (id == null || id.trim().isEmpty()) {
+            throw new IllegalArgumentException("Entity ID cannot be null or empty.");
+        }
         if (!repository.existsById(id)) {
             throw new IllegalArgumentException("Entity with id " + id + " not found for deletion.");
         }

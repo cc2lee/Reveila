@@ -139,7 +139,7 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     public InputStream openPropertiesStream(Properties jvmArgs) throws IOException, ConfigurationException {
         
         URL url;
-        String urlStr = jvmArgs.getProperty(Constants.SYSTEM_PROPERTIES_FILE_URL);
+        String urlStr = jvmArgs.getProperty(Constants.SYSTEM_PROPERTIES_FILE_NAME);
         try {
             url = new java.net.URI(urlStr).toURL();
         } catch (Exception e) {

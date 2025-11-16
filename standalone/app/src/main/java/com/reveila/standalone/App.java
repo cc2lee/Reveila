@@ -5,6 +5,8 @@ import reveila.system.RuntimeUtil;
 
 public class App {
     public static void main(String[] args) {
+        // A URL pointing to the configuration properties file can be passed in as an argument to the Java main class, using the following format:
+        // java MyApp "reveila.properties=file:///C:/IDE/Projects/Reveila-Suite/reveila/runtime-directory/configs/reveila.properties"
         Reveila reveila = new Reveila();
         try {
             reveila.start(new DefaultPlatformAdapter(RuntimeUtil.getJvmArgsAsProperties(args)));

@@ -41,7 +41,7 @@ import java.util.concurrent.Executors;
 import androidx.annotation.Nullable;
 
 import reveila.Reveila;
-import reveila.platform.PlatformAdapter;
+import reveila.system.PlatformAdapter;
 
 import com.reveila.android.AndroidPlatformAdapter;
 import com.reveila.android.ServiceManager;

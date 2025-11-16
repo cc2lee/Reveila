@@ -10,7 +10,7 @@ plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
-rootProject.name = "standalone"
+rootProject.name = "reveila-standalone"
 include("app")
 
 includeBuild("../reveila") {

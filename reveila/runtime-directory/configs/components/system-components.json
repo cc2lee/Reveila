@@ -9,7 +9,7 @@
       "license-token": "",
       "thread-safe": true,
       "start": true,
-      "arguments": [
+      "arguments(ignore)": [
         {
           "name": "InitialPoints",
           "type": "java.lang.String",
@@ -19,16 +19,7 @@
     }
   },
   {
-    "component": {
-      "name": "AIImageTransformer",
-      "class": "reveila.service.AIImageTransformer",
-      "description": "A service that transforms images using AI algorithms.",
-      "thread-safe": false,
-      "start": true
-    }
-  },
-  {
-    "component": {
+    "component(ignore)": {
       "name": "DataService",
       "class": "reveila.spring.service.SpringDataService",
       "description": "Data service implementation for the Spring environment.",

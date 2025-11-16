@@ -1,10 +1,6 @@
-group "com.reveila"
-version "1.0.0"
-description = "Reveila Android Platform Adapter Library"
-
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
+    id("com.reveila.convention.android.app")
+    // id("com.android.library") <-- This is redundant and can be removed
     id("maven-publish")
 }
 
@@ -34,22 +30,53 @@ android {
             resources.srcDir("src/test/resources")
         }
     }
-}
 
-publishing {
-    publications {
-        release(MavenPublication) {
-            groupId = 'com.reveila'
-            artifactId = 'android'
-            version = '1.0.0'
+    /* NOT WORKING WITH AGP 8.0.0+
 
-            // Tell the publication to use the Android library component
-            from components.release // Or components.debug, depending on your build type
+    publishing {
+        // REQUIRED: Explicitly tell AGP to create the "release" component
+        singleVariant("release") {
+            // Optional: Include source jars
+            // withSourcesJar()
+            // Optional: Include javadoc jars
+            // withJavadocJar()
         }
     }
-    
-    repositories { // Define repositories (e.g., Maven Local, remote Maven repository)
-        mavenLocal()
+
+    */
+
+}
+
+// Use afterEvaluate as a safeguard for assembly tasks
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                groupId = "com.reveila"
+                artifactId = "android"
+                version = "1.0.0"
+
+                // Manually add the main AAR artifact
+                artifact(tasks.getByName("bundleReleaseAar"))
+                
+                // Optional: Attach sources if needed
+                // from(components["release"]) // This line caused the error, so we replace it with manual artifacts
+
+                // If you need sources/javadoc jars, you need these extra tasks:
+                /*
+                // Task to generate sources JAR
+                tasks.register<Jar>("sourcesJar") {
+                    archiveClassifier.set("sources")
+                    from(android.sourceSets["main"].java.srcDirs)
+                }
+                artifact(tasks.getByName("sourcesJar"))
+                */
+            }
+        }
+        repositories {
+            // ... your repository setup ...
+            // mavenLocal()
+        }
     }
 }
 
