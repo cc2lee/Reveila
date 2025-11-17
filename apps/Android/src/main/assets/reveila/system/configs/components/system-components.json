@@ -54,7 +54,7 @@
   {
     "component": {
       "start": true,
-      "name": "remote.invocation.service",
+      "name": "remote.reveila",
       "class": "reveila.service.ReveilaRemote",
       "version": "1",
       "arguments": [
@@ -67,7 +67,7 @@
     }
   },
   {
-    "component": {
+    "component(ignore)": {
       "start": true,
       "name": "TaskManager",
       "class": "reveila.service.TaskManager",

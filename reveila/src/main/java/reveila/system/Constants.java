@@ -26,7 +26,6 @@ public final class Constants {
 	public static final String LAUNCH_STRICT_MODE = "launch.strict.mode";
 	public static final String SYSTEM_DATA_FILE_DIR = "system.data.file.dir";
 	public static final String SYSTEM_TEMP_FILE_DIR = "system.temp.file.dir";
-	public static final String REMOTE_INVOCATION_SERVICE = "remote.invocation.service";
 	public static final String TASK_THREAD_POOL_SIZE = "task.thread.pool.size";
 	public static final String TASK_INITIAL_DELAY = "task.initial.delay";
 	public static final String TASK_INTERVAL = "task.interval";
@@ -37,6 +36,7 @@ public final class Constants {
 	 * Used in configuration JSON files
 	 * **************************************************
 	 */
+	public static final String REMOTE_REVEILA = "remote.reveila";
 	public static final String DESCRIPTION = "description";
 	public static final String START = "start";
 	public static final Object ENABLE = "enable";

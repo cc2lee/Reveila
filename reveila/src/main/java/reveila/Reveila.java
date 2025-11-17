@@ -288,7 +288,7 @@ public class Reveila {
 			URL url = NodePerformanceTracker.getInstance().getBestNodeUrl();
 
 			if (url != this.localUrl) {
-				Optional<Proxy> remoteProxy = systemContext.getProxy(Constants.REMOTE_INVOCATION_SERVICE);
+				Optional<Proxy> remoteProxy = systemContext.getProxy(Constants.REMOTE_REVEILA);
 				if (remoteProxy.isPresent()) {
 					proxy = remoteProxy.get();
 					try {

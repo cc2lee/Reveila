@@ -12,8 +12,25 @@ public class SystemException extends Exception implements ErrorCode {
 	
 	protected String errorCode = "100";
 
+	public SystemException() {
+        super();
+    }
+
 	public SystemException(String message) {
         super(message);
+    }
+
+	public SystemException(Throwable cause) {
+        super(cause);
+    }
+
+	public SystemException(String message, Throwable cause) {
+        super(message, cause);
+    }
+
+	public SystemException(String message, Throwable cause, String errorCode) {
+        super(message, cause);
+        this.errorCode = errorCode;
     }
 
     @Override

@@ -9,11 +9,11 @@
       "license-token": "",
       "thread-safe": true,
       "start": true,
-      "arguments(ignore)": [
+      "arguments": [
         {
           "name": "InitialPoints",
           "type": "java.lang.String",
-          "value": "AIImageTransformer, 10000"
+          "value": ["EchoService, 10000"]
         }
       ]
     }
@@ -34,6 +34,7 @@
     "component": {
       "start": true,
       "name": "EchoService",
+      "description": "A simple service that echoes back input messages after an optional delay.",
       "class": "reveila.service.EchoService",
       "version": "1",
       "arguments": [
@@ -53,21 +54,22 @@
   {
     "component": {
       "start": true,
-      "name": "remote.invocation.service",
+      "name": "remote.reveila",
       "class": "reveila.service.ReveilaRemote",
       "version": "1",
-      "//comment": "To set up a cluster of Reveila instances, add each URL as an argument. The URL is followed by a comma and priority as an integer (lower value means higher priority).",
+      "//comment1": "To set up a cluster of Reveila instances, add the instance's base URL to the value array of the RemoteURLs argument.",
+      "//comment2": "The URL is followed by a comma and priority as an integer (lower value means higher priority).",
       "arguments": [
         {
-          "name": "BaseURL",
+          "name": "RemoteURLs",
           "type": "java.lang.String",
-          "value": "http://10.0.2.2:8080, 1"
+          "value": ["http://10.0.2.2:8080, 1"]
         }
       ]
     }
   },
   {
-    "component": {
+    "component(ignore)": {
       "start": true,
       "name": "TaskManager",
       "class": "reveila.service.TaskManager",

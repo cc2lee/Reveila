@@ -16,6 +16,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 import reveila.error.ConfigurationException;
+import reveila.error.SystemException;
 import reveila.system.AbstractService;
 import reveila.system.JsonException;
 import reveila.system.NodePerformanceTracker;
@@ -56,16 +57,29 @@ public class ReveilaRemote extends AbstractService {
      * Under the hood, this method adds the URL to a pool of URLs tracked as a cluster.
      * The Reveila invocation logic selects the most efficient node from this cluster to route requests.
      *
-     * @param urlAndPriority The base URL of the Reveila instance followed by a space and a priority integer.
+     * @param url The base URL of the Reveila instance followed by a space and a priority integer.
      */
-    public void setBaseURL(String urlAndPriority) throws ConfigurationException {
+    public void setRemoteURLs(String[] baseUrls) throws ConfigurationException {
+        for (String url : baseUrls) {
+            try {
+                addRemoteNode(url);
+            } catch (SystemException e) {
+                throw new ConfigurationException(
+                    "Error setting remote instance base URL: '" + url + "'. Check format: <URL>, <priority>" + "\n" 
+                    + "Example: http://127.0.0.1:8080, 1" + "\n"
+                    + "Error details: " + e.toString(), e);
+            }
+        }
+    }
+
+    public void addRemoteNode(String urlAndPriority) throws SystemException {
         try {
             String[] array = urlAndPriority.split(",");
             URL url = new URL(array[0].trim());
             Long priority = Long.parseLong(array[1].trim());
             configs.put(url, priority);
         } catch (Exception e) {
-            throw new ConfigurationException(
+            throw new SystemException(
                 "Error setting remote instance base URL. Check format: <URL>, <priority>" + "\n" 
                 + "Example: http://127.0.0.1:8080, 1" + "\n"
                 + "Error details: " + e.toString(), e);

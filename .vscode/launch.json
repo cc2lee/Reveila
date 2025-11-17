@@ -2,6 +2,13 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "type": "java",
+            "name": "Attach to Gradle Daemon",
+            "request": "attach",
+            "hostName": "localhost",
+            "port": 5005
+        },
+        {
             "name": "Reveila Standalone (Gradle)",
             "type": "java", // debugger type
             "request": "launch",

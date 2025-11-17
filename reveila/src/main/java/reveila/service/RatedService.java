@@ -1,5 +1,6 @@
 package reveila.service;
 
+import java.util.List;
 import java.util.Optional;
 
 import reveila.error.ConfigurationException;
@@ -20,14 +21,20 @@ public class RatedService extends AbstractService {
         this.pointsTracker = new SortedPointsTracker(name);
     }
 
-    public void setInitialPoints(String providerNameAndPoints) throws ConfigurationException {
+    public void setInitialPoints(List<String> providerNameAndPoints) throws ConfigurationException {
+        if (providerNameAndPoints == null || providerNameAndPoints.isEmpty()) {
+            return; // Ignore
+        }
         try {
-            String[] array = providerNameAndPoints.split(",");
-            String providerName = array[0].trim();
-            String points = array[1].trim();
-            pointsTracker.applyPoints(Long.valueOf(points), providerName);
+            for (String string : providerNameAndPoints) {
+                String[] array = string.split(",");
+                String providerName = array[0].trim();
+                String points = array[1].trim();
+                pointsTracker.applyPoints(Long.valueOf(points), providerName);
+            }
         } catch (Exception e) {
-            throw new ConfigurationException("Invalid service provider points initialization format. Expected format: <provider-name> <initial-points>" + "\n" 
+            throw new ConfigurationException(
+                "Invalid points initialization format. Expected format: [<provider-name>, <initial-points>]" + "\n" 
                 + "Error details: " + e.toString(), e);
         }
     }
