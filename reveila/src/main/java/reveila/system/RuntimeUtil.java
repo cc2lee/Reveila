@@ -16,13 +16,7 @@ import java.util.Properties;
  */
 public class RuntimeUtil {
 
-	public static Thread addShutdownHook(Runnable r) {
-		Thread thread = new Thread(r);
-		Runtime.getRuntime().addShutdownHook(thread);
-		return thread;
-	}
-
-	public static Properties getJvmArgsAsProperties(String[] args) {
+	public static Properties getArgsAsProperties(String[] args) {
 		Properties cmdArgs = new Properties();
 		if (args != null) {
 			for (String arg : args) {

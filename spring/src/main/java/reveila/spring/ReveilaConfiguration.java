@@ -27,7 +27,7 @@ public class ReveilaConfiguration {
     public ApplicationRunner reveilaRunner(Reveila reveila, ApplicationContext context) {
         return args -> {
             try {
-                reveila.start(new SpringPlatformAdapter(context, RuntimeUtil.getJvmArgsAsProperties(args.getSourceArgs())));
+                reveila.start(new SpringPlatformAdapter(context, RuntimeUtil.getArgsAsProperties(args.getSourceArgs())));
             } catch (Exception e) {
                 throw new IllegalStateException("Failed to start Reveila with SpringPlatformAdapter", e);
             }

@@ -10,7 +10,7 @@ public class App {
         // java MyApp "reveila.properties=file:///C:/IDE/Projects/Reveila-Suite/reveila/runtime-directory/configs/reveila.properties"
         Reveila reveila = new Reveila();
         try {
-            reveila.start(new DefaultPlatformAdapter(RuntimeUtil.getJvmArgsAsProperties(args)));
+            reveila.start(new DefaultPlatformAdapter(RuntimeUtil.getArgsAsProperties(args)));
         } catch (Exception e) {
             e.printStackTrace();
         }

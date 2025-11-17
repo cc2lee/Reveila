@@ -44,7 +44,9 @@ public class Reveila {
 	
 	public void shutdown() {
 		synchronized (this) {
-			System.out.println("\n\nShutting down system...");
+			
+			System.out.println("\n\nShutting down Reveila...");
+			
 			boolean error = false;
 
 			if (this.systemContext != null) {
@@ -52,8 +54,8 @@ public class Reveila {
 					systemContext.destruct();
 				} catch (Exception e) {					
 					error = true;
-					System.err.println("System shutdown failed: " + e.getMessage());
-					e.printStackTrace(System.err);
+					System.out.println("Reveila shutdown failed: " + e.getMessage());
+					e.printStackTrace();
 				}
 			}
 
@@ -62,15 +64,15 @@ public class Reveila {
 					this.platformAdapter.destruct();
 				} catch (Exception e) {
 					error = true;
-					System.err.println("Failed to destruct platform adapter: " + e.getMessage());
-					e.printStackTrace(System.err);
+					System.out.println("Failed to destruct Reveila platform adapter: " + e.getMessage());
+					e.printStackTrace();
 				}
 			}
 
 			if (!error) {
-				System.out.println("System shut down successfully\n\n");
+				System.out.println("Reveila shut down successfully\n\n");
 			} else {
-				System.out.println("System shut down with errors. Check logs for details.\n\n");
+				System.out.println("Reveila shut down with errors. Check logs for details.\n\n");
 			}
 
 			// Close logger handlers at the very end of the shutdown sequence.
@@ -83,6 +85,10 @@ public class Reveila {
 	}
 
 	public void start(PlatformAdapter platformAdapter) throws Exception {
+		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+			shutdown();
+		}));
+
 		if (platformAdapter == null) {
 			throw new IllegalArgumentException("PlatformAdapter cannot be null");
 		}
@@ -125,7 +131,7 @@ public class Reveila {
             }
         } catch (Exception e) {
             // Log a warning or handle the exception if the logo fails to load
-            System.err.println("Warning: Could not load logo resource file.");
+            System.out.println("Warning: Could not load Reveila logo resource file.");
         } finally {
             if (reader != null) {
                 try {
@@ -170,7 +176,7 @@ public class Reveila {
 
 		String secretKey = props.getProperty(Constants.CRYPTOGRAPHER_SECRETKEY);
 		if (secretKey == null || secretKey.isBlank()) {
-			throw new ConfigurationException("System property '" + Constants.CRYPTOGRAPHER_SECRETKEY + "' is not set.");
+			throw new ConfigurationException("Reveila system property '" + Constants.CRYPTOGRAPHER_SECRETKEY + "' is not set.");
 		}
 
 		String charset = props.getProperty(Constants.CHARACTER_ENCODING);
@@ -301,7 +307,7 @@ public class Reveila {
 						NodePerformanceTracker.getInstance().track(Long.valueOf(NodePerformanceTracker.DEFAULT_PENALTY_MS), url); // Penalize the remote node for failure
 						logger.severe(
 								"Remote invocation failed. Falling back to local invocation. Error: " + e.getMessage());
-						e.printStackTrace(System.err);
+						e.printStackTrace();
 					}
 				}
 			}
