@@ -1,4 +1,4 @@
-package com.reveila.standalone;
+package reveila.system;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -6,6 +6,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.MalformedURLException;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
@@ -27,9 +29,6 @@ import java.util.logging.SimpleFormatter;
 import reveila.error.ConfigurationException;
 import reveila.error.ExceptionList;
 import reveila.service.task.TaskEvent;
-import reveila.system.Constants;
-import reveila.system.EventWatcher;
-import reveila.system.PlatformAdapter;
 import reveila.util.FileUtil;
 
 /**
@@ -39,7 +38,7 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
 
     private Properties properties;
     private Logger logger;
-    private int jobThreadPoolSize = 5; // if not set in system.properties, default to 5
+    private int jobThreadPoolSize = 1; // Use single thread for serial execution by default
     private ScheduledExecutorService scheduler;
     
     public DefaultPlatformAdapter(Properties commandLineArgs) throws Exception {
@@ -47,18 +46,8 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
         loadProperties(commandLineArgs);
         this.logger = configureLogging(this.properties);
         setURLClassLoader(this.properties);
-        String threadPoolSizeStr = this.properties.getProperty(Constants.TASK_THREAD_POOL_SIZE);
-        if (threadPoolSizeStr != null && !threadPoolSizeStr.isBlank()) {
-            try {
-                this.jobThreadPoolSize = Integer.parseInt(threadPoolSizeStr);
-            } catch (NumberFormatException e) {
-                this.logger.warning("Invalid value for " + Constants.TASK_THREAD_POOL_SIZE + ": " + threadPoolSizeStr + 
-                    ". Using default of " + this.jobThreadPoolSize + ".");
-            }
-        }
-        this.logger.info("Task thread pool size set to: " + this.jobThreadPoolSize);
+        
         // ThreadFactory with named worker threads for easier debugging
-
         final ThreadFactory threadFactory = new ThreadFactory() {
             private final AtomicInteger count = new AtomicInteger(0);
             @Override
@@ -138,20 +127,35 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
 
     public InputStream openPropertiesStream(Properties jvmArgs) throws IOException, ConfigurationException {
         
-        URL url;
-        String urlStr = jvmArgs.getProperty(Constants.SYSTEM_PROPERTIES_FILE_NAME);
+        URL url = null;
+
+        // 1. try JVM argument first
         try {
-            url = new java.net.URI(urlStr).toURL();
+            url = new java.net.URI(jvmArgs.getProperty(Constants.SYSTEM_PROPERTIES_FILE_NAME)).toURL();
         } catch (Exception e) {
+            // 2. try looking in classpath
             url = DefaultPlatformAdapter.class.getClassLoader().getResource(Constants.SYSTEM_PROPERTIES_FILE_NAME);
         }
 
         if (url == null) {
-            throw new ConfigurationException(Constants.SYSTEM_PROPERTIES_FILE_NAME + 
-                " not found. Please ensure it is available in the classpath or passed in as JVM argument.");
-        } else {
-            return url.openStream();
+            // 3. last place - home directory
+            String path = getSystemHome() + File.separator + Constants.CONFIGS_DIR_NAME + File.separator + Constants.SYSTEM_PROPERTIES_FILE_NAME;
+            File file = new File(path);
+            try {
+                url = file.toURI().toURL();
+            } catch (Exception e) {
+                String message = "ERROR: " + Constants.SYSTEM_PROPERTIES_FILE_NAME 
+                    + " URL not specified as a command line argument, and not found in the classpath or in the system home directory: " + path;
+                System.out.println(message);
+                if (logger != null) {
+                    logger.severe(message);
+                }
+                throw new ConfigurationException(Constants.SYSTEM_PROPERTIES_FILE_NAME + " not found. "
+                    + "Please ensure it is passed in as a command line argument, or included in the classpath, or available in the configs directory of the Reveila System Home.");
+            }
         }
+
+        return url.openStream();
     }
 
     private void loadProperties(Properties overwrites) throws IOException, ConfigurationException {
@@ -359,26 +363,22 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
 
     @Override
     public void runTask(Runnable task, long delaySeconds, long periodSeconds, EventWatcher listener) {
-        // Schedule the task to run after an initial delay of delaySeconds second,
-        // and then repeatedly every periodSeconds seconds.
-        scheduler.scheduleAtFixedRate(task, delaySeconds, periodSeconds, TimeUnit.SECONDS);
         scheduler.scheduleAtFixedRate(() -> {
             try {
                 task.run();
                 if (listener != null) {
                     try {
-                        listener.onEvent(new TaskEvent(task, TaskEvent.COMPLETED, System.currentTimeMillis(),
-                                new ExceptionList()));
+                        listener.onEvent(new TaskEvent(task, TaskEvent.COMPLETED, System.currentTimeMillis(), new ExceptionList()));
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
                 }
-            } catch (Throwable t) {
+            }
+            catch (Throwable t) {
                 t.printStackTrace();
                 if (listener != null) {
                     try {
-                        listener.onEvent(new TaskEvent(task, TaskEvent.FAILED, System.currentTimeMillis(),
-                                new ExceptionList(t)));
+                        listener.onEvent(new TaskEvent(task, TaskEvent.FAILED, System.currentTimeMillis(), new ExceptionList(t)));
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
@@ -389,15 +389,16 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
 
     @Override
     public void destruct() {
-        // Gracefully shut down the job executor pool.
         if (this.scheduler != null) {
-            this.scheduler.shutdown();
+            this.scheduler.shutdown(); // Initiates an orderly shutdown in which previously submitted tasks are executed, but no new tasks will be accepted.
             try {
                 if (!this.scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
                     this.scheduler.shutdownNow();
                 }
             } catch (InterruptedException e) {
                 this.scheduler.shutdownNow();
+                Thread.currentThread().interrupt(); // Preserve interrupt status
+                System.out.println("Thread interrupted while waiting for Task Executor termination.");
             }
         }
         this.scheduler = null;

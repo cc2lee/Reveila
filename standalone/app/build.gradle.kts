@@ -1,3 +1,5 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
 group "com.reveila"
 version "1.0.0"
 description = "Reveila Standalone Application"
@@ -6,6 +8,7 @@ plugins {
     `java`
     `application`
     `maven-publish`
+    id("com.gradleup.shadow") version "9.2.2"
 }
 
 java {
@@ -36,14 +39,11 @@ repositories {
 dependencies {
 
     implementation("com.reveila:reveila:1.0.0")
-    
-    // Use JUnit Jupiter for testing.
-    testImplementation(libs.junit.jupiter)
-
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-
-    // This dependency is used by the application.
     implementation(libs.guava)
+    implementation("com.google.guava:guava:33.2.1-jre")
+
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 application {
@@ -69,15 +69,47 @@ tasks.withType<JavaExec>().configureEach {
     }
     // Note: If the property is not set, 'args' starts as an empty list (or whatever default the task has).
 
-    // 2. Define the reveila.properties argument to check/add to the args list
-    val arg = "reveila.properties=file:///C:/IDE/Projects/Reveila-Suite/reveila/runtime-directory/configs/reveila.properties"
+    if (false) { // toggle if supplying the reveila.properties URL as command line argument
 
-    // 3. Add the reveila.properties argument if it's not already present in the args list
-    if (!args.contains(arg)) {
-        args(arg) // Use args(arg) to append the argument to the list.
+
+        // 2. Define the reveila.properties argument to check/add to the args list
+        val arg = "reveila.properties=file:///C:/IDE/Projects/Reveila-Suite/reveila/runtime-directory/configs/reveila.properties"
+
+        // 3. Add the reveila.properties argument if it's not already present in the args list
+        if (!args.contains(arg)) {
+            args(arg) // Use args(arg) to append the argument to the list.
+        }
+    
     }
 }
 
 tasks.named<Test>("test") {
     useJUnitPlatform() // Use JUnit Platform for unit tests.
 }
+
+// Create an executable "fat" JAR that includes all dependencies (both external libraries and internal project dependencies)
+// Run command: java -jar your-project-1.0-SNAPSHOT-all.jar
+// Requires the 'com.gradleup.shadow' plugin applied above, and "import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar"
+tasks.getByName<ShadowJar>("shadowJar") {
+    // Specify the main class for the executable JAR
+    manifest {
+        attributes(mapOf("Main-Class" to "com.reveila.standalone.App"))
+    }
+
+    // Merges all dependencies into the single JAR file
+    // We use `configurations.runtimeClasspath.get()` to access the configuration
+    configurations = listOf(project.configurations.runtimeClasspath.get())
+
+    // Optional: Exclude signing files to avoid issues
+    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+}
+
+/* No "import" alternative:
+tasks.named("shadowJar", com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar::class.java) {
+    manifest {
+        attributes(mapOf("Main-Class" to "com.reveila.standalone.App"))
+    }
+    configurations(project.configurations.runtimeClasspath.get())
+    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+}
+*/

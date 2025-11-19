@@ -41,50 +41,70 @@ public class Reveila {
 	private String localAddress;
 	private URL localUrl;
 	private boolean standaloneMode = true;
-	
-	public void shutdown() {
-		synchronized (this) {
-			
-			System.out.println("\n\nShutting down Reveila...");
-			
-			boolean error = false;
+	private boolean isShutdown = false;
 
-			if (this.systemContext != null) {
-				try {
-					systemContext.destruct();
-				} catch (Exception e) {					
-					error = true;
-					System.out.println("Reveila shutdown failed: " + e.getMessage());
-					e.printStackTrace();
+	public synchronized void shutdown() {
+		
+		if (isShutdown) {
+			return;
+		}
+
+		isShutdown = true;
+
+		System.out.println("\n\nShutting down Reveila...");
+		if (logger != null) {
+			logger.info("Shutting down Reveila...");
+		}
+
+		boolean error = false;
+
+		if (this.systemContext != null) {
+			try {
+				systemContext.destruct();
+			} catch (Exception e) {
+				error = true;
+				System.out.println("Reveila shutdown failed: " + e.getMessage());
+				e.printStackTrace();
+				if (logger != null) {
+					logger.log(Level.SEVERE, "Reveila shutdown failed.", e);
 				}
 			}
+		}
 
-			if (this.platformAdapter != null) {
-				try {
-					this.platformAdapter.destruct();
-				} catch (Exception e) {
-					error = true;
-					System.out.println("Failed to destruct Reveila platform adapter: " + e.getMessage());
-					e.printStackTrace();
+		if (this.platformAdapter != null) {
+			try {
+				this.platformAdapter.destruct();
+			} catch (Exception e) {
+				error = true;
+				System.out.println("Failed to destruct Reveila platform adapter: " + e.getMessage());
+				e.printStackTrace();
+				if (logger != null) {
+					logger.log(Level.SEVERE, "Failed to destruct Reveila platform adapter.", e);
 				}
 			}
+		}
 
-			if (!error) {
-				System.out.println("Reveila shut down successfully\n\n");
-			} else {
-				System.out.println("Reveila shut down with errors. Check logs for details.\n\n");
+		if (!error) {
+			System.out.println("Reveila shut down successfully\n\n");
+			if (logger != null) {
+				logger.info("Reveila shut down successfully.");
 			}
+		} else {
+			System.out.println("Reveila shut down with errors. Check logs for details.\n\n");
+			if (logger != null) {
+				logger.warning("Reveila shut down with errors. Check logs for details.");
+			}
+		}
 
-			// Close logger handlers at the very end of the shutdown sequence.
-			if (this.logger != null) {
-				for (Handler handler : this.logger.getHandlers()) {
-					handler.close();
-				}
+		// Close logger handlers at the very end of the shutdown sequence.
+		if (this.logger != null) {
+			for (Handler handler : this.logger.getHandlers()) {
+				handler.close();
 			}
 		}
 	}
 
-	public void start(PlatformAdapter platformAdapter) throws Exception {
+	public synchronized void start(PlatformAdapter platformAdapter) throws Exception {
 		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
 			shutdown();
 		}));
@@ -98,7 +118,7 @@ public class Reveila {
 		this.logger = platformAdapter.getLogger();
 		this.localAddress = getLocalHost();
 		this.localUrl = new URL("http://" + this.localAddress + "/");
-		
+
 		printLogo();
 
 		logStartupBanner();
@@ -106,8 +126,9 @@ public class Reveila {
 
 		try {
 			this.standaloneMode = "true"
-				.equalsIgnoreCase(this.properties.getProperty(Constants.STANDALONE_MODE));
-		} catch (Exception e) {}
+					.equalsIgnoreCase(this.properties.getProperty(Constants.STANDALONE_MODE));
+		} catch (Exception e) {
+		}
 
 		createSystemContext(this.properties);
 		loadComponents();
@@ -119,36 +140,36 @@ public class Reveila {
 
 	private void printLogo() {
 
-        System.out.println();
+		System.out.println();
 
 		BufferedReader reader = null;
-        try (InputStream is = this.platformAdapter.getInputStream(PlatformAdapter.CONF_STORAGE, "logo.txt")) {
-            if (is == null) {
-                System.out.println("Reveila"); // Fallback if logo resource is not found
-            } else {
-            	reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
-            	reader.lines().forEach(System.out::println);
-            }
-        } catch (Exception e) {
-            // Log a warning or handle the exception if the logo fails to load
-            System.out.println("Warning: Could not load Reveila logo resource file.");
-        } finally {
-            if (reader != null) {
-                try {
-                    reader.close();
-                } catch (IOException e) {
-                    // Ignore
-                }
-            }
-        }
+		try (InputStream is = this.platformAdapter.getInputStream(PlatformAdapter.CONF_STORAGE, "logo.txt")) {
+			if (is == null) {
+				System.out.println("Reveila"); // Fallback if logo resource is not found
+			} else {
+				reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+				reader.lines().forEach(System.out::println);
+			}
+		} catch (Exception e) {
+			// Log a warning or handle the exception if the logo fails to load
+			System.out.println("Warning: Could not load Reveila logo resource file.");
+		} finally {
+			if (reader != null) {
+				try {
+					reader.close();
+				} catch (IOException e) {
+					// Ignore
+				}
+			}
+		}
 
-        String version = this.properties.getProperty(Constants.SYSTEM_VERSION);
+		String version = this.properties.getProperty(Constants.SYSTEM_VERSION);
 		if (version != null && !version.isBlank()) {
 			System.out.println(version);
 		}
-        
-        System.out.println();
-    }
+
+		System.out.println();
+	}
 
 	private void logStartupBanner() {
 		String displayName = getDisplayName(this.properties);
@@ -176,7 +197,8 @@ public class Reveila {
 
 		String secretKey = props.getProperty(Constants.CRYPTOGRAPHER_SECRETKEY);
 		if (secretKey == null || secretKey.isBlank()) {
-			throw new ConfigurationException("Reveila system property '" + Constants.CRYPTOGRAPHER_SECRETKEY + "' is not set.");
+			throw new ConfigurationException(
+					"Reveila system property '" + Constants.CRYPTOGRAPHER_SECRETKEY + "' is not set.");
 		}
 
 		String charset = props.getProperty(Constants.CHARACTER_ENCODING);
@@ -186,8 +208,7 @@ public class Reveila {
 
 		this.systemContext = new SystemContext(
 				props, eventManager, this.logger,
-				new DefaultCryptographer(secretKey.getBytes(charset)), this.platformAdapter
-		);
+				new DefaultCryptographer(secretKey.getBytes(charset)), this.platformAdapter);
 	}
 
 	private void loadComponents() throws Exception {
@@ -206,7 +227,8 @@ public class Reveila {
 					for (MetaObject mObj : list) {
 						if (mObj.isStartOnLoad()) {
 							logger.info("Starting component on load: " + mObj.getName());
-							// The Proxy class handles both stateful (singleton) and stateless (prototype) lifecycles.
+							// The Proxy class handles both stateful (singleton) and stateless (prototype)
+							// lifecycles.
 							Proxy proxy = new Proxy(mObj);
 							proxy.setSystemContext(this.systemContext);
 							proxy.start();
@@ -231,10 +253,11 @@ public class Reveila {
 	 * React Native bridge to interact with the Reveila backend.
 	 *
 	 * @param componentName The name of the component to invoke.
-	 * @param methodName The name of the method to invoke.
-	 * @param params The parameters to pass to the method.
+	 * @param methodName    The name of the method to invoke.
+	 * @param params        The parameters to pass to the method.
 	 * @return The result of the method invocation.
-	 * @throws Exception if the component or method is not found, or if invocation fails.
+	 * @throws Exception if the component or method is not found, or if invocation
+	 *                   fails.
 	 */
 	public Object invoke(String componentName, String methodName, Object[] params) throws Exception {
 		return invoke(componentName, methodName, params, null);
@@ -247,21 +270,22 @@ public class Reveila {
 	 * Blocking retrieval:
 	 * 
 	 * try {
-	 * 		Object result = future.get(); // This blocks the thread until the future is complete.
-	 * 		// Or with a timeout: Object result = future.get(5, TimeUnit.SECONDS);
+	 * Object result = future.get(); // This blocks the thread until the future is
+	 * complete.
+	 * // Or with a timeout: Object result = future.get(5, TimeUnit.SECONDS);
 	 * } catch (Exception e) {
-	 *      // Handle exceptions
+	 * // Handle exceptions
 	 * }
 	 * 
 	 * Non-blocking retrieval:
 	 * 
 	 * future.thenAccept(result -> {
-	 * 		System.out.println("Received result: " + result);
+	 * System.out.println("Received result: " + result);
 	 * });
 	 * 
 	 * @param componentName The name of the component to invoke.
-	 * @param methodName The name of the method to invoke.
-	 * @param params The parameters to pass to the method.
+	 * @param methodName    The name of the method to invoke.
+	 * @param params        The parameters to pass to the method.
 	 * @return The CompletableFuture result of the method invocation.
 	 */
 	public CompletableFuture<Object> invokeAsync(String componentName, String methodName, Object[] params) {
@@ -284,11 +308,12 @@ public class Reveila {
 		}
 
 		if (callerIp != null && !callerIp.isBlank()) {
-			logger.info("Received invocation request from " + callerIp + " for target: " + componentName + ", method: " + methodName);
+			logger.info("Received invocation request from " + callerIp + " for target: " + componentName + ", method: "
+					+ methodName);
 		}
 
 		Proxy proxy = null;
-		
+
 		if (standaloneMode == false) {
 			// Use the fastest node in the cluster to handle the request
 			URL url = NodePerformanceTracker.getInstance().getBestNodeUrl();
@@ -304,7 +329,10 @@ public class Reveila {
 						NodePerformanceTracker.getInstance().track(timeUsed, url); // Track remote invocation time
 						return result;
 					} catch (Exception e) {
-						NodePerformanceTracker.getInstance().track(Long.valueOf(NodePerformanceTracker.DEFAULT_PENALTY_MS), url); // Penalize the remote node for failure
+						NodePerformanceTracker.getInstance()
+								.track(Long.valueOf(NodePerformanceTracker.DEFAULT_PENALTY_MS), url); // Penalize the
+																										// remote node
+																										// for failure
 						logger.severe(
 								"Remote invocation failed. Falling back to local invocation. Error: " + e.getMessage());
 						e.printStackTrace();
@@ -313,7 +341,8 @@ public class Reveila {
 			}
 		}
 
-		// Use local invocation if standalone mode, or no better remote option, or remote invocation failed
+		// Use local invocation if standalone mode, or no better remote option, or
+		// remote invocation failed
 		Optional<Proxy> localProxy = systemContext.getProxy(componentName);
 		if (localProxy.isPresent()) {
 			proxy = localProxy.get();
@@ -330,13 +359,14 @@ public class Reveila {
 
 	private String getLocalHost() {
 		String address = null;
-        try {
-            InetAddress localHost = InetAddress.getLocalHost();
-            address = localHost.getHostAddress();
-        } catch (UnknownHostException e) {
-			logger.info("Unable to retrieve local IP address. Invocation time tracking is disabled. Error: " + e.getMessage());
-        }
+		try {
+			InetAddress localHost = InetAddress.getLocalHost();
+			address = localHost.getHostAddress();
+		} catch (UnknownHostException e) {
+			logger.info("Unable to retrieve local IP address. Invocation time tracking is disabled. Error: "
+					+ e.getMessage());
+		}
 
 		return address;
-    }
+	}
 }

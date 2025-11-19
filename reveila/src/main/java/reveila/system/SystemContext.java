@@ -67,13 +67,13 @@ public final class SystemContext {
 	}
 
 	public Logger getLogger(Object object) {
-		if (object instanceof Proxy) {
+		if (object != null && object instanceof Proxy) {
 			String proxyName = ((Proxy) object).getName();
 			// Use computeIfAbsent for a concise, thread-safe way to get or create the logger.
 			return this.loggersByName.computeIfAbsent(proxyName,
 					name -> Logger.getLogger(this.logger.getName() + "." + name));
 		}
-		return this.logger; // Return the root logger for non-proxy objects or null
+		return this.logger; // Return the root logger for non-proxy objects
 	}
 	
 	public SystemContext(

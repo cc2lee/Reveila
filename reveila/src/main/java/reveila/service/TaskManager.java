@@ -30,23 +30,14 @@ public class TaskManager extends AbstractService implements Runnable {
     }
 
     @Override
-    public void onEvent(EventObject evtObj) throws Exception {
-        // Not used in this implementation because this class is also the task runner.
-        // The run() method is called by the PlatformAdapter's scheduling mechanism.
-    }
+    public void onEvent(EventObject evtObj) throws Exception {}
 
     @Override
     public void start() throws Exception {
         PlatformAdapter platformAdapter = this.systemContext.getPlatformAdapter();
         Logger logger = this.systemContext.getLogger(this);
-        if (platformAdapter == null) {
-            throw new IllegalStateException("PlatformAdapter is not set in SystemContext.");
-        }
-        if (logger == null) {
-            throw new IllegalStateException("Logger is not found for " + this.getClass().getName() + ".");
-        }
         platformAdapter.runTask(this, this.initialDelay, this.interval, this);
-        logger.info("Task Manager started with interval: " + this.interval + " ms and initial delay: " + this.initialDelay + " ms.");
+        logger.info("Task Manager started with interval: " + this.interval + " ms, with initial delay: " + this.initialDelay + " ms.");
     }
 
     private String[] getTaskConfFiles() throws IOException {
@@ -55,7 +46,7 @@ public class TaskManager extends AbstractService implements Runnable {
     }
 
     @Override
-    public void run() {
+    public void run() { // A PlatformAdapter will call this method periodically based on the configured interval
         Logger logger = this.systemContext.getLogger(this);
         PlatformAdapter platformAdapter = this.systemContext.getPlatformAdapter();
         String[] paths;
@@ -75,26 +66,23 @@ public class TaskManager extends AbstractService implements Runnable {
 		}
 
 		for (String path : paths) {
-			if (path.toLowerCase(Locale.ROOT).endsWith(".json")) {
+			if (path.toLowerCase(Locale.ROOT).endsWith(".json")) { // only process JSON files
                 JsonConfiguration confGroup = null;
-				try (InputStream is = platformAdapter.getInputStream(PlatformAdapter.TASK_STORAGE, path)) {
+				try (InputStream is = platformAdapter.getInputStream(PlatformAdapter.TASK_STORAGE, path)) { // path is relative to task storage
 					logger.info("Loading tasks from: " + path);
 					confGroup = new JsonConfiguration(is, logger);
 					List<MetaObject> taskList = confGroup.read();
 					for (MetaObject task : taskList) {
-						if (task.isStartOnLoad()) { // enabled
+						if (task.isStartOnLoad()) { // The task is enabled. Run it if it's due.
                             JobSchedule schedule = parseSchedule(task, logger);
-                            if (schedule == null || !schedule.isDue()) {
-                                continue; // Job is not due to run
+                            
+                            if (schedule == null) {
+                                logger.warning("Invalid schedule for task: " + task.getName() + ". Skipping execution.");
+                                continue;
                             }
 
-                            // Update the last run time immediately before running the job.
-                            // This prevents the same job from being queued multiple times.
-                            if (schedule.lastRunMapObject != null) {
-                                String formatted = DateTimeFormatter.ofPattern(Constants.JOB_DATE_FORMAT)
-                                    .withZone(ZoneId.systemDefault())
-                                    .format(Instant.now());
-                                schedule.lastRunMapObject.put("value", formatted);
+                            if (!schedule.isDue()) {
+                                continue; // Job is not due to run
                             }
 
                             logger.info("Starting task: " + task.getName());
@@ -104,15 +92,20 @@ public class TaskManager extends AbstractService implements Runnable {
                                 proxy.setSystemContext(this.systemContext);
 							    proxy.start();
                                 proxy.invoke("run", null);
+
+                                if (schedule.lastRunMapObject != null) { // Update last run time in the task configuration
+                                    String timestamp = DateTimeFormatter.ofPattern(Constants.JOB_DATE_FORMAT)
+                                            .withZone(ZoneId.systemDefault())
+                                            .format(Instant.now());
+                                    schedule.lastRunMapObject.put("value", timestamp);
+                                }
                             } catch (Exception e) {
                                 logger.log(Level.SEVERE, "Task '" + task.getName() + "' failed during execution.", e);
                             } finally {
                                 try {
                                     proxy.stop();
                                 } catch (Exception e) {
-                                    // ignore,
-                                    // if successful, we don't care about stop errors
-                                    // if failed, it will be logged above
+                                    logger.log(Level.WARNING, "Failed to stop task '" + task.getName() + "'.", e);
                                 }
                             }
 						}
@@ -120,13 +113,13 @@ public class TaskManager extends AbstractService implements Runnable {
                     
 				} catch (Exception e) {
                     // try-with-resources handles closing the stream
-                    logger.log(Level.SEVERE, "Failed to load tasks from " + path + ".", e);
+                    logger.log(Level.SEVERE, "Failed to load task(s) from " + path + ".", e);
 				} finally {
                     if (confGroup != null) {
                         try (OutputStream os = platformAdapter.getOutputStream(PlatformAdapter.TASK_STORAGE, path)) {
                             confGroup.writeToStream(os);
                         } catch (Exception e) {
-                            logger.log(Level.SEVERE, "Failed to save tasks to " + path + ".", e);
+                            logger.log(Level.SEVERE, "Failed to save task run states to " + path + ".", e);
                         }
                     }
                 }
@@ -161,13 +154,16 @@ public class TaskManager extends AbstractService implements Runnable {
                     DateTimeFormatter formatter = DateTimeFormatter.ofPattern(Constants.JOB_DATE_FORMAT).withZone(ZoneId.systemDefault());
                     lastRun = Instant.from(formatter.parse(dateStr)).toEpochMilli();
                 } catch (Exception e) {
-                    logger.warning("Could not parse LastRun date for job '" + metaObject.getName() + "': " + dateStr);
+                    logger.warning("Could not parse Last-Run date for job '" + metaObject.getName() + "': " + dateStr);
                     return null; // Invalid schedule
                 }
             } else if (Constants.JOB_ARG_DELAY.equalsIgnoreCase(argName)) {
                 Object delayValue = arg.get("value");
                 if (delayValue instanceof Number) {
                     delay = ((Number) delayValue).longValue();
+                } else {
+                    logger.warning("Invalid delay value for job '" + metaObject.getName() + "': " + delayValue);
+                    return null; // Invalid schedule
                 }
             }
         }
