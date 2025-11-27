@@ -1,6 +1,6 @@
 plugins {
-    id("com.reveila.convention.android.app")
-    // id("com.android.library") <-- This is redundant and can be removed
+    // id("com.reveila.convention.android.app")
+    id("com.android.library")
     id("maven-publish")
 }
 

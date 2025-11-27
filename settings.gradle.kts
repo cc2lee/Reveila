@@ -26,8 +26,8 @@ pluginManagement {
 
 include(":adapters")
 include(":apps")
-// include(":Compose Multiplatform")
 include(":reveila")
 include(":spring")
 include(":standalone")
 // include(":web")
+// include(":Compose Multiplatform")

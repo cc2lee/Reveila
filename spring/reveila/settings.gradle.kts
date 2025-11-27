@@ -20,14 +20,8 @@ plugins {
 
 rootProject.name = "spring"
 
-includeBuild("../reveila") {
+includeBuild("../../reveila") {
     dependencySubstitution {
         substitute(module("com.reveila:reveila:1.0.0")).using(project(":"))
-    }
-}
-
-includeBuild("../standalone") {
-    dependencySubstitution {
-        substitute(module("com.reveila:standalone:1.0.0")).using(project(":app"))
     }
 }

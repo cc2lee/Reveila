@@ -22,10 +22,8 @@ plugins {
 
 rootProject.name = "android"
 
-includeBuild("../../build-logic")
 includeBuild("../../reveila") {
     dependencySubstitution {
         substitute(module("com.reveila:reveila:1.0.0")).using(project(":"))
     }
 }
-

@@ -20,9 +20,15 @@ tasks.withType<JavaCompile> {
 
 dependencies {
 
-    implementation("com.reveila:reveila:1.0.0")
-    implementation("com.reveila:standalone:1.0.0")
-
+    implementation("com.reveila:reveila:1.0.0") {
+        // slf4j-simple is excluded to prevent conflicts with Spring Boot's logback-classic logging setup
+        exclude(group = "org.slf4j", module = "slf4j-simple")
+    }
+    
+    // Spring Boot Admin Client dependency
+    implementation("de.codecentric:spring-boot-admin-starter-client:3.5.5")
+    implementation("org.springframework.boot:spring-boot-starter-security")
+    
     // The Jackson dependency is required for XML/JSON conversion.
     implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.17.1")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.17.1")
