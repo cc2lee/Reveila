@@ -18,6 +18,9 @@
 # Gradle
 .gradle/
 
+# node_modules
+node_modules/
+
 # IDE
 .idea/
 .vscode/
