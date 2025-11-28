@@ -74,7 +74,7 @@ app.get('/', (req, res) => {
 });
 
 const profileRoutes = require('./routes/profile');
-app.use('/api/profile', profileRoutes);
+app.use('/api/profile', profileRoutes); // The app.use defines the base path for profile routes
 
 // 6. Configure and start the HTTPS server
 const options = {

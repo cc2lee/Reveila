@@ -1,1 +1,1 @@
-rootProject.name = "AdminServer"
+rootProject.name = "Spring-Admin-Server"

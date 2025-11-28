@@ -5,18 +5,35 @@
     "maven.terminal.useJavaHome": true,
     
     "java.project.sourcePaths": [
-        "spring/src/main/java",
-        "adapters/reveila-android/src/main/java",
-        "reveila/src/main/java"
+        "adapters/android/src/main/java",
+        "adapters/db/src/main/java",
+        "apps/android/src/main/java",
+        "apps/expo/Reveila/android/app/src/main/java",
+        "reveila/src/main/java",
+        "spring/admin/src/main/java",
+        "spring/reveila/src/main/java"
     ],
 
     "java.project.referencedLibraries": [
     ],
 
     // Set "org.gradle.java.home" in each project's "gradle.properties" file
-    // to use different JDK for Gradle build. This setting here will take higher precedence.
-    // "java.import.gradle.java.home": "C:/IDE/JDK/jdk-17.0.12",
+    // to use different JDK for Gradle build.
+    // This setting here will take higher precedence.
+    // Example: "java.import.gradle.java.home": "C:/IDE/JDK/jdk-17.0.12",
     
     "java.jdt.ls.java.home": "C:/IDE/JDK/jdk-17.0.12",
-    "spring-boot.ls.java.home": "C:/IDE/JDK/jdk-17.0.12"
+    "spring-boot.ls.java.home": "C:/IDE/JDK/jdk-17.0.12",
+
+    // This tells the Java extensions specifically where to find Maven projects
+    "java.import.maven.discoveryPath": [
+        "${workspaceFolder}/spring/admin",
+        "${workspaceFolder}/spring/reveila"
+    ],
+    // You can also include/exclude files globally using files.exclude
+    "files.exclude": {
+        // Exclude other non-java sub-projects if necessary
+    },
+
+    "spring-boot.ls.logfile": "${workspaceFolder}/.vscode-logs/spring-boot-ls.log"
 }
