@@ -1,0 +1,18 @@
+# Ignore local build artifacts (these are generated inside the container)
+build/
+.gradle/
+
+# Ignore source control metadata
+.git/
+.gitignore
+
+# Ignore IDE configuration files (VS Code, IntelliJ)
+.vscode/
+.idea/
+
+# Ignore operating system generated files
+.DS_Store
+Thumbs.db
+
+# Example: Ignore local environment configs if you have them
+config/local.env

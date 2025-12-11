@@ -32,7 +32,12 @@
     ],
     // You can also include/exclude files globally using files.exclude
     "files.exclude": {
-        // Exclude other non-java sub-projects if necessary
+        "**/.git": true,
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        ".mule": true
     },
 
     "spring-boot.ls.logfile": "${workspaceFolder}/.vscode-logs/spring-boot-ls.log"

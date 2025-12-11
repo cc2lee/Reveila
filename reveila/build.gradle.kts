@@ -3,6 +3,7 @@ version "1.0.0"
 description = "Reveila - runtime"
 
 plugins {
+    id("com.autonomousapps.dependency-analysis") version "3.5.1"
     `java-library`
     `maven-publish`
 }
