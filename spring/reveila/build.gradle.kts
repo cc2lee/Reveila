@@ -4,7 +4,7 @@ description = "Reveila - Spring Boot"
 
 plugins {
 	java
-    id("org.springframework.boot") version "3.5.7" // To update Spring Boot version, also update in Dockerfile
+    id("org.springframework.boot") version "3.5.8" // To update Spring Boot version, also update in Dockerfile
     id("io.spring.dependency-management") version "1.1.7"
 }
 
