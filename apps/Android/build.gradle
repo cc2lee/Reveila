@@ -1,4 +1,9 @@
-apply plugin: "com.android.application"
+plugins {
+    id("my-android-conventions")
+}
+
+
+//apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
@@ -108,6 +113,9 @@ android {
 }
 
 dependencies {
+
+    implementation(libs.androidx.core)
+    
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
@@ -121,7 +129,7 @@ dependencies {
     // implementation(project(':reveila-android'))
 
     // My project dependencies
-    implementation("com.reveila:reveila:1.0.0") // Add Reveila library as a dependency
+    implementation(project(":reveila")) // Add Reveila library as a dependency
     implementation "com.reveila:android:1.0.0"
     implementation("com.google.code.gson:gson:2.10.1") // Add Gson for robust JSON serialization between Java and JavaScript
 

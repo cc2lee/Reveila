@@ -38,7 +38,7 @@ repositories {
 
 dependencies {
 
-    implementation("com.reveila:reveila:1.0.0")
+    implementation(project(":reveila"))
     implementation(libs.guava)
     implementation("com.google.guava:guava:33.2.1-jre")
 

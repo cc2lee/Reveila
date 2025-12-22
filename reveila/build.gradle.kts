@@ -3,15 +3,10 @@ version "1.0.0"
 description = "Reveila - runtime"
 
 plugins {
-    id("com.autonomousapps.dependency-analysis") version "3.5.1"
-    `java-library`
+    `java-library` // Keeps the library-specific features (like 'api' vs 'implementation')
+    id("java-conventions") // Adds custom Java conventions like the -parameters flag and shared settings
     `maven-publish`
-}
-
-java {
-	toolchain {
-		languageVersion = JavaLanguageVersion.of(17)
-	}
+    id("com.autonomousapps.dependency-analysis") version "3.5.1"
 }
 
 publishing {
@@ -22,13 +17,29 @@ publishing {
     }
 }
 
-tasks.withType<JavaCompile> {
-    options.compilerArgs.add("-parameters")
+tasks.named<Jar>("jar") {
+    archiveBaseName.set("reveila")
 }
 
 tasks.withType<Test> {
     useJUnitPlatform()
 }
+
+dependencies {
+    // This dependency is required by XmlUtil.java for XML/JSON conversion.
+    implementation(libs.bundles.jackson)
+
+    // Logging bundle (shared across projects)
+    implementation(libs.bundles.slf4j)
+
+    // Testing bundle
+    testImplementation(libs.bundles.junit)
+
+    // Networking
+    implementation(libs.okhttp)
+}
+
+/* Old dependency versions were here, now moved to buildSrc for central management
 
 dependencies {
     // This dependency is required by XmlUtil.java for XML/JSON conversion.
@@ -55,4 +66,13 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.1")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.1")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.1")
+}
+*/
+
+tasks.register("displayRoot") {
+    group = "My Custom Tasks"
+    description = "A simple callable task to display the Gradle root directory."
+    doLast {
+        println("Gradle root directory: ${rootDir.absolutePath}")
+    }
 }

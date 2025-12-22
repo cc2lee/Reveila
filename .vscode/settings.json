@@ -14,9 +14,6 @@
         "spring/reveila/src/main/java"
     ],
 
-    "java.project.referencedLibraries": [
-    ],
-
     // Set "org.gradle.java.home" in each project's "gradle.properties" file
     // to use different JDK for Gradle build.
     // This setting here will take higher precedence.
@@ -41,4 +38,5 @@
     },
 
     "spring-boot.ls.logfile": "${workspaceFolder}/.vscode-logs/spring-boot-ls.log"
+
 }

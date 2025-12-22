@@ -1,6 +1,7 @@
 package reveila.service;
 
 import java.io.IOException;
+import java.net.URI;
 import java.net.URL;
 import java.util.Collections;
 import java.util.HashMap;
@@ -75,7 +76,7 @@ public class ReveilaRemote extends AbstractService {
     public void addRemoteNode(String urlAndPriority) throws SystemException {
         try {
             String[] array = urlAndPriority.split(",");
-            URL url = new URL(array[0].trim());
+            URL url = new URI(array[0].trim()).toURL();
             Long priority = Long.parseLong(array[1].trim());
             configs.put(url, priority);
         } catch (Exception e) {

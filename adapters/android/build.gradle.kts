@@ -83,7 +83,7 @@ afterEvaluate {
 dependencies {
 
     // My dependencies
-    implementation("com.reveila:reveila:1.0.0") // Add Reveila library as a dependency
+    implementation(project(":reveila")) // Add Reveila library as a dependency
     
     // If you have any *.jar files, put them in the libs/ directory.
     // If you have multiple *.jar files, you can use a wildcard:
