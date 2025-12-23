@@ -3,10 +3,9 @@ package com.reveila.spring.service;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-
-import reveila.service.HttpClient;
-import reveila.util.JsonUtil;
-import reveila.util.xml.XmlUtil;
+import com.reveila.service.HttpClient;
+import com.reveila.util.JsonUtil;
+import com.reveila.util.xml.XmlUtil;
 
 import java.io.ByteArrayInputStream;
 import org.w3c.dom.Document;

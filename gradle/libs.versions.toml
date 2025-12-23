@@ -19,28 +19,32 @@
 [versions]
 
 java = "21"
+kotlin = "2.0.0"
 
 # Common libs:
 jackson = "2.17.1"
 okhttp = "4.12.0"
 slf4j = "2.0.13"
 junit = "5.10.1"
-junit-platform = "1.10.1"
+junitPlatform = "1.10.1"
 
 # https://github.com/GradleUp/shadow
 shadow = "9.3.0"
 
 # Android:
-android-compileSdk = "35"
-android-minSdk = "24"
-android-targetSdk = "35"
-agp = "8.7.2" # Android Gradle Plugin version
+androidCompileSdk = "35"
+androidMinSdk = "24"
+androidTargetSdk = "35"
+androidJvmTarget = "1.8"
+androidGradlePlugin = "8.7.2" # Android Gradle Plugin version
+androidxCore = "1.17.0"
 
 # AWS SDK:
-aws-sdk = "2.40.13"
+awsSdk = "2.40.13"
 
 # Spring Boot:
-springBoot = "3.5.8"
+springBoot = "3.5.9"
+springDependencyManagement = "1.1.7"
 
 [plugins]
 
@@ -48,11 +52,15 @@ springBoot = "3.5.8"
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
 
 # Android:
-android-library = { id = "com.android.library", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "androidGradlePlugin" }
 
 # Spring Boot:
+# With the following 2 plugins applied, Spring Boot will automatically use the spring-boot-dependencies BOM that corresponds to the version of the Spring Boot plugin
 spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
-spring-dependency-management = { id = "io.spring.dependency-management", version = "1.1.7" }
+spring-dependency-management = { id = "io.spring.dependency-management", version.ref = "springDependencyManagement" }
+
+# Kotlin
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 
 # The Gradle Node Plugin allows Gradle to manage Node.js and NPM automatically
 node = { id = "com.github.node-gradle.node", version = "7.1.0" }
@@ -61,15 +69,14 @@ node = { id = "com.github.node-gradle.node", version = "7.1.0" }
 
 # AWS SDK
 # Define an alias for the BOM artifact
-aws-sdk-bom = { module = "software.amazon.awssdk:bom", version.ref = "aws-sdk" }
+aws-sdk-bom = { module = "software.amazon.awssdk:bom", version.ref = "awsSdk" }
 
 # Define individual AWS SDK modules without specifying their versions, as the BOM will manage them
 aws-sdk-s3 = { module = "software.amazon.awssdk:s3" }
-# aws-sdk-s3-presigner = { module = "software.amazon.awssdk:s3-presigner" }
 aws-sdk-lambda = { module = "software.amazon.awssdk:lambda" }
 
-# aws-dynamodb = { module = "software.amazon.awssdk:dynamodb", version.ref = "aws-sdk" }
-# aws-lambda = { module = "software.amazon.awssdk:lambda", version.ref = "aws-sdk" }
+# aws-dynamodb = { module = "software.amazon.awssdk:dynamodb", version.ref = "awsSdk" }
+# aws-lambda = { module = "software.amazon.awssdk:lambda", version.ref = "awsSdk" }
 
 # Jackson dependencies
 jackson-xml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-xml", version.ref = "jackson" }
@@ -85,10 +92,18 @@ slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 # Testing
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
 junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit" }
-junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junitPlatform" }
 
-# Enable Spring Boot Security
-spring-boot-starter-security = { module = "org.springframework.boot:spring-boot-starter-security", version.ref = "springBoot" }
+# Gradle Plugins as library dependencies for build-logic
+kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+kotlin-allopen = { module = "org.jetbrains.kotlin:kotlin-allopen", version.ref = "kotlin" }
+spring-boot-gradle-plugin = { module = "org.springframework.boot:spring-boot-gradle-plugin", version.ref = "springBoot" }
+spring-dependency-management-plugin = { module = "io.spring.dependency-management:io.spring.dependency-management.gradle.plugin", version.ref = "springDependencyManagement" }
+
+shadow-gradle-plugin = { module = "com.gradleup.shadow:shadow-gradle-plugin", version.ref = "shadow" }
+android-gradle-plugin = { module = "com.android.tools.build:gradle", version.ref = "androidGradlePlugin" }
+
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidxCore" }
 
 [bundles]
 

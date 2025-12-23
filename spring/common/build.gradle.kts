@@ -1,8 +1,5 @@
 plugins {
     id("spring-conventions")
-    //`java-library`
-    //alias(libs.plugins.spring.boot).apply(false) // Use the alias from the TOML file and don't apply it to this library
-    //alias(libs.plugins.spring.dependency.management).apply(false) // Use the alias from the TOML file and don't apply it to this library
 }
 
 dependencies {

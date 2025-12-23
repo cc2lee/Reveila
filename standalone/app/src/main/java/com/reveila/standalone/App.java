@@ -1,8 +1,8 @@
 package com.reveila.standalone;
 
-import reveila.Reveila;
-import reveila.system.DefaultPlatformAdapter;
-import reveila.system.RuntimeUtil;
+import com.reveila.Reveila;
+import com.reveila.system.DefaultPlatformAdapter;
+import com.reveila.system.RuntimeUtil;
 
 public class App {
     public static void main(String[] args) {

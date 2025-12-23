@@ -6,8 +6,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import reveila.service.AbstractDataService;
-import reveila.util.io.Page;
+import com.reveila.service.AbstractDataService;
+import com.reveila.util.io.Page;
 
 /**
  * A DataService implementation for the Android environment.

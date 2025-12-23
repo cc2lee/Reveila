@@ -11,13 +11,11 @@ plugins {
 }
 
 dependencies {
-    // Import the AWS SDK BOM as a platform dependency
+    // AWS 1: Import the BOM as a platform dependency
     implementation(platform(libs.aws.sdk.bom))
 
-    // Add specific AWS SDK dependencies without versions
+    // AWS 2: Add specific SDK dependencies without versions
     implementation(libs.aws.sdk.s3)
-    //implementation("software.amazon.awssdk:s3-presigner:2.40.13")
-    //implementation(libs.aws.sdk.s3.presigner)
     //implementation(libs.aws.sdk.lambda)
 
     implementation(project(":spring:common"))

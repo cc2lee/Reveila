@@ -4,10 +4,6 @@ plugins {
 	id("io.spring.dependency-management") version "1.1.7" // Generally do not need to specify a version here. The boot plugin will manage it.
 }
 
-group = "reveila.spring"
-version = "0.0.1-SNAPSHOT"
-description = "Spring Boot Admin Server"
-
 java {
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(17)

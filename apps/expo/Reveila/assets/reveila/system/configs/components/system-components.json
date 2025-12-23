@@ -2,7 +2,7 @@
   {
     "component": {
       "name": "RatedService.Default",
-      "class": "reveila.service.RatedService",
+      "class": "com.reveila.service.RatedService",
       "description": "A service that manages multiple service providers and selects the best one based on ratings.",
       "author": "Charles Lee",
       "license-token": "",
@@ -30,7 +30,7 @@
     "component": {
       "start": true,
       "name": "EchoService",
-      "class": "reveila.service.EchoService",
+      "class": "com.reveila.service.EchoService",
       "version": "1",
       "arguments": [
         {
@@ -55,7 +55,7 @@
     "component": {
       "start": true,
       "name": "remote.reveila",
-      "class": "reveila.service.ReveilaRemote",
+      "class": "com.reveila.service.ReveilaRemote",
       "version": "1",
       "arguments": [
         {
@@ -70,7 +70,7 @@
     "component(ignore)": {
       "start": true,
       "name": "TaskManager",
-      "class": "reveila.service.TaskManager",
+      "class": "com.reveila.service.TaskManager",
       "thread-safe": true,
       "description": "A service that executes scheduled background jobs.",
       "arguments": [

@@ -1,0 +1,30 @@
+Calculating task graph as no cached configuration is available for tasks: build --Xlint:deprecation
+> Task :build-logic:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :build-logic:generateExternalPluginSpecBuilders UP-TO-DATE
+> Task :build-logic:extractPrecompiledScriptPluginPlugins UP-TO-DATE
+> Task :build-logic:compilePluginsBlocks UP-TO-DATE
+> Task :build-logic:generatePrecompiledScriptPluginAccessors UP-TO-DATE
+> Task :build-logic:generateScriptPluginAdapters UP-TO-DATE
+> Task :build-logic:pluginDescriptors UP-TO-DATE
+> Task :build-logic:processResources UP-TO-DATE
+
+> Task :build-logic:compileKotlin FAILED
+e: file:///C:/IDE/Projects/Reveila-Suite/build-logic/src/main/kotlin/spring-conventions.gradle.kts:25:5 Unresolved reference 'implementation'.
+e: file:///C:/IDE/Projects/Reveila-Suite/build-logic/src/main/kotlin/spring-conventions.gradle.kts:26:5 Unresolved reference 'testImplementation'.
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':build-logic:compileKotlin'.
+> A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+   > Compilation error. See log for more details
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to generate a Build Scan (Powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 2s
+8 actionable tasks: 1 executed, 7 up-to-date
+Configuration cache entry stored.

@@ -18,6 +18,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    buildFeatures {
+        // Explicitly enable because it is false by default in AGP 8.0+
+        buildConfig = true
+    }
+
     sourceSets {
         getByName("main") {
             kotlin.srcDir("src/main/kotlin") 

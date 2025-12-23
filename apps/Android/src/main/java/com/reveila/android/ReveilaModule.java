@@ -11,7 +11,7 @@ import com.facebook.react.bridge.ReadableArray;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import reveila.Reveila;
+import com.reveila.Reveila;
 
 public class ReveilaModule extends ReactContextBaseJavaModule {
 

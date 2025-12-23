@@ -4,7 +4,7 @@ import java.util.Properties;
 
 import org.springframework.context.ApplicationContext;
 
-import reveila.system.DefaultPlatformAdapter;
+import com.reveila.system.DefaultPlatformAdapter;
 
 /**
  * A custom PlatformAdapter that acts as a bridge to the Spring ApplicationContext.

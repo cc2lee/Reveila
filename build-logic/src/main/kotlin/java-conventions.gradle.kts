@@ -1,35 +1,41 @@
 // build-logic/src/main/kotlin/java-conventions.gradle.kts
 
-import org.gradle.api.artifacts.VersionCatalogsExtension
+import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.kotlin.dsl.configure
+import org.gradle.kotlin.dsl.dependencies
 import org.gradle.kotlin.dsl.getByType
+import org.gradle.kotlin.dsl.withType
+import org.gradle.api.artifacts.VersionCatalogsExtension
 
 plugins {
     `java-library`
-    id("com.gradleup.shadow")
 }
 
 val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
 
-java {
+// Use Java version defined in version catalog
+extensions.configure<JavaPluginExtension> {
     toolchain {
-        // Use Java version defined in version catalog
         languageVersion.set(JavaLanguageVersion.of(libs.findVersion("java").get().toString()))
     }
 }
 
+// Preserve parameter names for reflection at runtime
 tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.add("-parameters")
-    options.encoding = "UTF-8" // global standard
+    options.encoding = "UTF-8"
+}
+
+// Use JUnit Platform for tests
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
 }
 
 // Apply shared dependencies to every module using this plugin
 dependencies {
-    // Every module gets the SLF4J API for logging
-    implementation(libs.findLibrary("slf4j.api").get())
-
-    // Every module gets the core Jackson databind
-    implementation(libs.findLibrary("jackson.databind").get())
-    
-    // Use 'testImplementation' for shared testing tools
-    testImplementation(libs.findBundle("junit").get())
+    "implementation"(libs.findBundle("slf4j").get()) // logging bundle
+    "implementation"(libs.findBundle("jackson").get()) // XML/JSON manipulation
+    "testImplementation"(libs.findBundle("junit").get()) // testing bundle
 }

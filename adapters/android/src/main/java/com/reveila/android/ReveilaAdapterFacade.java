@@ -3,7 +3,7 @@ package com.reveila.android;
 import com.google.gson.Gson;
 import com.reveila.android.ReveilaService;
 
-import reveila.Reveila;
+import com.reveila.Reveila;
 
 public class ReveilaAdapterFacade {
 

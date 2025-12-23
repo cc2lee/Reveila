@@ -1,42 +1,38 @@
-// build-logic/src/main/kotlin/spring-conventions.gradle.kts
-
-// 1. Define plugin versions in gradle/libs.versions.toml (version catalog).
-// 2. Use versionless id(...) calls in convention plugins.
-// 3. The project applying the convention plugin will resolve the version from the version catalog.
+import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.api.tasks.testing.Test
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.kotlin.dsl.configure
+import org.gradle.kotlin.dsl.dependencies
+import org.gradle.kotlin.dsl.withType
+import org.jetbrains.kotlin.allopen.gradle.AllOpenExtension
+import org.gradle.api.artifacts.VersionCatalogsExtension
+import org.gradle.kotlin.dsl.getByType
 
 plugins {
     `java-library`
-    id("org.springframework.boot")
-    id("io.spring.dependency-management")
-    id("org.jetbrains.kotlin.jvm")
-    id("org.jetbrains.kotlin.plugin.spring")
 }
+
+// Apply the custom java-conventions plugin
+apply(plugin = "java-conventions")
+
+// Apply other necessary plugins imperatively
+apply(plugin = "org.springframework.boot")
+apply(plugin = "io.spring.dependency-management")
+apply(plugin = "org.jetbrains.kotlin.jvm")
+apply(plugin = "org.jetbrains.kotlin.plugin.spring")
+apply(plugin = "org.jetbrains.kotlin.plugin.allopen")
 
 val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
 
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of("21"))
-    }
-}
-
 dependencies {
-    testImplementation("org.springframework.boot:spring-boot-starter-test")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-}
-
-tasks.withType<Test> {
-    useJUnitPlatform()
-}
-
-tasks.withType<JavaCompile> {
-    // required since Spring Framework 5.2 for reflection-based parameter name discovery
-    options.compilerArgs.add("-parameters")
+    "implementation"("org.springframework.boot:spring-boot-starter")
+    "testImplementation"("org.springframework.boot:spring-boot-starter-test")
 }
 
 // Kotlin All-Open compiler plugin configuration. Kotlin classes and methods are final by default.
 // This makes classes and methods open if they are annotated with one of the specified annotations.
-allOpen {
+extensions.configure<AllOpenExtension> {
     annotation("org.springframework.stereotype.Component")
     annotation("org.springframework.transaction.annotation.Transactional")
     annotation("org.springframework.scheduling.annotation.Async")

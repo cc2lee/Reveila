@@ -5,8 +5,8 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import reveila.Reveila;
-import reveila.system.RuntimeUtil;
+import com.reveila.Reveila;
+import com.reveila.system.RuntimeUtil;
 
 
 @Configuration

@@ -3,7 +3,7 @@
         "task": {
             "enable": false,
             "name": "File Directory Cleanup Job",
-            "class": "reveila.util.task.CleanFileDirectoryJob",
+            "class": "com.reveila.util.task.CleanFileDirectoryJob",
             "description": "A job that can be scheduled to run at set intervals to clean out files in the configured directories.",
             "arguments": [
                 {

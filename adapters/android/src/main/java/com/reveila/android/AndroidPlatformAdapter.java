@@ -14,12 +14,12 @@ import java.util.Arrays;
 import java.util.Properties;
 import java.util.logging.*;
 
-import reveila.Reveila;
-import reveila.error.ConfigurationException;
-import reveila.system.PlatformAdapter;
-import reveila.system.Constants;
-import reveila.system.EventWatcher;
-import reveila.util.FileUtil;
+import com.reveila.Reveila;
+import com.reveila.error.ConfigurationException;
+import com.reveila.system.PlatformAdapter;
+import com.reveila.system.Constants;
+import com.reveila.system.EventWatcher;
+import com.reveila.util.FileUtil;
 import com.reveila.android.ReveilaSetup;
 
 /**

@@ -3,10 +3,9 @@ version "1.0.0"
 description = "Reveila - runtime"
 
 plugins {
-    `java-library` // Keeps the library-specific features (like 'api' vs 'implementation')
-    id("java-conventions") // Adds custom Java conventions like the -parameters flag and shared settings
+    id("java-conventions")
+    `java-library`
     `maven-publish`
-    id("com.autonomousapps.dependency-analysis") version "3.5.1"
 }
 
 publishing {
@@ -19,10 +18,6 @@ publishing {
 
 tasks.named<Jar>("jar") {
     archiveBaseName.set("reveila")
-}
-
-tasks.withType<Test> {
-    useJUnitPlatform()
 }
 
 dependencies {
