@@ -31,6 +31,9 @@ tasks.withType<JavaCompile>().configureEach {
 // Use JUnit Platform for tests
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+    testLogging {
+        events("passed", "skipped", "failed")
+    }
 }
 
 // Apply shared dependencies to every module using this plugin
@@ -39,3 +42,7 @@ dependencies {
     "implementation"(libs.findBundle("jackson").get()) // XML/JSON manipulation
     "testImplementation"(libs.findBundle("junit").get()) // testing bundle
 }
+
+// Optional:
+// JaCoCo for test code coverage
+// Checkstyle or PMD to maintain a consistent code style

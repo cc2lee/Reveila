@@ -28,7 +28,7 @@ dependencies {
     implementation("de.codecentric:spring-boot-admin-starter-client:3.5.5")
     implementation("org.springframework.boot:spring-boot-starter-security")
     
-    // The Jackson dependency is required for XML/JSON conversion.
+    // The Jackson dependency is required for XML/JSON conversions
     implementation(libs.bundles.jackson)
     
     implementation("org.springframework.boot:spring-boot-starter-actuator")
@@ -47,7 +47,6 @@ tasks.withType<org.springframework.boot.gradle.tasks.bundling.BootJar> {
 tasks.withType<org.springframework.boot.gradle.tasks.run.BootRun> {
     jvmArgs = listOf("-Xmx2048m", "-Dspring.profiles.active=dev")
 }
-
 
 // Integrate the Vue.js frontend build into Spring Boot's resources
 tasks.named<ProcessResources>("processResources") {
