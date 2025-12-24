@@ -12,6 +12,7 @@ import org.gradle.kotlin.dsl.getByType
 
 plugins {
     `java-library`
+    id("project-conventions") // Apply project-wide conventions
     id("org.springframework.boot")
     // id("io.spring.dependency-management") // Deprecated in favor of Gradle Native Platforms (Spring Boot 4.0+ style)
     id("org.jetbrains.kotlin.jvm")

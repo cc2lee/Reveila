@@ -6,6 +6,10 @@ import org.gradle.kotlin.dsl.getByType
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
+plugins {
+    id("project-conventions") // Apply project-wide conventions
+}
+
 // Use version catalog to access shared version information
 val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
 

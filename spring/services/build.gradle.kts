@@ -25,7 +25,7 @@ dependencies {
     }
     
     // Spring Boot Admin Client dependency
-    implementation("de.codecentric:spring-boot-admin-starter-client:3.5.6")
+    implementation("de.codecentric:spring-boot-admin-starter-client:3.5.5")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     
     // Spring Boot Security dependency

@@ -11,6 +11,7 @@ import org.gradle.api.artifacts.VersionCatalogsExtension
 
 plugins {
     `java-library`
+    id("project-conventions") // Apply project-wide conventions
 }
 
 val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
