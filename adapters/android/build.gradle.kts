@@ -1,58 +1,19 @@
 plugins {
-    // id("com.reveila.convention.android.app")
     id("com.android.library")
+    id("org.jetbrains.kotlin.android")
+    id("android-conventions")
     id("maven-publish")
 }
 
 android {
     namespace = "com.reveila.android.adapter"
-    compileSdk = 36
-
-    defaultConfig {
-        minSdk = 24
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
     buildFeatures {
         // Explicitly enable because it is false by default in AGP 8.0+
         buildConfig = true
     }
-
-    sourceSets {
-        getByName("main") {
-            kotlin.srcDir("src/main/kotlin") 
-            java.srcDir("src/main/java") 
-            resources.srcDir("src/main/resources")
-        }
-        getByName("test") {
-            kotlin.srcDir("src/test/kotlin")
-            java.srcDir("src/test/java")
-            resources.srcDir("src/test/resources")
-        }
-    }
-
-    /* NOT WORKING WITH AGP 8.0.0+
-
-    publishing {
-        // REQUIRED: Explicitly tell AGP to create the "release" component
-        singleVariant("release") {
-            // Optional: Include source jars
-            // withSourcesJar()
-            // Optional: Include javadoc jars
-            // withJavadocJar()
-        }
-    }
-
-    */
-
 }
 
-// Use afterEvaluate as a safeguard for assembly tasks
+// safeguard for assembly tasks
 afterEvaluate {
     publishing {
         publications {
@@ -98,10 +59,4 @@ dependencies {
     // AndroidX libraries
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.code.gson:gson:2.10.1")
-    
-    // Test dependencies
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.1")
-    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.1")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.1")
 }

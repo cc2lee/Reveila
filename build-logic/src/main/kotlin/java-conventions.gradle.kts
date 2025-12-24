@@ -36,11 +36,21 @@ tasks.withType<Test>().configureEach {
     }
 }
 
-// Apply shared dependencies to every module using this plugin
 dependencies {
+
     "implementation"(libs.findBundle("slf4j").get()) // logging bundle
     "implementation"(libs.findBundle("jackson").get()) // XML/JSON manipulation
-    "testImplementation"(libs.findBundle("junit").get()) // testing bundle
+    
+    // Configure JUnit dependencies:
+
+    // 1. Import the BOM to manage all JUnit versions
+    "testImplementation"(platform(libs.findLibrary("junit.bom").get()))
+    
+    // 2. Add required modules without specifying versions
+    "testImplementation"("org.junit.jupiter:junit-jupiter")
+    
+    // 3. Optional: add legacy support or the launcher
+    "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
 }
 
 // Optional:

@@ -1,4 +1,4 @@
-package reveila.spring.AdminServer;
+package com.reveila.spring.AdminServer;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

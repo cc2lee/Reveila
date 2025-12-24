@@ -1,4 +1,4 @@
-package reveila.spring.AdminServer;
+package com.reveila.spring.AdminServer;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

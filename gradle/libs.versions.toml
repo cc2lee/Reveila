@@ -25,8 +25,7 @@ kotlin = "2.0.0"
 jackson = "2.17.1"
 okhttp = "4.12.0"
 slf4j = "2.0.13"
-junit = "5.10.1"
-junitPlatform = "1.10.1"
+junit = "5.12.2"
 
 # https://github.com/GradleUp/shadow
 shadow = "9.3.0"
@@ -44,7 +43,7 @@ awsSdk = "2.40.13"
 
 # Spring Boot:
 springBoot = "3.5.9"
-springDependencyManagement = "1.1.7"
+# springDependencyManagement = "1.1.7"
 
 [plugins]
 
@@ -52,12 +51,13 @@ springDependencyManagement = "1.1.7"
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
 
 # Android:
+android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
 android-library = { id = "com.android.library", version.ref = "androidGradlePlugin" }
 
 # Spring Boot:
 # With the following 2 plugins applied, Spring Boot will automatically use the spring-boot-dependencies BOM that corresponds to the version of the Spring Boot plugin
-spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
-spring-dependency-management = { id = "io.spring.dependency-management", version.ref = "springDependencyManagement" }
+# spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
+# spring-dependency-management = { id = "io.spring.dependency-management", version.ref = "springDependencyManagement" }
 
 # Kotlin
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
@@ -90,15 +90,17 @@ slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 
 # Testing
-junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
-junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit" }
-junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junitPlatform" }
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
+# junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+# junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine" }
+# junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 
 # Gradle Plugins as library dependencies for build-logic
 kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
 kotlin-allopen = { module = "org.jetbrains.kotlin:kotlin-allopen", version.ref = "kotlin" }
 spring-boot-gradle-plugin = { module = "org.springframework.boot:spring-boot-gradle-plugin", version.ref = "springBoot" }
-spring-dependency-management-plugin = { module = "io.spring.dependency-management:io.spring.dependency-management.gradle.plugin", version.ref = "springDependencyManagement" }
+spring-boot-dependencies = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "springBoot" }
+# spring-dependency-management-plugin = { module = "io.spring.dependency-management:io.spring.dependency-management.gradle.plugin", version.ref = "springDependencyManagement" }
 
 shadow-gradle-plugin = { module = "com.gradleup.shadow:shadow-gradle-plugin", version.ref = "shadow" }
 android-gradle-plugin = { module = "com.android.tools.build:gradle", version.ref = "androidGradlePlugin" }
@@ -110,5 +112,5 @@ androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = 
 # Create groups so you only need one line in your build files
 slf4j = ["slf4j-api", "slf4j-simple"]
 jackson = ["jackson-xml", "jackson-databind", "jackson-annotations", "jackson-jsr310"]
-junit = ["junit-jupiter-api", "junit-jupiter-engine", "junit-platform-launcher"]
+# junit = ["junit-jupiter-api", "junit-jupiter-engine", "junit-platform-launcher"]
 aws = ["aws-sdk-s3", "aws-sdk-lambda"]

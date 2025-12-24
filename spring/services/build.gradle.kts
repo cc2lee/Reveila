@@ -25,15 +25,20 @@ dependencies {
     }
     
     // Spring Boot Admin Client dependency
-    implementation("de.codecentric:spring-boot-admin-starter-client:3.5.5")
+    implementation("de.codecentric:spring-boot-admin-starter-client:3.5.6")
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
+    
+    // Spring Boot Security dependency
     implementation("org.springframework.boot:spring-boot-starter-security")
     
     // The Jackson dependency is required for XML/JSON conversions
     implementation(libs.bundles.jackson)
     
-    implementation("org.springframework.boot:spring-boot-starter-actuator")
+    // Alternatives to spring-boot-starter-web:
+    // spring-boot-starter-webflux: For reactive, non-blocking applications.
+    // spring-boot-starter-rsocket: For RSocket-based binary protocol
     implementation("org.springframework.boot:spring-boot-starter-web")
-    implementation("org.apache.httpcomponents.client5:httpclient5")
+    //implementation("org.apache.httpcomponents.client5:httpclient5")
     
     runtimeOnly("com.h2database:h2")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
