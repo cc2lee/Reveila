@@ -3,6 +3,13 @@
     "configurations": [
         {
             "type": "java",
+            "name": "Application",
+            "request": "launch",
+            "mainClass": "com.reveila.spring.Application",
+            "projectName": "services"
+        },
+        {
+            "type": "java",
             "name": "Attach to Gradle Daemon",
             "request": "attach",
             "hostName": "localhost",
@@ -10,9 +17,9 @@
         },
         {
             "name": "Reveila Standalone (Gradle)",
-            "type": "java", // debugger type
+            "type": "java",
             "request": "launch",
-            "preLaunchTask": "Run Reveila Standalone (Gradle)", // Points to the "label" of the task defined in tasks.json
+            "preLaunchTask": "Run Reveila Standalone (Gradle)",
             "mainClass": "com.reveila.standalone.App",
             "projectName": "app",
             "cwd": "${workspaceFolder}/standalone"

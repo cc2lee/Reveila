@@ -38,8 +38,7 @@ public final class Constants {
 	public static final String REMOTE_REVEILA = "remote.reveila";
 	public static final String DESCRIPTION = "description";
 	public static final String START = "start";
-	public static final Object ENABLE = "enable";
-    public static final String NAME = "name";
+	public static final String NAME = "name";
 	public static final String VERSION = "version";
 	public static final String CLASS = "class";
 	public static final String THREAD_SAFE = "thread-safe";

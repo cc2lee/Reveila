@@ -67,11 +67,11 @@ public class TaskManager extends AbstractService implements Runnable {
 
 		for (String path : paths) {
 			if (path.toLowerCase(Locale.ROOT).endsWith(".json")) { // only process JSON files
-                JsonConfiguration confGroup = null;
+                JsonConfiguration jsonConf = null;
 				try (InputStream is = platformAdapter.getInputStream(PlatformAdapter.TASK_STORAGE, path)) { // path is relative to task storage
 					logger.info("Loading tasks from: " + path);
-					confGroup = new JsonConfiguration(is, logger);
-					List<MetaObject> taskList = confGroup.read();
+					jsonConf = new JsonConfiguration(is);
+					List<MetaObject> taskList = jsonConf.getMetaObjects();
 					for (MetaObject task : taskList) {
 						if (task.isStartOnLoad()) { // The task is enabled. Run it if it's due.
                             JobSchedule schedule = parseSchedule(task, logger);
@@ -115,9 +115,9 @@ public class TaskManager extends AbstractService implements Runnable {
                     // try-with-resources handles closing the stream
                     logger.log(Level.SEVERE, "Failed to load task(s) from " + path + ".", e);
 				} finally {
-                    if (confGroup != null) {
+                    if (jsonConf != null) {
                         try (OutputStream os = platformAdapter.getOutputStream(PlatformAdapter.TASK_STORAGE, path)) {
-                            confGroup.writeToStream(os);
+                            jsonConf.writeToStream(os);
                         } catch (Exception e) {
                             logger.log(Level.SEVERE, "Failed to save task run states to " + path + ".", e);
                         }

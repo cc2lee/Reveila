@@ -224,8 +224,8 @@ public class Reveila {
 			if (fileName.toLowerCase(Locale.ROOT).endsWith(".json")) {
 				try (InputStream is = this.platformAdapter.getInputStream(PlatformAdapter.CONF_STORAGE, fileName)) {
 					logger.info("Loading components from: " + fileName);
-					JsonConfiguration group = new JsonConfiguration(is, this.logger);
-					List<MetaObject> list = group.read();
+					JsonConfiguration jsonConf = new JsonConfiguration(is);
+					List<MetaObject> list = jsonConf.getMetaObjects();
 					for (MetaObject mObj : list) {
 						if (mObj.isStartOnLoad()) {
 							logger.info("Starting component on load: " + mObj.getName());

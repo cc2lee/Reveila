@@ -36,38 +36,22 @@ public class MetaObject {
 	/**
 	 * Checks if the component is configured to be thread-safe, which implies
 	 * a singleton lifecycle (one instance is created and reused).
-	 * Defaults to {@code false} if the property is not specified.
-	 * @return {@code true} if the component is configured as thread-safe, {@code false} otherwise.
+	 * Defaults to {@code true} if the property is not specified.
+	 * @return the configured value of the {@code thread-safe} property, or {@code true} if not specified (default).
 	 */
 	public boolean isThreadSafe() {
-		Object threadSafe = this.data.get(Constants.THREAD_SAFE);
-		if (threadSafe instanceof Boolean) {
-			return (Boolean) threadSafe;
-		}
-		// Also support string "true" for flexibility in JSON config.
-		return "true".equalsIgnoreCase(String.valueOf(threadSafe));
+		Object value = this.data.get(Constants.THREAD_SAFE);
+		return !"false".equalsIgnoreCase(String.valueOf(value)); // default to true if not specified, or incorrect value
 	}
 
 	/**
 	 * Checks if the component is configured to be started immediately after loading.
-	 * Defaults to {@code false} if the property is not specified.
+	 * Defaults to {@code true} if the property is not specified.
 	 * @return {@code true} if the component should be started on load, {@code false} otherwise.
 	 */
 	public boolean isStartOnLoad() {
 		Object value = this.data.get(Constants.START);
-		if (value == null) {
-			value = this.data.get(Constants.ENABLE);
-		}
-
-		if (value == null) {
-			return false;
-		}
-
-		if (value instanceof Boolean) {
-			return (Boolean) value;
-		}
-		
-		return "true".equalsIgnoreCase(String.valueOf(value));
+		return !"false".equalsIgnoreCase(String.valueOf(value)); // default to true if not specified, or incorrect value
 	}
 
 	public String getName() {
