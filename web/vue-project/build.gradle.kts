@@ -15,7 +15,7 @@ val buildTask = tasks.named<com.github.gradle.node.npm.task.NpmTask>("npmInstall
 
 val buildVue = tasks.register<com.github.gradle.node.npm.task.NpmTask>("buildVue") {
     dependsOn(buildTask)
-    args.set(listOf("run", "build"))
+    args.set(listOf("run", "build-only"))
     
     // Define outputs for caching and for other modules to consume
     inputs.dir("src")

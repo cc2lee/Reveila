@@ -2,7 +2,7 @@
   {
     "component": {
       "name": "RatedService.Default",
-      "class": "reveila.service.RatedService",
+      "class": "com.reveila.service.RatedService",
       "description": "A service that manages multiple service providers and selects the best one based on ratings.",
       "provider": "Reveila LLC",
       "author": "Charles Lee",
@@ -21,7 +21,7 @@
   {
     "component(ignore)": {
       "name": "DataService",
-      "class": "reveila.spring.service.SpringDataService",
+      "class": "com.reveila.spring.service.SpringDataService",
       "description": "Data service implementation for the Spring environment.",
       "provider": "Reveila LLC",
       "author": "Charles Lee",
@@ -35,7 +35,7 @@
       "start": true,
       "name": "EchoService",
       "description": "A simple service that echoes back input messages after an optional delay.",
-      "class": "reveila.service.EchoService",
+      "class": "com.reveila.service.EchoService",
       "version": "1",
       "arguments": [
         {
@@ -55,7 +55,7 @@
     "component": {
       "start": true,
       "name": "remote.reveila",
-      "class": "reveila.service.ReveilaRemote",
+      "class": "com.reveila.service.ReveilaRemote",
       "version": "1",
       "//comment1": "To set up a cluster of Reveila instances, add the instance's base URL to the value array of the RemoteURLs argument.",
       "//comment2": "The URL is followed by a comma and priority as an integer (lower value means higher priority).",
@@ -72,7 +72,7 @@
     "component(ignore)": {
       "start": true,
       "name": "TaskManager",
-      "class": "reveila.service.TaskManager",
+      "class": "com.reveila.service.TaskManager",
       "thread-safe": true,
       "description": "A service that executes scheduled background jobs.",
       "arguments": [
