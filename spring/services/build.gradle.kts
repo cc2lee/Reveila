@@ -53,13 +53,16 @@ tasks.withType<org.springframework.boot.gradle.tasks.run.BootRun> {
     jvmArgs = listOf("-Xmx2048m", "-Dspring.profiles.active=dev")
 }
 
-// Integrate the Vue.js frontend build into Spring Boot's resources
-tasks.named<ProcessResources>("processResources") {
-    // Ensure Vue is built before processing resources
-    dependsOn(":web:vue-project:buildVue")
 
-    // Copy the Vue 'dist' output into Spring's static folder
-    from(project(":web:vue-project").tasks.named("buildVue").map { it.outputs.files.asPath }) {
-        into("static")
-    }
+// Copies the Vue.js distributables to the resources directory so that they are
+// available on the classpath for Spring Boot.
+val copyVueDist by tasks.registering(Sync::class) {
+    dependsOn(":web:vue-project:buildVue")
+    from(project(":web:vue-project").tasks.named("buildVue"))
+    into("src/main/resources/static")
 }
+
+tasks.withType<ProcessResources> {
+    dependsOn(copyVueDist)
+}
+

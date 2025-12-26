@@ -1,0 +1,1 @@
+import{b as e,c as t,d as n,e as r}from"./index-Dr8_SAnM.js";const i={},a={class:`about`};function o(e,i){return r(),n(`div`,a,i[0]||=[t(`h1`,null,`This is an about page`,-1)])}var s=e(i,[[`render`,o]]);export{s as default};
