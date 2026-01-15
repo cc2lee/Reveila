@@ -2,7 +2,7 @@ package com.reveila.system;
 
 import java.util.EventObject;
 
-public abstract class AbstractService implements EventWatcher, Startable, Stoppable {
+public abstract class AbstractService implements EventConsumer, Startable, Stoppable {
 
     protected SystemContext systemContext;
     protected boolean available = true;
@@ -28,7 +28,7 @@ public abstract class AbstractService implements EventWatcher, Startable, Stoppa
     }
 
     @Override
-    public void onEvent(EventObject evtObj) throws Exception {
+    public void notifyEvent(EventObject evtObj) throws Exception {
     }
 
 }

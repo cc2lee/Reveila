@@ -1,14 +1,16 @@
 package com.reveila.system;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Objects;
@@ -38,12 +40,14 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     private Logger logger;
     private int jobThreadPoolSize = 1; // Use single thread for serial execution by default
     private ScheduledExecutorService scheduler;
+    private Path systemHome;
     
     public DefaultPlatformAdapter(Properties commandLineArgs) throws Exception {
         super();
         loadProperties(commandLineArgs);
-        this.logger = configureLogging(this.properties);
         setURLClassLoader(this.properties);
+        configureLogging(this.properties);
+        systemHome = Paths.get(this.properties.getProperty(Constants.SYSTEM_HOME));
         
         // ThreadFactory with named worker threads for easier debugging
         final ThreadFactory threadFactory = new ThreadFactory() {
@@ -57,73 +61,34 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     }
 
     @Override
-    public String getHostDescription() {
-        String osName = System.getProperty("os.name");
-        String osVersion = System.getProperty("os.version");
-        String osArchitecture = System.getProperty("os.arch");
-        return osName + " " + osVersion + " (" + osArchitecture + ")";
+    public String getPlatformDescription() {
+        return properties.getProperty(Constants.PLATFORM_OS);
     }
 
     @Override
-    public String[] listComponentConfigs() throws IOException {
-        File componentsDir = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + "components");
-        File[] files = FileUtil.listFilesWithExtension(componentsDir.getAbsolutePath(), "json");
-        return Arrays.stream(files).map(File::getName).toArray(String[]::new);
+    public String[] getConfigFilePaths() throws IOException {
+        String dir = this.systemHome.resolve(Constants.CONFIGS_DIR_NAME).resolve("components").toAbsolutePath().toString();
+        return FileUtil.getRelativeFilePaths(dir, ".json");
     }
 
     @Override
-    public String[] listTaskConfigs() throws IOException {
-        File tasksDir = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + "tasks");
-        File[] files = FileUtil.listFilesWithExtension(tasksDir.getAbsolutePath(), "json");
-        return Arrays.stream(files).map(File::getName).toArray(String[]::new);
+    public InputStream getFileInputStream(String path) throws IOException {
+        Path absolutePath = FileUtil.toSafePath(this.systemHome, path);
+        return Files.newInputStream(absolutePath);
     }
 
     @Override
-    public InputStream getInputStream(int storageType, String path) throws IOException {
-        if (storageType == PlatformAdapter.CONF_STORAGE) {
-            return openConfigInputStream(path);
-        } else if (storageType == PlatformAdapter.DATA_STORAGE) {
-            return openDataInputStream(path);
-        } else if (storageType == PlatformAdapter.TEMP_STORAGE) {
-            return openTempDataInputStream(path);
-        } else {
-            throw new IOException("Unsupported storage type: " + storageType);
+    public OutputStream getFileOutputStream(String path, boolean append) throws IOException {
+        Path absolutePath = FileUtil.toSafePath(this.systemHome, path);
+        if (append) {
+            return Files.newOutputStream(absolutePath, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        }
+        else {
+            return Files.newOutputStream(absolutePath, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         }
     }
 
-    @Override
-    public OutputStream getOutputStream(int storageType, String path) throws IOException {
-        if (storageType == PlatformAdapter.CONF_STORAGE) {
-            return openConfigOutputStream(path);
-        } else if (storageType == PlatformAdapter.DATA_STORAGE) {
-            return openDataOutputStream(path);
-        } else if (storageType == PlatformAdapter.TEMP_STORAGE) {
-            return openTempDataOutputStream(path);
-        } else {
-            throw new IOException("Unsupported storage type: " + storageType);
-        }
-    }
-
-    private String getSystemHome() {
-        String systemHome = this.properties.getProperty(Constants.SYSTEM_HOME);
-        if (systemHome == null || systemHome.isBlank()) {
-            systemHome = System.getenv("REVEILA_HOME");
-            if (systemHome == null || systemHome.isBlank()) {
-                systemHome = System.getProperty("user.dir") + File.separator + "reveila";
-            }
-            
-            File dir = new File(systemHome);
-            if (!dir.exists()) {
-                if (!dir.mkdirs()) {
-                    throw new RuntimeException("Failed to create home directory: " + systemHome);
-                }
-            }
-            this.properties.setProperty(Constants.SYSTEM_HOME, systemHome);
-        }
-        return systemHome;
-    }
-
-    public InputStream openPropertiesStream(Properties jvmArgs) throws IOException, ConfigurationException {
+    private InputStream openPropertiesStream(Properties jvmArgs) throws IOException, ConfigurationException {
         
         URL url = null;
 
@@ -137,7 +102,7 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
 
         if (url == null) {
             // 3. last place - home directory
-            String path = getSystemHome() + File.separator + Constants.CONFIGS_DIR_NAME + File.separator + Constants.SYSTEM_PROPERTIES_FILE_NAME;
+            String path = this.systemHome.toAbsolutePath() + File.separator + Constants.CONFIGS_DIR_NAME + File.separator + Constants.SYSTEM_PROPERTIES_FILE_NAME;
             File file = new File(path);
             try {
                 url = file.toURI().toURL();
@@ -178,14 +143,21 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
 
 		properties.putAll(overwrites);
 
-        // Set default properties if not already set
+        // Set defaults if not already set
         String value = properties.getProperty(Constants.SYSTEM_HOME);
         if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.SYSTEM_HOME, getSystemHome());
+            value = System.getenv("REVEILA_HOME");
+            if (value == null || value.isBlank()) {
+                value = System.getProperty("user.dir") + File.separator + "reveila";
+            }
+            properties.setProperty(Constants.SYSTEM_HOME, value);
         }
         value = properties.getProperty(Constants.PLATFORM_OS);
         if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.PLATFORM_OS, getHostDescription());
+            String osName = System.getProperty("os.name");
+            String osVersion = System.getProperty("os.version");
+            String osArchitecture = System.getProperty("os.arch");
+            properties.setProperty(Constants.PLATFORM_OS, osName + " " + osVersion + " (" + osArchitecture + ")");
         }
         value = properties.getProperty(Constants.CHARACTER_ENCODING);
         if (value == null || value.isBlank()) {
@@ -197,62 +169,16 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
         }
         value = properties.getProperty(Constants.SYSTEM_DATA_FILE_DIR);
         if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.SYSTEM_DATA_FILE_DIR, getSystemHome() + File.separator + "data" /*System.getProperty("user.home") + File.separator + "reveila" + File.separator + "data"*/ );
+            properties.setProperty(Constants.SYSTEM_DATA_FILE_DIR, this.systemHome.toAbsolutePath() + File.separator + "data" /*System.getProperty("user.home") + File.separator + "reveila" + File.separator + "data"*/ );
         }
         value = properties.getProperty(Constants.SYSTEM_TEMP_FILE_DIR);
         if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.SYSTEM_TEMP_FILE_DIR, getSystemHome() + File.separator + "temp" /*System.getProperty("java.io.tmpdir") + File.separator + "reveila" + File.separator + "temp"*/ );
+            properties.setProperty(Constants.SYSTEM_TEMP_FILE_DIR, this.systemHome.toAbsolutePath() + File.separator + "temp" /*System.getProperty("java.io.tmpdir") + File.separator + "reveila" + File.separator + "temp"*/ );
         }
         value = properties.getProperty(Constants.SYSTEM_PROPERTIES_FILE_NAME);
         if (value == null || value.isBlank()) {
             properties.setProperty(Constants.SYSTEM_PROPERTIES_FILE_NAME, Constants.SYSTEM_PROPERTIES_FILE_NAME);
         }
-    }
-
-    private InputStream openConfigInputStream(String fileName) throws IOException {
-        File file = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + fileName);
-        if (!file.exists() || !file.isFile()) {
-            file = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + "components" + File.separator + fileName);
-        }
-
-        if (!file.exists() || !file.isFile()) {
-            throw new IOException("Configuration file not found: " + fileName);
-        }
-        
-        return new FileInputStream(file);
-    }
-
-    private InputStream openDataInputStream(String fileName) throws IOException {
-        File file = new File(getSystemHome(), "data" + File.separator + fileName);
-        return new FileInputStream(file);
-    }
-
-    private InputStream openTempDataInputStream(String fileName) throws IOException {
-        File file = new File(getSystemHome(), "temp" + File.separator + fileName);
-        return new FileInputStream(file);
-    }
-
-    private OutputStream openConfigOutputStream(String fileName) throws IOException {
-        File file = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + fileName);
-        if (!file.exists() || !file.isFile()) {
-            file = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + "components" + File.separator + fileName);
-        }
-
-        if (!file.exists() || !file.isFile()) {
-            throw new IOException("Configuration file not found: " + fileName);
-        }
-        
-        return new FileOutputStream(file);
-    }
-
-    private OutputStream openDataOutputStream(String fileName) throws IOException {
-        File file = new File(getSystemHome(), "data" + File.separator + fileName);
-        return new FileOutputStream(file);
-    }
-
-    private OutputStream openTempDataOutputStream(String fileName) throws IOException {
-        File file = new File(getSystemHome(), "temp" + File.separator + fileName);
-        return new FileOutputStream(file);
     }
 
     private void setURLClassLoader(Properties props) throws ConfigurationException {
@@ -298,16 +224,16 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
         return this.logger;
     }
 
-    private Logger configureLogging(Properties props) throws IOException {
-		Logger logger = Logger.getLogger("");
-		for (Handler handler : logger.getHandlers()) {
-			logger.removeHandler(handler);
+    private void configureLogging(Properties props) throws IOException {
+		Logger l = Logger.getLogger("");
+		for (Handler handler : l.getHandlers()) {
+			l.removeHandler(handler);
 		}
 
 		Handler fileHandler = createLogFileHandler(props);
-		logger.addHandler(fileHandler);
-		setLoggingLevel(logger, props);
-		return logger;
+		l.addHandler(fileHandler);
+		setLoggingLevel(l, props);
+		this.logger =  l;
 	}
 
     private Handler createLogFileHandler(Properties props) throws IOException {
@@ -360,13 +286,13 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     }
 
     @Override
-    public void runTask(Runnable task, long delaySeconds, long periodSeconds, EventWatcher listener) {
+    public void registerTask(Runnable task, long delaySeconds, long periodSeconds, EventConsumer listener) {
         scheduler.scheduleAtFixedRate(() -> {
             try {
                 task.run();
                 if (listener != null) {
                     try {
-                        listener.onEvent(new TaskEvent(task, TaskEvent.COMPLETED, System.currentTimeMillis(), new ExceptionList()));
+                        listener.notifyEvent(new TaskEvent(task, TaskEvent.COMPLETED, System.currentTimeMillis(), new ExceptionList()));
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
@@ -376,7 +302,7 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
                 t.printStackTrace();
                 if (listener != null) {
                     try {
-                        listener.onEvent(new TaskEvent(task, TaskEvent.FAILED, System.currentTimeMillis(), new ExceptionList(t)));
+                        listener.notifyEvent(new TaskEvent(task, TaskEvent.FAILED, System.currentTimeMillis(), new ExceptionList(t)));
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
@@ -386,7 +312,7 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     }
 
     @Override
-    public void destruct() {
+    public void unplug() {
         if (this.scheduler != null) {
             this.scheduler.shutdown(); // Initiates an orderly shutdown in which previously submitted tasks are executed, but no new tasks will be accepted.
             try {

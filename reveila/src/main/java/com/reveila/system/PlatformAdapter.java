@@ -12,19 +12,13 @@ import java.util.logging.Logger;
  */
 public interface PlatformAdapter {
 
-    public static final int TEMP_STORAGE = 0;
-    public static final int DATA_STORAGE = 1;
-    public static final int CONF_STORAGE = 2;
-    public static final int TASK_STORAGE = 3;
-
-    public String getHostDescription();
+    public String getPlatformDescription();
     public Properties getProperties();
-    public InputStream getInputStream(int storageType, String path) throws IOException;
-    public OutputStream getOutputStream(int storageType, String path) throws IOException;
-    public String[] listComponentConfigs() throws IOException;
-    public String[] listTaskConfigs() throws IOException;
+    public InputStream getFileInputStream(String relativePath) throws IOException;
+    public OutputStream getFileOutputStream(String relativePath, boolean append) throws IOException;
+    public String[] getConfigFilePaths() throws IOException;
     public Logger getLogger();
-    public void runTask(Runnable task, long delayMillis, long periodMillis, EventWatcher listener);
-    public void destruct();
+    public void registerTask(Runnable task, long delayMillis, long periodMillis, EventConsumer eventConsumer);
+    public void unplug();
 
 }

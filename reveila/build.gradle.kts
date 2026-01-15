@@ -1,6 +1,6 @@
 group "com.reveila"
 version "1.0.0"
-description = "Reveila - runtime"
+description = "Reveila"
 
 plugins {
     id("java-conventions")

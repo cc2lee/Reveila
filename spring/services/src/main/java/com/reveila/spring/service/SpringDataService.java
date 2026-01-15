@@ -17,7 +17,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reveila.service.AbstractDataService;
 import com.reveila.spring.SpringPlatformAdapter;
-import com.reveila.util.io.Page;
+import com.reveila.system.data.Page;
 
 
 /**
@@ -26,14 +26,14 @@ import com.reveila.util.io.Page;
  */
 public class SpringDataService extends AbstractDataService {
 
-    private GenericEntityRepository repository;
+    private SpringEntityRepository repository;
     private ObjectMapper objectMapper;
 
     @Override
     public void start() throws Exception {
         systemContext.getLogger(this).info("SpringDataService starting...");
         if (systemContext.getPlatformAdapter() instanceof SpringPlatformAdapter springAdapter) {
-            this.repository = springAdapter.getBean(GenericEntityRepository.class);
+            this.repository = springAdapter.getBean(SpringEntityRepository.class);
             this.objectMapper = springAdapter.getBean(ObjectMapper.class);
             systemContext.getLogger(this).info("SpringDataService started and wired to Spring Data JPA.");
         } else {
@@ -44,7 +44,7 @@ public class SpringDataService extends AbstractDataService {
     @Override
     public Map<String, Object> save(String entityName, Map<String, Object> data) {
         try {
-            GenericEntity entity;
+            SpringEntity entity;
             Object idObject = data.get("id");
  
             // If an ID is provided, treat it as an update. Otherwise, it's a new entity.
@@ -58,7 +58,7 @@ public class SpringDataService extends AbstractDataService {
                             id, entity.getEntityType(), entityName));
                 }
             } else {
-                entity = new GenericEntity();
+                entity = new SpringEntity();
                 entity.setEntityType(entityName);
             }
 
@@ -67,7 +67,7 @@ public class SpringDataService extends AbstractDataService {
             dataToStore.remove("id");
             entity.setJsonData(objectMapper.writeValueAsString(dataToStore));
 
-            GenericEntity savedEntity = repository.save(entity);
+            SpringEntity savedEntity = repository.save(entity);
             return toMap(savedEntity);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to serialize entity data to JSON", e);
@@ -80,7 +80,7 @@ public class SpringDataService extends AbstractDataService {
      * @return Optional<Map<String, Object>>
      */
     @Override
-    public Optional<Map<String, Object>> findById(String entityName, String id) {
+    public Optional<Map<String, Object>> getByKey(String entityName, String id) {
         if (id == null || id.trim().isEmpty() || !repository.existsById(id)) {
             return Optional.empty();
         }
@@ -88,10 +88,10 @@ public class SpringDataService extends AbstractDataService {
     }
 
     @Override
-    public Page<Map<String, Object>> findAll(String entityName, int pageNumber, int pageSize) {
+    public Page<Map<String, Object>> getPage(String entityName, int pageNumber, int pageSize) {
         try {
             Pageable pageable = PageRequest.of(pageNumber, pageSize);
-            org.springframework.data.domain.Page<GenericEntity> springPage = repository.findByEntityType(entityName, pageable);
+            org.springframework.data.domain.Page<SpringEntity> springPage = repository.findByEntityType(entityName, pageable);
 
             List<Map<String, Object>> content = springPage.getContent().stream()
                     .map(this::toMap)
@@ -106,7 +106,7 @@ public class SpringDataService extends AbstractDataService {
     }
 
     @Override
-    public void deleteById(String entityName, String id) {
+    public void deleteByKey(String entityName, String id) {
         if (id == null || id.trim().isEmpty()) {
             throw new IllegalArgumentException("Entity ID cannot be null or empty.");
         }
@@ -117,7 +117,7 @@ public class SpringDataService extends AbstractDataService {
         systemContext.getLogger(this).info(String.format("Deleted entity with ID '%s'.", id));
     }
 
-    private Map<String, Object> toMap(GenericEntity entity) {
+    private Map<String, Object> toMap(SpringEntity entity) {
         try {
             // The TypeReference is needed to correctly deserialize into a Map.
             Map<String, Object> map = objectMapper.readValue(entity.getJsonData(), new TypeReference<>() {});

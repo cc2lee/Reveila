@@ -2,11 +2,15 @@ package com.reveila.util;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.stream.Stream;
 
 import com.reveila.error.FileDeleteException;
 
@@ -64,14 +68,32 @@ public final class FileUtil {
 	 * @param extension the file extension to filter by (without the dot).
 	 * @return an array of {@link File} objects, or an empty array if the directory does not exist or is not a directory.
 	 */
-	public static File[] listFilesWithExtension(String dirPath, String extension) {
-		File dir = new File(dirPath);
-		if (!dir.isDirectory()) {
-			return new File[0];
+	public static String[] getRelativeFilePaths(String directory, String fileExt) throws IOException {
+		Path root = Paths.get(directory);
+
+		// 1. Sanitize extension (ensure it has a dot)
+		// Making it "effectively final" or just a new variable for use in lambda
+		final String extension = fileExt.startsWith(".") ? fileExt : "." + fileExt;
+
+		// 2. Use Files.walk to go deep (Recursive)
+		// The try-with-resources block ensures the stream is closed (crucial for file
+		// handles)
+		try (Stream<Path> stream = Files.walk(root)) {
+			return stream
+					// Filter 1: We only want Files, not Directories
+					.filter(Files::isRegularFile)
+
+					// Filter 2: Check the extension (case-sensitive)
+					.filter(path -> path.toString().endsWith(extension))
+
+					// Map: Convert absolute path to relative path
+					// e.g., "/usr/data/logs/2024/jan.log" -> "logs/2024/jan.log" (if root is
+					// /usr/data)
+					.map(path -> root.relativize(path).toString())
+
+					// Collect: Convert Stream<String> directly to String[]
+					.toArray(String[]::new);
 		}
-		// Ensure the extension starts with a dot for the filter.
-		final String dotExtension = extension.startsWith(".") ? extension : "." + extension;
-		return dir.listFiles((d, name) -> name.toLowerCase().endsWith(dotExtension.toLowerCase()));
 	}
 
 	/**
@@ -184,4 +206,16 @@ public final class FileUtil {
 		// return the full name.
 		return (dotIndex <= 0) ? name : name.substring(0, dotIndex);
 	}
+
+	public static Path toSafePath(Path base, String path) {
+		Path resolvedPath = base.resolve(path).normalize();
+		if (!resolvedPath.startsWith(base)) {
+			throw new IllegalArgumentException("Path traversal attempt detected");
+		}
+		return resolvedPath;
+	}
+
+	public static String toJavaFilePath(String path) {
+		return path.replace('\\', '/');
+	}	
 }

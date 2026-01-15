@@ -1,4 +1,4 @@
-package com.reveila.config;
+package com.reveila.spring;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

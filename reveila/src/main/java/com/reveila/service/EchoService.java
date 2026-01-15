@@ -111,6 +111,6 @@ public class EchoService extends AbstractService {
     }
 
     @Override
-    public void onEvent(EventObject evtObj) throws Exception {
+    public void notifyEvent(EventObject evtObj) throws Exception {
     }
 }

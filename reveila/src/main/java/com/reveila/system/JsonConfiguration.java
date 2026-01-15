@@ -41,17 +41,12 @@ public class JsonConfiguration {
                 if (wrapper.containsKey(Constants.COMPONENT)) {
                     Map<String, Object> map = (Map<String, Object>) wrapper.get(Constants.COMPONENT);
                     if (map != null) {
-                        parsedObjects.add(new MetaObject(map, Constants.COMPONENT));
-                    }
-                }
-                else if (wrapper.containsKey(Constants.TASK)) {
-                    Map<String, Object> map = (Map<String, Object>) wrapper.get(Constants.TASK);
-                    if (map != null) {
-                        parsedObjects.add(new MetaObject(map, Constants.TASK));
+                        parsedObjects.add(new MetaObject(map));
                     }
                 }
             }
         }
+
         return parsedObjects;
     }
 
@@ -69,7 +64,7 @@ public class JsonConfiguration {
 
     public synchronized void writeToStream(OutputStream outputStream) throws IOException, JsonException {
         List<Map<String, Object>> listToSave = this.metaObjects.stream()
-            .map(MetaObject::toWrapperMap)
+            .map(MetaObject::getDataMap)
                 .collect(Collectors.toList());
         JsonUtil.writeToStream(listToSave, outputStream);
     }

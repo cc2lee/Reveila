@@ -12,8 +12,10 @@ import java.net.URI;
 import java.net.URL;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.logging.Handler;
@@ -75,7 +77,7 @@ public class Reveila {
 
 		if (this.platformAdapter != null) {
 			try {
-				this.platformAdapter.destruct();
+				this.platformAdapter.unplug();
 			} catch (Exception e) {
 				error = true;
 				System.out.println("Failed to destruct Reveila platform adapter: " + e.getMessage());
@@ -145,7 +147,7 @@ public class Reveila {
 		System.out.println();
 
 		BufferedReader reader = null;
-		try (InputStream is = this.platformAdapter.getInputStream(PlatformAdapter.CONF_STORAGE, "logo.txt")) {
+		try (InputStream is = this.platformAdapter.getFileInputStream("logo.txt")) {
 			if (is == null) {
 				System.out.println("Reveila"); // Fallback if logo resource is not found
 			} else {
@@ -214,37 +216,63 @@ public class Reveila {
 	}
 
 	private void loadComponents() throws Exception {
-		String[] componentFiles = this.platformAdapter.listComponentConfigs();
-		if (componentFiles == null || componentFiles.length == 0) {
+		String[] files = this.platformAdapter.getConfigFilePaths();
+		if (files == null || files.length == 0) {
 			logger.info("No components found to load.");
 			return;
 		}
 
-		for (String fileName : componentFiles) {
-			if (fileName.toLowerCase(Locale.ROOT).endsWith(".json")) {
-				try (InputStream is = this.platformAdapter.getInputStream(PlatformAdapter.CONF_STORAGE, fileName)) {
-					logger.info("Loading components from: " + fileName);
-					JsonConfiguration jsonConf = new JsonConfiguration(is);
-					List<MetaObject> list = jsonConf.getMetaObjects();
-					for (MetaObject mObj : list) {
-						if (mObj.isStartOnLoad()) {
-							logger.info("Starting component on load: " + mObj.getName());
-							// The Proxy class handles both stateful (singleton) and stateless (prototype)
-							// lifecycles.
-							Proxy proxy = new Proxy(mObj);
-							proxy.setSystemContext(this.systemContext);
-							proxy.start();
+		for (String file : files) {
+			try (InputStream is = this.platformAdapter.getFileInputStream(file)) {
+				logger.info("Loading components from: " + file);
+				JsonConfiguration jsonConf = new JsonConfiguration(is);
+				List<MetaObject> list = jsonConf.getMetaObjects();
+				for (MetaObject mObj : list) {
+					if (mObj.isStartOnLoad()) {
+						logger.info("Starting component on load: " + mObj.getName());
+						// The Proxy class handles both stateful (singleton) and stateless (prototype)
+						// lifecycles.
+						Proxy proxy = new Proxy(mObj);
+						proxy.setSystemContext(this.systemContext);
+						proxy.start();
+
+						Map<String, Object> config = mObj.getDataMap();
+						
+						String methodName = null;
+						Object[] args = null;
+
+						// TODO: Extract the method name and arguments from the configuration file
+
+						if (methodName != null) {
+							Runnable r = () -> {
+								CompletableFuture<Object> future = proxy.invokeAsync(methodName, args);
+								future.thenAccept(result -> {
+									// the method should not return a value
+								}).exceptionally(ex -> {
+									logger.log(Level.SEVERE,
+											"Failed to invoke method '" + methodName + "' with arguments ("
+													+ Arrays.toString(args) + ") on component '"
+													+ proxy.getImplementationClassName() + "'. Error: "
+													+ ex.getMessage(),
+											ex);
+									return null; // required by the Function<Throwable, Void> signature
+								});
+							};
 						}
+
+						
+
+						
 					}
-				} catch (Exception e) {
-					boolean isStrictMode = "true"
-							.equalsIgnoreCase(this.properties.getProperty(Constants.LAUNCH_STRICT_MODE));
-					if (isStrictMode) {
-						throw new ConfigurationException("Failed to load components from " + fileName, e);
-					} else {
-						logger.log(Level.SEVERE,
-								"Failed to load components from " + fileName + ". Continuing in non-strict mode.", e);
-					}
+				}
+			} catch (Exception e) {
+				boolean isStrictMode = "true"
+						.equalsIgnoreCase(this.properties.getProperty(Constants.LAUNCH_STRICT_MODE));
+				if (isStrictMode) {
+					throw new ConfigurationException("Failed to load components from " + file, e);
+				} else {
+					logger.log(Level.SEVERE,
+							"Failed to load components from " + file + ". Continuing in non-strict mode.", e);
 				}
 			}
 		}

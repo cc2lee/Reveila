@@ -14,7 +14,7 @@ import java.util.logging.Logger;
  */
 public class EventManager {
 
-	private List<EventWatcher> listeners = new LinkedList<EventWatcher>();
+	private List<EventConsumer> listeners = new LinkedList<EventConsumer>();
 	private ThreadGroup tGroup = new ThreadGroup("Event dispatching thread group");
 	private Logger logger;
 	
@@ -28,7 +28,7 @@ public class EventManager {
 		super();
 	}
 	
-	public void addEventWatcher(EventWatcher l) {
+	public void addEventWatcher(EventConsumer l) {
 		if (l == null) {
 			throw new IllegalArgumentException("Argument 'EventReceiver' must not be null");
 		}
@@ -40,7 +40,7 @@ public class EventManager {
 		}
 	}
 
-	public void removeEventWatcher(EventWatcher l) {
+	public void removeEventWatcher(EventConsumer l) {
 		if (l == null) {
 			throw new IllegalArgumentException("Argument 'EventReceiver' must not be null");
 		}
@@ -55,10 +55,10 @@ public class EventManager {
 	public void dispatchEvent(EventObject event) {
 		Runnable r = new Runnable() {
 			public void run() {
-				Iterator<EventWatcher> i = listeners.iterator();
+				Iterator<EventConsumer> i = listeners.iterator();
 				while (i.hasNext()) {
 					try {
-						i.next().onEvent(event);
+						i.next().notifyEvent(event);
 					} catch (Exception e) {
 						if (logger != null) {
 							logger.severe(e.toString() + e.getStackTrace());

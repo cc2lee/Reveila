@@ -11,7 +11,7 @@ import com.reveila.error.ExceptionList;
 /**
  * @author Charles Lee
  */
-public final class Proxy implements EventWatcher, Startable, Stoppable {
+public final class Proxy implements EventConsumer, Startable, Stoppable {
 
 	protected MetaObject metaObject;
 	protected SystemContext systemContext;
@@ -26,6 +26,24 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 		this.metaObject = metaObject;
 	}
 
+	/**
+	 * Invokes a method asynchronously on the object instance using reflection.
+	 * This version finds the method based on its name and the number of arguments.
+	 * 
+	 * Example:
+	 * 
+	 * CompletableFuture<Object> future = proxy.invokeAsync("calculate", new Object[]{10, 20});
+	 * future.thenAccept(result -> {
+	 * 		System.out.println("Success: " + result);
+	 * }).exceptionally(ex -> {
+	 * 		System.err.println("Async task failed: " + ex.getMessage());
+	 * 		return null; // Return a default value if needed
+	 * });
+	 *
+	 * @param methodName the name of the method to invoke
+	 * @param args       the arguments to pass to the method
+	 * @return the result of the invoked method
+	 */
 	public CompletableFuture<Object> invokeAsync(final String methodName, final Object[] args) {
 		return CompletableFuture.supplyAsync(() -> {
 			try {
@@ -150,10 +168,10 @@ public final class Proxy implements EventWatcher, Startable, Stoppable {
 	}
 
 	@Override
-	public void onEvent(EventObject evtObj) throws Exception {
+	public void notifyEvent(EventObject evtObj) throws Exception {
 		Object target = getTargetObject();
-		if (target instanceof EventWatcher) {
-			((EventWatcher) target).onEvent(evtObj);
+		if (target instanceof EventConsumer) {
+			((EventConsumer) target).notifyEvent(evtObj);
 		}
 	}
 

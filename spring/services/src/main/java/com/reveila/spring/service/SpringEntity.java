@@ -8,7 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Lob;
 
 @Entity
-public class GenericEntity {
+public class SpringEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

@@ -1,11 +1,13 @@
 package com.reveila.service;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.EventObject;
 import java.util.List;
 import java.util.Locale;
@@ -19,8 +21,9 @@ import com.reveila.system.JsonConfiguration;
 import com.reveila.system.MetaObject;
 import com.reveila.system.PlatformAdapter;
 import com.reveila.system.Proxy;
+import com.reveila.util.FileUtil;
 
-public class TaskManager extends AbstractService implements Runnable {
+public class TaskManager extends AbstractService {
 
     private long interval = 60000; // 1 minute
     private long initialDelay = 60000; // Default to 1 minute
@@ -30,19 +33,24 @@ public class TaskManager extends AbstractService implements Runnable {
     }
 
     @Override
-    public void onEvent(EventObject evtObj) throws Exception {}
+    public void notifyEvent(EventObject evtObj) throws Exception {}
 
     @Override
     public void start() throws Exception {
         PlatformAdapter platformAdapter = this.systemContext.getPlatformAdapter();
         Logger logger = this.systemContext.getLogger(this);
-        platformAdapter.runTask(this, this.initialDelay, this.interval, this);
+        platformAdapter.registerTask(this, this.initialDelay, this.interval, this);
         logger.info("Task Manager started with interval: " + this.interval + " ms, with initial delay: " + this.initialDelay + " ms.");
     }
 
     private String[] getTaskConfFiles() throws IOException {
         PlatformAdapter platformAdapter = this.systemContext.getPlatformAdapter();
         return platformAdapter.listTaskConfigs();
+    }
+
+    public String[] listTaskConfigs() throws IOException {
+        File tasksDir = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + "tasks");
+        return FileUtil.getRelativeFilePaths(tasksDir.getAbsolutePath(), "json");
     }
 
     @Override
@@ -68,7 +76,7 @@ public class TaskManager extends AbstractService implements Runnable {
 		for (String path : paths) {
 			if (path.toLowerCase(Locale.ROOT).endsWith(".json")) { // only process JSON files
                 JsonConfiguration jsonConf = null;
-				try (InputStream is = platformAdapter.getInputStream(PlatformAdapter.TASK_STORAGE, path)) { // path is relative to task storage
+				try (InputStream is = platformAdapter.getFileInputStream(path)) { // path is relative to task storage
 					logger.info("Loading tasks from: " + path);
 					jsonConf = new JsonConfiguration(is);
 					List<MetaObject> taskList = jsonConf.getMetaObjects();
@@ -116,7 +124,7 @@ public class TaskManager extends AbstractService implements Runnable {
                     logger.log(Level.SEVERE, "Failed to load task(s) from " + path + ".", e);
 				} finally {
                     if (jsonConf != null) {
-                        try (OutputStream os = platformAdapter.getOutputStream(PlatformAdapter.TASK_STORAGE, path)) {
+                        try (OutputStream os = platformAdapter.getFileOutputStream(path)) {
                             jsonConf.writeToStream(os);
                         } catch (Exception e) {
                             logger.log(Level.SEVERE, "Failed to save task run states to " + path + ".", e);

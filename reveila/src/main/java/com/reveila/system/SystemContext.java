@@ -11,6 +11,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.reveila.crypto.Cryptographer;
+import com.reveila.system.data.FileAdapter;
 
 
 /**
@@ -24,7 +25,7 @@ public final class SystemContext {
 	private Properties properties;
 	private EventManager eventManager;
 	private Logger logger;
-	private Map<Proxy, StorageManager> storageManagers = new ConcurrentHashMap<>();
+	private Map<Proxy, FileAdapter> fileAdapters = new ConcurrentHashMap<>();
 	private Map<String, Logger> loggersByName = new ConcurrentHashMap<>();
 	private Cryptographer cryptographer;
 	private Map<String, Proxy> proxiesByName = new ConcurrentHashMap<>();
@@ -42,24 +43,24 @@ public final class SystemContext {
 		return properties;
 	}
 
-	public StorageManager getStorageManager(Proxy proxy) throws IOException {
+	public FileAdapter getFileAdapter(Proxy proxy) throws IOException {
 		
 		Objects.requireNonNull(proxy, "Argument 'proxy' must not be null.");
 
-		StorageManager storageManager = storageManagers.get(proxy);
-		if (storageManager == null) {
+		FileAdapter fileAdapter = fileAdapters.get(proxy);
+		if (fileAdapter == null) {
 			// Use double-checked locking to ensure thread-safe, lazy initialization.
-			synchronized (this.storageManagers) {
+			synchronized (this.fileAdapters) {
 				// Check again in case another thread created the manager while we were waiting for the lock.
-				storageManager = storageManagers.get(proxy);
-				if (storageManager == null) {
+				fileAdapter = fileAdapters.get(proxy);
+				if (fileAdapter == null) {
 					// Each Proxy object has its own storage manager
-					storageManager = new StorageManager(platformAdapter, proxy);
-					storageManagers.put(proxy, storageManager);
+					fileAdapter = new FileAdapter(platformAdapter, proxy);
+					fileAdapters.put(proxy, fileAdapter);
 				}
 			}
 		}
-		return storageManager;
+		return fileAdapter;
 	}
 
 	public EventManager getEventManager() {
@@ -110,7 +111,7 @@ public final class SystemContext {
 
 		proxiesByName.remove(proxy.getName());
 		eventManager.removeEventWatcher(proxy);
-		storageManagers.remove(proxy);
+		fileAdapters.remove(proxy);
 		loggersByName.remove(proxy.getName());
 		logger.info("Unregistered component: " + proxy.getName());
 	}
@@ -139,7 +140,7 @@ public final class SystemContext {
 		proxiesByName.clear();
 		loggersByName.clear();
 		eventManager.clear();
-		storageManagers.clear();
+		fileAdapters.clear();
 		properties.clear();
 		cryptographer = null;
 		logger.info("System context destructed.");

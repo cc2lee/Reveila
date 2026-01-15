@@ -2,10 +2,8 @@ package com.reveila.system;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.logging.Logger;
 
 import com.reveila.error.ConfigurationException;
@@ -13,25 +11,18 @@ import com.reveila.util.GUID;
 
 public class MetaObject {
 
-	private final Map<String, Object> data;
-	private final String type;
-
-	public MetaObject (Map<String,Object> map, String type) {
-		// Use a new HashMap to ensure the internal map is mutable if needed, and to prevent external modification of the original map.
-		this.data = new HashMap<>(Objects.requireNonNull(map, "Component data map must not be null."));
-		this.type = type;
-	}
-
-	public Map<String,Object> toMap() {
-		return new HashMap<>(this.data);
-	}
-
-	public String getType() {
-		return type;
-	}
+	private Map<String, Object> dataMap;
 	
-	// This method is used by JsonConfiguration to reconstruct the file for writing.
-	Map<String, Object> toWrapperMap() { return Map.of(this.type, this.data); }
+	public MetaObject (Map<String,Object> map) {
+		if (map == null) {
+			throw new IllegalArgumentException("Map cannot be null.");
+		}
+		this.dataMap = map;
+	}
+
+	public Map<String,Object> getDataMap() {
+		return this.dataMap;
+	}
 
 	/**
 	 * Checks if the component is configured to be thread-safe, which implies
@@ -40,7 +31,7 @@ public class MetaObject {
 	 * @return the configured value of the {@code thread-safe} property, or {@code true} if not specified (default).
 	 */
 	public boolean isThreadSafe() {
-		Object value = this.data.get(Constants.THREAD_SAFE);
+		Object value = this.dataMap.get(Constants.THREAD_SAFE);
 		return !"false".equalsIgnoreCase(String.valueOf(value)); // default to true if not specified, or incorrect value
 	}
 
@@ -50,42 +41,42 @@ public class MetaObject {
 	 * @return {@code true} if the component should be started on load, {@code false} otherwise.
 	 */
 	public boolean isStartOnLoad() {
-		Object value = this.data.get(Constants.START);
+		Object value = this.dataMap.get(Constants.START);
 		return !"false".equalsIgnoreCase(String.valueOf(value)); // default to true if not specified, or incorrect value
 	}
 
 	public String getName() {
-		String name = (String)this.data.get(Constants.NAME);
+		String name = (String)this.dataMap.get(Constants.NAME);
 		if (name == null || name.isBlank()) {
 			name = GUID.getGUID(this);
-			this.data.put(Constants.NAME, name);
+			this.dataMap.put(Constants.NAME, name);
 		}
 		return name;
 	}
 
 	public String getImplementationClassName() {
-		return (String)this.data.get(Constants.CLASS);
+		return (String)this.dataMap.get(Constants.CLASS);
 	}
 
 	public String getDescription() {
-		return (String)this.data.get(Constants.DESCRIPTION);
+		return (String)this.dataMap.get(Constants.DESCRIPTION);
 	}
 
 	public String getVersion() {
-		return (String)this.data.get(Constants.VERSION);
+		return (String)this.dataMap.get(Constants.VERSION);
 	}
 
 	public String getAuthor() {
-		return (String)this.data.get(Constants.AUTHOR);
+		return (String)this.dataMap.get(Constants.AUTHOR);
 	}
 
 	public String getLicense() {
-		return (String)this.data.get(Constants.LICENSE_TOKEN);
+		return (String)this.dataMap.get(Constants.LICENSE_TOKEN);
 	}
 
 	@SuppressWarnings("unchecked")
 	public List<Map<String, Object>> getArguments() {
-		return (List<Map<String, Object>>)this.data.get(Constants.ARGUMENTS);
+		return (List<Map<String, Object>>)this.dataMap.get(Constants.ARGUMENTS);
 	}
 
 	public Object newObject(Logger logger) 

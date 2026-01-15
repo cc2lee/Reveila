@@ -4,7 +4,7 @@ evaluationDependsOn(":web:vue-project")
 
 group = "com.reveila"
 version = "1.0.0"
-description = "Reveila - Spring Boot"
+description = "Spring Boot Services"
 
 plugins {
     id("spring-conventions")
