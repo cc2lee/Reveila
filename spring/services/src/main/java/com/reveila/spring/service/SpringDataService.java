@@ -15,9 +15,9 @@ import org.springframework.data.domain.Pageable;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reveila.data.Page;
 import com.reveila.service.AbstractDataService;
 import com.reveila.spring.SpringPlatformAdapter;
-import com.reveila.system.data.Page;
 
 
 /**

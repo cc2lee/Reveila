@@ -1,7 +1,7 @@
 [
   {
     "component": {
-      "name": "RatedService.Default",
+      "name": "Performance Rating Service",
       "class": "com.reveila.service.RatedService",
       "description": "A service that manages multiple service providers and selects the best one based on ratings.",
       "provider": "Reveila LLC",
@@ -15,6 +15,10 @@
           "type": "java.lang.String",
           "value": ["EchoService, 10000"]
         }
+      ],
+      "start-priority": 101,
+      "dependencies": [
+        "EchoService"
       ]
     }
   },
@@ -32,11 +36,20 @@
   },
   {
     "component": {
-      "start": true,
+      "start-priority": 100,
       "name": "EchoService",
-      "description": "A simple service that echoes back input messages after an optional delay.",
-      "class": "com.reveila.service.EchoService",
       "version": "1",
+      "api-version": "2.0",
+      "displayName": "Enterprise Reporting Tool",
+      "description": "A simple service that echoes back input messages after an optional delay.",
+      "author": "Charles Lee",
+      "class": "com.reveila.service.EchoService",
+      "plugin": {
+          "directory": "C:/IDE/Projects/Reveila-Suite/reveila/runtime-directory/plugins/example",
+          "capabilities": ["UI", "NETWORK", "FILESYSTEM"],
+          "hot-deploy": false
+      },
+      "start": true,
       "arguments": [
         {
           "name": "reverse",

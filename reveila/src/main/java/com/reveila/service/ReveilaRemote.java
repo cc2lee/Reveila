@@ -13,9 +13,9 @@ import java.util.concurrent.TimeUnit;
 import com.reveila.error.ConfigurationException;
 import com.reveila.error.SystemException;
 import com.reveila.system.AbstractService;
-import com.reveila.system.JsonException;
-import com.reveila.system.NodePerformanceTracker;
-import com.reveila.util.JsonUtil;
+import com.reveila.system.PerformanceTracker;
+import com.reveila.util.json.JsonException;
+import com.reveila.util.json.JsonUtil;
 
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -43,7 +43,7 @@ public class ReveilaRemote extends AbstractService {
             .build();
 
     private Map<URL, Number> configs = Collections.synchronizedMap(new HashMap<URL, Number>());
-    private NodePerformanceTracker nodePerformanceTracker = NodePerformanceTracker.getInstance();
+    private PerformanceTracker nodePerformanceTracker = PerformanceTracker.getInstance();
     
     /**
      * No-arg constructor for instantiation by the Reveila engine.
@@ -184,7 +184,7 @@ public class ReveilaRemote extends AbstractService {
 
         Long timeUsed = System.currentTimeMillis() - startTime;
         if (!response.isSuccessful()) {
-            nodePerformanceTracker.track(Long.valueOf(timeUsed + NodePerformanceTracker.DEFAULT_PENALTY_MS), baseUrl); // Penalize failed calls
+            nodePerformanceTracker.track(Long.valueOf(timeUsed + PerformanceTracker.DEFAULT_PENALTY_MS), baseUrl); // Penalize failed calls
             throw new IOException("Remote invocation failed with HTTP code " + response.code() + " for " + url
                     + ". Body: " + responseBodyString);
         }

@@ -1,0 +1,10 @@
+{
+  "id": "com.reveila.plugin.reporting",
+  "version": "1.2.0",
+  "api-version": "2.0",
+  "displayName": "Enterprise Reporting Tool",
+  "description": "Generates PDF reports for system metrics.",
+  "author": "Charles Lee",
+  "mainClass": "com.reveila.plugin.ReportingImpl",
+  "capabilities": ["UI", "NETWORK", "FILESYSTEM"]
+}

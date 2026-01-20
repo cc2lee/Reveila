@@ -4,7 +4,7 @@ import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.reveila.service.HttpClient;
-import com.reveila.util.JsonUtil;
+import com.reveila.util.json.JsonUtil;
 import com.reveila.util.xml.XmlUtil;
 
 import java.io.ByteArrayInputStream;

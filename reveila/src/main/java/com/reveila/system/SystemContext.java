@@ -11,7 +11,10 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.reveila.crypto.Cryptographer;
-import com.reveila.system.data.FileAdapter;
+import com.reveila.data.FileAdapter;
+import com.reveila.error.SystemException;
+import com.reveila.event.EventManager;
+import com.reveila.util.GUID;
 
 
 /**
@@ -91,64 +94,56 @@ public final class SystemContext {
 		this.platformAdapter = Objects.requireNonNull(platformAdapter, "Argument 'platformAdapter' must not be null");
 	}
 
-	public synchronized void register(Proxy proxy) throws Exception {
+	public synchronized void register(Proxy proxy) throws SystemException {
 		Objects.requireNonNull(proxy, "Argument 'proxy' must not be null");
-
-		String proxyName = proxy.getName();
-
-		if (proxiesByName.containsKey(proxyName)) {
-			throw new IllegalStateException(
-					"A proxy with name '" + proxyName + "' is already registered.");
+		if (proxiesByName.size() == Integer.MAX_VALUE) {
+			throw new SystemException("Too many components (" + proxiesByName.size() + ")!");
+		}
+		String name = proxy.getName();
+		if (name == null || name.isBlank()) {
+			name = GUID.getGUID(proxy);
 		}
 
-		proxiesByName.put(proxyName, proxy);
+		for (int i = 0; proxiesByName.containsKey(name); i++) {
+			if (i == Integer.MAX_VALUE) {
+				throw new SystemException("Too many components (" + proxiesByName.size() + ")!");
+			}
+			name = name + "_" + i;
+		}
+
+		proxy.setName(name);
+		proxiesByName.put(name, proxy);
 		eventManager.addEventWatcher(proxy);
-		logger.info("Registered component: " + proxyName);
+		proxy.setSystemContext(this);
+		logger.info("Registered component: " + proxy.toString());
 	}
 
-	public synchronized void unregister(Proxy proxy) throws Exception {
-		Objects.requireNonNull(proxy, "Argument 'proxy' must not be null");
-
+	public synchronized void unregister(Proxy proxy) {
+		if (proxy == null) {
+			return;
+		}
 		proxiesByName.remove(proxy.getName());
-		eventManager.removeEventWatcher(proxy);
+		eventManager.removeEventConsumer(proxy);
 		fileAdapters.remove(proxy);
 		loggersByName.remove(proxy.getName());
-		logger.info("Unregistered component: " + proxy.getName());
 	}
 
-	public void destruct() {
-		// First, gracefully stop all stoppable services.
-		// This is done before unregistering to allow services to interact during shutdown.
-		logger.info("Stopping all components...");
-		for (Proxy proxy : List.copyOf(proxiesByName.values())) {
-			try {
-				proxy.stop();
-			} catch (Exception e) {
-				logger.log(Level.SEVERE, "Failed to stop component: " + proxy.getName(), e);
-			}
-		}
-
-		// Then, kill (unregister) all proxies.
-		for (Proxy proxy : List.copyOf(proxiesByName.values())) {
-			try {
-				this.unregister(proxy);
-			} catch (Exception e) {
-				logger.log(Level.SEVERE, "Failed to unregister or clean up component: " + proxy.getName(), e);
-			}
-		}
-
+	public synchronized void clear() {
 		proxiesByName.clear();
 		loggersByName.clear();
 		eventManager.clear();
 		fileAdapters.clear();
 		properties.clear();
 		cryptographer = null;
-		logger.info("System context destructed.");
 	}
 
 	public Optional<Proxy> getProxy(String name) {
 		Objects.requireNonNull(name, "Component name cannot be null when getting a proxy.");
 		return Optional.ofNullable(this.proxiesByName.get(name));
+	}
+
+	public List<Proxy> getProxies() {
+		return List.copyOf(this.proxiesByName.values());
 	}
 
 }

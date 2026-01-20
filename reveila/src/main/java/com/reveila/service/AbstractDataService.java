@@ -3,9 +3,9 @@ package com.reveila.service;
 import java.util.Map;
 import java.util.Optional;
 
+import com.reveila.data.ObjectDataAdapter;
+import com.reveila.data.Page;
 import com.reveila.system.AbstractService;
-import com.reveila.system.data.ObjectDataAdapter;
-import com.reveila.system.data.Page;
 
 /**
  * An abstract base class for data service implementations,

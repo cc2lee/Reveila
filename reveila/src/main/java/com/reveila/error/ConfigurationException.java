@@ -1,14 +1,8 @@
 package com.reveila.error;
 
-/**
- * @author Charles Lee
- * 
- * Thrown by system codes to indicate a configuration error.
- */
- 
-public class ConfigurationException extends Exception implements ErrorCode {
+public class ConfigurationException extends Exception {
 	
-	public static final String ERROR_CODE = "500";
+	private String errorCode = "500";
 
 	public ConfigurationException(String message) {
         super(message);
@@ -18,8 +12,13 @@ public class ConfigurationException extends Exception implements ErrorCode {
         super(message, cause);
     }
 
+    public ConfigurationException(String message, Throwable cause, String errorCode) {
+        super(message, cause);
+        this.errorCode = errorCode;
+    }
+
     public String getErrorCode() {
-		return ERROR_CODE;
+		return errorCode;
 	}
 
 }

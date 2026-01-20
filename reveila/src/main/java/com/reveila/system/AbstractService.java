@@ -2,6 +2,8 @@ package com.reveila.system;
 
 import java.util.EventObject;
 
+import com.reveila.event.EventConsumer;
+
 public abstract class AbstractService implements EventConsumer, Startable, Stoppable {
 
     protected SystemContext systemContext;

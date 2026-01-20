@@ -44,6 +44,10 @@ public final class Constants {
 	public static final String THREAD_SAFE = "thread-safe";
 	public static final String VALUE = "value";
 	public static final String ARGUMENTS = "arguments";
+	public static final String RUNNABLE = "runnable";
+	public static final String RUNNABLE_DELAY = "delay.seconds";
+	public static final String RUNNABLE_INTERVAL = "interval.seconds";
+	public static final String RUNNABLE_METHOD = "method.name";
 	public static final String AUTHOR = "author";
 	public static final String LICENSE_TOKEN = "license-token";
 	public static final String COMPONENT = "component";
@@ -55,4 +59,10 @@ public final class Constants {
 	public static final String TASK = "task";
     public static final String LIB_DIR_NAME = "libs";
 	public static final String STANDALONE_MODE = "standalone.mode";
+	public static final String PLUGIN = "plugin";
+	public static final String DIRECTORY = "directory";
+	public static final String CAPABILITIES = "capabilities";
+	public static final String HOT_DEPLOY = "hot-deploy";
+	public static final String START_PRIORITY = "start-priority";
+	public static final String DEPENDENCIES = "dependencies";
 }

@@ -1,0 +1,36 @@
+# --- SECRETS & CREDENTIALS ---
+.env
+.env.*
+*.pem
+*.key
+*.pub
+.aws/
+.azure/
+.ssh/
+secrets/
+credentials.json
+
+# --- SYSTEM & WORKSPACE ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.history/
+node_modules/
+.npm/
+
+# --- BUILD OUTPUTS (Reduces Token Usage) ---
+build/
+bin/
+out/
+target/
+*.class
+*.dex
+.gradle/
+.m2/
+
+# --- PERSONAL & INFRASTRUCTURE ---
+terraform.tfstate*
+*.log
+backup/
+temp/

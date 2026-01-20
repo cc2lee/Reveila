@@ -6,6 +6,8 @@ import java.io.OutputStream;
 import java.util.Properties;
 import java.util.logging.Logger;
 
+import com.reveila.event.EventConsumer;
+
 /**
  * An interface to abstract the host platform, allowing Reveila to run
  * on different platforms without having to deal with the underlying implementation details.
@@ -18,7 +20,8 @@ public interface PlatformAdapter {
     public OutputStream getFileOutputStream(String relativePath, boolean append) throws IOException;
     public String[] getConfigFilePaths() throws IOException;
     public Logger getLogger();
-    public void registerTask(Runnable task, long delayMillis, long periodMillis, EventConsumer eventConsumer);
-    public void unplug();
+    public void registerAutoCall(String componentName, String methodName, long delaySeconds, long intervalSeconds, EventConsumer eventConsumer) throws Exception;
+    public void plug(Reveila reveila) throws Exception;
+    public void unplug() throws Exception;
 
 }

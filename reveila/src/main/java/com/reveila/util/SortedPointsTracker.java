@@ -10,6 +10,7 @@ import java.util.NavigableMap;
 import java.util.TreeMap;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.reveila.util.json.JsonUtil;
 
 public class SortedPointsTracker {
 
