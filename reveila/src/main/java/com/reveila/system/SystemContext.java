@@ -7,7 +7,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.reveila.crypto.Cryptographer;
@@ -29,7 +28,6 @@ public final class SystemContext {
 	private EventManager eventManager;
 	private Logger logger;
 	private Map<Proxy, FileAdapter> fileAdapters = new ConcurrentHashMap<>();
-	private Map<String, Logger> loggersByName = new ConcurrentHashMap<>();
 	private Cryptographer cryptographer;
 	private Map<String, Proxy> proxiesByName = new ConcurrentHashMap<>();
 	private PlatformAdapter platformAdapter;
@@ -70,14 +68,8 @@ public final class SystemContext {
 		return eventManager;
 	}
 
-	public Logger getLogger(Object object) {
-		if (object != null && object instanceof Proxy) {
-			String proxyName = ((Proxy) object).getName();
-			// Use computeIfAbsent for a concise, thread-safe way to get or create the logger.
-			return this.loggersByName.computeIfAbsent(proxyName,
-					name -> Logger.getLogger(this.logger.getName() + "." + name));
-		}
-		return this.logger; // Return the root logger for non-proxy objects
+	public Logger getLogger() {
+		return this.logger;
 	}
 	
 	public SystemContext(
@@ -94,7 +86,7 @@ public final class SystemContext {
 		this.platformAdapter = Objects.requireNonNull(platformAdapter, "Argument 'platformAdapter' must not be null");
 	}
 
-	public synchronized void register(Proxy proxy) throws SystemException {
+	public synchronized void add(Proxy proxy) throws SystemException {
 		Objects.requireNonNull(proxy, "Argument 'proxy' must not be null");
 		if (proxiesByName.size() == Integer.MAX_VALUE) {
 			throw new SystemException("Too many components (" + proxiesByName.size() + ")!");
@@ -112,25 +104,22 @@ public final class SystemContext {
 		}
 
 		proxy.setName(name);
+		proxy.setSystemContext(this);
 		proxiesByName.put(name, proxy);
 		eventManager.addEventWatcher(proxy);
-		proxy.setSystemContext(this);
-		logger.info("Registered component: " + proxy.toString());
 	}
 
-	public synchronized void unregister(Proxy proxy) {
+	public synchronized void remove(Proxy proxy) {
 		if (proxy == null) {
 			return;
 		}
 		proxiesByName.remove(proxy.getName());
 		eventManager.removeEventConsumer(proxy);
 		fileAdapters.remove(proxy);
-		loggersByName.remove(proxy.getName());
 	}
 
 	public synchronized void clear() {
 		proxiesByName.clear();
-		loggersByName.clear();
 		eventManager.clear();
 		fileAdapters.clear();
 		properties.clear();

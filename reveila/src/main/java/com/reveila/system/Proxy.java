@@ -29,13 +29,13 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 	private final AtomicReference<ClassLoader> loaderRef = new AtomicReference<>();
 	private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 	private PluginWatcher activeWatcher;
-    private Thread watcherThread;
+	private Thread watcherThread;
 	private MetaObject metaObject;
 	private SystemContext systemContext;
 	private volatile Class<?> implementationClass;
 	private volatile Object singletonInstance;
 	private String name;
-	
+
 	public Proxy(MetaObject metaObject) {
 		if (metaObject == null) {
 			throw new IllegalArgumentException("Argument must not be null");
@@ -59,30 +59,31 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 		if (newLoader == this.loaderRef.get()) {
 			return;
 		}
-        // 1. Acquire the Write Lock
-        // This blocks until all current 'invoke' calls are finished
-        lock.writeLock().lock();
-        try {
-            ClassLoader oldLoader = loaderRef.getAndSet(newLoader);
+		// 1. Acquire the Write Lock
+		// This blocks until all current 'invoke' calls are finished
+		lock.writeLock().lock();
+		try {
+			ClassLoader oldLoader = loaderRef.getAndSet(newLoader);
 
-            // 2. Invalidate state while under Write Lock
-            this.implementationClass = null;
-            this.singletonInstance = null;
+			// 2. Invalidate state while under Write Lock
+			this.implementationClass = null;
+			this.singletonInstance = null;
 
-            // 3. Cleanup old resources
-            if (oldLoader != null && oldLoader != newLoader) {
-                if (oldLoader instanceof Closeable) {
-                    try {
-                        ((Closeable) oldLoader).close();
-                    } catch (Exception e) {
-                        System.err.println("Failed to close class loader for component (plugin): " + name + "." + e.getMessage());
-                    }
-                }
-            }
-        } finally {
-            lock.writeLock().unlock();
-        }
-    }
+			// 3. Cleanup old resources
+			if (oldLoader != null && oldLoader != newLoader) {
+				if (oldLoader instanceof Closeable) {
+					try {
+						((Closeable) oldLoader).close();
+					} catch (Exception e) {
+						System.err.println(
+								"Failed to close class loader for component (plugin): " + name + "." + e.getMessage());
+					}
+				}
+			}
+		} finally {
+			lock.writeLock().unlock();
+		}
+	}
 
 	public void loadPlugin(String pluginDir) throws Exception {
 		setClassLoader(RuntimeUtil.createPluginClassLoader(pluginDir));
@@ -94,12 +95,13 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 	 * 
 	 * Example:
 	 * 
-	 * CompletableFuture<Object> future = proxy.invokeAsync("calculate", new Object[]{10, 20});
+	 * CompletableFuture<Object> future = proxy.invokeAsync("calculate", new
+	 * Object[]{10, 20});
 	 * future.thenAccept(result -> {
-	 * 		System.out.println("Success: " + result);
+	 * System.out.println("Success: " + result);
 	 * }).exceptionally(ex -> {
-	 * 		System.err.println("Async task failed: " + ex.getMessage());
-	 * 		return null; // Return a default value if needed
+	 * System.err.println("Async task failed: " + ex.getMessage());
+	 * return null; // Return a default value if needed
 	 * });
 	 *
 	 * @param methodName the name of the method to invoke
@@ -107,7 +109,7 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 	 * @return the result of the invoked method
 	 */
 	public CompletableFuture<Object> invokeAsync(final String methodName, final Object[] args) {
-		
+
 		final ClassLoader pluginLoader = getClassLoader();
 
 		return CompletableFuture.supplyAsync(() -> {
@@ -117,7 +119,9 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 					Thread.currentThread().setContextClassLoader(pluginLoader);
 				return invoke(methodName, args);
 			} catch (Exception e) {
-				throw new RuntimeException("Async invocation failed for " + this.toString() + "." + getMethodSignature(methodName, args), e);
+				throw new RuntimeException(
+						"Async invocation failed for " + this.toString() + "." + getMethodSignature(methodName, args),
+						e);
 			} finally {
 				if (originalLoader != pluginLoader)
 					Thread.currentThread().setContextClassLoader(originalLoader);
@@ -158,7 +162,8 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 			Method methodToInvoke = ReflectionMethod.findBestMethod(target.getClass(), methodName, args);
 
 			if (methodToInvoke == null) {
-				throw new NoSuchMethodException("Method not found: " + this.toString() + "." + getMethodSignature(methodName, args));
+				throw new NoSuchMethodException(
+						"Method not found: " + this.toString() + "." + getMethodSignature(methodName, args));
 			}
 
 			Object[] coercedArgs = ReflectionMethod.coerceArguments(methodToInvoke, args);
@@ -188,7 +193,7 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 		if (object instanceof Startable) {
 			((Startable) object).start();
 		}
-		
+
 		return object;
 	}
 
@@ -235,15 +240,15 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 		ExceptionCollection exceptions = new ExceptionCollection();
 
 		// Gracefully stop the Plugin Watcher first
-        if (activeWatcher != null) {
-            activeWatcher.stop();
-            if (watcherThread != null) {
-                watcherThread.interrupt(); // Wake it up from any polling/sleep
-            }
-            activeWatcher = null;
-            watcherThread = null;
-            System.out.println("🛑 Plugin Watcher stopped for: " + this.getName());
-        }
+		if (activeWatcher != null) {
+			activeWatcher.stop();
+			if (watcherThread != null) {
+				watcherThread.interrupt(); // Wake it up from any polling/sleep
+			}
+			activeWatcher = null;
+			watcherThread = null;
+			System.out.println("🛑 Plugin Watcher stopped for: " + this.getName());
+		}
 
 		// First, gracefully stop any stoppable instance.
 		if (this.singletonInstance != null && this.singletonInstance instanceof Stoppable) {
@@ -253,18 +258,11 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 				exceptions.addException(e);
 			}
 		}
-		
-		try {
-			this.systemContext.unregister(this);
-		} catch (Exception e) {
-			exceptions.addException(e);
-		}
 
 		// Finally, clean up internal state.
 		this.systemContext = null;
 		this.singletonInstance = null;
 		this.metaObject = null;
-
 		setClassLoader(null);
 
 		if (!exceptions.getExceptions().isEmpty()) {
@@ -274,9 +272,6 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 
 	@Override
 	public void notifyEvent(EventObject evtObj) throws Exception {
-
-		// TODO: Add logic to handle events
-
 		Object target = getTargetObject();
 		if (target instanceof EventConsumer) {
 			((EventConsumer) target).notifyEvent(evtObj);
@@ -284,16 +279,16 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 	}
 
 	public String getName() {
-        return name;
-    }
+		return name;
+	}
 
-    public void setName(String name) {
-        if (name == null || name.trim().isEmpty()) {
-            throw new IllegalArgumentException("Argument 'name' cannot be null or empty.");
-        }
+	public void setName(String name) {
+		if (name == null || name.trim().isEmpty()) {
+			throw new IllegalArgumentException("Argument 'name' cannot be null or empty.");
+		}
 
-        this.name = name;
-    }
+		this.name = name;
+	}
 
 	private String getComponentClassName() {
 		return this.metaObject.getImplementationClassName();
@@ -325,7 +320,7 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 		return getName() + " (" + getComponentClassName() + ")";
 	}
 
-	/** 
+	/**
 	 * Set arguments on the target object.
 	 * The arguments are configured in the components configuration file.
 	 * This method looks for setter methods corresponding to each argument.
@@ -336,9 +331,9 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 	 * @throws ConfigurationException
 	 * @throws ClassNotFoundException
 	 */
-	private void setArguments(Object target, Class<?> targetClass, List<Map<String, Object>> arguments) 
+	private void setArguments(Object target, Class<?> targetClass, List<Map<String, Object>> arguments)
 			throws ConfigurationException, ClassNotFoundException {
-		
+
 		if (arguments == null || arguments.isEmpty()) {
 			return; // no arguments to set
 		}
@@ -368,8 +363,7 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 							method = targetClass.getMethod(setterName, argClass);
 						}
 					}
-				}
-				else {
+				} else {
 					argClass = getClassForType(typeName);
 					method = targetClass.getMethod(setterName, argClass);
 				}
@@ -377,14 +371,17 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 				method.invoke(target, value);
 			} catch (Exception e) {
 				throw new ConfigurationException(
-					"Failed to set '" + name + "' using method '" + setterName + "(" + argClass == null ? "null" : argClass.getName() + ")'"
-						+ " in class '" + targetClass.getName() + "'. Error: " + e.getMessage(), e);
+						"Failed to set '" + name + "' using method '" + setterName + "(" + argClass == null ? "null"
+								: argClass.getName() + ")'"
+										+ " in class '" + targetClass.getName() + "'. Error: " + e.getMessage(),
+						e);
 			}
 		}
 	}
 
-	/** 
+	/**
 	 * Coerce (standardize) the argument value to the target type.
+	 * 
 	 * @param value
 	 * @param targetType
 	 * @return Object
@@ -410,22 +407,33 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 			Double d = (Double) value;
 			// numeric conversions
 			switch (targetType.getName()) {
-				case "java.lang.Byte": return Byte.valueOf(d.byteValue());
-				case "java.lang.Short": return Short.valueOf(d.shortValue());
-				case "java.lang.Integer": return Integer.valueOf(d.intValue());
-				case "java.lang.Long": return Long.valueOf(d.longValue());
-				case "java.lang.Float": return Float.valueOf(d.floatValue());
-				case "java.lang.Double": return Double.valueOf(d.doubleValue());
-				case "byte": return d.byteValue();
-				case "short": return d.shortValue();
-				case "int": return d.intValue();
-				case "long": return d.longValue();
-				case "float": return d.floatValue();
-				case "double": return d.doubleValue();
+				case "java.lang.Byte":
+					return Byte.valueOf(d.byteValue());
+				case "java.lang.Short":
+					return Short.valueOf(d.shortValue());
+				case "java.lang.Integer":
+					return Integer.valueOf(d.intValue());
+				case "java.lang.Long":
+					return Long.valueOf(d.longValue());
+				case "java.lang.Float":
+					return Float.valueOf(d.floatValue());
+				case "java.lang.Double":
+					return Double.valueOf(d.doubleValue());
+				case "byte":
+					return d.byteValue();
+				case "short":
+					return d.shortValue();
+				case "int":
+					return d.intValue();
+				case "long":
+					return d.longValue();
+				case "float":
+					return d.floatValue();
+				case "double":
+					return d.doubleValue();
 			}
 			return value; // No conversion needed
-		}
-		else if (value instanceof List && targetType.isArray()) {
+		} else if (value instanceof List && targetType.isArray()) {
 			// Handle array conversion
 			Class<?> componentType = targetType.getComponentType();
 			Object array = java.lang.reflect.Array.newInstance(componentType, ((List<?>) value).size());
@@ -441,15 +449,24 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 
 	private Class<?> getClassForType(String typeName) throws ClassNotFoundException {
 		switch (typeName) {
-			case "int": return int.class;
-			case "long": return long.class;
-			case "double": return double.class;
-			case "float": return float.class;
-			case "boolean": return boolean.class;
-			case "char": return char.class;
-			case "byte": return byte.class;
-			case "short": return short.class;
-			default: return Class.forName(typeName);
+			case "int":
+				return int.class;
+			case "long":
+				return long.class;
+			case "double":
+				return double.class;
+			case "float":
+				return float.class;
+			case "boolean":
+				return boolean.class;
+			case "char":
+				return char.class;
+			case "byte":
+				return byte.class;
+			case "short":
+				return short.class;
+			default:
+				return Class.forName(typeName);
 		}
 	}
 }

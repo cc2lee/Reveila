@@ -15,7 +15,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,7 +28,6 @@ import com.reveila.crypto.DefaultCryptographer;
 import com.reveila.error.ConfigurationException;
 import com.reveila.error.SystemException;
 import com.reveila.event.EventManager;
-import com.reveila.util.GUID;
 import com.reveila.util.TimeFormat;
 
 public class Reveila {
@@ -38,7 +36,7 @@ public class Reveila {
 	private Properties properties;
 	private SystemContext systemContext;
 	private boolean strictMode = true;
-	private List<Proxy> startedProxies = new ArrayList<>();
+	private List<Proxy> startedProxies;
 
 	public SystemContext getSystemContext() {
 		return systemContext;
@@ -139,8 +137,7 @@ public class Reveila {
 		}
 
 		createSystemContext(this.properties);
-		loadComponents();
-
+		startComponents(parseMetaObjects());
 		logStartupCompletion(beginTime);
 
 		System.out.println(getDisplayName(this.properties) + " is running...");
@@ -220,60 +217,43 @@ public class Reveila {
 				new DefaultCryptographer(secretKey.getBytes(charset)), this.platformAdapter);
 	}
 
-	private void loadComponents() throws Exception {
+	private List<MetaObject> parseMetaObjects() throws Exception {
 		strictMode = !"false".equalsIgnoreCase(this.properties.getProperty(Constants.LAUNCH_STRICT_MODE));
 		String[] files = this.platformAdapter.getConfigFilePaths();
 
 		if (files == null || files.length == 0) {
 			logger.info("No components found to load.");
-			return;
+			return null;
 		}
 
 		logger.info("Loading components...");
 		
 		// PHASE 1: DISCOVERY
-		Map<String, MetaObject> registry = new HashMap<>();
+		List<MetaObject> list = new ArrayList<>();
 		for (String file : files) {
 			try (InputStream is = this.platformAdapter.getFileInputStream(file)) {
 				Configuration config = new Configuration(is);
 				for (MetaObject mObj : config.getMetaObjects()) {
-					String name = (mObj.getName() == null || mObj.getName().isBlank())
-							? GUID.getGUID(mObj)
-							: mObj.getName();
-					registry.put(name, mObj);
+					if (mObj.getName() == null || mObj.getName().isBlank()) {
+						throw new ConfigurationException(
+								"Component name is not set in configuration file: " + file);
+					}
+					list.add(mObj);
 				}
-				logger.info("Processed configuration from: " + file);
+				logger.info("Processed configuration file: " + file);
 			} catch (Exception e) {
-				handleStartError("Failed to parse config: " + file, e);
+				handleStartError("Failed to parse configuration file: " + file, e);
 			}
 		}
 
 		// PHASE 2: VALIDATION (Linting & Cycle Detection)
 		try {
-			new ConfigurationLinter().lint(registry.values());
+			new ConfigurationLinter().lint(list);
 		} catch (Exception e) {
-			handleStartError("Configuration validation failed", e);
+			handleStartError("Configuration validation failed.", e);
 		}
 
-		// PHASE 3: ACTIVATION
-		for (MetaObject mObj : registry.values()) {
-			try {
-				Proxy proxy = new Proxy(mObj);
-				proxy.setName(mObj.getName());
-
-				// Register with SystemContext
-				this.systemContext.register(proxy);
-
-				// Handle Auto-Run (Scheduling)
-				setupAutoCall(mObj, proxy);
-
-			} catch (Exception e) {
-				handleStartError("Failed to activate component: " + mObj.getName(), e);
-			}
-		}
-
-		// PHASE 4: SEQUENTIAL START
-		startComponentsByPriority(this.systemContext.getProxies());
+		return list;
 	}
 
 	/**
@@ -290,8 +270,14 @@ public class Reveila {
 		}
 	}
 
-	private void setupAutoCall(MetaObject mObj, Proxy proxy) throws Exception {
+	private void setupAutoCall(Proxy proxy) throws Exception {
+		if (proxy == null) {
+			throw new IllegalArgumentException("Argument 'proxy' cannot be null.");
+		}
+
+		MetaObject mObj = proxy.getMetaObject();
 		Map<String, Object> autoRunConf = mObj.getAutoRunConf();
+		
 		if (autoRunConf == null || autoRunConf.isEmpty()) {
 			return;
 		}
@@ -327,30 +313,40 @@ public class Reveila {
 				Long.parseLong(delay), Long.parseLong(interval), proxy);
 	}
 
-	private void startComponentsByPriority(List<Proxy> proxies) throws SystemException {
-		if (proxies == null || proxies.isEmpty()) {
+	private void startComponents(List<MetaObject> list) throws Exception {
+		if (startedProxies != null && !startedProxies.isEmpty()) {
+			stopComponents();
+		}
+
+		if (list == null || list.isEmpty()) {
 			return;
 		}
 
+		if (startedProxies == null) {
+			startedProxies = new ArrayList<>();
+		}
+
 		// 1. Sort based on priority (Ascending)
-		proxies.sort(Comparator.comparingInt(p -> p.getMetaObject().getStartPriority()));
+		list.sort(Comparator.comparingInt(m -> m.getStartPriority()));
 
 		// 2. Sequential Bootstrapping
-		for (Proxy proxy : proxies) {
+		for (MetaObject mObj : list) {
 			try {
+				Proxy proxy = new Proxy(mObj);
+				proxy.setName(mObj.getName());
 				proxy.start();
 				startedProxies.add(proxy); // Track successful starts
-				logger.log(Level.INFO, "✅ Component {0} started.", proxy.toString());
+				systemContext.add(proxy);
+				setupAutoCall(proxy);
 			} catch (Exception e) {
-				String errorMsg = "❌ Failed to start component " + proxy.toString() + ": " + e.getMessage();
-
+				String errorMsg = "❌ Failed to start component " + mObj.getName() + ": " + e.getMessage();
 				if (strictMode) {
-					logger.log(Level.SEVERE, errorMsg + " - Initiating emergency shutdown.", e);
+					handleStartError(errorMsg + " - Initiating emergency shutdown.", e);
 					// ROLLBACK: Stop everything that was already started in reverse order
 					stopComponents();
 					throw new SystemException(errorMsg, e);
 				} else {
-					logger.log(Level.SEVERE, errorMsg + " - Continuing in non-strict mode.", e);
+					handleStartError(errorMsg + " - Continuing in non-strict mode.", e);
 				}
 			}
 		}
@@ -373,6 +369,7 @@ public class Reveila {
 			}
 		}
 
+		startedProxies.clear();
 		return success;
 	}
 
