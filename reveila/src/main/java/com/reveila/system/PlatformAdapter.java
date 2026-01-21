@@ -21,7 +21,7 @@ public interface PlatformAdapter {
     public String[] getConfigFilePaths() throws IOException;
     public Logger getLogger();
     public void registerAutoCall(String componentName, String methodName, long delaySeconds, long intervalSeconds, EventConsumer eventConsumer) throws Exception;
-    public void plug(Reveila reveila) throws Exception;
-    public void unplug() throws Exception;
-
+    public void plug(Reveila reveila);
+    public void unplug();
+    public ClassLoader getClassLoader();
 }

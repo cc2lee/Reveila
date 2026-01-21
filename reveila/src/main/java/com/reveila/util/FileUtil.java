@@ -2,17 +2,13 @@ package com.reveila.util;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Stream;
-
-import com.reveila.error.FileDeleteException;
 
 /**
  * @author Charles Lee
@@ -30,10 +26,10 @@ public final class FileUtil {
 	 * Deletes a file or directory. If the file is a directory, it will be deleted recursively.
 	 *
 	 * @param file the file or directory to delete.
-	 * @param throwException if true, throws a {@link FileDeleteException} if any file could not be deleted.
-	 * @throws FileDeleteException if deletion fails and throwException is true.
+	 * @param throwException if true, throws a {@link IOException} if any file could not be deleted.
+	 * @throws IOException if deletion fails and throwException is true.
 	 */
-	public static void delete(File file, boolean throwException) throws FileDeleteException {
+	public static void delete(File file, boolean throwException) throws IOException {
 		if (file == null || !file.exists()) {
 			return;
 		}
@@ -42,7 +38,7 @@ public final class FileUtil {
 		deleteRecursively(file, failedFiles);
 
 		if (throwException && !failedFiles.isEmpty()) {
-			throw new FileDeleteException("Failed to delete one or more files.", failedFiles.toArray(new File[0]));
+			throw new IOException("Failed to delete: " + failedFiles);
 		}
 	}
 
@@ -207,15 +203,18 @@ public final class FileUtil {
 		return (dotIndex <= 0) ? name : name.substring(0, dotIndex);
 	}
 
-	public static Path toSafePath(Path base, String path) {
+	public static Path toSafePath(Path base, String path) throws IOException {
+		if (base == null || path == null) {
+			throw new IOException("Base path and target path must not be null");
+		}
 		Path resolvedPath = base.resolve(path).normalize();
 		if (!resolvedPath.startsWith(base)) {
-			throw new IllegalArgumentException("Path traversal attempt detected");
+			throw new IOException("Path traversal attempt detected");
 		}
 		return resolvedPath;
 	}
 
 	public static String toJavaFilePath(String path) {
 		return path.replace('\\', '/');
-	}	
+	}
 }

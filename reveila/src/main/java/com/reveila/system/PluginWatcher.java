@@ -17,6 +17,12 @@ public class PluginWatcher implements Runnable {
 
     public PluginWatcher(String dir, Proxy proxy) {
         this.pluginPath = Paths.get(dir);
+        if (!Files.isDirectory(this.pluginPath)) {
+            throw new IllegalArgumentException("Plugin path must be a valid directory: " + dir);
+        }
+        if (proxy == null) {
+            throw new IllegalArgumentException("Proxy cannot be null.");
+        }
         this.proxy = proxy;
     }
 
@@ -51,7 +57,7 @@ public class PluginWatcher implements Runnable {
                     Thread.sleep(500);
                     System.out.println("♻️ Change detected. Reloading plugin via Proxy...");
                     try {
-                        proxy.loadPlugin(pluginPath.toString());
+                        proxy.loadPlugin(pluginPath);
                         System.out.println("✅ Hot-Reload successful.");
                     } catch (Exception e) {
                         System.err.println("❌ Hot-Reload failed for component '" + proxy.toString() + "': " + e.getMessage());

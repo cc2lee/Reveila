@@ -20,6 +20,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -32,6 +36,7 @@ import com.reveila.util.TimeFormat;
 
 public class Reveila {
 
+	private final ExecutorService startExecutor = Executors.newCachedThreadPool();
 	private PlatformAdapter platformAdapter;
 	private Properties properties;
 	private SystemContext systemContext;
@@ -56,13 +61,15 @@ public class Reveila {
 
 		shutdown = true;
 		boolean error = false;
-		
+
 		String message = "Shutting down Reveila...";
 		System.out.println(message);
 		if (logger != null) {
 			logger.info(message);
 		}
-		
+
+		// Stop the executor from taking new tasks
+    	startExecutor.shutdownNow();
 		error = !stopComponents();
 		
 		if (systemContext != null) {
@@ -96,6 +103,14 @@ public class Reveila {
 			if (logger != null) {
 				logger.warning(message);
 			}
+		}
+
+		try {
+			if (!startExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+				logger.warning("Some start-up threads did not exit cleanly.");
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
 		}
 
 		if (logger != null) {
@@ -137,11 +152,11 @@ public class Reveila {
 		}
 
 		createSystemContext(this.properties);
+		this.platformAdapter.plug(this);
 		startComponents(parseMetaObjects());
 		logStartupCompletion(beginTime);
 
 		System.out.println(getDisplayName(this.properties) + " is running...");
-		this.platformAdapter.plug(this);
 	}
 
 	private void printLogo() {
@@ -227,7 +242,7 @@ public class Reveila {
 		}
 
 		logger.info("Loading components...");
-		
+
 		// PHASE 1: DISCOVERY
 		List<MetaObject> list = new ArrayList<>();
 		for (String file : files) {
@@ -261,12 +276,15 @@ public class Reveila {
 	 */
 	private void handleStartError(String message, Exception e) throws Exception {
 		if (message == null || message.isBlank()) {
-			message = "System startup error";
+			message = "System startup error!";
 		}
 		if (strictMode) {
-			throw new ConfigurationException(message, e); // Rethrow in strict mode
+			// ROLLBACK: Stop everything that was already started in reverse order
+			stopComponents();
+			throw new SystemException(message, e);
 		} else {
-			logger.log(Level.SEVERE, message + (message.endsWith(".") ? " " : ". ") + "Continuing in non-strict mode.", e);
+			logger.log(Level.SEVERE, message + (message.endsWith(".") ? " " : ". ")
+					+ "Continuing in non-strict mode.", e);
 		}
 	}
 
@@ -277,7 +295,7 @@ public class Reveila {
 
 		MetaObject mObj = proxy.getMetaObject();
 		Map<String, Object> autoRunConf = mObj.getAutoRunConf();
-		
+
 		if (autoRunConf == null || autoRunConf.isEmpty()) {
 			return;
 		}
@@ -309,7 +327,7 @@ public class Reveila {
 							+ Constants.RUNNABLE_INTERVAL + "' cannot be negative.");
 		}
 
-		platformAdapter.registerAutoCall(proxy.getName(), methodName, 
+		platformAdapter.registerAutoCall(proxy.getName(), methodName,
 				Long.parseLong(delay), Long.parseLong(interval), proxy);
 	}
 
@@ -328,26 +346,47 @@ public class Reveila {
 
 		// 1. Sort based on priority (Ascending)
 		list.sort(Comparator.comparingInt(m -> m.getStartPriority()));
+		long startTimeoutSeconds = Long.parseLong(
+				this.properties.getProperty(Constants.COMPONENT_START_TIMEOUT, "30"));
 
 		// 2. Sequential Bootstrapping
 		for (MetaObject mObj : list) {
+			Proxy proxy = new Proxy(mObj);
+			proxy.setName(mObj.getName());
 			try {
-				Proxy proxy = new Proxy(mObj);
-				proxy.setName(mObj.getName());
-				proxy.start();
+				CompletableFuture<Void> startFuture = CompletableFuture.runAsync(() -> {
+					try {
+						proxy.start();
+						setupAutoCall(proxy);
+					} catch (Exception e) {
+						throw new RuntimeException(e);
+					}
+				}, startExecutor);
+
+				// Wait for completion or timeout
+				startFuture.get(startTimeoutSeconds, TimeUnit.SECONDS);
+				
+				logger.info("✅ Started component: " + mObj.getName());
 				startedProxies.add(proxy); // Track successful starts
 				systemContext.add(proxy);
-				setupAutoCall(proxy);
-			} catch (Exception e) {
-				String errorMsg = "❌ Failed to start component " + mObj.getName() + ": " + e.getMessage();
-				if (strictMode) {
-					handleStartError(errorMsg + " - Initiating emergency shutdown.", e);
-					// ROLLBACK: Stop everything that was already started in reverse order
-					stopComponents();
-					throw new SystemException(errorMsg, e);
-				} else {
-					handleStartError(errorMsg + " - Continuing in non-strict mode.", e);
+				
+			} catch (TimeoutException e) {
+				String msg = "⏱️ Timeout: Component [" + mObj.getName() + "] failed to start within "
+						+ startTimeoutSeconds + " seconds.";
+				try {
+					proxy.stop(); // Attempt to stop the proxy if start timed out
+				} catch (Exception ex) {
+					msg = msg + "\n⚠️ Failed to stop component after start timeout: " + mObj.getName() + " - " + ex.getMessage();
 				}
+				handleStartError(msg, e);
+			} catch (Exception e) {
+				String msg = "❌ Failed to start component [" + mObj.getName() + "].";
+				try {
+					proxy.stop(); // Attempt to stop the proxy if start timed out
+				} catch (Exception ex) {
+					msg = msg + "\n⚠️ Failed to stop component after start up error: " + mObj.getName() + " - " + ex.getMessage();
+				}
+				handleStartError(msg, e);
 			}
 		}
 	}
@@ -356,7 +395,7 @@ public class Reveila {
 		if (startedProxies == null || startedProxies.isEmpty()) {
 			return true;
 		}
-		
+
 		// Stop in reverse order of starting (LIFO)
 		boolean success = true;
 		Collections.reverse(startedProxies);
@@ -454,10 +493,9 @@ public class Reveila {
 						PerformanceTracker.getInstance().track(timeUsed, url); // Track remote invocation time
 						return result;
 					} catch (Exception e) {
+						// Penalize the failed remote node
 						PerformanceTracker.getInstance()
-								.track(Long.valueOf(PerformanceTracker.DEFAULT_PENALTY_MS), url); // Penalize the
-																									// remote node
-																									// for failure
+								.track(Long.valueOf(PerformanceTracker.DEFAULT_PENALTY_MS), url);
 						logger.severe(
 								"Remote invocation failed. Falling back to local invocation. Error: " + e.getMessage());
 						e.printStackTrace();

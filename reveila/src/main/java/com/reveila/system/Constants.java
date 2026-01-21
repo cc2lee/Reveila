@@ -19,16 +19,10 @@ public final class Constants {
 	public static final String LOG_FILE_SIZE = "logging.file.size";
 	public static final String LOG_FILE_COUNT = "logging.file.count";
 	public static final String LOG_LEVEL = "logging.level";
-	public static final String LOGGER_NAME = "logger.name";
 	public static final String SYSTEM_PROPERTIES_FILE_NAME = "reveila.properties";
 	public static final String CRYPTOGRAPHER_SECRETKEY = "cryptographer.secretkey";
 	public static final String CHARACTER_ENCODING = "text.character.encoding";
 	public static final String LAUNCH_STRICT_MODE = "launch.strict.mode";
-	public static final String SYSTEM_DATA_FILE_DIR = "system.data.file.dir";
-	public static final String SYSTEM_TEMP_FILE_DIR = "system.temp.file.dir";
-	public static final String TASK_INITIAL_DELAY = "task.initial.delay";
-	public static final String TASK_INTERVAL = "task.interval";
-	public static final String INVOCATION_TIME_TRACKING_MAX_ENTRIES = "invocation.time.tracking.max.entries";
 	
 	/*
 	 * **************************************************
@@ -65,4 +59,6 @@ public final class Constants {
 	public static final String HOT_DEPLOY = "hot-deploy";
 	public static final String START_PRIORITY = "start-priority";
 	public static final String DEPENDENCIES = "dependencies";
+    public static final String COMPONENT_START_TIMEOUT = "start-timeout";
+    public static final String LOG_CONSOLE_ENABLED = "log.console.enabled";
 }

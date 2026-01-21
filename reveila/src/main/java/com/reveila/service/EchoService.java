@@ -103,11 +103,11 @@ public class EchoService extends AbstractService {
     }
 
     @Override
-    public void stop() throws Exception {
+    public void onStart() throws Exception {
     }
 
     @Override
-    public void start() throws Exception {
+    public void onStop() throws Exception {
     }
 
     @Override

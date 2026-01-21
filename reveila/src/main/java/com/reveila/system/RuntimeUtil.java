@@ -41,7 +41,7 @@ public final class RuntimeUtil {
 		return cmdArgs;
 	}
 
-	public static ClassLoader createPluginClassLoader(String dir) throws Exception {
+	public static ClassLoader createPluginClassLoader(String dir, ClassLoader parentClassLoader) throws Exception {
 		Path root = Paths.get(dir);
 		List<URL> urls = Files.list(root)
 				.filter(path -> {
@@ -72,6 +72,6 @@ public final class RuntimeUtil {
 				.collect(Collectors.toList());
 
 		URL[] urlArray = urls.toArray(new URL[0]);
-		return new ChildFirstURLClassLoader(urlArray, RuntimeUtil.class.getClassLoader());
+		return new ChildFirstURLClassLoader(urlArray, parentClassLoader);
 	}
 }

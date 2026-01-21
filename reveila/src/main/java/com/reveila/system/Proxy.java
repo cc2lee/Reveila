@@ -2,20 +2,17 @@ package com.reveila.system;
 
 import java.io.Closeable;
 import java.lang.reflect.Method;
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.EventObject;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.logging.Level;
+import java.util.stream.Collectors;
 
 import com.reveila.error.ConfigurationException;
 import com.reveila.event.EventConsumer;
@@ -24,14 +21,13 @@ import com.reveila.util.ExceptionCollection;
 /**
  * @author Charles Lee
  */
-public final class Proxy implements EventConsumer, Startable, Stoppable {
+public final class Proxy extends AbstractService {
 
 	private final AtomicReference<ClassLoader> loaderRef = new AtomicReference<>();
 	private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 	private PluginWatcher activeWatcher;
 	private Thread watcherThread;
 	private MetaObject metaObject;
-	private SystemContext systemContext;
 	private volatile Class<?> implementationClass;
 	private volatile Object singletonInstance;
 	private String name;
@@ -46,13 +42,6 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 
 	public MetaObject getMetaObject() {
 		return metaObject;
-	}
-
-	private ClassLoader getClassLoader() {
-		if (loaderRef.get() == null) {
-			return Thread.currentThread().getContextClassLoader();
-		}
-		return loaderRef.get();
 	}
 
 	private void setClassLoader(ClassLoader newLoader) {
@@ -85,8 +74,11 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 		}
 	}
 
-	public void loadPlugin(String pluginDir) throws Exception {
-		setClassLoader(RuntimeUtil.createPluginClassLoader(pluginDir));
+	public void loadPlugin(Path pluginDir) throws Exception {
+		if (!Files.isDirectory(pluginDir)) {
+			throw new IllegalArgumentException("Plugin directory does not exist or is not a directory: " + pluginDir);
+		}
+		setClassLoader(RuntimeUtil.createPluginClassLoader(pluginDir.toString(), super.systemContext.getPlatformAdapter().getClassLoader()));
 	}
 
 	/**
@@ -109,22 +101,14 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 	 * @return the result of the invoked method
 	 */
 	public CompletableFuture<Object> invokeAsync(final String methodName, final Object[] args) {
-
-		final ClassLoader pluginLoader = getClassLoader();
-
 		return CompletableFuture.supplyAsync(() -> {
-			final ClassLoader originalLoader = Thread.currentThread().getContextClassLoader();
 			try {
-				if (originalLoader != pluginLoader)
-					Thread.currentThread().setContextClassLoader(pluginLoader);
 				return invoke(methodName, args);
-			} catch (Exception e) {
-				throw new RuntimeException(
-						"Async invocation failed for " + this.toString() + "." + getMethodSignature(methodName, args),
-						e);
-			} finally {
-				if (originalLoader != pluginLoader)
-					Thread.currentThread().setContextClassLoader(originalLoader);
+			} catch (Throwable t) {
+				String msg = "Async invocation failed for " + this.toString() + "."
+						+ getMethodSignature(methodName, args);
+				logger.log(Level.SEVERE, msg, t);
+				throw new RuntimeException(msg, t);
 			}
 		});
 	}
@@ -151,13 +135,14 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 			throw new IllegalArgumentException("Method name must not be null");
 
 		lock.readLock().lock();
-		ClassLoader pluginLoader = getClassLoader();
-		ClassLoader originalLoader = Thread.currentThread().getContextClassLoader();
+		final ClassLoader pluginLoader = loaderRef.get();
+		final ClassLoader originalLoader = Thread.currentThread().getContextClassLoader();
+		boolean isDifferentLoader = pluginLoader != null && originalLoader != pluginLoader;
+		if (isDifferentLoader) {
+			Thread.currentThread().setContextClassLoader(pluginLoader);
+		}
 
 		try {
-			if (originalLoader != pluginLoader)
-				Thread.currentThread().setContextClassLoader(pluginLoader);
-
 			Object target = getTargetObject();
 			Method methodToInvoke = ReflectionMethod.findBestMethod(target.getClass(), methodName, args);
 
@@ -174,7 +159,7 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 				return methodToInvoke.invoke(target, coercedArgs);
 			}
 		} finally {
-			if (originalLoader != pluginLoader)
+			if (isDifferentLoader)
 				Thread.currentThread().setContextClassLoader(originalLoader);
 			lock.readLock().unlock();
 		}
@@ -187,7 +172,7 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 		setArguments(object, clazz, arguments);
 
 		if (object instanceof AbstractService) {
-			((AbstractService) object).setSystemContext(this.systemContext);
+			((AbstractService) object).setSystemContext(systemContext);
 		}
 
 		if (object instanceof Startable) {
@@ -219,14 +204,10 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 		}
 	}
 
-	public void setSystemContext(SystemContext context) {
-		this.systemContext = Objects.requireNonNull(context, "SystemContext cannot be null.");
-	}
-
-	public void start() throws Exception {
+	public void onStart() throws Exception {
 		String pluginDir = metaObject.getPluginDir();
 		if (pluginDir != null && !pluginDir.isBlank()) {
-			loadPlugin(pluginDir);
+			loadPlugin(Path.of(pluginDir));
 			if (metaObject.isHotDeployEnabled()) {
 				// Launch watcher in background
 				watcherThread = new Thread(new PluginWatcher(pluginDir, this));
@@ -236,7 +217,7 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 		}
 	}
 
-	public void stop() throws Exception {
+	public void onStop() throws Exception {
 		ExceptionCollection exceptions = new ExceptionCollection();
 
 		// Gracefully stop the Plugin Watcher first
@@ -260,7 +241,6 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 		}
 
 		// Finally, clean up internal state.
-		this.systemContext = null;
 		this.singletonInstance = null;
 		this.metaObject = null;
 		setClassLoader(null);
@@ -307,7 +287,7 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 
 	private Class<?> getClass(String className) throws ClassNotFoundException {
 		// Explicitly use the plugin's class loader
-		ClassLoader classLoader = getClassLoader();
+		ClassLoader classLoader = loaderRef.get();
 		if (classLoader != null) {
 			return Class.forName(className, true, classLoader);
 		} else {
@@ -324,12 +304,6 @@ public final class Proxy implements EventConsumer, Startable, Stoppable {
 	 * Set arguments on the target object.
 	 * The arguments are configured in the components configuration file.
 	 * This method looks for setter methods corresponding to each argument.
-	 * 
-	 * @param target
-	 * @param targetClass
-	 * @param logger
-	 * @throws ConfigurationException
-	 * @throws ClassNotFoundException
 	 */
 	private void setArguments(Object target, Class<?> targetClass, List<Map<String, Object>> arguments)
 			throws ConfigurationException, ClassNotFoundException {

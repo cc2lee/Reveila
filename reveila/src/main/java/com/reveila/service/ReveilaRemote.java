@@ -89,8 +89,7 @@ public class ReveilaRemote extends AbstractService {
     }
 
     @Override
-    public synchronized void start() throws Exception {
-        super.start();
+    public synchronized void onStart() throws Exception {
         Set<Entry<URL, Number>> entrySet = configs.entrySet();
         for (Entry<URL, Number> entry : entrySet) {
             nodePerformanceTracker.track(entry.getValue(), entry.getKey());
@@ -98,8 +97,7 @@ public class ReveilaRemote extends AbstractService {
     }
 
     @Override
-    public synchronized void stop() throws Exception {
-        super.stop();
+    public synchronized void onStop() throws Exception {
         nodePerformanceTracker.clear();
     }
 
@@ -175,7 +173,7 @@ public class ReveilaRemote extends AbstractService {
         Request request = new Request.Builder().url(url).post(body).build();
 
         // Log the remote call
-        systemContext.getLogger(this).info("Remote invocation: URL: " + url + " target component: " + componentName + " target method: " + methodName);
+        logger.info("Remote invocation: URL: " + url + " target component: " + componentName + " target method: " + methodName);
         Response response = client.newCall(request).execute();
         // The response body can only be consumed once. We read it into a string
         // to allow logging it in case of an error.

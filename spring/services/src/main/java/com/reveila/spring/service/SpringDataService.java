@@ -19,7 +19,6 @@ import com.reveila.data.Page;
 import com.reveila.service.AbstractDataService;
 import com.reveila.spring.SpringPlatformAdapter;
 
-
 /**
  * A DataService implementation for the Spring environment.
  * This implementation uses Spring Data JPA to interact with a database.
@@ -30,12 +29,12 @@ public class SpringDataService extends AbstractDataService {
     private ObjectMapper objectMapper;
 
     @Override
-    public void start() throws Exception {
-        systemContext.getLogger(this).info("SpringDataService starting...");
+    public void onStart() throws Exception {
+        logger.info("SpringDataService starting...");
         if (systemContext.getPlatformAdapter() instanceof SpringPlatformAdapter springAdapter) {
             this.repository = springAdapter.getBean(SpringEntityRepository.class);
             this.objectMapper = springAdapter.getBean(ObjectMapper.class);
-            systemContext.getLogger(this).info("SpringDataService started and wired to Spring Data JPA.");
+            logger.info("SpringDataService started and wired to Spring Data JPA.");
         } else {
             throw new IllegalStateException("SpringDataService requires a SpringPlatformAdapter to function.");
         }
@@ -46,16 +45,17 @@ public class SpringDataService extends AbstractDataService {
         try {
             SpringEntity entity;
             Object idObject = data.get("id");
- 
+
             // If an ID is provided, treat it as an update. Otherwise, it's a new entity.
             if (idObject != null && idObject instanceof String id && !id.trim().isEmpty()) {
                 entity = repository.findById(id)
-                    .orElseThrow(() -> new IllegalArgumentException("Entity with id " + id + " not found for update."));
+                        .orElseThrow(
+                                () -> new IllegalArgumentException("Entity with id " + id + " not found for update."));
                 // Optional: Check if the entity type matches
                 if (!entity.getEntityType().equals(entityName)) {
                     throw new IllegalArgumentException(
-                        String.format("Entity with id %s has type %s, but was expecting %s.",
-                            id, entity.getEntityType(), entityName));
+                            String.format("Entity with id %s has type %s, but was expecting %s.",
+                                    id, entity.getEntityType(), entityName));
                 }
             } else {
                 entity = new SpringEntity();
@@ -74,7 +74,7 @@ public class SpringDataService extends AbstractDataService {
         }
     }
 
-    /** 
+    /**
      * @param entityName
      * @param id
      * @return Optional<Map<String, Object>>
@@ -91,7 +91,8 @@ public class SpringDataService extends AbstractDataService {
     public Page<Map<String, Object>> getPage(String entityName, int pageNumber, int pageSize) {
         try {
             Pageable pageable = PageRequest.of(pageNumber, pageSize);
-            org.springframework.data.domain.Page<SpringEntity> springPage = repository.findByEntityType(entityName, pageable);
+            org.springframework.data.domain.Page<SpringEntity> springPage = repository.findByEntityType(entityName,
+                    pageable);
 
             List<Map<String, Object>> content = springPage.getContent().stream()
                     .map(this::toMap)
@@ -100,7 +101,7 @@ public class SpringDataService extends AbstractDataService {
 
             return new Page<>(content, springPage.getNumber(), springPage.getSize(), springPage.getTotalElements());
         } catch (Exception e) {
-            systemContext.getLogger(this).log(Level.SEVERE, "Error finding all entities for: " + entityName, e);
+            logger.log(Level.SEVERE, "Error finding all entities for: " + entityName, e);
             return new Page<>(Collections.emptyList(), pageNumber, pageSize, 0);
         }
     }
@@ -114,18 +115,43 @@ public class SpringDataService extends AbstractDataService {
             throw new IllegalArgumentException("Entity with id " + id + " not found for deletion.");
         }
         repository.deleteById(id);
-        systemContext.getLogger(this).info(String.format("Deleted entity with ID '%s'.", id));
+        logger.info(String.format("Deleted entity with ID '%s'.", id));
     }
 
     private Map<String, Object> toMap(SpringEntity entity) {
         try {
             // The TypeReference is needed to correctly deserialize into a Map.
-            Map<String, Object> map = objectMapper.readValue(entity.getJsonData(), new TypeReference<>() {});
+            Map<String, Object> map = objectMapper.readValue(entity.getJsonData(), new TypeReference<>() {
+            });
             map.put("id", entity.getId()); // Ensure the database-generated/persisted ID is in the map.
             return map;
         } catch (JsonProcessingException e) {
             // This would indicate a data corruption issue if it fails.
             throw new IllegalStateException("Failed to deserialize entity JSON for id: " + entity.getId(), e);
         }
+    }
+
+    @Override
+    public void deleteByKey(String entityType, Map<String, Object> key) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'deleteByKey'");
+    }
+
+    @Override
+    public Optional<Map<String, Object>> getByKey(String entityType, Map<String, Object> key) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getByKey'");
+    }
+
+    @Override
+    public Map<String, Object> save(String entityType, Map<String, Object> key, Map<String, Object> data) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'save'");
+    }
+
+    @Override
+    protected void onStop() throws Exception {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'onStop'");
     }
 }

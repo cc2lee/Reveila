@@ -1,9 +1,9 @@
 package com.reveila.platform;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
@@ -11,8 +11,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
-import java.util.Arrays;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.Executors;
@@ -20,11 +18,13 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.ConsoleHandler;
 import java.util.logging.FileHandler;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
+import java.util.stream.Stream;
 
 import com.reveila.error.ConfigurationException;
 import com.reveila.error.SystemException;
@@ -32,9 +32,7 @@ import com.reveila.event.AutoCallEvent;
 import com.reveila.event.EventConsumer;
 import com.reveila.system.Constants;
 import com.reveila.system.PlatformAdapter;
-import com.reveila.system.Proxy;
 import com.reveila.system.Reveila;
-import com.reveila.util.ExceptionCollection;
 import com.reveila.util.FileUtil;
 
 /**
@@ -48,23 +46,39 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     private int jobThreadPoolSize = 1; // Use single thread for serial execution by default
     private ScheduledExecutorService scheduler;
     private Path systemHome;
-    
+    private ClassLoader classLoader;
+
     public DefaultPlatformAdapter(Properties commandLineArgs) throws Exception {
         super();
         loadProperties(commandLineArgs);
-        setURLClassLoader(this.properties);
-        configureLogging(this.properties);
         systemHome = Paths.get(this.properties.getProperty(Constants.SYSTEM_HOME));
-        
+        setupDirectories();
+        configureLogging();
+        setupClassLoader();
+        createScheduler();
+    }
+
+    private void createScheduler() {
         // ThreadFactory with named worker threads for easier debugging
         final ThreadFactory threadFactory = new ThreadFactory() {
             private final AtomicInteger count = new AtomicInteger(0);
+
             @Override
             public Thread newThread(Runnable r) {
                 return new Thread(r, "Task Executor - " + count.incrementAndGet());
             }
         };
         this.scheduler = Executors.newScheduledThreadPool(jobThreadPoolSize, threadFactory);
+    }
+
+    private void setupDirectories() throws IOException {
+        Files.createDirectories(systemHome);
+        Files.createDirectories(systemHome.resolve("configs").resolve("components"));
+        Files.createDirectories(systemHome.resolve("data"));
+        Files.createDirectories(systemHome.resolve("libs"));
+        Files.createDirectories(systemHome.resolve("logs"));
+        Files.createDirectories(systemHome.resolve("plugins"));
+        Files.createDirectories(systemHome.resolve("temp"));
     }
 
     @Override
@@ -74,13 +88,18 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
 
     @Override
     public String[] getConfigFilePaths() throws IOException {
-        String dir = this.systemHome.resolve(Constants.CONFIGS_DIR_NAME).resolve("components").toAbsolutePath().toString();
+        String dir = this.systemHome.resolve(Constants.CONFIGS_DIR_NAME).resolve("components").toAbsolutePath()
+                .toString();
         return FileUtil.getRelativeFilePaths(dir, ".json");
     }
 
     @Override
     public InputStream getFileInputStream(String path) throws IOException {
         Path absolutePath = FileUtil.toSafePath(this.systemHome, path);
+        if (!Files.exists(absolutePath)) {
+            throw new IOException("File not found: " + absolutePath.toString());
+        }
+        
         return Files.newInputStream(absolutePath);
     }
 
@@ -89,14 +108,13 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
         Path absolutePath = FileUtil.toSafePath(this.systemHome, path);
         if (append) {
             return Files.newOutputStream(absolutePath, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        }
-        else {
+        } else {
             return Files.newOutputStream(absolutePath, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         }
     }
 
     private InputStream openPropertiesStream(Properties jvmArgs) throws IOException, ConfigurationException {
-        
+
         URL url = null;
 
         // 1. try JVM argument first
@@ -109,19 +127,19 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
 
         if (url == null) {
             // 3. last place - home directory
-            String path = this.systemHome.toAbsolutePath() + File.separator + Constants.CONFIGS_DIR_NAME + File.separator + Constants.SYSTEM_PROPERTIES_FILE_NAME;
-            File file = new File(path);
             try {
-                url = file.toURI().toURL();
+                url = this.systemHome.resolve(Constants.CONFIGS_DIR_NAME)
+                        .resolve(Constants.SYSTEM_PROPERTIES_FILE_NAME).toUri().toURL();
             } catch (Exception e) {
-                String message = "ERROR: " + Constants.SYSTEM_PROPERTIES_FILE_NAME 
-                    + " URL not specified as a command line argument, and not found in the classpath or in the system home directory: " + path;
-                System.out.println(message);
+                String message = "SYSTEM STARTUP ERROR: " + Constants.SYSTEM_PROPERTIES_FILE_NAME
+                        + "  not found. Please ensure it is passed in as a command line argument in URL format,"
+                        + " or included in the classpath, or available in the " + Constants.CONFIGS_DIR_NAME
+                        + " directory of the Reveila System Home.";
+                System.err.println(message);
                 if (logger != null) {
                     logger.severe(message);
                 }
-                throw new ConfigurationException(Constants.SYSTEM_PROPERTIES_FILE_NAME + " not found. "
-                    + "Please ensure it is passed in as a command line argument, or included in the classpath, or available in the configs directory of the Reveila System Home.");
+                throw new ConfigurationException(message, e, "100");
             }
         }
 
@@ -129,163 +147,175 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     }
 
     private void loadProperties(Properties overwrites) throws IOException, ConfigurationException {
-        if (overwrites == null) {
-            overwrites = new Properties();
+        Properties incoming = (overwrites != null) ? overwrites : new Properties();
+        this.properties = new Properties();
+
+        // 1. Load from file using Try-with-Resources
+        try (InputStream stream = openPropertiesStream(incoming)) {
+            this.properties.load(stream);
+        } catch (Exception e) {
+            // If the file is missing, we might still continue if defaults are enough
+            // but since you throw IOException, we'll keep that contract.
+            throw new IOException("Failed to load " + Constants.SYSTEM_PROPERTIES_FILE_NAME, e);
         }
 
-        // Load properties from the reveila.properties file
-        properties = new Properties();
+        // 2. Apply command-line overwrites
+        this.properties.putAll(incoming);
 
-		InputStream stream = null;
-		try {
-            stream = openPropertiesStream(overwrites);
-			properties.load(stream);
-		} catch (IOException e) {
-			throw e;
-		} finally {
-            if (stream != null) {
-                stream.close();
+        // 3. Resolve SYSTEM_HOME
+        String homeValue = properties.getProperty(Constants.SYSTEM_HOME);
+        if (homeValue == null || homeValue.isBlank()) {
+            homeValue = System.getenv("REVEILA_HOME");
+            if (homeValue == null || homeValue.isBlank()) {
+                homeValue = Paths.get(System.getProperty("user.dir"))
+                        .resolve("reveila")
+                        .toAbsolutePath()
+                        .toString();
             }
+            properties.setProperty(Constants.SYSTEM_HOME, homeValue);
         }
 
-		properties.putAll(overwrites);
+        // 4. Set OS Metadata
+        if (properties.getProperty(Constants.PLATFORM_OS) == null) {
+            properties.setProperty(Constants.PLATFORM_OS, String.format("%s %s (%s)",
+                    System.getProperty("os.name"),
+                    System.getProperty("os.version"),
+                    System.getProperty("os.arch")));
+        }
 
-        // Set defaults if not already set
-        String value = properties.getProperty(Constants.SYSTEM_HOME);
-        if (value == null || value.isBlank()) {
-            value = System.getenv("REVEILA_HOME");
-            if (value == null || value.isBlank()) {
-                value = System.getProperty("user.dir") + File.separator + "reveila";
-            }
-            properties.setProperty(Constants.SYSTEM_HOME, value);
-        }
-        value = properties.getProperty(Constants.PLATFORM_OS);
-        if (value == null || value.isBlank()) {
-            String osName = System.getProperty("os.name");
-            String osVersion = System.getProperty("os.version");
-            String osArchitecture = System.getProperty("os.arch");
-            properties.setProperty(Constants.PLATFORM_OS, osName + " " + osVersion + " (" + osArchitecture + ")");
-        }
-        value = properties.getProperty(Constants.CHARACTER_ENCODING);
-        if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.CHARACTER_ENCODING, StandardCharsets.UTF_8.name());
-        }
-        value = properties.getProperty(Constants.LAUNCH_STRICT_MODE);
-        if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.LAUNCH_STRICT_MODE, "true");
-        }
-        value = properties.getProperty(Constants.SYSTEM_DATA_FILE_DIR);
-        if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.SYSTEM_DATA_FILE_DIR, this.systemHome.toAbsolutePath() + File.separator + "data" /*System.getProperty("user.home") + File.separator + "reveila" + File.separator + "data"*/ );
-        }
-        value = properties.getProperty(Constants.SYSTEM_TEMP_FILE_DIR);
-        if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.SYSTEM_TEMP_FILE_DIR, this.systemHome.toAbsolutePath() + File.separator + "temp" /*System.getProperty("java.io.tmpdir") + File.separator + "reveila" + File.separator + "temp"*/ );
-        }
-        value = properties.getProperty(Constants.SYSTEM_PROPERTIES_FILE_NAME);
-        if (value == null || value.isBlank()) {
-            properties.setProperty(Constants.SYSTEM_PROPERTIES_FILE_NAME, Constants.SYSTEM_PROPERTIES_FILE_NAME);
+        // 5. Set Defaults for missing properties
+        resolveProperty(Constants.CHARACTER_ENCODING, StandardCharsets.UTF_8.name());
+        resolveProperty(Constants.LAUNCH_STRICT_MODE, "true");
+    }
+
+    // Helper to keep the main logic readable
+    private void resolveProperty(String key, String defaultValue) {
+        if (properties.getProperty(key) == null || properties.getProperty(key).isBlank()) {
+            properties.setProperty(key, defaultValue);
         }
     }
 
-    private void setURLClassLoader(Properties props) throws ConfigurationException {
-		String systemHome = props.getProperty(Constants.SYSTEM_HOME);
-		if (systemHome == null || systemHome.isBlank()) {
-			// This case should not be reachable as prepareRuntimeDirectories sets the property.
-			// Throwing an exception here is a safe fallback.
-			throw new ConfigurationException("System property '" + Constants.SYSTEM_HOME + "' was not set during directory preparation.");
-		}
+    private URL[] scanJars(Path dir) throws IOException {
+        if (dir == null || !Files.exists(dir)) {
+            return new URL[0];
+        }
 
-		File libDir = new File(systemHome, Constants.LIB_DIR_NAME);
-		File[] jarFiles = libDir.listFiles((dir, name) -> name.toLowerCase(Locale.ROOT).endsWith(".jar"));
-		if (jarFiles == null) {
-			throw new ConfigurationException("Could not list files in lib directory: " + libDir.getAbsolutePath());
-		}
+        try (Stream<Path> stream = Files.find(dir, 1,
+                (path, attr) -> path.toString().toLowerCase().endsWith(".jar") && attr.isRegularFile())) {
 
-		URL[] urlArray = Arrays.stream(jarFiles)
-				.map(this::toURL)
-				.filter(Objects::nonNull)
-				.toArray(URL[]::new);
+            return stream
+                    .map(this::toURL) // Now uses the Path-based version
+                    .filter(Objects::nonNull)
+                    .toArray(URL[]::new);
+        }
+    }
 
-		URLClassLoader classLoader = new URLClassLoader(urlArray, this.getClass().getClassLoader());
-		Thread.currentThread().setContextClassLoader(classLoader);
-	}
+    private void setupClassLoader() throws Exception {
+        this.classLoader = createClassLoader();
+        Thread.currentThread().setContextClassLoader(this.classLoader);
+    }
 
-    /**
-	 * Converts a File object to a URL, handling potential exceptions.
-	 * @param file The file to convert.
-	 * @return The corresponding URL, or null if conversion fails.
-	 */
-	private URL toURL(File file) {
-		try {
-			return file.toURI().toURL();
-		} catch (Exception e) {
-			// This is unlikely to happen with a valid File object but is handled for safety.
-			logger.log(Level.WARNING, "Could not convert file to URL, skipping: " + file.getAbsolutePath(), e);
-			return null;
-		}
-	}
+    protected ClassLoader createClassLoader() throws Exception {
+        // 1. Validation: Ensure systemHome was initialized in the constructor
+        if (this.systemHome == null) {
+            throw new SystemException("System Home Path was not initialized.");
+        }
+
+        // 2. Define the path for Shared (Common) libraries
+        // This folder contains the interfaces/DTOs that all plugins share
+        Path libsDir = this.systemHome.resolve(Constants.LIB_DIR_NAME);
+
+        // 3. Ensure the common libs directory exists
+        Files.createDirectories(libsDir);
+
+        // 4. Load the Shared API ClassLoader
+        // We use the System ClassLoader as the parent for this Common Loader
+        URL[] urls = scanJars(libsDir);
+        return new URLClassLoader(urls, this.getClass().getClassLoader());
+    }
+
+    private URL toURL(Path path) {
+        try {
+            return path.toUri().toURL();
+        } catch (MalformedURLException e) {
+            logger.log(Level.SEVERE, "Invalid JAR path: " + path, e);
+            return null;
+        }
+    }
 
     @Override
     public Logger getLogger() {
         return this.logger;
     }
 
-    private void configureLogging(Properties props) throws IOException {
-		Logger l = Logger.getLogger("");
-		for (Handler handler : l.getHandlers()) {
-			l.removeHandler(handler);
-		}
+    private void configureLogging() throws IOException {
+        // 0. Set standard format: [Date Time] [Level] Message
+        String format = "[%1$tF %1$tT] [%4$-7s] %5$s %n";
+        System.setProperty("java.util.logging.SimpleFormatter.format", format);
+        Logger rootLogger = Logger.getLogger("");
 
-		Handler fileHandler = createLogFileHandler(props);
-		l.addHandler(fileHandler);
-		setLoggingLevel(l, props);
-		this.logger =  l;
-	}
+        // 1. Clean out existing handlers
+        for (Handler handler : rootLogger.getHandlers()) {
+            rootLogger.removeHandler(handler);
+        }
+
+        // 2. Add the File Handler (Standard for persistence)
+        rootLogger.addHandler(createLogFileHandler(properties));
+
+        // 3. Add Console Handler if enabled in properties
+        String consoleEnabled = properties.getProperty(Constants.LOG_CONSOLE_ENABLED, "true");
+        if (Boolean.parseBoolean(consoleEnabled)) {
+            ConsoleHandler console = new ConsoleHandler();
+            console.setFormatter(new SimpleFormatter());
+            console.setLevel(Level.ALL);
+            rootLogger.addHandler(console);
+        }
+
+        // 4. Set the global filter level
+        setLoggingLevel(rootLogger, properties);
+        this.logger = rootLogger;
+    }
 
     private Handler createLogFileHandler(Properties props) throws IOException {
-        String logFilePath = props.getProperty(Constants.SYSTEM_HOME) + File.separator + "logs" + File.separator
-                + "reveila.log";
-        File logFile = new File(logFilePath);
-        File logDir = logFile.getParentFile();
-        if (logDir != null && !logDir.exists()) {
-            logDir.mkdirs();
-        }
+        // 1. Resolve Path using NIO.2
+        Path logDir = Paths.get(props.getProperty(Constants.SYSTEM_HOME)).resolve("logs");
+        Files.createDirectories(logDir); // Ensure directory exists
+        Path logFile = logDir.resolve("reveila.log");
 
-        String limitStr = props.getProperty(Constants.LOG_FILE_SIZE, "0");
-        String countStr = props.getProperty(Constants.LOG_FILE_COUNT, "1");
-        int limit = 0;
-        int count = 1;
-        try {
-            limit = Integer.parseInt(limitStr);
-        } catch (NumberFormatException e) {
-            System.err.println("Warning: Invalid value for '" + Constants.LOG_FILE_SIZE
-                    + "'. Using 0 (disabling rotation).");
-        }
-        try {
-            count = Integer.parseInt(countStr);
-        } catch (NumberFormatException e) {
-            System.err.println(
-                    "Warning: Invalid value for '" + Constants.LOG_FILE_COUNT + "'. Using default of 1.");
-        }
+        // 2. Parse Rotation Settings safely
+        int limit = parseLogSetting(props.getProperty(Constants.LOG_FILE_SIZE), 0, "size (rotation limit)");
+        int count = parseLogSetting(props.getProperty(Constants.LOG_FILE_COUNT), 1, "file count");
 
+        // 3. Initialize FileHandler
+        // limit > 0 triggers the rotating file pattern
         Handler handler = (limit > 0)
-                ? new FileHandler(logFilePath, limit, Math.max(1, count), true)
-                : new FileHandler(logFilePath, true);
+                ? new FileHandler(logFile.toString(), limit, Math.max(1, count), true)
+                : new FileHandler(logFile.toString(), true);
 
         handler.setFormatter(new SimpleFormatter());
-        handler.setLevel(Level.ALL);
+        handler.setLevel(Level.ALL); // Handler accepts all; Root Logger filters based on config
         return handler;
     }
 
+    private int parseLogSetting(String value, int defaultValue, String label) {
+        if (value == null || value.isBlank())
+            return defaultValue;
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            System.err.println("Warning: Invalid " + label + " value. Using default: " + defaultValue);
+            return defaultValue;
+        }
+    }
+
     private void setLoggingLevel(Logger logger, Properties props) {
-		String level = props.getProperty(Constants.LOG_LEVEL, "ALL").trim().toUpperCase();
-		try {
-			logger.setLevel(Level.parse(level));
-		} catch (IllegalArgumentException e) {
-			logger.setLevel(Level.ALL); // Default to ALL if the level string is invalid
-		}
-	}
+        String level = props.getProperty(Constants.LOG_LEVEL, "ALL").trim().toUpperCase();
+        try {
+            logger.setLevel(Level.parse(level));
+        } catch (IllegalArgumentException e) {
+            logger.setLevel(Level.ALL); // Default to ALL if the level string is invalid
+        }
+    }
 
     @Override
     public Properties getProperties() {
@@ -293,47 +323,48 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
     }
 
     @Override
-    public void registerAutoCall(String componentName, String methodName, long delaySeconds, long intervalSeconds, EventConsumer eventConsumer) {
+    public void registerAutoCall(String componentName, String methodName, long delaySeconds, long intervalSeconds,
+            EventConsumer eventConsumer) {
 
         // Use scheduleWithFixedDelay for system stability
         scheduler.scheduleWithFixedDelay(() -> {
-            try {
-                Proxy proxy = reveila.getSystemContext().getProxy(componentName)
-                    .orElseThrow(() -> new SystemException("Component '" + componentName + "' not found."));
-                    
-                // Perform the task
-                proxy.invoke(methodName, null);
+            if (reveila == null)
+                return;
 
-                // Success:
-                logger.log(Level.INFO, "Auto-call task completed successfully. Component: " + proxy + ", Method: " + methodName);
-                notifyAutoCallStatus(eventConsumer, componentName, AutoCallEvent.COMPLETED, new ExceptionCollection());
+            try {
+                reveila.invoke(componentName, methodName, null);
+                AutoCallEvent event = new AutoCallEvent(this, componentName, methodName, AutoCallEvent.COMPLETED,
+                        System.currentTimeMillis(), null);
+                notifyAutoCallEventListener(eventConsumer, event);
 
             } catch (Throwable t) {
-                // Failure:
-                logger.log(Level.SEVERE, "Auto-call task failed! Component: " + componentName + ", Method: " + methodName, t);
-                notifyAutoCallStatus(eventConsumer, componentName, AutoCallEvent.FAILED, new ExceptionCollection(t));
+                logger.log(Level.SEVERE,
+                        "Auto-call task failed! Component: " + componentName + ", Method: " + methodName, t);
+                AutoCallEvent event = new AutoCallEvent(this, componentName, methodName, AutoCallEvent.FAILED,
+                        System.currentTimeMillis(), t);
+                notifyAutoCallEventListener(eventConsumer, event);
             }
         }, delaySeconds, intervalSeconds, TimeUnit.SECONDS);
     }
 
     // Helper method to remove duplication and nesting
-    private void notifyAutoCallStatus(EventConsumer eventListener, String proxy, int status, ExceptionCollection exceptions) {
-        if (eventListener == null)
+    private void notifyAutoCallEventListener(EventConsumer listener, AutoCallEvent event) {
+        if (listener == null)
             return;
 
         try {
-            eventListener.notifyEvent(new AutoCallEvent(this, status, System.currentTimeMillis(), exceptions));
+            listener.notifyEvent(event);
         } catch (Exception e) {
-            // Prevent a listener error from killing the scheduler or obscuring the original error
-            System.err.println("Failed to notify event listener");
-            e.printStackTrace();
+            logger.log(Level.SEVERE,
+                    "Failed to notify auto call event listener registered for component: " + event.getProxyName(), e);
         }
     }
 
     @Override
     public synchronized void unplug() {
         if (this.scheduler != null) {
-            this.scheduler.shutdown(); // Initiates an orderly shutdown in which previously submitted tasks are executed, but no new tasks will be accepted.
+            this.scheduler.shutdown(); // Initiates an orderly shutdown in which previously submitted tasks are
+                                       // executed, but no new tasks will be accepted.
             try {
                 if (!this.scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
                     this.scheduler.shutdownNow();
@@ -353,7 +384,12 @@ public class DefaultPlatformAdapter implements PlatformAdapter {
         if (reveila == null) {
             throw new IllegalArgumentException("Reveila cannot be null");
         }
-        
+
         this.reveila = reveila;
+    }
+
+    @Override
+    public ClassLoader getClassLoader() {
+        return this.classLoader;
     }
 }
