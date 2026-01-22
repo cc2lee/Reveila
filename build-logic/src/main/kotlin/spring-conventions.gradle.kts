@@ -7,56 +7,62 @@ import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.dependencies
 import org.gradle.kotlin.dsl.withType
 import org.jetbrains.kotlin.allopen.gradle.AllOpenExtension
-import org.gradle.api.artifacts.VersionCatalogsExtension
-import org.gradle.kotlin.dsl.getByType
+import org.gradle.accessors.dm.LibrariesForLibs
+import org.gradle.kotlin.dsl.the
 
 plugins {
     `java-library`
-    id("project-conventions") // Apply project-wide conventions
+    id("project-conventions") 
     id("org.springframework.boot")
-    // id("io.spring.dependency-management") // Deprecated in favor of Gradle Native Platforms (Spring Boot 4.0+ style)
     id("org.jetbrains.kotlin.jvm")
     id("org.jetbrains.kotlin.plugin.spring")
     id("org.jetbrains.kotlin.plugin.allopen")
 }
 
-val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
+// 1. Correctly access the Version Catalog in build-logic
+val libs = the<LibrariesForLibs>()
 
-// Use Java version defined in version catalog
+// 2. Configure Java Toolchain
 extensions.configure<JavaPluginExtension> {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(libs.findVersion("java").get().toString()))
+        // Use .get() to extract the version string from the catalog provider
+        languageVersion.set(JavaLanguageVersion.of(libs.versions.java.get()))
     }
 }
 
-// Preserve parameter names for reflection at runtime
+// 3. Compiler Parameters (Essential for Spring's @Value and constructor injection)
 tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.add("-parameters")
     options.encoding = "UTF-8"
 }
 
-// Use JUnit Platform for tests
+// 4. Test Configuration
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     testLogging {
         events("passed", "skipped", "failed")
+        showStandardStreams = true
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 }
 
+// 5. Native BOM Management
 dependencies {
-    // Import Native Gradle BOM using the plugin's internal coordinates
+    // SpringBootPlugin.BOM_COORDINATES is safer than manual strings because 
+    // it automatically stays in sync with the applied Spring Boot plugin version.
     "implementation"(platform(SpringBootPlugin.BOM_COORDINATES))
     "testImplementation"(platform(SpringBootPlugin.BOM_COORDINATES))
-    //"implementation"(platform(libs.findLibrary("spring-boot-dependencies").get())) // if using version catalog
+
+    // Use catalog-based starters for consistency
     "implementation"("org.springframework.boot:spring-boot-starter")
     "testImplementation"("org.springframework.boot:spring-boot-starter-test")
 }
 
-// Kotlin All-Open compiler plugin configuration. Kotlin classes and methods are final by default.
-// This makes classes and methods open if they are annotated with one of the specified annotations.
+// 6. Kotlin All-Open for Spring Proxies
 extensions.configure<AllOpenExtension> {
     annotation("org.springframework.stereotype.Component")
     annotation("org.springframework.transaction.annotation.Transactional")
     annotation("org.springframework.scheduling.annotation.Async")
     annotation("org.springframework.cache.annotation.Cacheable")
+    annotation("org.springframework.boot.test.context.SpringBootTest")
 }

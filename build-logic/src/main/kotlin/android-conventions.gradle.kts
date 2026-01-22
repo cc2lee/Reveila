@@ -7,15 +7,20 @@ import org.gradle.kotlin.dsl.getByType
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
+// 1. Apply the necessary plugins FIRST so their extensions exist
 plugins {
-    id("project-conventions") 
+    id("com.android.library")
+    id("org.jetbrains.kotlin.android")
+    id("project-conventions")
 }
 
+// 2. Setup Version Catalog access
 val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
 val jvmVersion = libs.findVersion("androidJvmTarget").get().requiredVersion
 
+// 3. Configure the Android Library Extension
+// Because we applied 'com.android.library' above, this block will now work!
 extensions.configure<LibraryExtension> {
-    // 1. SDK Versions
     compileSdk = libs.findVersion("androidCompileSdk").get().requiredVersion.toInt()
     
     defaultConfig {
@@ -27,13 +32,11 @@ extensions.configure<LibraryExtension> {
         consumerProguardFiles(layout.projectDirectory.file("consumer-rules.pro"))
     }
 
-    // 2. Release Configuration & R8
     buildTypes {
         getByName("release") {
-            // Let the final App (the "Consumer") handle the shrinking.
-            // If you shrink the library first, and then the App shrinks it again,
-            // you often end up with ClassNotFoundException errors that are nearly impossible to trace.
-            isMinifyEnabled = false // Set to true to enable code shrinking
+            // Recommendation: Set to false for Libraries to avoid "double-shrinking"
+            isMinifyEnabled = false 
+            
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"), 
                 layout.projectDirectory.file("proguard-rules.pro")
@@ -41,14 +44,13 @@ extensions.configure<LibraryExtension> {
         }
     }
 
-    // 3. Java Compatibility
     compileOptions {
         sourceCompatibility = JavaVersion.toVersion(jvmVersion)
         targetCompatibility = JavaVersion.toVersion(jvmVersion)
     }
 }
 
-// 4. Kotlin JVM Target
+// 4. Configure Kotlin Compiler
 tasks.withType<KotlinCompile>().configureEach {
     compilerOptions {
         jvmTarget.set(JvmTarget.fromTarget(jvmVersion))
