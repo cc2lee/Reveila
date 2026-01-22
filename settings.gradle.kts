@@ -2,9 +2,9 @@
 
 pluginManagement {
     repositories {
+        google()
         gradlePluginPortal()
         mavenCentral()
-        google()
     }
 }
 
@@ -39,3 +39,4 @@ include(":spring:common")
 include(":spring:services")
 include(":standalone")
 include(":web:vue-project")
+include(":android")

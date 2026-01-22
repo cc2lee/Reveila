@@ -1,12 +1,17 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
     id("android-conventions")
     id("maven-publish")
 }
 
 android {
-    namespace = "com.reveila.android.adapter"
+    namespace = "com.reveila.android"
+    compileSdk = libs.versions.androidCompileSdk.get().toInt()
+
+    defaultConfig {
+        minSdk = libs.versions.androidMinSdk.get().toInt()
+        targetSdk = libs.versions.androidTargetSdk.get().toInt()
+    }
+
     buildFeatures {
         // Explicitly enable because it is false by default in AGP 8.0+
         buildConfig = true
@@ -18,8 +23,8 @@ afterEvaluate {
     publishing {
         publications {
             create<MavenPublication>("release") {
-                groupId = "com.reveila"
-                artifactId = "android"
+                groupId = "com.reveila.android"
+                artifactId = "common"
                 version = "1.0.0"
 
                 // Manually add the main AAR artifact
