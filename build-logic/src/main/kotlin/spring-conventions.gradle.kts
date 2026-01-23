@@ -56,6 +56,15 @@ dependencies {
     // Use catalog-based starters for consistency
     "implementation"("org.springframework.boot:spring-boot-starter")
     "testImplementation"("org.springframework.boot:spring-boot-starter-test")
+
+    // Core Spring Data JPA (Includes Hibernate)
+    "implementation"("org.springframework.boot:spring-boot-starter-data-jpa")
+    
+    // For validation annotations (@NotNull, @Size, etc.)
+    "implementation"("org.springframework.boot:spring-boot-starter-validation")
+    
+    // Database drivers (Example: MySQL or PostgreSQL as per your interest)
+    "runtimeOnly"("com.mysql:mysql-connector-j")
 }
 
 // 6. Kotlin All-Open for Spring Proxies

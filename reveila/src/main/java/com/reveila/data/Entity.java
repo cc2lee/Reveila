@@ -2,12 +2,12 @@ package com.reveila.data;
 
 import java.util.Map;
 
-public class GenericEntity {
+public class Entity {
 
 	private Map<String, Object> key;
 	private Map<String, Object> attributes;
 	
-	public GenericEntity(Map<String, Object> key, Map<String, Object> attributes) {
+	public Entity(Map<String, Object> key, Map<String, Object> attributes) {
 		
 		super();
 		if (key == null || key.isEmpty()) {

@@ -1,6 +1,5 @@
 package com.reveila.system;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -10,7 +9,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 import com.reveila.crypto.Cryptographer;
-import com.reveila.data.FileAdapter;
 import com.reveila.error.SystemException;
 import com.reveila.event.EventManager;
 import com.reveila.util.GUID;
@@ -27,7 +25,6 @@ public final class SystemContext {
 	private Properties properties;
 	private EventManager eventManager;
 	private Logger logger;
-	private Map<Proxy, FileAdapter> fileAdapters = new ConcurrentHashMap<>();
 	private Cryptographer cryptographer;
 	private Map<String, Proxy> proxiesByName = new ConcurrentHashMap<>();
 	private PlatformAdapter platformAdapter;
@@ -42,26 +39,6 @@ public final class SystemContext {
 
 	public Properties getProperties() {
 		return properties;
-	}
-
-	public FileAdapter getFileAdapter(Proxy proxy) throws IOException {
-		
-		Objects.requireNonNull(proxy, "Argument 'proxy' must not be null.");
-
-		FileAdapter fileAdapter = fileAdapters.get(proxy);
-		if (fileAdapter == null) {
-			// Use double-checked locking to ensure thread-safe, lazy initialization.
-			synchronized (this.fileAdapters) {
-				// Check again in case another thread created the manager while we were waiting for the lock.
-				fileAdapter = fileAdapters.get(proxy);
-				if (fileAdapter == null) {
-					// Each Proxy object has its own storage manager
-					fileAdapter = new FileAdapter(platformAdapter, proxy);
-					fileAdapters.put(proxy, fileAdapter);
-				}
-			}
-		}
-		return fileAdapter;
 	}
 
 	public EventManager getEventManager() {
@@ -115,13 +92,11 @@ public final class SystemContext {
 		}
 		proxiesByName.remove(proxy.getName());
 		eventManager.removeEventConsumer(proxy);
-		fileAdapters.remove(proxy);
 	}
 
 	public synchronized void clear() {
 		proxiesByName.clear();
 		eventManager.clear();
-		fileAdapters.clear();
 		properties.clear();
 		cryptographer = null;
 	}

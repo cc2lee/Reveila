@@ -19,4 +19,8 @@ dependencies {
     implementation(libs.spring.boot.gradle.plugin)
     // This allows 'libs' to be used inside your .gradle.kts convention scripts
     implementation(files(libs.javaClass.superclass.protectionDomain.codeSource.location))
+
+    // For compiling classes using JPA annotations
+    implementation(libs.jakarta.persistence.api)
+    implementation(libs.hibernate.core)
 }

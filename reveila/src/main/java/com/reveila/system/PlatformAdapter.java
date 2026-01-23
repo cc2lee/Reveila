@@ -6,6 +6,7 @@ import java.io.OutputStream;
 import java.util.Properties;
 import java.util.logging.Logger;
 
+import com.reveila.data.Repository;
 import com.reveila.event.EventConsumer;
 
 /**
@@ -24,4 +25,5 @@ public interface PlatformAdapter {
     public void plug(Reveila reveila);
     public void unplug();
     public ClassLoader getClassLoader();
+    public Repository<?, ?> getRepository(Class<?> entityClass);
 }
