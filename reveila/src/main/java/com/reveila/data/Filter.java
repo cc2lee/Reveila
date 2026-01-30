@@ -7,14 +7,30 @@ public class Filter {
     public enum LogicalOp { AND, OR }
     public enum SearchOp { EQUAL, LIKE, IN, GREATER_THAN, LESS_THAN }
 
-    public record Criterion(Object value, SearchOp operator) {}
+    // Aligned to use SearchOp
+    public record Criterion(Object value, SearchOp operator) {
+        public static Criterion equal(Object value) {
+            return new Criterion(value, SearchOp.EQUAL);
+        }
 
-    private final Map<String, Criterion> conditions = new HashMap<>();
+        public static Criterion like(String value) {
+            return new Criterion(value, SearchOp.LIKE);
+        }
+    }
+
+    private final Map<String, Criterion> conditions;
     private LogicalOp logicalOp = LogicalOp.AND;
 
-    public Filter() {}
+    public Filter() {
+        this.conditions = new HashMap<>();
+    }
+
+    public Filter(Map<String, Criterion> conditions) {
+        this.conditions = new HashMap<>(conditions);
+    }
 
     public Filter(LogicalOp logicalOp) {
+        this();
         this.logicalOp = logicalOp;
     }
 
@@ -23,7 +39,6 @@ public class Filter {
         return this;
     }
 
-    // Default to EQUAL for backward compatibility
     public Filter add(String field, Object value) {
         return add(field, value, SearchOp.EQUAL);
     }

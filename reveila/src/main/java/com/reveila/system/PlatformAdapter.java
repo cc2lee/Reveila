@@ -25,5 +25,5 @@ public interface PlatformAdapter {
     public void plug(Reveila reveila);
     public void unplug();
     public ClassLoader getClassLoader();
-    public Repository<?, ?> getRepository(Class<?> entityClass);
+    public Repository<?, ?> getRepository(String entityType);
 }

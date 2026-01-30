@@ -1,26 +1,34 @@
 package com.reveila.data;
 
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 public class Entity {
 
-	private Map<String, Object> key;
-	private Map<String, Object> attributes;
-	
-	public Entity(Map<String, Object> key, Map<String, Object> attributes) {
-		
-		super();
-		if (key == null || key.isEmpty()) {
-			throw new IllegalArgumentException("Key cannot be null or empty.");
-		}
-		this.key = key;
-		this.attributes = attributes;
+	public static final String TYPE = "type";
+	public static final String KEY = "key";
+	public static final String ATTRIBUTES = "attributes";
+
+	private Map<String, Object> map = Collections.checkedMap(new HashMap<String, Object>(), String.class, Object.class);
+
+	public Entity(String type, Map<String, Object> key, Map<String, Object> attributes) {
+		map.put(TYPE, type);
+		map.put(KEY, Map.copyOf(key));
+		map.put(ATTRIBUTES, new HashMap<>(attributes));
 	}
 	
+	public String getType() {
+		return (String) map.get(TYPE);
+	}
+	
+	@SuppressWarnings("unchecked")
 	public Map<String, Object> getKey() {
-		return key;
+		return (Map<String, Object>) map.get(KEY);
 	}
 	
+	@SuppressWarnings("unchecked")
 	public Map<String, Object> getAttributes() {
-		return attributes;
-	}}
+		return (Map<String, Object>) map.get(ATTRIBUTES);
+	}
+}

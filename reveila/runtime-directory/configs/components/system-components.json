@@ -8,7 +8,6 @@
       "author": "Charles Lee",
       "license-token": "",
       "thread-safe": true,
-      "start": true,
       "arguments": [
         {
           "name": "InitialPoints",
@@ -23,23 +22,10 @@
     }
   },
   {
-    "component(ignore)": {
-      "name": "DataService",
-      "class": "com.reveila.spring.service.SpringDataService",
-      "description": "Data service implementation for the Spring environment.",
-      "provider": "Reveila LLC",
-      "author": "Charles Lee",
-      "license-token": "",
-      "thread-safe": true,
-      "start": true
-    }
-  },
-  {
     "component": {
       "start-priority": 100,
       "name": "EchoService",
       "version": "1",
-      "api-version": "2.0",
       "displayName": "Enterprise Reporting Tool",
       "description": "A simple service that echoes back input messages after an optional delay.",
       "author": "Charles Lee",
@@ -49,7 +35,6 @@
           "capabilities": ["UI", "NETWORK", "FILESYSTEM"],
           "hot-deploy": false
       },
-      "start": true,
       "arguments": [
         {
           "name": "reverse",
@@ -66,7 +51,34 @@
   },
   {
     "component": {
-      "start": true,
+      "start-priority": 99,
+      "name": "HttpClientService",
+      "version": "1",
+      "displayName": "Http Client Service",
+      "description": "Provides HTTP client capabilities for making web requests.",
+      "author": "Charles Lee",
+      "class": "com.reveila.service.HttpClientService",
+      "arguments": [
+        {
+          "name": "connectTimeout",
+          "type": "long",
+          "value": 10
+        },
+        {
+          "name": "writeTimeout",
+          "type": "long",
+          "value": 10
+        },
+        {
+          "name": "readTimeout",
+          "type": "long",
+          "value": 30
+        }
+      ]
+    }
+  },
+  {
+    "component": {
       "name": "remote.reveila",
       "class": "com.reveila.service.ReveilaRemote",
       "version": "1",
@@ -77,27 +89,6 @@
           "name": "RemoteURLs",
           "type": "java.lang.String",
           "value": ["http://10.0.2.2:8080, 1"]
-        }
-      ]
-    }
-  },
-  {
-    "component(ignore)": {
-      "start": true,
-      "name": "TaskManager",
-      "class": "com.reveila.service.TaskManager",
-      "thread-safe": true,
-      "description": "A service that executes scheduled background jobs.",
-      "arguments": [
-        {
-          "name": "interval",
-          "type": "long",
-          "value": 30000
-        },
-        {
-          "name": "initialDelay",
-          "type": "long",
-          "value": 60000
         }
       ]
     }

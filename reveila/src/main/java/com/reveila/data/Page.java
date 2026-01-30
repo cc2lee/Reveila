@@ -118,4 +118,8 @@ public record Page<T>(
         // Return a new Page instance with the same metadata but new content type
         return new Page<>(mappedContent, pageNumber, pageSize, hasNext, totalElements);
     }
+
+    public List<T> getContent() {
+        return content;
+    }
 }

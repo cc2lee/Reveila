@@ -78,4 +78,12 @@ public class RatedService extends AbstractService {
     public String getWorstProvider() {
         return pointsTracker.getWorst();
     }
+
+    @Override
+    protected void onStop() throws Exception {
+    }
+
+    @Override
+    protected void onStart() throws Exception {
+    }
 }
