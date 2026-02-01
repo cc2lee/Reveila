@@ -1,41 +1,68 @@
 package com.reveila.spring.system;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 
 import org.springframework.context.ApplicationContext;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reveila.data.Entity;
+import com.reveila.data.EntityMapper;
+import com.reveila.data.GenericRepository;
 import com.reveila.data.Repository;
 import com.reveila.platform.BasePlatformAdapter;
-import com.reveila.spring.service.SpringEntityRepository;
+import com.reveila.spring.data.BaseRepository;
 
-/**
- * A custom PlatformAdapter that acts as a bridge to the Spring ApplicationContext.
- * This allows Reveila components to access Spring-managed beans.
- */
 public class SpringPlatformAdapter extends BasePlatformAdapter {
 
-    private ApplicationContext springContext;
-    private Repository<?, ?> repository;
-    private ObjectMapper objectMapper;
+    private final ApplicationContext springContext;
+
+    // The "Registry" of all discovered repositories
+    private final Map<String, GenericRepository<?, ?>> repositoryRegistry = new HashMap<>();
 
     public SpringPlatformAdapter(ApplicationContext context, Properties commandLineArgs) throws Exception {
         super(commandLineArgs);
         this.springContext = context;
-        this.repository = getBean(SpringEntityRepository.class);
-        this.objectMapper = getBean(ObjectMapper.class);
+
+        // Automatically discover and map repositories during initialization
+        initializeRepositoryRegistry();
     }
 
-    public <T> T getBean(Class<T> beanClass) {
-        if (beanClass == null) {
-            throw new IllegalArgumentException("Argument 'beanClass' must not be null.");
+    private void initializeRepositoryRegistry() {
+        @SuppressWarnings("rawtypes")
+        Map<String, Repository> beans = springContext.getBeansOfType(Repository.class);
+
+        for (Repository<?, ?> repo : beans.values()) {
+            String type = repo.getEntityType().toLowerCase();
+
+            // Pass the 'unknown' repo into our capture method
+            // This effectively 'unwraps' the Repository<?, ?> into Repository<T, ID>
+            @SuppressWarnings("unchecked")
+            BaseRepository<Object, Object> typedRepo = (BaseRepository<Object, Object>) repo;
+
+            GenericRepository<?, ?> genericRepo = createGenericRepo(typedRepo);
+
+            // Store it as the platform-standard Repository<Entity, Map<String, Object>>
+            repositoryRegistry.put(type, genericRepo);
         }
-        return springContext.getBean(beanClass);
+    }
+
+    // Wildcard Capture: Compiler internally infers the specific type of an unknown wildcard (?) argument
+    private <T, ID> GenericRepository<T, ID> createGenericRepo(BaseRepository<T, ID> repo) {
+        // We pull the metadata directly from the repo instance
+        EntityMapper<T> mapper = repo.getEntityMapper();
+        Class<T> entityClass = repo.getEntityClass();
+        Class<ID> idClass = repo.getIdClass();
+        GenericRepository<T, ID> genericRepo 
+            = new GenericRepository<T, ID>(repo, mapper, entityClass, idClass);
+        // We capture T and ID here, so the GenericRepository
+        // is instantiated with the correct 'identity'
+        return genericRepo;
     }
 
     @Override
-    public Repository<?, ?> getRepository(String entityType) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getRepository'");
+    public Repository<Entity, Map<String, Map<String, Object>>> getRepository(String entityType) {
+        if (entityType == null) return null;
+        return repositoryRegistry.get(entityType.toLowerCase());
     }
 }

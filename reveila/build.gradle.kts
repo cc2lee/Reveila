@@ -21,6 +21,7 @@ tasks.named<Jar>("jar") {
 
 dependencies {
     implementation(libs.okhttp)
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.15.2")
 }
 
 tasks.register("displayRoot") {

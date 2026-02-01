@@ -9,6 +9,7 @@ import jakarta.persistence.EntityManager;
 @Repository
 public class AuditLogRepository extends BaseRepository<AuditLog, UUID> {
     public AuditLogRepository(EntityManager em) {
-        super(em, AuditLog.class);
+        // Arguments: EntityManager entityManager, Class<T> entityClass, Class<ID> idClass, EntityMapper entityMapper
+        super(em, AuditLog.class, UUID.class, new AuditLogEntityMapper());
     }
 }

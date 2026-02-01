@@ -1,8 +1,6 @@
 package com.reveila.spring.data;
 
-import java.util.Map;
 import java.util.UUID;
-import java.util.function.Function;
 
 import org.springframework.stereotype.Service;
 
@@ -16,9 +14,9 @@ public class UserService extends BaseService<User, UUID> {
     // Standard operations are handled by BaseService
 
     private final UserRepository userRepository;
-    private final EntityMapper entityMapper;
+    private final EntityMapper<User> entityMapper;
 
-    public UserService(UserRepository userRepository, EntityMapper entityMapper) {
+    public UserService(UserRepository userRepository, EntityMapper<User> entityMapper) {
         this.userRepository = userRepository;
         this.entityMapper = entityMapper;
     }
@@ -29,18 +27,13 @@ public class UserService extends BaseService<User, UUID> {
     }
 
     @Override
-    protected EntityMapper getEntityMapper() {
+    protected EntityMapper<User> getEntityMapper() {
         return entityMapper;
     }
 
     @Override
     protected String getEntityType() {
         return "user";
-    }
-
-    @Override
-    protected Function<User, Map<String, Object>> getKeyExtractor() {
-        return user -> Map.of("id", user.getId());
     }
 
     // Custom business logic

@@ -6,6 +6,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
+import com.reveila.data.EntityMapper;
 import com.reveila.data.Filter;
 import com.reveila.data.Page;
 import com.reveila.data.Repository;
@@ -21,14 +22,30 @@ import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 
-public class BaseRepository<T, ID> implements Repository<T, ID> {
+public abstract class BaseRepository<T, ID> implements Repository<T, ID> {
 
     protected final EntityManager entityManager;
     protected final Class<T> entityClass;
+    protected final Class<ID> idClass;
+    protected final EntityMapper<T> entityMapper;
 
-    protected BaseRepository(EntityManager entityManager, Class<T> entityClass) {
+    public EntityManager getEntityManager() {
+        return entityManager;
+    }
+
+    public Class<T> getEntityClass() {
+        return entityClass;
+    }
+
+    protected BaseRepository(EntityManager entityManager, Class<T> entityClass, Class<ID> idClass, EntityMapper<T> entityMapper) {
         this.entityManager = entityManager;
         this.entityClass = entityClass;
+        this.idClass = idClass;
+        this.entityMapper = entityMapper;
+    }
+
+    public Class<ID> getIdClass() {
+        return idClass;
     }
 
     @Override
@@ -37,8 +54,17 @@ public class BaseRepository<T, ID> implements Repository<T, ID> {
     }
 
     @Override
-    public T save(T entity) {
-        return entityManager.merge(entity);
+    public T save(T obj) {
+        if (obj == null) {
+            throw new IllegalArgumentException("Entity cannot be null");
+        }
+
+        if (entityClass.isInstance(obj)) {
+            T entity = entityClass.cast(obj);
+            return entityManager.merge(entity);
+        }
+
+        throw new IllegalArgumentException("Expected entity of type " + entityClass.getName());
     }
 
     @Override
@@ -172,5 +198,15 @@ public class BaseRepository<T, ID> implements Repository<T, ID> {
     @Override
     public void flush() {
         entityManager.flush();
+    }
+
+    @Override
+    public String getEntityType() {
+        // Defaults to "user", but can be overridden in specific repos to "hr.user"
+        return entityClass.getSimpleName().toLowerCase();
+    }
+
+    public EntityMapper<T> getEntityMapper() {
+        return entityMapper;
     }
 }

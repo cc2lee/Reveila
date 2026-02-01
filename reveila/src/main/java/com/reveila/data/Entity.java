@@ -12,7 +12,7 @@ public class Entity {
 
 	private Map<String, Object> map = Collections.checkedMap(new HashMap<String, Object>(), String.class, Object.class);
 
-	public Entity(String type, Map<String, Object> key, Map<String, Object> attributes) {
+	public Entity(String type, Map<String, Map<String, Object>> key, Map<String, Object> attributes) {
 		map.put(TYPE, type);
 		map.put(KEY, Map.copyOf(key));
 		map.put(ATTRIBUTES, new HashMap<>(attributes));
@@ -23,8 +23,8 @@ public class Entity {
 	}
 	
 	@SuppressWarnings("unchecked")
-	public Map<String, Object> getKey() {
-		return (Map<String, Object>) map.get(KEY);
+	public Map<String, Map<String, Object>> getKey() {
+		return (Map<String, Map<String, Object>>) map.get(KEY);
 	}
 	
 	@SuppressWarnings("unchecked")

@@ -1,8 +1,6 @@
 package com.reveila.spring.data;
 
-import java.util.Map;
 import java.util.UUID;
-import java.util.function.Function;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -22,26 +20,17 @@ public class AuditLogService extends BaseService<AuditLog, UUID> {
     }
 
     @Override
-    protected EntityMapper getEntityMapper() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getEntityMapper'");
+    protected EntityMapper<AuditLog> getEntityMapper() {
+        return new AuditLogEntityMapper();
     }
 
     @Override
     protected String getEntityType() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getEntityType'");
+        return AuditLog.class.getSimpleName();
     }
 
     @Override
     protected Class<AuditLog> getEntityClass() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getEntityClass'");
-    }
-
-    @Override
-    protected Function<AuditLog, Map<String, Object>> getKeyExtractor() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getKeyExtractor'");
+        return AuditLog.class;
     }
 }

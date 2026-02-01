@@ -9,7 +9,7 @@ import jakarta.persistence.EntityManager;
 @Repository
 public class UserRepository extends BaseRepository<User, UUID> {
     public UserRepository(EntityManager entityManager) {
-        super(entityManager, User.class);
+        // Arguments: EntityManager entityManager, Class<T> entityClass, Class<ID> idClass, EntityMapper entityMapper
+        super(entityManager, User.class, UUID.class, new UserEntityMapper());
     }
-    // No other code needed! All Repository methods are inherited.
 }

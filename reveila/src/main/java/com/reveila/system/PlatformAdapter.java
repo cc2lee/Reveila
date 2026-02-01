@@ -3,9 +3,11 @@ package com.reveila.system;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Logger;
 
+import com.reveila.data.Entity;
 import com.reveila.data.Repository;
 import com.reveila.event.EventConsumer;
 
@@ -25,5 +27,5 @@ public interface PlatformAdapter {
     public void plug(Reveila reveila);
     public void unplug();
     public ClassLoader getClassLoader();
-    public Repository<?, ?> getRepository(String entityType);
+    public Repository<Entity, Map<String, Map<String, Object>>> getRepository(String entityType);
 }
