@@ -1,8 +1,10 @@
 package com.reveila.spring.data;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.UUID;
 import java.util.Set;
+import java.util.HashSet;
 
 @Entity
 @Table(name = "organizations")
@@ -17,24 +19,23 @@ public class Organization {
 
     private String description;
 
-    // Optional: Bi-directional mapping if you need to find all users from an org
-    @OneToMany(mappedBy = "org", cascade = CascadeType.ALL)
-    private Set<User> users;
+    // We use @JsonIgnore to prevent the infinite recursion loop 
+    // when mapping User -> Org -> Users -> Org...
+    @JsonIgnore
+    @OneToMany(mappedBy = "org") 
+    private Set<User> users = new HashSet<>();
 
-    // Mandatory No-args constructor for Hibernate
     public Organization() {}
 
     public Organization(String name) {
         this.name = name;
     }
 
-    // Getters and Setters
+    // Standard Getters/Setters
     public UUID getId() { return id; }
-    public void setId(UUID id) { this.id = id; }
-
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
-
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+    public Set<User> getUsers() { return users; }
 }

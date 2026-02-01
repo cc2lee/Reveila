@@ -38,8 +38,8 @@ class UserRepositoryTest {
         org.setName("Reveila Corp");
         entityManager.persist(org);
 
-        User user = new User("charles_lee", "password123", Collections.emptyList(), "s3-folder-1");
-        user.setActive(true);
+        User user = new User("charles_lee", "password123", Collections.emptyList());
+        user.setEnabled(true);
         // Assuming you add an org setter to the User class
         // user.setOrg(org); 
         entityManager.persist(user);

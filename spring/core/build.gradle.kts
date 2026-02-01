@@ -60,7 +60,8 @@ tasks.withType<org.springframework.boot.gradle.tasks.run.BootRun> {
 val copyVueDist by tasks.registering(Sync::class) {
     dependsOn(":web:vue-project:buildVue")
     from(project(":web:vue-project").tasks.named("buildVue"))
-    into("src/main/resources/static")
+    // Into the build output directory, not the source directory
+    into(layout.buildDirectory.dir("resources/main/static"))
 }
 
 tasks.withType<ProcessResources> {

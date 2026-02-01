@@ -11,7 +11,7 @@ import com.reveila.data.EntityMapper;
 import com.reveila.data.GenericRepository;
 import com.reveila.data.Repository;
 import com.reveila.platform.BasePlatformAdapter;
-import com.reveila.spring.data.BaseRepository;
+import com.reveila.spring.data.JpaRepository;
 
 public class SpringPlatformAdapter extends BasePlatformAdapter {
 
@@ -38,7 +38,7 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
             // Pass the 'unknown' repo into our capture method
             // This effectively 'unwraps' the Repository<?, ?> into Repository<T, ID>
             @SuppressWarnings("unchecked")
-            BaseRepository<Object, Object> typedRepo = (BaseRepository<Object, Object>) repo;
+            JpaRepository<Object, Object> typedRepo = (JpaRepository<Object, Object>) repo;
 
             GenericRepository<?, ?> genericRepo = createGenericRepo(typedRepo);
 
@@ -48,7 +48,7 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
     }
 
     // Wildcard Capture: Compiler internally infers the specific type of an unknown wildcard (?) argument
-    private <T, ID> GenericRepository<T, ID> createGenericRepo(BaseRepository<T, ID> repo) {
+    private <T, ID> GenericRepository<T, ID> createGenericRepo(JpaRepository<T, ID> repo) {
         // We pull the metadata directly from the repo instance
         EntityMapper<T> mapper = repo.getEntityMapper();
         Class<T> entityClass = repo.getEntityClass();

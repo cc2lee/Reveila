@@ -2,50 +2,40 @@ package com.reveila.spring.data;
 
 import java.util.UUID;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
-import com.reveila.data.BaseService;
-import com.reveila.data.EntityMapper;
-import com.reveila.data.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
-public class UserService extends BaseService<User, UUID> {
+public class UserService extends BaseService<User, UUID> implements UserDetailsService {
 
-    // Standard operations are handled by BaseService
-
-    private final UserRepository userRepository;
-    private final EntityMapper<User> entityMapper;
-
-    public UserService(UserRepository userRepository, EntityMapper<User> entityMapper) {
-        this.userRepository = userRepository;
-        this.entityMapper = entityMapper;
+    @Autowired
+    public UserService(UserRepository repository) {
+        super(repository, repository.getEntityMapper(), repository.getEntityClass());
     }
 
-    @Override
-    protected Repository<User, UUID> getRepository() {
-        return userRepository;
-    }
-
-    @Override
-    protected EntityMapper<User> getEntityMapper() {
-        return entityMapper;
-    }
-
-    @Override
-    protected String getEntityType() {
-        return "user";
-    }
-
-    // Custom business logic
+    // Custom business logic:
 
     public void deactivateUser(UUID id) {
-        User user = userRepository.findById(id).orElseThrow();
-        user.setActive(false);
-        userRepository.save(user);
+        User user = repository.findById(id).orElseThrow();
+        user.setEnabled(false);
+        repository.save(user);
     }
 
     @Override
-    protected Class<User> getEntityClass() {
-        return User.class;
+    @Transactional(readOnly = true)
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        try {
+            return repository.getEntityManager().createQuery(
+                    "SELECT u FROM User u JOIN FETCH u.org WHERE u.username = :username", User.class)
+                    .setParameter("username", username)
+                    .getSingleResult();
+        } catch (jakarta.persistence.NoResultException e) {
+            throw new UsernameNotFoundException("User not found: " + username);
+        }
     }
 }

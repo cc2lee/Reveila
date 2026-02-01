@@ -6,11 +6,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
-public class AuditLogService extends BaseService<AuditLog, UUID> {
+public class OrganizationService extends BaseService<Organization, UUID> {
 
     @Autowired
-    public AuditLogService(AuditLogRepository repository) {
+    public OrganizationService(OrganizationRepository repository) {
         super(repository, repository.getEntityMapper(), repository.getEntityClass());
     }
-
 }

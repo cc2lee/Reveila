@@ -8,7 +8,7 @@ import com.reveila.data.EntityMapper;
 public class UserEntityMapper extends EntityMapper<User> {
 
     @Override
-    public Map<String, Map<String, Object>> extractKey(Object typedEntity) {
+    public Map<String, Map<String, Object>> extractKey(User typedEntity) {
         if (typedEntity instanceof User user && user.getId() != null) {
             return Map.of("", Map.of("id", user.getId()));
         }

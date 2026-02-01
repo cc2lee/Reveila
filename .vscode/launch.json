@@ -3,10 +3,13 @@
     "configurations": [
         {
             "type": "java",
-            "name": "Application",
+            "name": "Reveila-on-Spring",
             "request": "launch",
-            "mainClass": "com.reveila.spring.Application",
-            "projectName": "services"
+            "mainClass": "com.reveila.spring.system.Application",
+            "projectName": "spring:core",
+            "env": {
+                "MONGO_PWD": "4DNC9GMenknPbhnh"
+            }
         },
         {
             "type": "java",

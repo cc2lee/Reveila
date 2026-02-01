@@ -1,4 +1,9 @@
-package com.reveila.data;
+package com.reveila.spring.data;
+
+import com.reveila.data.Entity;
+import com.reveila.data.EntityMapper;
+import com.reveila.data.Page;
+import com.reveila.data.QueryRequest;
 
 /**
  * Modernized Base Service that abstracts JPA entities into generic Reveila
@@ -6,16 +11,18 @@ package com.reveila.data;
  */
 public abstract class BaseService<T, ID> {
 
-    protected abstract Repository<T, ID> getRepository();
+    protected final JpaRepository<T, ID> repository;
+    protected final EntityMapper<T> entityMapper;
+    protected final Class<T> entityClass;
 
-    protected abstract EntityMapper<T> getEntityMapper();
-
-    protected abstract String getEntityType();
-
-    protected abstract Class<T> getEntityClass();
+    public BaseService(JpaRepository<T, ID> repository, EntityMapper<T> entityMapper, Class<T> entityClass) {
+        this.repository = repository;
+        this.entityMapper = entityMapper;
+        this.entityClass = entityClass;
+    }
 
     public Page<Entity> search(QueryRequest request) {
-        Page<T> entityPage = getRepository().findAll(
+        Page<T> entityPage = repository.findAll(
                 request.filter(),
                 request.sort(),
                 request.fetches(),
@@ -27,7 +34,7 @@ public abstract class BaseService<T, ID> {
     }
 
     public Entity findById(ID id) {
-        return getRepository().findById(id)
+        return repository.findById(id)
                 .map(this::mapToGeneric)
                 .orElse(null);
     }
@@ -36,16 +43,16 @@ public abstract class BaseService<T, ID> {
      * Internal mapping logic using the centralized EntityMapper.
      */
     private Entity mapToGeneric(T jpaEntity) {
-        return getEntityMapper().toGenericEntity(jpaEntity, getEntityType());
+        return entityMapper.toGenericEntity(jpaEntity, repository.getEntityType());
     }
 
     public Entity save(Entity genericEntity) {
         // 1. Convert the generic Entity DTO back to a typed JPA POJO
         // We assume getEntityClass() is added as an abstract method
-        T typedEntity = getEntityMapper().fromGenericEntity(genericEntity, getEntityClass());
+        T typedEntity = entityMapper.fromGenericEntity(genericEntity, entityClass);
 
         // 2. Persist the typed entity
-        T saved = getRepository().save(typedEntity);
+        T saved = repository.save(typedEntity);
 
         // 3. Return as a generic Entity
         return mapToGeneric(saved);

@@ -43,7 +43,7 @@ public abstract class EntityMapper<T> {
 
             .build();
 
-    public ObjectMapper getMapper() {
+    public static ObjectMapper getMapper() {
         return mapper;
     }
 
@@ -80,6 +80,6 @@ public abstract class EntityMapper<T> {
      * E.g., {"compositeKey": {"part1": "A", "part2": "B"}}
      * For simple keys, use empty key name and return {"": {"id": 123}}.
      */
-    public abstract Map<String, Map<String, Object>> extractKey(Object typedEntity);
+    public abstract Map<String, Map<String, Object>> extractKey(T typedEntity);
 
 }

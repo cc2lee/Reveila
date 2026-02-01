@@ -22,12 +22,15 @@ import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 
-public abstract class BaseRepository<T, ID> implements Repository<T, ID> {
+public class JpaRepository<T, ID> implements Repository<T, ID> {
 
     protected final EntityManager entityManager;
     protected final Class<T> entityClass;
     protected final Class<ID> idClass;
     protected final EntityMapper<T> entityMapper;
+    
+    // Performance: Store the check result so we don't use reflection per query
+    protected final boolean isMultiTenant;
 
     public EntityManager getEntityManager() {
         return entityManager;
@@ -37,11 +40,15 @@ public abstract class BaseRepository<T, ID> implements Repository<T, ID> {
         return entityClass;
     }
 
-    protected BaseRepository(EntityManager entityManager, Class<T> entityClass, Class<ID> idClass, EntityMapper<T> entityMapper) {
+    protected JpaRepository(EntityManager entityManager, Class<T> entityClass, Class<ID> idClass, EntityMapper<T> entityMapper) {
         this.entityManager = entityManager;
         this.entityClass = entityClass;
         this.idClass = idClass;
         this.entityMapper = entityMapper;
+
+        // Perform the reflection check once during instantiation
+        this.isMultiTenant = Arrays.stream(entityClass.getDeclaredFields())
+                .anyMatch(f -> f.getName().equals("org"));
     }
 
     public Class<ID> getIdClass() {
@@ -121,12 +128,8 @@ public abstract class BaseRepository<T, ID> implements Repository<T, ID> {
     private Predicate buildPredicate(Filter filter, Root<T> root, CriteriaBuilder cb) {
         List<Predicate> predicates = new ArrayList<>();
 
-        // 1. Inject Global Tenant Filter
-        // Check if the entity has an 'org' field
-        boolean hasOrgField = Arrays.stream(entityClass.getDeclaredFields())
-                .anyMatch(f -> f.getName().equals("org"));
-
-        if (hasOrgField && TenantContext.getTenantId() != null) {
+        // 1. Inject Global Tenant Filter (Optimized with isMultiTenant)
+        if (isMultiTenant && TenantContext.getTenantId() != null) {
             predicates.add(cb.equal(root.get("org").get("id"), TenantContext.getTenantId()));
         }
 
@@ -138,14 +141,12 @@ public abstract class BaseRepository<T, ID> implements Repository<T, ID> {
                     path = path.get(part);
                 }
                 Object value = criterion.value();
-                // Aligned with Filter.SearchOp
+                
                 switch (criterion.operator()) {
                     case EQUAL -> predicates.add(cb.equal(path, value));
                     case LIKE -> predicates.add(cb.like(cb.lower(path.as(String.class)),
                             "%" + value.toString().toLowerCase() + "%"));
                     case IN -> predicates.add(path.in((Collection<?>) value));
-
-                    // These two lines are WHY you need the @SuppressWarnings
                     case GREATER_THAN -> predicates.add(cb.greaterThan(
                             (Path<Comparable<Object>>) path, (Comparable<Object>) value));
                     case LESS_THAN -> predicates.add(cb.lessThan(
@@ -155,14 +156,11 @@ public abstract class BaseRepository<T, ID> implements Repository<T, ID> {
         }
 
         // 3. Combine with Logical Operator
-        Predicate filterPredicate = (filter != null && filter.getLogicalOp() == Filter.LogicalOp.OR)
+        return (filter != null && filter.getLogicalOp() == Filter.LogicalOp.OR)
                 ? cb.or(predicates.toArray(new Predicate[0]))
                 : cb.and(predicates.toArray(new Predicate[0]));
-
-        return filterPredicate;
     }
 
-    // Standard implementations
     @Override
     public List<T> saveAll(Collection<T> entities) {
         List<T> result = new ArrayList<>();
@@ -183,7 +181,6 @@ public abstract class BaseRepository<T, ID> implements Repository<T, ID> {
         return findById(id).isPresent();
     }
 
-    // Standard implementations you already had:
     @Override
     public void deleteById(ID id) {
         findById(id).ifPresent(entityManager::remove);
@@ -202,7 +199,6 @@ public abstract class BaseRepository<T, ID> implements Repository<T, ID> {
 
     @Override
     public String getEntityType() {
-        // Defaults to "user", but can be overridden in specific repos to "hr.user"
         return entityClass.getSimpleName().toLowerCase();
     }
 

@@ -47,9 +47,9 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
 
             // 2. Merge incoming attributes into the managed bean
             try {
-                entityMapper.getMapper()
+                EntityMapper.getMapper()
                         .readerForUpdating(target)
-                        .readValue(entityMapper.getMapper().writeValueAsBytes(entity.getAttributes()));
+                        .readValue(EntityMapper.getMapper().writeValueAsBytes(entity.getAttributes()));
             } catch (Exception e) {
                 throw new RuntimeException("Merge failed", e);
             }
@@ -129,10 +129,10 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
         String key = keyMap.keySet().stream().findFirst().orElse("");
         if (key.length() > 0) {
             // If there is a specific key name (e.g., "id"), it's a composite key
-            return entityMapper.getMapper().convertValue(keyMap, idClass);
+            return EntityMapper.getMapper().convertValue(keyMap, idClass);
         } else {
             // If no specific key name (flat), just merge all key parts
-            return entityMapper.getMapper().convertValue(keyMap.values().iterator().next(), idClass);
+            return EntityMapper.getMapper().convertValue(keyMap.values().iterator().next(), idClass);
         }
     }
 
