@@ -1,0 +1,10 @@
+{
+    "name": "@reveila/core",
+    "version": "1.0.0",
+    "description": "Universal SDK for Reveila Platform",
+    "main": "reveila-core.js",
+    "type": "module",
+    "exports": {
+        ".": "./reveila-core.js"
+    }
+}

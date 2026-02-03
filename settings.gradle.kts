@@ -32,7 +32,7 @@ includeBuild("build-logic") // Include my convention plugins
 // Example 1: include(":my-project"); project(":my-project").projectDir = file("path/to/my-project")
 // In a flat structure, if you want the project to be named :reveila but its files are physically inside spring/reveila/,
 // Example 2: include("reveila"); project(":reveila").projectDir = file("spring/reveila")
-include(":adapters")
+include(":connectors")
 include(":reveila")
 include(":spring:admin")
 include(":spring:core")

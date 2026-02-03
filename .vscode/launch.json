@@ -3,6 +3,13 @@
     "configurations": [
         {
             "type": "java",
+            "name": "Application",
+            "request": "launch",
+            "mainClass": "com.reveila.spring.system.Application",
+            "projectName": "core"
+        },
+        {
+            "type": "java",
             "name": "Reveila-on-Spring",
             "request": "launch",
             "mainClass": "com.reveila.spring.system.Application",

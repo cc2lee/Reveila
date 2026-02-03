@@ -16,7 +16,20 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 public abstract class EntityMapper<T> {
 
-    private static final ObjectMapper mapper = JsonMapper.builder()
+    protected Class<T> entityClass;
+
+    protected EntityMapper(Class<T> entityClass) {
+        if (entityClass == null) {
+            throw new IllegalArgumentException("Entity class cannot be null");
+        }
+        this.entityClass = entityClass;
+    }
+
+    public Class<T> getEntityClass() {
+        return entityClass;
+    }
+
+    private static final ObjectMapper objectMapper = JsonMapper.builder()
             .addModule(new JavaTimeModule())
             // Your current settings
             .enable(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT)
@@ -43,13 +56,13 @@ public abstract class EntityMapper<T> {
 
             .build();
 
-    public static ObjectMapper getMapper() {
-        return mapper;
+    public static ObjectMapper getObjectmapper() {
+        return objectMapper;
     }
 
     public Entity toGenericEntity(T pojo, String type) {
         @SuppressWarnings("unchecked")
-        Map<String, Object> attributes = getMapper().convertValue(pojo, Map.class);
+        Map<String, Object> attributes = getObjectmapper().convertValue(pojo, Map.class);
         Map<String, Map<String, Object>> keyMap = extractKey(pojo);
         return new Entity(type, keyMap, attributes);
     }
@@ -71,7 +84,7 @@ public abstract class EntityMapper<T> {
             }
         }
 
-        return getMapper().convertValue(sourceMap, targetClass);
+        return getObjectmapper().convertValue(sourceMap, targetClass);
     }
 
     /*

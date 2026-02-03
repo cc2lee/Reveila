@@ -1,4 +1,4 @@
-package com.reveila.spring.data;
+package com.reveila.spring.repository.mongo;
 
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;

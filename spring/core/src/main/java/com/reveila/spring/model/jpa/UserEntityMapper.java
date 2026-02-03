@@ -1,11 +1,18 @@
-package com.reveila.spring.data;
+package com.reveila.spring.model.jpa;
 
 import java.util.Map;
+
+import org.springframework.stereotype.Component;
 
 import com.reveila.data.Entity;
 import com.reveila.data.EntityMapper;
 
+@Component
 public class UserEntityMapper extends EntityMapper<User> {
+
+    public UserEntityMapper() {
+        super(User.class);
+    }
 
     @Override
     public Map<String, Map<String, Object>> extractKey(User typedEntity) {

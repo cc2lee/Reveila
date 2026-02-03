@@ -1,20 +1,22 @@
 import { globalIgnores } from 'eslint/config'
-import { defineConfigWithVueTs, vueTsConfigs } from '@vue/eslint-config-typescript'
+import { defineConfigWithVueTs, vueTsConfigs, configureVueProject } from '@vue/eslint-config-typescript'
 import pluginVue from 'eslint-plugin-vue'
 import pluginVitest from '@vitest/eslint-plugin'
 import pluginPlaywright from 'eslint-plugin-playwright'
 import pluginOxlint from 'eslint-plugin-oxlint'
 import skipFormatting from '@vue/eslint-config-prettier/skip-formatting'
 
-// To allow more languages other than `ts` in `.vue` files, uncomment the following lines:
-// import { configureVueProject } from '@vue/eslint-config-typescript'
-// configureVueProject({ scriptLangs: ['ts', 'tsx'] })
-// More info at https://github.com/vuejs/eslint-config-typescript/#advanced-setup
+/**
+ * This tells the TypeScript plugin that it's okay to find plain JavaScript 
+ * inside the .vue files.
+ */
+configureVueProject({ scriptLangs: ['ts', 'tsx', 'js', 'jsx'] })
 
 export default defineConfigWithVueTs(
   {
     name: 'app/files-to-lint',
-    files: ['**/*.{ts,mts,tsx,vue}'],
+    // ADDED 'js' and 'mjs' to the patterns so your service files are included
+    files: ['**/*.{js,mjs,ts,mts,tsx,vue}'],
   },
 
   globalIgnores(['**/dist/**', '**/dist-ssr/**', '**/coverage/**']),
@@ -31,6 +33,22 @@ export default defineConfigWithVueTs(
     ...pluginPlaywright.configs['flat/recommended'],
     files: ['e2e/**/*.{test,spec}.{js,ts,jsx,tsx}'],
   },
+  
+  // Custom Rule Overrides
+  {
+    rules: {
+      // Allows <script setup> without an explicit lang="ts"
+      'vue/block-lang': ['error', {
+        'script': {
+          'lang': ['ts', 'js'],
+          'allowNoLang': true
+        }
+      }],
+      // Relaxes strict TS checking for your JS-heavy hybrid files
+      '@typescript-eslint/no-explicit-any': 'off'
+    }
+  },
+
   ...pluginOxlint.configs['flat/recommended'],
   skipFormatting,
 )

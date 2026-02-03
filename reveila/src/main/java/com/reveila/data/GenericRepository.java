@@ -19,37 +19,35 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
     public GenericRepository(Repository<T, ID> repo, EntityMapper<T> mapper, Class<T> entityClass, Class<ID> idClass) {
         this.repository = repo;
         this.entityMapper = mapper;
-        this.entityType = repo.getEntityType();
+        this.entityType = repo.getType();
         this.typeClass = entityClass;
         this.idClass = idClass;
     }
 
     @Override
-    public Page<Entity> findAll(Filter filter, Sort sort, List<String> fetches, int page, int size,
+    public Page<Entity> fetchPage(Filter filter, Sort sort, List<String> fetches, int page, int size,
             boolean includeCount) {
-        Page<T> typedPage = repository.findAll(filter, sort, fetches, page, size, includeCount);
+        Page<T> typedPage = repository.fetchPage(filter, sort, fetches, page, size, includeCount);
         return typedPage.map(this::mapToGeneric);
     }
 
-    // Inside GenericRepository.java
     @Override
-    public Entity save(Entity obj) {
-        if (!(obj instanceof Entity)) {
-            throw new IllegalArgumentException("Expected Entity type");
+    public Entity store(Entity entity) {
+        if (entity == null) {
+            throw new IllegalArgumentException("Entity cannot be null");
         }
-        Entity entity = (Entity) obj;
         ID id = reverseId(entity.getKey());
         T target;
 
-        if (id != null && repository.existsById(id)) {
-            // 1. Fetch existing managed entity
-            target = repository.findById(id).orElseThrow();
+        if (id != null && repository.hasId(id)) {
+            // 1. Fetch existing entity
+            target = repository.fetchById(id).orElseThrow();
 
-            // 2. Merge incoming attributes into the managed bean
+            // 2. Merge incoming attributes
             try {
-                EntityMapper.getMapper()
+                EntityMapper.getObjectmapper()
                         .readerForUpdating(target)
-                        .readValue(EntityMapper.getMapper().writeValueAsBytes(entity.getAttributes()));
+                        .readValue(EntityMapper.getObjectmapper().writeValueAsBytes(entity.getAttributes()));
             } catch (Exception e) {
                 throw new RuntimeException("Merge failed", e);
             }
@@ -58,23 +56,23 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
             target = entityMapper.fromGenericEntity(entity, typeClass);
         }
 
-        T saved = repository.save(target);
+        T saved = repository.store(target);
         return mapToGeneric(saved);
     }
 
     @Override
-    public Optional<Entity> findById(Map<String, Map<String, Object>> idMap) {
+    public Optional<Entity> fetchById(Map<String, Map<String, Object>> idMap) {
         ID id = reverseId(idMap);
-        return repository.findById(id).map(this::mapToGeneric);
+        return repository.fetchById(id).map(this::mapToGeneric);
     }
 
     @Override
-    public void deleteById(Map<String, Map<String, Object>> idMap) {
-        repository.deleteById(reverseId(idMap));
+    public void disposeById(Map<String, Map<String, Object>> idMap) {
+        repository.disposeById(reverseId(idMap));
     }
 
     @Override
-    public List<Entity> saveAll(Collection<Entity> entities) {
+    public List<Entity> storeAll(Collection<Entity> entities) {
         List<T> typedList = new ArrayList<>();
         Iterator<Entity> i = entities.iterator();
         while (i.hasNext()) {
@@ -85,14 +83,7 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
                 typedList.add(entityMapper.fromGenericEntity(e, typeClass));
             }
         }
-        return repository.saveAll(typedList).stream()
-                .map(this::mapToGeneric)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<Entity> findAll() {
-        return repository.findAll().stream()
+        return repository.storeAll(typedList).stream()
                 .map(this::mapToGeneric)
                 .collect(Collectors.toList());
     }
@@ -103,13 +94,13 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
     }
 
     @Override
-    public boolean existsById(Map<String, Map<String, Object>> idMap) {
-        return repository.existsById(reverseId(idMap));
+    public boolean hasId(Map<String, Map<String, Object>> idMap) {
+        return repository.hasId(reverseId(idMap));
     }
 
     @Override
-    public void flush() {
-        repository.flush();
+    public void commit() {
+        repository.commit();
     }
 
     // Helper to centralize mapping logic
@@ -122,22 +113,29 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
      * from the key map using the localized mapper for type-safe conversion.
      */
     private ID reverseId(Map<String, Map<String, Object>> keyMap) {
-        if (keyMap == null) {
+        if (keyMap == null || keyMap.isEmpty()) {
             return null;
         }
         
         String key = keyMap.keySet().stream().findFirst().orElse("");
         if (key.length() > 0) {
             // If there is a specific key name (e.g., "id"), it's a composite key
-            return EntityMapper.getMapper().convertValue(keyMap, idClass);
+            return EntityMapper.getObjectmapper().convertValue(keyMap, idClass);
         } else {
             // If no specific key name (flat), just merge all key parts
-            return EntityMapper.getMapper().convertValue(keyMap.values().iterator().next(), idClass);
+            return EntityMapper.getObjectmapper().convertValue(keyMap.values().iterator().next(), idClass);
         }
     }
 
     @Override
-    public String getEntityType() {
+    public String getType() {
         return entityType;
+    }
+
+    @Override
+    public List<Entity> fetchAll() {
+        return repository.fetchAll().stream()
+                .map(this::mapToGeneric)
+                .collect(Collectors.toList());
     }
 }

@@ -63,10 +63,10 @@ public class DataService extends AbstractService {
      */
     public Page<Entity> search(Map<String, Object> requestMap) {
         // This will now look for a "sort" key inside the requestMap automatically
-        SearchRequest request = EntityMapper.getMapper().convertValue(requestMap, SearchRequest.class);
+        SearchRequest request = EntityMapper.getObjectmapper().convertValue(requestMap, SearchRequest.class);
 
         Repository<Entity, Map<String, Map<String, Object>>> repo = getRepo(request.entityType());
-        return repo.findAll(request.filter(), request.sort(), request.fetches(),
+        return repo.fetchPage(request.filter(), request.sort(), request.fetches(),
                 request.page(), request.size(), request.includeCount());
     }
 
@@ -74,7 +74,7 @@ public class DataService extends AbstractService {
      * Finds a single entity by its hierarchical key.
      */
     public Entity findById(String entityType, Map<String, Map<String, Object>> key) {
-        return getRepo(entityType).findById(key).orElse(null);
+        return getRepo(entityType).fetchById(key).orElse(null);
     }
 
     /**
@@ -82,12 +82,12 @@ public class DataService extends AbstractService {
      */
     public Entity save(String entityType, Map<String, Object> entityMap) {
         // Convert Map to Generic Entity DTO
-        Entity entity = EntityMapper.getMapper().convertValue(entityMap, Entity.class);
-        return getRepo(entityType).save(entity);
+        Entity entity = EntityMapper.getObjectmapper().convertValue(entityMap, Entity.class);
+        return getRepo(entityType).store(entity);
     }
 
     public void delete(String entityType, Map<String, Map<String, Object>> key) {
-        getRepo(entityType).deleteById(key);
+        getRepo(entityType).disposeById(key);
     }
 
     private Repository<Entity, Map<String, Map<String, Object>>> getRepo(String entityType) {

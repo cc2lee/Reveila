@@ -1,9 +1,16 @@
-package com.reveila.spring.data;
+package com.reveila.spring.model.jpa;
 
 import com.reveila.data.EntityMapper;
 import java.util.Map;
 
+import org.springframework.stereotype.Component;
+
+@Component
 public class OrganizationEntityMapper extends EntityMapper<Organization> {
+
+    public OrganizationEntityMapper() {
+        super(Organization.class);
+    }
 
     @Override
     public Map<String, Map<String, Object>> extractKey(Organization entity) {

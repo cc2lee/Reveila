@@ -1,4 +1,4 @@
-package com.reveila.spring.data;
+package com.reveila.spring.model.jpa;
 
 import jakarta.persistence.*;
 import com.fasterxml.jackson.annotation.JsonIgnore;

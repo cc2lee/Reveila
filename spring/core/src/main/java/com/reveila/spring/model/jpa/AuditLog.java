@@ -1,4 +1,4 @@
-package com.reveila.spring.data;
+package com.reveila.spring.model.jpa;
 
 import java.util.UUID;
 

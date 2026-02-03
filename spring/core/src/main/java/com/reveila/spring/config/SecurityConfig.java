@@ -1,6 +1,5 @@
 package com.reveila.spring.config;
 
-import com.reveila.spring.data.UserService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -13,13 +12,16 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 
+import com.reveila.spring.repository.jpa.UserRepositoryJPA;
+
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
-    private final UserService userService;
+    private final UserRepositoryJPA userService;
 
-    public SecurityConfig(UserService userService) {
+    // Spring automatically injects your @Service here
+    public SecurityConfig(UserRepositoryJPA userService) {
         this.userService = userService;
     }
 
@@ -36,11 +38,6 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /**
-     * FIXED: Use the argument-based constructor to avoid deprecation warnings.
-     * The no-args constructor and setUserDetailsService() are deprecated
-     * in favor of this direct injection.
-     */
     @Bean
     public DaoAuthenticationProvider authenticationProvider(PasswordEncoder passwordEncoder) {
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider(userService);
