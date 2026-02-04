@@ -2,6 +2,8 @@ package com.reveila.spring.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchyImpl;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -12,16 +14,16 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 
-import com.reveila.spring.repository.jpa.UserRepositoryJPA;
+import com.reveila.spring.model.jpa.UserService;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
-    private final UserRepositoryJPA userService;
+    private final UserService userService;
 
     // Spring automatically injects your @Service here
-    public SecurityConfig(UserRepositoryJPA userService) {
+    public SecurityConfig(UserService userService) {
         this.userService = userService;
     }
 
@@ -36,6 +38,11 @@ public class SecurityConfig {
                 });
 
         return http.build();
+    }
+
+    @Bean
+    public RoleHierarchy roleHierarchy() {
+        return RoleHierarchyImpl.fromHierarchy("ROLE_ADMIN > ROLE_USER \n ROLE_USER > ROLE_GUEST");
     }
 
     @Bean

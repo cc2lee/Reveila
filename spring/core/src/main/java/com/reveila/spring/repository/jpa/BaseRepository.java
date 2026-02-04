@@ -12,7 +12,7 @@ import org.springframework.data.jpa.repository.support.SimpleJpaRepository;
 import com.reveila.data.EntityMapper;
 import com.reveila.data.Filter;
 import com.reveila.data.Page;
-import com.reveila.data.Repository;
+import com.reveila.data.JavaObjectRepository;
 import com.reveila.data.Sort;
 import com.reveila.spring.security.TenantContext;
 import com.reveila.spring.system.ApplicationContextProvider;
@@ -28,7 +28,7 @@ import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 
 public class BaseRepository<T, ID>
-        extends SimpleJpaRepository<T, ID> implements Repository<T, ID> {
+        extends SimpleJpaRepository<T, ID> implements JavaObjectRepository<T, ID> {
 
     protected EntityManager entityManager;
     protected Class<T> entityClass;

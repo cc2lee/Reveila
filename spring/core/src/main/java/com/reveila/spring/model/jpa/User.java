@@ -55,7 +55,7 @@ public class User implements UserDetails {
     private Collection<? extends GrantedAuthority> authorities;
 
     // 1. Mandatory No-Args Constructor for Hibernate
-    protected User() {
+    public User() {
     }
 
     // 2. Business Constructor

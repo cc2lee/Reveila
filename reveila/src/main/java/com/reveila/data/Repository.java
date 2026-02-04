@@ -16,4 +16,5 @@ public interface Repository<T, ID> {
     boolean hasId(ID id);
     void commit();
     String getType();
+
 }

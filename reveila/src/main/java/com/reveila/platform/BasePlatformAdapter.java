@@ -88,9 +88,27 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
 
     @Override
     public String[] getConfigFilePaths() throws IOException {
-        String dir = this.systemHome.resolve(Constants.CONFIGS_DIR_NAME).resolve("components").toAbsolutePath()
-                .toString();
-        return FileUtil.getRelativeFilePaths(dir, ".json");
+        // 1. Ensure we have a clean, absolute path to the components dir
+        Path configDir = this.systemHome.resolve(Constants.CONFIGS_DIR_NAME)
+                .resolve("components")
+                .toAbsolutePath()
+                .normalize();
+
+        // 2. Find the files (assuming FileUtil returns relative paths from configDir)
+        String[] files = FileUtil.findRelativePaths(configDir.toString(), ".json");
+
+        // 3. Ensure systemHome is also absolute and normalized for a clean comparison
+        Path normalizedHome = this.systemHome.toAbsolutePath().normalize();
+
+        return Stream.of(files)
+                .map(file -> {
+                    // Resolve the file against the configDir, then normalize
+                    Path absoluteFilePath = configDir.resolve(file).normalize();
+
+                    // Relativize from home to the specific file
+                    return normalizedHome.relativize(absoluteFilePath).toString();
+                })
+                .toArray(String[]::new);
     }
 
     @Override

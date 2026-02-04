@@ -1,5 +1,5 @@
 /**
- * ReveilaCore: Universal client for Vue and React/Expo
+ * Reveila Core: Universal client for Vue and React/Expo
  */
 export class ReveilaClient {
     constructor(config = {}) {

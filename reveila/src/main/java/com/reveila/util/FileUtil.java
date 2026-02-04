@@ -64,7 +64,7 @@ public final class FileUtil {
 	 * @param extension the file extension to filter by (without the dot).
 	 * @return an array of {@link File} objects, or an empty array if the directory does not exist or is not a directory.
 	 */
-	public static String[] getRelativeFilePaths(String directory, String fileExt) throws IOException {
+	public static String[] findRelativePaths(String directory, String fileExt) throws IOException {
 		Path root = Paths.get(directory);
 
 		// 1. Sanitize extension (ensure it has a dot)
@@ -79,8 +79,8 @@ public final class FileUtil {
 					// Filter 1: We only want Files, not Directories
 					.filter(Files::isRegularFile)
 
-					// Filter 2: Check the extension (case-sensitive)
-					.filter(path -> path.toString().endsWith(extension))
+					// Filter 2: Check the extension (case-insensitive)
+					.filter(path -> path.toString().toLowerCase().endsWith(extension.toLowerCase()))
 
 					// Map: Convert absolute path to relative path
 					// e.g., "/usr/data/logs/2024/jan.log" -> "logs/2024/jan.log" (if root is

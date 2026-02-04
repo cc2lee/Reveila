@@ -10,13 +10,13 @@ import java.util.stream.Collectors;
 
 public class GenericRepository<T, ID> implements Repository<Entity, Map<String, Map<String, Object>>> {
 
-    private final Repository<T, ID> repository;
+    private final JavaObjectRepository<T, ID> repository;
     private final EntityMapper<T> entityMapper;
     private final String entityType;
     private final Class<T> typeClass;
     private final Class<ID> idClass;
 
-    public GenericRepository(Repository<T, ID> repo, EntityMapper<T> mapper, Class<T> entityClass, Class<ID> idClass) {
+    public GenericRepository(JavaObjectRepository<T, ID> repo, EntityMapper<T> mapper, Class<T> entityClass, Class<ID> idClass) {
         this.repository = repo;
         this.entityMapper = mapper;
         this.entityType = repo.getType();

@@ -1,4 +1,4 @@
-<script setup lang="js">
+<script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue';
 import { ReveilaClient } from '@reveila/core';
 
@@ -77,6 +77,29 @@ onMounted(fetchData);
                 class="search-input" />
         </div>
 
+        <table v-if="entities.length > 0" class="reveila-table">
+            <thead>
+                <tr>
+                    <th v-for="h in headers" :key="h">
+                        {{ h.charAt(0).toUpperCase() + h.slice(1) }}
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr v-for="entity in entities" :key="entity.id.id">
+                    <td v-for="h in headers" :key="h">
+                        <span v-if="h === 'id'" class="id-cell">{{ entity.id.id }}</span>
+                        <span v-else>{{ entity.attributes[h] }}</span>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        <div v-else-if="!loading" class="no-data">
+            No results found for "{{ entityType }}"
+        </div>
+        <div v-else class="loading-state">
+            Loading...
+        </div>
     </div>
 </template>
 
