@@ -1,147 +1,69 @@
-# Reveila Suite
+# 🏛️ Reveila-Suite
+**The Hexagonal Multi-Tenant Application Platform**
 
-This repository contains the full Reveila Suite, a multi-project application consisting of a Spring Boot backend and a React Native mobile client.
+Reveila-Suite is a high-extensibility, cross-platform distributed application platform. Engineered using **Hexagonal Architecture** (Ports and Adapters), it maintains a strict separation between core business logic and infrastructure-specific implementations, ensuring consistency across Backend, Web, and Mobile environments.
 
-## Project Structure
 
-The repository is organized as a monorepo with the following key components:
 
--   `./`: The root contains the Spring Boot application that serves the main API.
--   `./reveila`: A shared Java library subproject used by the Spring Boot backend.
--   `./mobile`: The React Native mobile application.
+## 🏗️ Architectural Core
+
+The system is anchored by **Reveila-Core**, a platform-agnostic engine that manages the lifecycle of components and configuration without being tied to a specific framework.
+
+* **Clean Architecture:** Business logic is isolated in the Domain layer, while infrastructure (Spring Boot, Android, Standalone) is injected via the `PlatformAdapter` interface.
+* **Dependency Inversion:** Core logic depends on abstractions; infrastructure implements them.
+* **Universal Invocation Model:** Rather than traditional hardcoded REST mappings, Reveila uses a dynamic proxy mechanism to invoke component methods via a universal endpoint:
+    * `POST /api/components/{componentName}/invoke`
+* **Dynamic Component Loading:** Components are discovered, sequenced by priority, and validated via a JSON-based metadata system and a dedicated **Configuration Linter** at startup.
+
+## 📦 Project Structure (Monorepo)
+
+Managed as a monorepo to ensure API contracts and shared logic are synchronized across all layers:
+
+| Module | Description |
+| :--- | :--- |
+| **[`/reveila`](reveila/README.MD)** | **Core Logic.** Shared Java classes, utilities, and the system engine. |
+| **[`/spring`](spring/core/src/main/resources/application.properties)** | **Backend Implementation.** Spring Boot 3.5+ wrappers for the Core engine. |
+| **[`/android`](android/readme.md)** | **Mobile Infrastructure.** Android-specific adapters and DEX loading logic. |
+| **[`/apps`](apps/settings.gradle.kts)** | **Client Applications.** Expo/React Native and native Android projects. |
+| **[`/connectors`](connectors/js/readme.md)** | **Integration Bridges.** JavaScript and Database adapters for external systems. |
+| **[`/web`](web/vue-project/README.md)** | **Web Frontend.** Vue.js based administrative or user interfaces. |
+
+
+
+## 🚀 Key Features
+
+* **Dynamic Multi-Tenancy:** Automated data isolation at the repository layer, ensuring zero data leakage between organizations.
+* **Advanced Mobile Strategy:** Supports dynamic plugin loading via `DexClassLoader` and library shadowing to prevent classpath conflicts in Android environments.
+* **Universal Configuration:** A robust loader capable of resolving properties from local files, classpath resources, or remote URLs (`http`/`file`) seamlessly.
+* **Modern Security Integration:** Integrated Spring Security 6.x+ with a custom **Role Hierarchy** (`ADMIN > USER > GUEST`) and secure BCrypt hashing.
+* **Performance Tracking:** Intelligent routing that determines if a component call should be handled locally or distributed across a cluster for optimal execution.
+
+## 🛠️ Tech Stack
+
+* **Backend:** Java 21, Spring Boot 3.5, Hibernate/JPA, H2/PostgreSQL/MongoDB.
+* **Mobile:** Kotlin/Java (Native), React Native (Expo).
+* **Web:** Vue.js, TypeScript.
+* **Build System:** Gradle (Kotlin DSL) and Maven.
+
+## 🚦 Getting Started
+
+### Prerequisites
+* **JDK 21** or higher
+* **Maven 3.9+** / **Gradle 8+**
+
+### Quick Start
+1.  **Clone the repository:**
+    ```bash
+    git clone [https://github.com/yourusername/reveila-suite.git](https://github.com/yourusername/reveila-suite.git)
+    ```
+2.  **Environment Setup:** Ensure your `SYSTEM_HOME` environment variable points to your local configuration directory.
+3.  **Run the Spring Backend:**
+    ```bash
+    mvn spring-boot:run -pl spring
+    ```
+4.  **Verification:** Access the H2 console at `/h2-console` to view the auto-initialized `admin` user and multi-tenant schema.
 
 ---
 
-## 1. Backend (Spring Boot)
-
-The backend is a standard Spring Boot application that provides a RESTful API.
-
-
-### Prerequisites
-
--   Java Development Kit (JDK) 17 or later.
-
-
-### Building the Backend
-
-This project uses the Gradle wrapper. To build the project, run the following command from the root directory:
-
-```bash
-# For Linux/macOS:
-./gradlew build
-
-# For Windows:
-gradlew.bat build
-```
-
-This will compile the code, run tests, and create an executable JAR file in the `build/libs/` directory.
-
-
-### Running the Backend
-
-Once built, you can run the application using:
-
-```bash
-java -jar build/libs/reveila.jar
-```
-
-The server will start on port 8080 by default.
-
-
-### Interacting with the Reveila Backend API
-
-Reveila backend provides a generic REST API endpoint. Instead of having a unique URL for every action, the application uses a single endpoint to invoke methods on backend components.
-
-#### API Endpoint
-
--   **URL**: `/api/components/{componentName}/invoke`
--   **Method**: `POST`
--   **Description**: Invokes a method on a specified backend component.
-
-#### Request Body
-
-The body of the `POST` request must be a JSON object with the following structure:
-
-```json
-{
-  "methodName": "theMethodToCall",
-  "args": [ "argument1", 123, { "some": "object" } ]
-}
-```
-
--   `methodName`: The name of the method you want to execute on the component.
--   `args`: An array of arguments to pass to the method.
-
-#### Example: Calling an `EchoService`
-
-Here is a TypeScript example of how to call an `echo` method on a component named `EchoService` using the `fetch` API. You would typically place such logic in a dedicated service file within your React Native project.
-
-```typescript
-import Config from './config'; // A simple configuration file
-
-async function invokeEcho(message: string): Promise<string> {
-  const componentName = 'EchoService';
-  const requestPayload = {
-    methodName: 'echo',
-    args: [message] // The arguments must be in an array
-  };
-
-  try {
-    const response = await fetch(`${Config.API_BASE_URL}/api/components/${componentName}/invoke`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(requestPayload)
-    });
-
-    if (!response.ok) {
-      // The backend provides structured error messages
-      const errorData = await response.json();
-      console.error(`API Error: ${response.status}`, errorData.error);
-      throw new Error(`Request failed: ${errorData.error || response.statusText}`);
-    }
-
-    // The 'echo' method returns a simple string, so we read it as text
-    const result = await response.text();
-    console.log('Success! Server responded with:', result);
-    return result;
-
-  } catch (error) {
-    console.error('Failed to invoke component:', error);
-    throw error; // Re-throw the error for the caller to handle
-  }
-}
-```
-
-## 2. Mobile Client (React Native)
-
-The mobile application is built with React Native and communicates with the backend service. It features a native Android background service that acts as the core engine. For more details on the mobile architecture, see `mobile/README.md`.
-
-
-### Prerequisites
-
--   Node.js and the React Native development environment. Please follow the official setup guide.
--   Android Studio and a configured Android device or emulator.
-
-
-### Running the Mobile App
-
-Navigate to the `mobile` directory to run the application.
-
-```bash
-cd mobile
-```
-
-Then, follow these steps:
-
-```bash
-# 1. Start the Metro bundler in one terminal
-npx react-native start
-
-# 2. In a separate terminal, build and run the Android app
-npx react-native run-android
-```
-
-The mobile app is configured to communicate with the backend running on `localhost`. Ensure the backend service is running before you test features that require API calls.
+## 👨‍💻 Author
+**Charles Lee** *Enterprise Architect specializing in scalable, multi-tenant software systems and cross-platform infrastructure.*
