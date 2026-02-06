@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.MalformedURLException;
+import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +25,9 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
+import java.util.Map;
 import java.util.stream.Stream;
 
 import com.reveila.error.ConfigurationException;
@@ -45,13 +49,13 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     private Logger logger;
     private int jobThreadPoolSize = 1; // Use single thread for serial execution by default
     private ScheduledExecutorService scheduler;
+    private final Map<String, ScheduledFuture<?>> autoCallTasks = new ConcurrentHashMap<>();
     private Path systemHome;
     private ClassLoader classLoader;
 
     public BasePlatformAdapter(Properties commandLineArgs) throws Exception {
         super();
         loadProperties(commandLineArgs);
-        systemHome = Paths.get(this.properties.getProperty(Constants.SYSTEM_HOME));
         setupDirectories();
         configureLogging();
         setupClassLoader();
@@ -131,13 +135,30 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         }
     }
 
+    private URL resolveConfigurationResource(String location) throws Exception {
+        if (location == null || location.isBlank()) {
+            throw new IllegalArgumentException("Location string is null or empty");
+        }
+
+        // 1. Check if it's already a formal URL (e.g., http://, https://, file:/)
+        if (location.matches("^[a-zA-Z][a-zA-Z0-9+.-]*://.*")) {
+            return new URI(location).toURL();
+        }
+
+        // 2. Treat as a local File Path
+        Path path = Path.of(location).toAbsolutePath().normalize();
+
+        // 3. Convert Path to URL (this automatically handles the 'file:/' prefix)
+        return path.toUri().toURL();
+    }
+
     private InputStream openPropertiesStream(Properties jvmArgs) throws IOException, ConfigurationException {
 
         URL url = null;
 
         // 1. try JVM argument first
         try {
-            url = new java.net.URI(jvmArgs.getProperty(Constants.SYSTEM_PROPERTIES_FILE_NAME)).toURL();
+            url = resolveConfigurationResource(jvmArgs.getProperty(Constants.SYSTEM_PROPERTIES_FILE_NAME));
         } catch (Exception e) {
             // 2. try looking in classpath
             url = BasePlatformAdapter.class.getClassLoader().getResource(Constants.SYSTEM_PROPERTIES_FILE_NAME);
@@ -164,24 +185,21 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         return url.openStream();
     }
 
-    private void loadProperties(Properties overwrites) throws IOException, ConfigurationException {
-        Properties incoming = (overwrites != null) ? overwrites : new Properties();
-        this.properties = new Properties();
-
-        // 1. Load from file using Try-with-Resources
-        try (InputStream stream = openPropertiesStream(incoming)) {
-            this.properties.load(stream);
-        } catch (Exception e) {
-            // If the file is missing, we might still continue if defaults are enough
-            // but since you throw IOException, we'll keep that contract.
-            throw new IOException("Failed to load " + Constants.SYSTEM_PROPERTIES_FILE_NAME, e);
+    @Override
+    public void unregisterAutoCall(String componentName) {
+        ScheduledFuture<?> task = autoCallTasks.remove(componentName);
+        if (task != null) {
+            task.cancel(false); // Do not interrupt if running, just don't run again
+            logger.info("Unregistered auto-call for component: " + componentName);
         }
+    }
 
-        // 2. Apply command-line overwrites
-        this.properties.putAll(incoming);
-
-        // 3. Resolve SYSTEM_HOME
-        String homeValue = properties.getProperty(Constants.SYSTEM_HOME);
+    private void loadProperties(Properties jvmArgs) throws IOException, ConfigurationException {
+        
+        Properties args = (jvmArgs != null) ? jvmArgs : new Properties();
+        
+        // Resolve SYSTEM_HOME
+        String homeValue = args.getProperty(Constants.SYSTEM_HOME);
         if (homeValue == null || homeValue.isBlank()) {
             homeValue = System.getenv("REVEILA_HOME");
             if (homeValue == null || homeValue.isBlank()) {
@@ -190,10 +208,24 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
                         .toAbsolutePath()
                         .toString();
             }
-            properties.setProperty(Constants.SYSTEM_HOME, homeValue);
+            args.setProperty(Constants.SYSTEM_HOME, homeValue);
+        }
+        this.systemHome = Paths.get(homeValue).toAbsolutePath().normalize();
+        
+        // Load properties file using Try-with-Resources
+        this.properties = new Properties();
+        try (InputStream stream = openPropertiesStream(args)) {
+            this.properties.load(stream);
+        } catch (Exception e) {
+            // If the file is missing, we might still continue if defaults are enough
+            // but since you throw IOException, we'll keep that contract.
+            throw new IOException("Failed to load " + Constants.SYSTEM_PROPERTIES_FILE_NAME, e);
         }
 
-        // 4. Set OS Metadata
+        // Apply command-line overwrites
+        this.properties.putAll(args);
+
+        // Set OS Metadata
         if (properties.getProperty(Constants.PLATFORM_OS) == null) {
             properties.setProperty(Constants.PLATFORM_OS, String.format("%s %s (%s)",
                     System.getProperty("os.name"),
@@ -201,7 +233,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
                     System.getProperty("os.arch")));
         }
 
-        // 5. Set Defaults for missing properties
+        // Set Defaults for missing properties
         resolveProperty(Constants.CHARACTER_ENCODING, StandardCharsets.UTF_8.name());
         resolveProperty(Constants.LAUNCH_STRICT_MODE, "true");
     }
@@ -327,7 +359,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     }
 
     private void setLoggingLevel(Logger logger, Properties props) {
-        String level = props.getProperty(Constants.LOG_LEVEL, "ALL").trim().toUpperCase();
+        String level = props.getProperty(Constants.LOG_LEVEL, "INFO").trim().toUpperCase();
         try {
             logger.setLevel(Level.parse(level));
         } catch (IllegalArgumentException e) {
@@ -344,8 +376,11 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     public void registerAutoCall(String componentName, String methodName, long delaySeconds, long intervalSeconds,
             EventConsumer eventConsumer) {
 
+        // Unregister existing task for this component if any
+        unregisterAutoCall(componentName);
+
         // Use scheduleWithFixedDelay for system stability
-        scheduler.scheduleWithFixedDelay(() -> {
+        ScheduledFuture<?> task = scheduler.scheduleWithFixedDelay(() -> {
             if (reveila == null)
                 return;
 
@@ -363,6 +398,8 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
                 notifyAutoCallEventListener(eventConsumer, event);
             }
         }, delaySeconds, intervalSeconds, TimeUnit.SECONDS);
+
+        autoCallTasks.put(componentName, task);
     }
 
     // Helper method to remove duplication and nesting
@@ -379,7 +416,12 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     }
 
     @Override
-    public synchronized void unplug() {
+    public synchronized void shutdown() {
+        logger.info("Platform Adapter shutting down...");
+        // Clear all auto-call tasks
+        autoCallTasks.values().forEach(task -> task.cancel(true));
+        autoCallTasks.clear();
+
         if (this.scheduler != null) {
             this.scheduler.shutdown(); // Initiates an orderly shutdown in which previously submitted tasks are
                                        // executed, but no new tasks will be accepted.
@@ -395,6 +437,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         }
         this.scheduler = null;
         this.reveila = null;
+        logger.info("Platform Adapter shutdown complete.");
     }
 
     @Override
@@ -404,10 +447,5 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         }
 
         this.reveila = reveila;
-    }
-
-    @Override
-    public ClassLoader getClassLoader() {
-        return this.classLoader;
     }
 }

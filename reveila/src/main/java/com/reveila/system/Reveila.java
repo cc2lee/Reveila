@@ -3,15 +3,15 @@
  */
 package com.reveila.system;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.URL;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -69,16 +69,16 @@ public class Reveila {
 		}
 
 		// Stop the executor from taking new tasks
-    	startExecutor.shutdownNow();
+		startExecutor.shutdownNow();
 		error = !stopComponents();
-		
+
 		if (systemContext != null) {
 			systemContext.clear();
 		}
 
 		if (platformAdapter != null) {
 			try {
-				platformAdapter.unplug();
+				platformAdapter.shutdown();
 			} catch (Throwable t) {
 				error = true;
 				message = "Failed to unplug platform adapter, cause: " + t.getMessage();
@@ -160,36 +160,40 @@ public class Reveila {
 	}
 
 	private void printLogo() {
+		String logoContent = loadLogoContent();
+		String version = this.properties.getProperty(Constants.SYSTEM_VERSION);
 
+		System.out.println("\n" + logoContent);
+		if (version != null && !version.isBlank()) {
+			System.out.println("Version: " + version);
+		}
 		System.out.println();
+	}
 
-		BufferedReader reader = null;
-		try (InputStream is = this.platformAdapter.getFileInputStream("logo.txt")) {
-			if (is == null) {
-				System.out.println("Reveila"); // Fallback if logo resource is not found
-			} else {
-				reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
-				reader.lines().forEach(System.out::println);
+	private String loadLogoContent() {
+		// 1. Try to load from External Configuration Directory
+		try {
+			Path home = Path.of(this.properties.getProperty(Constants.SYSTEM_HOME)).toAbsolutePath().normalize();
+			Path externalLogo = home.resolve(Constants.CONFIGS_DIR_NAME).resolve("logo.txt");
+
+			if (Files.exists(externalLogo)) {
+				return Files.readString(externalLogo, StandardCharsets.UTF_8);
 			}
 		} catch (Exception e) {
-			// Log a warning or handle the exception if the logo fails to load
-			System.out.println("Warning: Could not load Reveila logo resource file.");
-		} finally {
-			if (reader != null) {
-				try {
-					reader.close();
-				} catch (IOException e) {
-					// Ignore
-				}
+			// Fall through to classpath
+		}
+
+		// 2. Fallback: Try to load from Classpath
+		try (InputStream is = getClass().getClassLoader().getResourceAsStream("logo.txt")) {
+			if (is != null) {
+				return new String(is.readAllBytes(), StandardCharsets.UTF_8);
 			}
+		} catch (IOException e) {
+			// Fall through to hardcoded default
 		}
 
-		String version = this.properties.getProperty(Constants.SYSTEM_VERSION);
-		if (version != null && !version.isBlank()) {
-			System.out.println(version);
-		}
-
-		System.out.println();
+		// 3. Ultimate Fallback: Plain Text
+		return "REVEILA";
 	}
 
 	private void logStartupBanner() {
@@ -264,6 +268,7 @@ public class Reveila {
 		// PHASE 2: VALIDATION (Linting & Cycle Detection)
 		try {
 			new ConfigurationLinter().lint(list);
+			logger.info("✅ Configuration validation complete. No issues found.");
 		} catch (Exception e) {
 			handleStartError("Configuration validation failed.", e);
 		}
@@ -274,17 +279,17 @@ public class Reveila {
 	/**
 	 * Helper to centralize Strict Mode logic
 	 */
-	private void handleStartError(String message, Exception e) throws Exception {
+	private void handleStartError(String message, Throwable t) throws Exception {
 		if (message == null || message.isBlank()) {
 			message = "System startup error!";
 		}
 		if (strictMode) {
 			// ROLLBACK: Stop everything that was already started in reverse order
 			stopComponents();
-			throw new SystemException(message, e);
+			throw new SystemException(message, t);
 		} else {
 			logger.log(Level.SEVERE, message + (message.endsWith(".") ? " " : ". ")
-					+ "Continuing in non-strict mode.", e);
+					+ "Continuing in non-strict mode.", t);
 		}
 	}
 
@@ -354,6 +359,7 @@ public class Reveila {
 			Proxy proxy = new Proxy(mObj);
 			proxy.setName(mObj.getName());
 			try {
+				systemContext.add(proxy);
 				CompletableFuture<Void> startFuture = CompletableFuture.runAsync(() -> {
 					try {
 						proxy.start();
@@ -365,28 +371,36 @@ public class Reveila {
 
 				// Wait for completion or timeout
 				startFuture.get(startTimeoutSeconds, TimeUnit.SECONDS);
-				
+
 				logger.info("✅ Started component: " + mObj.getName());
 				startedProxies.add(proxy); // Track successful starts
-				systemContext.add(proxy);
-				
 			} catch (TimeoutException e) {
 				String msg = "⏱️ Timeout: Component [" + mObj.getName() + "] failed to start within "
 						+ startTimeoutSeconds + " seconds.";
 				try {
 					proxy.stop(); // Attempt to stop the proxy if start timed out
 				} catch (Exception ex) {
-					msg = msg + "\n⚠️ Failed to stop component after start timeout: " + mObj.getName() + " - " + ex.getMessage();
+					msg = msg + "\n⚠️ Failed to stop component after start timeout: " + mObj.getName() + " - "
+							+ ex.getMessage();
 				}
+
+				systemContext.remove(proxy);
+				platformAdapter.unregisterAutoCall(proxy.getName());
+
 				handleStartError(msg, e);
-			} catch (Exception e) {
+			} catch (Throwable t) {
 				String msg = "❌ Failed to start component [" + mObj.getName() + "].";
 				try {
 					proxy.stop(); // Attempt to stop the proxy if start timed out
 				} catch (Exception ex) {
-					msg = msg + "\n⚠️ Failed to stop component after start up error: " + mObj.getName() + " - " + ex.getMessage();
+					msg = msg + "\n⚠️ Failed to stop component after start up error: " + mObj.getName() + " - "
+							+ ex.getMessage();
 				}
-				handleStartError(msg, e);
+
+				systemContext.remove(proxy);
+				platformAdapter.unregisterAutoCall(proxy.getName());
+
+				handleStartError(msg, t);
 			}
 		}
 	}

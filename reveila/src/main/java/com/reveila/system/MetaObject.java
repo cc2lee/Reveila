@@ -1,5 +1,6 @@
 package com.reveila.system;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -57,25 +58,35 @@ public class MetaObject {
 
 	@SuppressWarnings("unchecked")
 	public List<Map<String, Object>> getArguments() {
-		return (List<Map<String, Object>>) this.dataMap.get(Constants.ARGUMENTS);
+		Object value = this.dataMap.get(Constants.ARGUMENTS);
+		return (value instanceof List) ? (List<Map<String, Object>>) value : Collections.emptyList();
 	}
 
 	@SuppressWarnings("unchecked")
 	public Map<String, Object> getAutoRunConf() {
-		return (Map<String, Object>) this.dataMap.get(Constants.RUNNABLE);
+		Object value = this.dataMap.get(Constants.RUNNABLE);
+		return (value instanceof Map) ? (Map<String, Object>) value : Collections.emptyMap();
 	}
 
 	@SuppressWarnings("unchecked")
 	public String getPluginDir() {
-		Map<String, Object> plugin = (Map<String, Object>) this.dataMap.get(Constants.PLUGIN);
-		return (String) plugin.get(Constants.DIRECTORY);
+		Object pluginValue = this.dataMap.get(Constants.PLUGIN);
+		if (pluginValue instanceof Map) {
+			Map<String, Object> plugin = (Map<String, Object>) pluginValue;
+			return (String) plugin.get(Constants.DIRECTORY);
+		}
+		return null;
 	}
 
 	@SuppressWarnings("unchecked")
 	public boolean isHotDeployEnabled() {
-		Map<String, Object> plugin = (Map<String, Object>) this.dataMap.get(Constants.PLUGIN);
-		String hotDeploy = (String) plugin.get(Constants.HOT_DEPLOY);
-		return "true".equalsIgnoreCase(hotDeploy);
+		Object pluginValue = this.dataMap.get(Constants.PLUGIN);
+		if (pluginValue instanceof Map) {
+			Map<String, Object> plugin = (Map<String, Object>) pluginValue;
+			Object hotDeploy = plugin.get(Constants.HOT_DEPLOY);
+			return "true".equalsIgnoreCase(String.valueOf(hotDeploy));
+		}
+		return false;
 	}
 
 	public int getStartPriority() {
@@ -100,6 +111,7 @@ public class MetaObject {
 
 	@SuppressWarnings("unchecked")
 	public List<String> getDependencies() {
-		return (List<String>) this.dataMap.get(Constants.DEPENDENCIES);
+		Object value = this.dataMap.get(Constants.DEPENDENCIES);
+		return (value instanceof List) ? (List<String>) value : Collections.emptyList();
 	}
 }

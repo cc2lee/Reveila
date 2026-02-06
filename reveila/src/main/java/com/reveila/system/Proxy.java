@@ -78,7 +78,7 @@ public final class Proxy extends AbstractService {
 		if (!Files.isDirectory(pluginDir)) {
 			throw new IllegalArgumentException("Plugin directory does not exist or is not a directory: " + pluginDir);
 		}
-		setClassLoader(RuntimeUtil.createPluginClassLoader(pluginDir.toString(), super.systemContext.getPlatformAdapter().getClassLoader()));
+		setClassLoader(RuntimeUtil.createPluginClassLoader(pluginDir.toString(), Reveila.class.getClassLoader()));
 	}
 
 	/**
@@ -231,7 +231,7 @@ public final class Proxy extends AbstractService {
 			System.out.println("🛑 Plugin Watcher stopped for: " + this.getName());
 		}
 
-		// First, gracefully stop any stoppable instance.
+		// Gracefully stop any stoppable instance.
 		if (this.singletonInstance != null && this.singletonInstance instanceof Stoppable) {
 			try {
 				((Stoppable) this.singletonInstance).stop();
@@ -242,7 +242,7 @@ public final class Proxy extends AbstractService {
 
 		// Finally, clean up internal state.
 		this.singletonInstance = null;
-		this.metaObject = null;
+		// this.metaObject = null;
 		setClassLoader(null);
 
 		if (!exceptions.getExceptions().isEmpty()) {
