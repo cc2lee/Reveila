@@ -416,7 +416,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     }
 
     @Override
-    public synchronized void shutdown() {
+    public synchronized void unplug() {
         logger.info("Platform Adapter shutting down...");
         // Clear all auto-call tasks
         autoCallTasks.values().forEach(task -> task.cancel(true));

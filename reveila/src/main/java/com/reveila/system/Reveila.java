@@ -78,7 +78,7 @@ public class Reveila {
 
 		if (platformAdapter != null) {
 			try {
-				platformAdapter.shutdown();
+				platformAdapter.unplug();
 			} catch (Throwable t) {
 				error = true;
 				message = "Failed to unplug platform adapter, cause: " + t.getMessage();

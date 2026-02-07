@@ -26,7 +26,7 @@ public interface PlatformAdapter {
     public void registerAutoCall(String componentName, String methodName, long delaySeconds, long intervalSeconds, EventConsumer eventConsumer) throws Exception;
     public void unregisterAutoCall(String componentName);
     public void plug(Reveila reveila);
-    public void shutdown();
+    public void unplug();
     public Repository<Entity, Map<String, Map<String, Object>>> getRepository(String entityType);
 
 }
