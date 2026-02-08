@@ -63,7 +63,7 @@ Managed as a monorepo to ensure API contracts and shared logic are synchronized 
 ---
 
 ## 👨‍💻 Author
-**Charles Lee** *I am a senior technology executive and Fractional CTO specializing in enterprise transformation, AI strategy, and platform modernization in complex, regulated environments.
+**Charles Lee** I am a senior technology executive and Fractional CTO specializing in enterprise transformation, AI strategy, and platform modernization in complex, regulated environments.
 
 My work focuses on helping executive teams and boards move from fragmented systems and experimental AI initiatives to scalable, production grade platforms that support long term growth, operational resilience, and measurable business outcomes. I advise organizations on how to align architecture, governance, and investment decisions so technology becomes an enabler of strategy rather than a source of risk.
 
@@ -73,4 +73,4 @@ A sizable portion of my work involves M&A and transformation scenarios, includin
 
 As a practitioner in applied AI, I have architected agentic AI platforms that enable autonomous execution across complex enterprise systems while maintaining governance, control, and extensibility. I am known for translating advanced technical concepts into clear, actionable guidance for non technical executives and board members.
 
-I currently advise organizations as a Fractional CTO and strategic technology partner.*
+I currently advise organizations as a Fractional CTO and strategic technology partner.
