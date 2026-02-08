@@ -1,9 +1,7 @@
 # 🏛️ Reveila-Suite
 **The Hexagonal Multi-Tenant Application Platform**
 
-Reveila-Suite is a high-extensibility, cross-platform distributed application platform. Engineered using **Hexagonal Architecture** (Ports and Adapters), it maintains a strict separation between core business logic and infrastructure-specific implementations, ensuring consistency across Backend, Web, and Mobile environments.
-
-
+Reveila-Suite is a cross-platform distributed AI framework with dynamic component loading & prioritized sequencing, based on Universal Invocation Model & Plug-In architecture, to enable agentic AI systems to autonomously discover and execute cross platform logic, supporting extensibility, control, and safe deployment at scale. Its **Hexagonal Architecture** (Ports and Adapters) allows it to maintain a strict separation between core business logic and infrastructure-specific implementations, ensuring consistency across Backend, Web, and Mobile environments.
 
 ## 🏗️ Architectural Core
 
@@ -66,4 +64,14 @@ Managed as a monorepo to ensure API contracts and shared logic are synchronized 
 ---
 
 ## 👨‍💻 Author
-**Charles Lee** *Enterprise Architect specializing in scalable, multi-tenant software systems and cross-platform infrastructure.*
+**Charles Lee** *I am a senior technology executive and Fractional CTO specializing in enterprise transformation, AI strategy, and platform modernization in complex, regulated environments.
+
+My work focuses on helping executive teams and boards move from fragmented systems and experimental AI initiatives to scalable, production grade platforms that support long term growth, operational resilience, and measurable business outcomes. I advise organizations on how to align architecture, governance, and investment decisions so technology becomes an enabler of strategy rather than a source of risk.
+
+Across financial services, healthcare, transportation, energy, and the public sector, I have led and advised large scale modernization initiatives involving cloud migration, enterprise architecture redesign, and data driven operating models. I have managed technology portfolios exceeding $300M annually and contributed to multi billion dollar transformation programs in highly regulated environments.
+
+A sizable portion of my work involves M&A and transformation scenarios, including technology due diligence, integration planning, and post acquisition platform rationalization. I help investors and leadership teams identify architectural risk, scalability constraints, and hidden technical debt, while defining pragmatic roadmaps that accelerate value realization after closing.
+
+As a practitioner in applied AI, I have architected agentic AI platforms that enable autonomous execution across complex enterprise systems while maintaining governance, control, and extensibility. I am known for translating advanced technical concepts into clear, actionable guidance for non technical executives and board members.
+
+I currently advise organizations as a Fractional CTO and strategic technology partner.*

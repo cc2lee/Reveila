@@ -1,0 +1,1 @@
+This project aims to create an AI framework with dynamic component loading & prioritized sequencing, based on Universal Invocation Model & Plug-In architecture, to enable agentic AI systems to autonomously discover and execute cross platform logic, supporting extensibility, control, and safe deployment at scale.
