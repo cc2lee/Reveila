@@ -1,7 +1,6 @@
 # 🏛️ Reveila-Suite
-**The Hexagonal Multi-Tenant Application Platform**
 
-Reveila-Suite is a cross-platform distributed AI framework with dynamic component loading & prioritized sequencing, based on Universal Invocation Model & Plug-In architecture, to enable agentic AI systems to autonomously discover and execute cross platform logic, supporting extensibility, control, and safe deployment at scale. Its **Hexagonal Architecture** (Ports and Adapters) allows it to maintain a strict separation between core business logic and infrastructure-specific implementations, ensuring consistency across Backend, Web, and Mobile environments.
+Reveila-Suite is a cross-platform distributed Agentic AI framework with dynamic component loading & prioritized sequencing, based on Universal Invocation Model & Plug-In architecture, to enable agentic AI systems to autonomously discover and execute cross platform logic, supporting extensibility, control, and safe deployment at scale. Its **Hexagonal Architecture** (Ports and Adapters) allows it to maintain a strict separation between core business logic and infrastructure-specific implementations, ensuring consistency across Backend, Web, and Mobile environments.
 
 ## 🏗️ Architectural Core
 
