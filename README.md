@@ -29,6 +29,7 @@ Managed as a monorepo to ensure API contracts and shared logic are synchronized 
 
 ## 🚀 Key Features
 
+* **Guarded Execution:** Ability to "shadow" third-party plugins to prevent unexpected fallouts, thus allowing running complex, multi-vendor enterprise plugins in a single environment without instability.
 * **Dynamic Multi-Tenancy:** Automated data isolation at the repository layer, ensuring zero data leakage between organizations.
 * **Advanced Mobile Strategy:** Supports dynamic plugin loading via `DexClassLoader` and library shadowing to prevent classpath conflicts in Android environments.
 * **Universal Configuration:** A robust loader capable of resolving properties from local files, classpath resources, or remote URLs (`http`/`file`) seamlessly.
