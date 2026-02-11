@@ -7,6 +7,19 @@ plugins {
     `maven-publish`
 }
 
+sourceSets {
+    main {
+        java {
+            srcDirs("src/main/java")
+        }
+    }
+    test {
+        java {
+            srcDirs("src/test/java")
+        }
+    }
+}
+
 publishing {
     publications {
         create<MavenPublication>("maven") {
@@ -26,9 +39,6 @@ dependencies {
     // Docker Java API
     implementation("com.github.docker-java:docker-java:3.3.6")
     implementation("com.github.docker-java:docker-java-transport-httpclient5:3.3.6")
-
-    // Core module needs access to Spring Core for Cross-Module Tests
-    testImplementation(project(":spring:core"))
 
     // JSON Schema Validation
     implementation("com.networknt:json-schema-validator:1.0.86")

@@ -4,6 +4,7 @@ import com.reveila.ai.AgentPrincipal;
 import com.reveila.ai.FlightRecorder;
 import com.reveila.spring.model.jpa.AuditLog;
 import com.reveila.spring.repository.jpa.JdbcAuditLogRepository;
+import org.springframework.lang.NonNull;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +28,7 @@ public class PostgresFlightRecorder implements FlightRecorder {
     @Override
     @Async
     public void recordStep(AgentPrincipal principal, String stepName, Map<String, Object> data) {
+        @SuppressWarnings("null")
         AuditLog log = createBaseLog(principal, stepName);
         if (data != null) {
             log.setMetadata(data.toString());
@@ -37,6 +39,7 @@ public class PostgresFlightRecorder implements FlightRecorder {
     @Override
     @Async
     public void recordReasoning(AgentPrincipal principal, String reasoning) {
+        @SuppressWarnings("null")
         AuditLog log = createBaseLog(principal, "REASONING_TRACE");
         log.setReasoningTrace(reasoning);
         auditRepository.save(log);
@@ -45,6 +48,7 @@ public class PostgresFlightRecorder implements FlightRecorder {
     @Override
     @Async
     public void recordToolOutput(AgentPrincipal principal, String toolName, Object output) {
+        @SuppressWarnings("null")
         AuditLog log = createBaseLog(principal, "TOOL_OUTPUT: " + toolName);
         if (output != null) {
             log.setMetadata(output.toString());
@@ -55,6 +59,7 @@ public class PostgresFlightRecorder implements FlightRecorder {
     @Override
     @Async
     public void recordForensicMetadata(AgentPrincipal principal, Map<String, Object> metadata) {
+        @SuppressWarnings("null")
         AuditLog log = createBaseLog(principal, "FORENSIC_METRICS");
         if (metadata != null) {
             log.setMetadata(metadata.toString());
@@ -62,7 +67,7 @@ public class PostgresFlightRecorder implements FlightRecorder {
         auditRepository.save(log);
     }
 
-    private AuditLog createBaseLog(AgentPrincipal principal, String action) {
+    private @NonNull AuditLog createBaseLog(AgentPrincipal principal, String action) {
         AuditLog log = new AuditLog();
         log.setTraceId(principal.traceId());
         log.setAction(action);
