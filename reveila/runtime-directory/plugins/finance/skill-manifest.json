@@ -1,0 +1,9 @@
+{
+  "bundle_id": "com.reveila.finance",
+  "name": "Finance Skill Bundle",
+  "baseline_perimeter": {
+    "allowed_scopes": ["finance.read", "finance.calculate"],
+    "max_memory_bytes": 1073741824,
+    "max_cpu_cores": 2
+  }
+}

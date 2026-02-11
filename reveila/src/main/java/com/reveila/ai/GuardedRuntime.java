@@ -16,7 +16,8 @@ public interface GuardedRuntime {
      * @param perimeter The security perimeter for execution.
      * @param pluginId The ID of the plugin to execute.
      * @param arguments The validated arguments for the plugin.
+     * @param jitCredentials Temporary credentials to inject.
      * @return The result of the execution.
      */
-    Object execute(AgentPrincipal principal, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments);
+    Object execute(AgentPrincipal principal, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials);
 }

@@ -19,6 +19,14 @@ public interface FlightRecorder {
     void recordStep(AgentPrincipal principal, String stepName, Map<String, Object> data);
 
     /**
+     * Records the reasoning trace (the 'thought' process) of the agent.
+     *
+     * @param principal The agent principal.
+     * @param reasoning The natural language reasoning for the action.
+     */
+    void recordReasoning(AgentPrincipal principal, String reasoning);
+
+    /**
      * Records the output of a tool/plugin execution.
      *
      * @param principal The agent principal.
@@ -26,4 +34,12 @@ public interface FlightRecorder {
      * @param output The raw or processed output.
      */
     void recordToolOutput(AgentPrincipal principal, String toolName, Object output);
+
+    /**
+     * Captures forensic metadata for execution audit.
+     *
+     * @param principal The agent principal.
+     * @param metadata Map containing exit code, duration, memory peak, etc.
+     */
+    void recordForensicMetadata(AgentPrincipal principal, Map<String, Object> metadata);
 }

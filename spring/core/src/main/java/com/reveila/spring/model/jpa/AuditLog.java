@@ -16,6 +16,12 @@ public class AuditLog {
     private UUID id;
     
     private String action;
+
+    private String traceId;
+
+    private String reasoningTrace;
+
+    private String metadata;
     
     @ManyToOne(fetch = FetchType.LAZY)
     private User user;
@@ -34,6 +40,30 @@ public class AuditLog {
 
     public void setAction(String action) {
         this.action = action;
+    }
+
+    public String getTraceId() {
+        return traceId;
+    }
+
+    public void setTraceId(String traceId) {
+        this.traceId = traceId;
+    }
+
+    public String getReasoningTrace() {
+        return reasoningTrace;
+    }
+
+    public void setReasoningTrace(String reasoningTrace) {
+        this.reasoningTrace = reasoningTrace;
+    }
+
+    public String getMetadata() {
+        return metadata;
+    }
+
+    public void setMetadata(String metadata) {
+        this.metadata = metadata;
     }
 
     public User getUser() {

@@ -45,6 +45,18 @@ Ensuring every autonomous action is identified, authorized, and audited.
 
 > **Roo Code Prompt Hint:** "Implement a Java-based Sandbox Manager that spawns ephemeral Docker containers using gVisor to execute JAR files, enforcing CPU and Memory limits via the Docker API."
 
+Objective: Create a physical boundary using containerization.
+
+Implementation Steps:
+
+Container Provider: Implement a DockerSandboxManager that uses the Docker Java API to spawn ephemeral containers.
+
+Filesystem Isolation: Mount the plugin JAR as a read-only volume.
+
+Resource Constraints: Map the cpuQuotaUs and maxMemoryBytes from the AgencyPerimeter record directly to Docker HostConfig (cgroups).
+
+Runtime Shadowing: Ensure the DexClassLoader logic (or a custom URLClassLoader) is used within the container to prevent classpath pollution.
+
 ---
 
 ## 🗺️ Phase 2: Universal Discovery & Invocation
