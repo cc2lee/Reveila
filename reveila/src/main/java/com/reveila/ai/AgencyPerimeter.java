@@ -12,7 +12,10 @@ public record AgencyPerimeter(
     Set<String> allowedDomains,
     boolean networkAccessEnabled,
     long maxMemoryBytes,
-    int maxCpuCores
+    int maxCpuCores,
+    int pidsLimit,
+    long cpuPeriodUs,
+    long cpuQuotaUs
 ) {
     /**
      * Checks if a specific scope is allowed within this perimeter.

@@ -13,16 +13,19 @@ public class UniversalInvocationBridge {
     private final SchemaEnforcer schemaEnforcer;
     private final GuardedRuntime guardedRuntime;
     private final FlightRecorder flightRecorder;
+    private final MetadataRegistry metadataRegistry;
 
     public UniversalInvocationBridge(
             IntentValidator intentValidator,
             SchemaEnforcer schemaEnforcer,
             GuardedRuntime guardedRuntime,
-            FlightRecorder flightRecorder) {
+            FlightRecorder flightRecorder,
+            MetadataRegistry metadataRegistry) {
         this.intentValidator = intentValidator;
         this.schemaEnforcer = schemaEnforcer;
         this.guardedRuntime = guardedRuntime;
         this.flightRecorder = flightRecorder;
+        this.metadataRegistry = metadataRegistry;
     }
 
     /**
@@ -36,12 +39,25 @@ public class UniversalInvocationBridge {
      * @throws IllegalArgumentException If validation fails.
      */
     public Object invoke(AgentPrincipal principal, AgencyPerimeter perimeter, String intent, Map<String, Object> rawArguments) {
-        flightRecorder.recordStep(principal, "intent_intercepted", Map.of("intent", intent));
+        flightRecorder.recordStep(principal, "intent_intercepted", Map.of(
+            "intent", intent,
+            "trace_id", principal.traceId()
+        ));
 
         String pluginId = intentValidator.validateIntent(intent);
+        
+        // Phase 2: Metadata Check
+        MetadataRegistry.PluginManifest manifest = metadataRegistry.getManifest(pluginId);
+        if (manifest == null) {
+            throw new IllegalArgumentException("Plugin not registered in Metadata Registry: " + pluginId);
+        }
+
         Map<String, Object> validatedArgs = schemaEnforcer.enforce(pluginId, rawArguments);
 
-        Object result = guardedRuntime.execute(principal, perimeter, pluginId, validatedArgs);
+        // Merge or validate perimeter against manifest defaults if needed
+        AgencyPerimeter activePerimeter = perimeter != null ? perimeter : manifest.defaultPerimeter();
+
+        Object result = guardedRuntime.execute(principal, activePerimeter, pluginId, validatedArgs);
         
         flightRecorder.recordToolOutput(principal, pluginId, result);
         return result;
