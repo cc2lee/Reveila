@@ -22,7 +22,8 @@ public record AgencyPerimeter(
         int maxCpuCores,
         int pidsLimit,
         long cpuPeriodUs,
-        long cpuQuotaUs) {
+        long cpuQuotaUs,
+        boolean delegationAllowed) {
     /**
      * Checks if a specific scope is allowed within this perimeter.
      *
@@ -59,6 +60,7 @@ public record AgencyPerimeter(
                 Math.min(this.maxCpuCores, other.maxCpuCores),
                 Math.min(this.pidsLimit, other.pidsLimit),
                 this.cpuPeriodUs, // Period usually stays constant for the system
-                Math.min(this.cpuQuotaUs, other.cpuQuotaUs));
+                Math.min(this.cpuQuotaUs, other.cpuQuotaUs),
+                this.delegationAllowed && other.delegationAllowed);
     }
 }

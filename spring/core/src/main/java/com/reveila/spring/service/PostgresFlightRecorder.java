@@ -28,7 +28,6 @@ public class PostgresFlightRecorder implements FlightRecorder {
     @Override
     @Async
     public void recordStep(AgentPrincipal principal, String stepName, Map<String, Object> data) {
-        @SuppressWarnings("null")
         AuditLog log = createBaseLog(principal, stepName);
         if (data != null) {
             log.setMetadata(data.toString());
@@ -39,7 +38,6 @@ public class PostgresFlightRecorder implements FlightRecorder {
     @Override
     @Async
     public void recordReasoning(AgentPrincipal principal, String reasoning) {
-        @SuppressWarnings("null")
         AuditLog log = createBaseLog(principal, "REASONING_TRACE");
         log.setReasoningTrace(reasoning);
         auditRepository.save(log);
@@ -48,7 +46,6 @@ public class PostgresFlightRecorder implements FlightRecorder {
     @Override
     @Async
     public void recordToolOutput(AgentPrincipal principal, String toolName, Object output) {
-        @SuppressWarnings("null")
         AuditLog log = createBaseLog(principal, "TOOL_OUTPUT: " + toolName);
         if (output != null) {
             log.setMetadata(output.toString());
@@ -59,7 +56,6 @@ public class PostgresFlightRecorder implements FlightRecorder {
     @Override
     @Async
     public void recordForensicMetadata(AgentPrincipal principal, Map<String, Object> metadata) {
-        @SuppressWarnings("null")
         AuditLog log = createBaseLog(principal, "FORENSIC_METRICS");
         if (metadata != null) {
             log.setMetadata(metadata.toString());

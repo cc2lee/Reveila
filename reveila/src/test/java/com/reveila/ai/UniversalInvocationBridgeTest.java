@@ -24,17 +24,20 @@ class UniversalInvocationBridgeTest {
     @Mock private CredentialManager credentialManager;
 
     private UniversalInvocationBridge bridge;
+    private OrchestrationService orchestrationService;
     private AgentPrincipal principal;
     private AgencyPerimeter perimeter;
 
     @BeforeEach
     void setUp() {
+        orchestrationService = new OrchestrationService();
         bridge = new UniversalInvocationBridge(
-            intentValidator, schemaEnforcer, guardedRuntime, 
-            flightRecorder, metadataRegistry, credentialManager
+            intentValidator, schemaEnforcer, guardedRuntime,
+            flightRecorder, metadataRegistry, credentialManager,
+            orchestrationService
         );
         principal = AgentPrincipal.create("test-agent", "tenant-1");
-        perimeter = new AgencyPerimeter(Set.of("read"), Set.of(), true, 1024, 1, 10, 100, 50);
+        perimeter = new AgencyPerimeter(Set.of("read"), Set.of(), true, 1024, 1, 10, 100, 50, false);
     }
 
     @Test

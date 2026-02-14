@@ -30,6 +30,7 @@ public class UniversalInvocationBridge {
     private final FlightRecorder flightRecorder;
     private final MetadataRegistry metadataRegistry;
     private final CredentialManager credentialManager;
+    private final OrchestrationService orchestrationService;
 
     public UniversalInvocationBridge(
             IntentValidator intentValidator,
@@ -37,13 +38,15 @@ public class UniversalInvocationBridge {
             GuardedRuntime guardedRuntime,
             FlightRecorder flightRecorder,
             MetadataRegistry metadataRegistry,
-            CredentialManager credentialManager) {
+            CredentialManager credentialManager,
+            OrchestrationService orchestrationService) {
         this.intentValidator = intentValidator;
         this.schemaEnforcer = schemaEnforcer;
         this.guardedRuntime = guardedRuntime;
         this.flightRecorder = flightRecorder;
         this.metadataRegistry = metadataRegistry;
         this.credentialManager = credentialManager;
+        this.orchestrationService = orchestrationService;
     }
 
     /**
@@ -58,6 +61,21 @@ public class UniversalInvocationBridge {
      */
     public InvocationResult invoke(AgentPrincipal principal, AgencyPerimeter perimeter, String intent,
             Map<String, Object> rawArguments) {
+        
+        // Phase 5: Recursive Invocation & Delegation Handling
+        String sessionId = (String) rawArguments.get("_session_id");
+        AgentSession session = null;
+        if (sessionId != null) {
+            session = orchestrationService.getSession(sessionId);
+        }
+
+        // Trace Context Propagation
+        String effectiveTraceId = TraceContextHolder.getTraceId();
+        if (effectiveTraceId == null) {
+            effectiveTraceId = principal.traceId();
+            TraceContextHolder.setTraceId(effectiveTraceId);
+        }
+
         String reasoning = (String) rawArguments.getOrDefault("_thought", "No reasoning provided");
         flightRecorder.recordReasoning(principal, reasoning);
 
@@ -82,6 +100,13 @@ public class UniversalInvocationBridge {
             activePerimeter = activePerimeter.intersect(perimeter);
         }
 
+        // Delegation Enforcement
+        boolean isDelegationRequested = intent.startsWith("delegate:");
+        if (isDelegationRequested && !activePerimeter.delegationAllowed()) {
+            flightRecorder.recordStep(principal, "delegation_blocked", Map.of("intent", intent));
+            return InvocationResult.error("Delegation not allowed for this plugin perimeter.");
+        }
+
         // 2. HITL Check for High-Risk Actions
         if (isHighRiskAction(manifest, intent, validatedArgs)) {
             flightRecorder.recordStep(principal, "hitl_triggered", Map.of("intent", intent));
@@ -101,6 +126,11 @@ public class UniversalInvocationBridge {
         } catch (Exception e) {
             flightRecorder.recordStep(principal, "execution_failed", Map.of("error", e.getMessage()));
             return InvocationResult.error(e.getMessage());
+        } finally {
+            // Only clear if we were the root of the trace context
+            if (principal.traceId().equals(TraceContextHolder.getTraceId())) {
+                TraceContextHolder.clear();
+            }
         }
     }
 

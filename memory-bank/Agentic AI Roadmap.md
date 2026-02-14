@@ -25,13 +25,13 @@ Ensuring every autonomous action is identified, authorized, and audited.
 
 ## 📊 Feature Roadmap for Reveila
 
-| Phase | Feature | Objective |
-| :--- | :--- | :--- |
-| **Phase I: Safety** | **Guarded Runtime** | Isolate third-party plugin execution from the core platform. |
-| **Phase II: Identity** | **Agent Principals** | Establish non-person identities and scoped RBAC for agents. |
-| **Phase III: Bridge** | **Universal Invocation** | Standardize how models trigger plugins via the Bridge. |
-| **Phase IV: Audit** | **Flight Recorder** | Capture reasoning traces and tool outputs for compliance. |
-| **Phase V: Discovery**| **Metadata Registry** | Enable agents to dynamically discover and use new plugins. |
+| Phase | Feature | Status | Objective |
+| :--- | :--- | :--- | :--- |
+| **Phase I** | **Guarded Runtime** | ✅ | Isolate third-party plugin execution from the core platform. |
+| **Phase II** | **Agent Principals** | ✅ | Establish non-person identities and scoped RBAC for agents. |
+| **Phase III** | **Universal Invocation** | ✅ | Standardize how models trigger plugins via the Bridge. |
+| **Phase IV** | **Flight Recorder** | ✅ | Capture reasoning traces and tool outputs for compliance. |
+| **Phase V** | **Agentic Fabric** | ✅ | Orchestrate multi-agent workflows and Manager-Worker delegation. |
 
 ---
 
@@ -39,23 +39,9 @@ Ensuring every autonomous action is identified, authorized, and audited.
 **Goal:** Isolate third-party code to prevent host contamination and resource exhaustion.
 
 ### Implementation Specs
-*   **Isolation Layer:** Deploy plugins within gVisor or Firecracker micro-VMs. This provides a "sandbox" where system calls are intercepted.
-*   **ClassLoader Shadowing:** Use a custom `DexClassLoader` (Android) or `Parent-Last ClassLoader` (Java) to isolate plugin dependencies from the core Reveila runtime.
-*   **Resource Quotas:** Set hard cgroups limits (e.g., 0.5 vCPU, 512MB RAM) and zero-egress network policies by default.
-
-> **Roo Code Prompt Hint:** "Implement a Java-based Sandbox Manager that spawns ephemeral Docker containers using gVisor to execute JAR files, enforcing CPU and Memory limits via the Docker API."
-
-Objective: Create a physical boundary using containerization.
-
-Implementation Steps:
-
-Container Provider: Implement a DockerSandboxManager that uses the Docker Java API to spawn ephemeral containers.
-
-Filesystem Isolation: Mount the plugin JAR as a read-only volume.
-
-Resource Constraints: Map the cpuQuotaUs and maxMemoryBytes from the AgencyPerimeter record directly to Docker HostConfig (cgroups).
-
-Runtime Shadowing: Ensure the DexClassLoader logic (or a custom URLClassLoader) is used within the container to prevent classpath pollution.
+*   **Isolation Layer:** Deploy plugins within gVisor or Firecracker micro-VMs.
+*   **ClassLoader Shadowing:** Isolate plugin dependencies using a custom `Parent-Last ClassLoader`.
+*   **Resource Quotas:** Map `cpuQuotaUs` and `maxMemoryBytes` from the `AgencyPerimeter` directly to container constraints.
 
 ---
 
@@ -63,11 +49,8 @@ Runtime Shadowing: Ensure the DexClassLoader logic (or a custom URLClassLoader) 
 **Goal:** Create a standardized "handshake" between the AI agent and the plugins.
 
 ### Implementation Specs
-*   **Metadata Registry:** A JSON-based catalog where plugins register their capabilities using Model Context Protocol (MCP) schemas.
-*   **Universal Invocation Bridge:** A proxy service that translates natural language intents into validated method calls.
-*   **Schema Enforcement:** Every tool call must be validated against a strict JSON schema before being passed to the Guarded Runtime.
-
-> **Roo Code Prompt Hint:** "Create a Spring Boot service that acts as a Metadata Registry. It should accept JSON manifests from plugins and generate OpenAI-compatible tool definitions for an LLM."
+*   **Metadata Registry:** A catalog where plugins register capabilities using MCP schemas.
+*   **Schema Enforcement:** Strict JSON schema validation before passing to the Guarded Runtime.
 
 ---
 
@@ -75,11 +58,9 @@ Runtime Shadowing: Ensure the DexClassLoader logic (or a custom URLClassLoader) 
 **Goal:** Implement "Least Privilege" security and Human-in-the-Loop (HITL) oversight.
 
 ### Implementation Specs
-*   **Perimeter Metadata:** Define `access_scopes` (e.g., `db.read_only`, `api.limited_egress`) in the plugin manifest.
-*   **JIT Credential Injection:** The Bridge should inject short-lived OAuth tokens into the sandbox at runtime, rather than storing secrets in the plugin.
-*   **HITL Triggers:** Logic to intercept high-risk actions (like `delete` or `external_transfer`) and pause execution until an admin approves via a callback.
-
-> **Roo Code Prompt Hint:** "Build a policy enforcement engine that intercepts tool calls. If a tool call matches a 'High Risk' list, the engine must return a 'Human Approval Required' status instead of executing."
+*   **Perimeter Metadata:** Define `access_scopes` and `delegation_allowed` in manifests.
+*   **JIT Credential Injection:** Inject short-lived OAuth tokens into the sandbox at runtime.
+*   **HITL Triggers:** Intercept high-risk actions and pause for human approval.
 
 ---
 
@@ -87,52 +68,43 @@ Runtime Shadowing: Ensure the DexClassLoader logic (or a custom URLClassLoader) 
 **Goal:** Capture the agent's reasoning and actions for compliance and debugging.
 
 ### Implementation Specs
-*   **Reasoning Trace:** Log the LLM’s "Thought" process alongside the tool call parameters.
-*   **Immutable Logs:** Stream JSON audit logs to an append-only storage bucket (e.g., AWS S3 with Object Lock).
-*   **Forensic Metadata:** Capture system-level metrics (latency, resource usage) for every plugin invocation.
-
-> **Roo Code Prompt Hint:** "Create an asynchronous logging service that captures 'Trace ID', 'Reasoning Thought', and 'Tool Output' for every agent action, saving them as immutable JSON blobs."
+*   **Reasoning Trace:** Log the LLM’s "Thought" process alongside the tool call.
+*   **Immutable Logs:** Stream JSON audit logs to append-only storage.
 
 ---
 
-## 🚀 Phase 5: The Agentic Fabric (Collaboration)
-**Goal:** Orchestrate multi-agent workflows and verticalized "Skill" sets.
+## 🚀 Phase 5: The Agentic Fabric & Orchestration
+**Goal:** Orchestrate multi-agent workflows and complex "Manager-Worker" patterns.
 
 ### Implementation Specs
-*   **Agent-to-Agent (A2A) Bridge:** Allow a "Manager Agent" to invoke other specialized "Worker Agents" as if they were plugins.
-*   **Context Persistence:** Implement a Redis-backed memory layer to maintain state across complex, multi-step agentic workflows.
-*   **Vertical Skills:** Create pre-validated plugin bundles for specific sectors (e.g., a "Financial Skill" with pre-set perimeters for banking data).
+
+#### 1. The Multi-Agent Handshake (AgentSession)
+Instead of stateless calls, Phase 5 introduces the **AgentSession**. This allows context persistence across delegated sub-tasks.
+
+| Component | Responsibility | Impact |
+| :--- | :--- | :--- |
+| **Session Manager** | In-memory/Redis store of sessions. | Memory persistence across delegation. |
+| **Recursive Bridge** | Support for plugins calling the Bridge. | Enables Agents to invoke other Agents as tools. |
+| **Trace Propagation** | Passing `trace_id` through nested calls. | Maintains a tree-structured audit log. |
+
+#### 2. Orchestration Logic: The "Manager" Pattern
+Implementation of a delegation mechanism within the `UniversalInvocationBridge`. When a task requires multiple specialized skills, the high-level agent delegates to worker plugins.
+
+**Example Workflow:**
+1.  **Manager Agent:** Receives high-level request (e.g., "Audit Q4 claims").
+2.  **Delegation:** Manager calls the Bridge to invoke a `SQL-Worker`.
+3.  **Isolation:** Worker runs in its own Guarded Runtime with restricted database read-access.
+4.  **Re-Aggregation:** Worker returns data to Manager, who then delegates to a `Compliance-Checker`.
 
 ---
 
 ## ⚙️ Resource Quota Enforcement
-In a Guarded Runtime, resource quotas are the "virtual walls" that prevent a third-party plugin from consuming the host's resources—whether intentionally (via a DDoS attack) or accidentally (via a memory leak).
+Resource quotas prevent a third-party plugin from consuming the host's resources.
 
-As an Enterprise Architect, you'll want these settings to be **Metadata-Driven**, allowing the Universal Invocation Bridge to apply different "Resource Profiles" based on the plugin's tier.
-
-### 🏛️ Resource Quota Specification
-
-| Resource Category | Constraint Type | Proposed Default (Tier 1) | Objective |
-| :--- | :--- | :--- | :--- |
-| **Compute** | CPU Shares | 0.5 vCPU | Prevent a single plugin from locking the host CPU during complex agentic reasoning. |
-| **Memory** | RAM Limit | 256 MB - 512 MB | Guard against "Memory Bomb" attacks or inefficient Java/Spring object handling. |
-| **Storage** | Ephemeral Disk | 100 MB (Read-Only) | Block the plugin from writing persistent malware or large files to the system. |
-| **Network** | Egress Rules | Whitelist Only | Stop "Data Exfiltration" by blocking all traffic except to specific, pre-approved API domains. |
-| **Concurrency** | Thread Limit | 10 Threads | Mitigate "Fork Bomb" attacks where a plugin tries to exhaust the thread pool. |
-
-### 🛠️ Implementation via Agency Perimeter
-These limits should be defined in the `agency-policy.json`. When the Guarded Runtime spins up the sandbox, it reads these values and applies them at the OS/Container level:
-
-```json
-{
-  "resource_constraints": {
-    "cpu_period_us": 100000,
-    "cpu_quota_us": 50000,
-    "mem_limit_bytes": 536870912,
-    "pids_limit": 10,
-    "ulimits": [
-      { "name": "nofile", "soft": 1024, "hard": 2048 }
-    ]
-  }
-}
-```
+| Resource Category | Constraint Type | Proposed Default |
+| :--- | :--- | :--- |
+| **Compute** | CPU Shares | 0.5 vCPU |
+| **Memory** | RAM Limit | 512 MB |
+| **Storage** | Ephemeral Disk | 100 MB (Read-Only) |
+| **Network** | Egress Rules | Whitelist Only |
+| **Concurrency** | Thread Limit | 10 Threads |
