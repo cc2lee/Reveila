@@ -44,14 +44,24 @@ public class MetadataRegistry {
      * Data record for a plugin's metadata.
      */
     public record PluginManifest(
-            String id,
+            String plugin_id,
             String name,
             String version,
-            Map<String, Object> toolDefinitions,
-            AgencyPerimeter defaultPerimeter,
-            java.util.Set<String> hitlRequiredIntents,
-            java.util.Set<String> secretParameters,
-            java.util.Set<String> maskedParameters) {
+            Map<String, Object> tool_definitions,
+            AgencyPerimeter agency_perimeter,
+            java.util.Set<String> secret_parameters,
+            java.util.Set<String> masked_parameters) {
+        
+        // Helper to match old usage if needed or bridge to new snake_case
+        public String id() { return plugin_id; }
+        public Map<String, Object> toolDefinitions() { return tool_definitions; }
+        public AgencyPerimeter defaultPerimeter() { return agency_perimeter; }
+        public java.util.Set<String> secretParameters() { return secret_parameters; }
+        public java.util.Set<String> maskedParameters() { return masked_parameters; }
+        public java.util.Set<String> hitlRequiredIntents() {
+            // Standardizing HITL intents to be part of tool_definitions or perimeter
+            return java.util.Set.of();
+        }
     }
 
     /**

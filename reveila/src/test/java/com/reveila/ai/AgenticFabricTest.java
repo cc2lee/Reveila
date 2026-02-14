@@ -43,10 +43,10 @@ class AgenticFabricTest {
         principal = AgentPrincipal.create("manager-agent", "tenant-1");
         
         // Manager allowed to delegate
-        managerPerimeter = new AgencyPerimeter(Set.of("manage"), Set.of(), true, 2048, 2, 20, 100, 100, true);
+        managerPerimeter = new AgencyPerimeter(Set.of("manage"), Set.of(), false, 2048, 2, 60, true);
         
         // Worker NOT allowed to delegate
-        workerPerimeter = new AgencyPerimeter(Set.of("work"), Set.of(), true, 1024, 1, 10, 100, 50, false);
+        workerPerimeter = new AgencyPerimeter(Set.of("work"), Set.of(), false, 1024, 1, 30, false);
     }
 
     @Test
@@ -57,7 +57,7 @@ class AgenticFabricTest {
         managerArgs.put("_thought", "Delegating to worker...");
 
         MetadataRegistry.PluginManifest managerManifest = new MetadataRegistry.PluginManifest(
-            "manager", "Manager Plugin", "1.0", Map.of(), managerPerimeter, Set.of(), Set.of(), Set.of()
+            "manager", "Manager Plugin", "1.0", Map.of(), managerPerimeter, Set.of(), Set.of()
         );
 
         when(intentValidator.validateIntent(managerIntent)).thenReturn("manager");
@@ -70,7 +70,7 @@ class AgenticFabricTest {
         String workerIntent = "worker.task";
         Map<String, Object> workerArgs = Map.of("task_id", "123", "_thought", "Working...");
         MetadataRegistry.PluginManifest workerManifest = new MetadataRegistry.PluginManifest(
-            "worker", "Worker Plugin", "1.0", Map.of(), workerPerimeter, Set.of(), Set.of(), Set.of()
+            "worker", "Worker Plugin", "1.0", Map.of(), workerPerimeter, Set.of(), Set.of()
         );
 
         when(guardedRuntime.execute(any(), any(), eq("manager"), anyMap(), any())).thenAnswer(invocation -> {
@@ -102,7 +102,7 @@ class AgenticFabricTest {
         Map<String, Object> args = Map.of("_thought", "Attempting unauthorized delegation...");
 
         MetadataRegistry.PluginManifest workerManifest = new MetadataRegistry.PluginManifest(
-            "worker", "Worker Plugin", "1.0", Map.of(), workerPerimeter, Set.of(), Set.of(), Set.of()
+            "worker", "Worker Plugin", "1.0", Map.of(), workerPerimeter, Set.of(), Set.of()
         );
 
         when(intentValidator.validateIntent(delegationIntent)).thenReturn("worker");
@@ -128,7 +128,7 @@ class AgenticFabricTest {
         args.put("_thought", "Using session context...");
 
         MetadataRegistry.PluginManifest manifest = new MetadataRegistry.PluginManifest(
-            "p1", "Plugin 1", "1.0", Map.of(), workerPerimeter, Set.of(), Set.of(), Set.of()
+            "p1", "Plugin 1", "1.0", Map.of(), workerPerimeter, Set.of(), Set.of()
         );
 
         when(intentValidator.validateIntent(anyString())).thenReturn("p1");

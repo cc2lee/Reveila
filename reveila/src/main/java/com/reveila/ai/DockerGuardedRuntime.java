@@ -59,10 +59,10 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
         // RESOURCE MAPPING: AgencyPerimeter -> Docker HostConfig (cgroups)
         HostConfig hostConfig = HostConfig.newHostConfig()
                 .withRuntime("runsc") // Force gVisor kernel isolation
-                .withMemory(perimeter.maxMemoryBytes()) // RAM Limit
-                .withCpuPeriod(perimeter.cpuPeriodUs()) // CPU Period
-                .withCpuQuota(perimeter.cpuQuotaUs())   // CPU Quota
-                .withPidsLimit((long) perimeter.pidsLimit()) // PID/Fork Limit
+                .withMemory(perimeter.maxMemoryMb() * 1024 * 1024) // RAM Limit
+                .withCpuPeriod(100000L) // Default 100ms
+                .withCpuQuota((long) (perimeter.maxCpuCores() * 100000))   // CPU Quota
+                .withPidsLimit(100L) // Default limit
                 .withBinds(new Bind(pluginJarPath, pluginVolume, AccessMode.ro)) // Read-Only filesystem
                 .withAutoRemove(true);
 

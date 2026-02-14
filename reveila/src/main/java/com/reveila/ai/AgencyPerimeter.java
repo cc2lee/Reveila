@@ -6,24 +6,19 @@ import java.util.Set;
  * The AgencyPerimeter record defines the physical and logical boundaries for
  * the Guarded Runtime, that is, what a plugin is authorized to do.
  * 
- * Resource Quotas: It explicitly includes cgroups-style parameters such as
- * maxMemoryBytes, cpuQuotaUs, and pidsLimit.
- * 
- * Network Control: It supports domain-specific whitelisting (allowedDomains),
- * which is a primary defense against data exfiltration by rogue plugins.
+ * Reconciled to a standardized snake_case naming convention for JSON parity.
  * 
  * @author CL
  */
 public record AgencyPerimeter(
-        Set<String> allowedScopes,
+        Set<String> accessScopes,
         Set<String> allowedDomains,
-        boolean networkAccessEnabled,
-        long maxMemoryBytes,
+        boolean internetAccessBlocked,
+        long maxMemoryMb,
         int maxCpuCores,
-        int pidsLimit,
-        long cpuPeriodUs,
-        long cpuQuotaUs,
+        int maxExecutionSec,
         boolean delegationAllowed) {
+
     /**
      * Checks if a specific scope is allowed within this perimeter.
      *
@@ -31,7 +26,7 @@ public record AgencyPerimeter(
      * @return True if the scope is allowed, false otherwise.
      */
     public boolean isScopeAllowed(String scope) {
-        return allowedScopes.contains(scope);
+        return accessScopes.contains(scope);
     }
 
     /**
@@ -46,8 +41,8 @@ public record AgencyPerimeter(
         if (other == null)
             return this;
 
-        java.util.Set<String> intersectedScopes = new java.util.HashSet<>(this.allowedScopes);
-        intersectedScopes.retainAll(other.allowedScopes);
+        java.util.Set<String> intersectedScopes = new java.util.HashSet<>(this.accessScopes);
+        intersectedScopes.retainAll(other.accessScopes);
 
         java.util.Set<String> intersectedDomains = new java.util.HashSet<>(this.allowedDomains);
         intersectedDomains.retainAll(other.allowedDomains);
@@ -55,12 +50,10 @@ public record AgencyPerimeter(
         return new AgencyPerimeter(
                 java.util.Collections.unmodifiableSet(intersectedScopes),
                 java.util.Collections.unmodifiableSet(intersectedDomains),
-                this.networkAccessEnabled && other.networkAccessEnabled,
-                Math.min(this.maxMemoryBytes, other.maxMemoryBytes),
+                this.internetAccessBlocked || other.internetAccessBlocked, // Most restrictive
+                Math.min(this.maxMemoryMb, other.maxMemoryMb),
                 Math.min(this.maxCpuCores, other.maxCpuCores),
-                Math.min(this.pidsLimit, other.pidsLimit),
-                this.cpuPeriodUs, // Period usually stays constant for the system
-                Math.min(this.cpuQuotaUs, other.cpuQuotaUs),
+                Math.min(this.maxExecutionSec, other.maxExecutionSec),
                 this.delegationAllowed && other.delegationAllowed);
     }
 }

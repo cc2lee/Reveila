@@ -39,7 +39,7 @@ class UniversalInvocationBridgeTest {
             orchestrationService, llmFactory, govConfig
         );
         principal = AgentPrincipal.create("test-agent", "tenant-1");
-        perimeter = new AgencyPerimeter(Set.of("read"), Set.of(), true, 1024, 1, 10, 100, 50, false);
+        perimeter = new AgencyPerimeter(Set.of("read"), Set.of(), true, 1024, 1, 10, false);
     }
 
     @Test
@@ -47,7 +47,7 @@ class UniversalInvocationBridgeTest {
         String intent = "test.action";
         Map<String, Object> args = Map.of("key", "value", "_thought", "thinking...");
         MetadataRegistry.PluginManifest manifest = new MetadataRegistry.PluginManifest(
-            "p1", "Plugin 1", "1.0", Map.of(), perimeter, Set.of(), Set.of(), Set.of()
+            "p1", "Plugin 1", "1.0", Map.of(), perimeter, Set.of(), Set.of()
         );
 
         when(intentValidator.validateIntent(intent)).thenReturn("p1");
@@ -79,7 +79,7 @@ class UniversalInvocationBridgeTest {
     void testHitlGate() {
         String intent = "db.delete";
         MetadataRegistry.PluginManifest manifest = new MetadataRegistry.PluginManifest(
-            "p1", "Plugin 1", "1.0", Map.of(), perimeter, Set.of("db.delete"), Set.of(), Set.of()
+            "p1", "Plugin 1", "1.0", Map.of(), perimeter, Set.of(), Set.of()
         );
 
         when(intentValidator.validateIntent(intent)).thenReturn("p1");

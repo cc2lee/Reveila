@@ -76,10 +76,10 @@ public class FabricDemoController {
 
         // Manager perimeter that allows delegation but might be subject to HITL for specific intents
         AgencyPerimeter managerPerimeter = new AgencyPerimeter(
-                Set.of("finance"), 
+                Set.of("finance"),
                 Set.of("ma_summary.approve"), // Requires HITL if listed in manifest or matched by patterns
-                true, // delegationAllowed
-                4096, 5, 60, 1000, 500, true
+                false, // internetAccessBlocked
+                4096, 5, 60, true
         );
 
         InvocationResult summaryResult = bridge.invoke(managerPrincipal, managerPerimeter, "ma_summary.approve", summaryArgs);

@@ -1,0 +1,40 @@
+{
+  "plugin_id": "healthcare_audit",
+  "name": "Healthcare Audit Plugin",
+  "version": "1.0.0",
+  "tool_definitions": {
+    "auditClaimData": {
+      "description": "Audits healthcare claim data based on medical codes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "medical_codes": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of medical codes (ICD-10, CPT, etc.)"
+          },
+          "patient_ssn": {
+            "type": "string",
+            "description": "Patient Social Security Number"
+          },
+          "patient_dob": {
+            "type": "string",
+            "description": "Patient Date of Birth"
+          }
+        },
+        "required": ["medical_codes", "patient_ssn"]
+      }
+    }
+  },
+  "agency_perimeter": {
+    "access_scopes": ["healthcare_ops"],
+    "allowed_domains": ["internal.claims-db.reveila.local"],
+    "internet_access_blocked": true,
+    "max_memory_mb": 512,
+    "max_cpu_cores": 1,
+    "max_execution_sec": 30,
+    "delegation_allowed": false
+  },
+  "secret_parameters": ["patient_ssn", "patient_dob"],
+  "masked_parameters": ["patient_ssn", "patient_dob"]
+}

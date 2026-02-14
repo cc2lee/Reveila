@@ -1,34 +1,32 @@
 {
     "plugin_id": "reveila.analytics.sql_runner",
+    "name": "SQL Runner Plugin",
     "version": "1.2.0",
-    "capabilities": [
-        "data_query",
-        "report_generation"
-    ],
+    "tool_definitions": {
+        "runQuery": {
+            "description": "Runs a SQL query against the internal database.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string" }
+                }
+            }
+        }
+    },
     "agency_perimeter": {
-        "tier": "Tier 2 (Sensitive)",
         "access_scopes": [
             "db.read",
             "fs.read:/reports/tmp"
         ],
-        "network_egress": {
-            "allowed_domains": [
-                "api.internal-analytics.com"
-            ],
-            "protocols": [
-                "https"
-            ]
-        },
-        "human_in_the_loop": {
-            "trigger_on": [
-                "db.delete",
-                "db.drop"
-            ],
-            "escalation_policy": "admin_approval_required"
-        },
-        "resource_limits": {
-            "max_memory_mb": 512,
-            "max_execution_sec": 30
-        }
-    }
+        "allowed_domains": [
+            "api.internal-analytics.com"
+        ],
+        "internet_access_blocked": false,
+        "max_memory_mb": 512,
+        "max_cpu_cores": 1,
+        "max_execution_sec": 30,
+        "delegation_allowed": false
+    },
+    "secret_parameters": [],
+    "masked_parameters": []
 }

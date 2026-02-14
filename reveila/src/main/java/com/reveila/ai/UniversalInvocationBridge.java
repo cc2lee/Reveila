@@ -148,8 +148,8 @@ public class UniversalInvocationBridge {
 
         // 3. JIT Credential Injection
         Map<String, String> jitCreds = null;
-        if (!activePerimeter.allowedScopes().isEmpty()) {
-            jitCreds = credentialManager.generateJitToken(principal, activePerimeter.allowedScopes().iterator().next());
+        if (!activePerimeter.accessScopes().isEmpty()) {
+            jitCreds = credentialManager.generateJitToken(principal, activePerimeter.accessScopes().iterator().next());
         }
 
         try {
