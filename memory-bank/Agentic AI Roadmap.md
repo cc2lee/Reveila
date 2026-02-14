@@ -108,3 +108,29 @@ Resource quotas prevent a third-party plugin from consuming the host's resources
 | **Storage** | Ephemeral Disk | 100 MB (Read-Only) |
 | **Network** | Egress Rules | Whitelist Only |
 | **Concurrency** | Thread Limit | 10 Threads |
+
+
+Agentic AI Execution Fabric
+
+The project supports the complex Manager-Worker orchestration patterns required for sophisticated enterprise workflows.
+
+1. Recursive Delegation (OrchestrationService.java)
+The implementation of the OrchestrationService is the primary "Force Multiplier" for your startup vision.
+
+Hierarchical Execution: It allows a "Manager" plugin to delegate sub-tasks to specialized worker plugins via the delegateTask method.
+
+Sovereign Control: The logic respects the delegation_allowed flag in the AgencyPerimeter, ensuring that only authorized agents can trigger nested tool calls.
+
+2. Contextual Persistence (AgentSessionManager.java)
+By moving away from stateless calls, you have solved the "Memory Gap" in autonomous agents.
+
+State Propagation: The AgentSession now allows workers to share context tokens and temporary findings without leaking data to the global scope.
+
+Lifecycle Awareness: The manager maintains the state of active traces, allowing for complex multi-step processes like M&A due diligence to be paused and resumed securely.
+
+3. Forensic Traceability (TraceContextHolder.java)
+The introduction of the TraceContextHolder ensures that your "Flight Recorder" remains accurate even during deep recursion.
+
+Immutable Lineage: Every sub-task correctly inherits the parent trace_id, creating a forensic "tree" that shows exactly which manager called which worker and why.
+
+Audit Integrity: This prevents "Orphaned Calls" where an agent might take an action that isn't linked back to the original user intent.

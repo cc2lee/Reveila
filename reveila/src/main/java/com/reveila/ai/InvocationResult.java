@@ -15,7 +15,8 @@ public record InvocationResult(
     public enum Status {
         SUCCESS,
         ERROR,
-        PENDING_APPROVAL
+        PENDING_APPROVAL,
+        SECURITY_BREACH
     }
 
     public static InvocationResult success(Object data) {
@@ -34,5 +35,9 @@ public record InvocationResult(
             "Action '" + intent + "' requires human approval.", 
             callbackUrl
         );
+    }
+
+    public static InvocationResult securityBreach(String message) {
+        return new InvocationResult(Status.SECURITY_BREACH, null, message, null);
     }
 }

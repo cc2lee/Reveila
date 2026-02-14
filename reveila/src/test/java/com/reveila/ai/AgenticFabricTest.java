@@ -23,6 +23,8 @@ class AgenticFabricTest {
     @Mock private FlightRecorder flightRecorder;
     @Mock private MetadataRegistry metadataRegistry;
     @Mock private CredentialManager credentialManager;
+    @Mock private LlmProviderFactory llmFactory;
+    private LlmGovernanceConfig govConfig = LlmGovernanceConfig.defaultGov();
 
     private OrchestrationService orchestrationService;
     private UniversalInvocationBridge bridge;
@@ -34,9 +36,9 @@ class AgenticFabricTest {
     void setUp() {
         orchestrationService = new OrchestrationService();
         bridge = new UniversalInvocationBridge(
-            intentValidator, schemaEnforcer, guardedRuntime, 
+            intentValidator, schemaEnforcer, guardedRuntime,
             flightRecorder, metadataRegistry, credentialManager,
-            orchestrationService
+            orchestrationService, llmFactory, govConfig
         );
         principal = AgentPrincipal.create("manager-agent", "tenant-1");
         
@@ -55,19 +57,20 @@ class AgenticFabricTest {
         managerArgs.put("_thought", "Delegating to worker...");
 
         MetadataRegistry.PluginManifest managerManifest = new MetadataRegistry.PluginManifest(
-            "manager", "Manager Plugin", "1.0", Map.of(), managerPerimeter, Set.of()
+            "manager", "Manager Plugin", "1.0", Map.of(), managerPerimeter, Set.of(), Set.of(), Set.of()
         );
 
         when(intentValidator.validateIntent(managerIntent)).thenReturn("manager");
         when(metadataRegistry.getManifest("manager")).thenReturn(managerManifest);
         when(schemaEnforcer.enforce(eq("manager"), anyMap())).thenReturn(managerArgs);
-        
+        when(intentValidator.performSafetyAudit(anyString(), anyString(), anyString())).thenReturn(true);
+
         // Mock the manager plugin's execution which in turn calls the bridge again (simulated here)
         // Setup worker expectations OUTSIDE the nested thenAnswer to avoid issues with Mockito's state
         String workerIntent = "worker.task";
         Map<String, Object> workerArgs = Map.of("task_id", "123", "_thought", "Working...");
         MetadataRegistry.PluginManifest workerManifest = new MetadataRegistry.PluginManifest(
-            "worker", "Worker Plugin", "1.0", Map.of(), workerPerimeter, Set.of()
+            "worker", "Worker Plugin", "1.0", Map.of(), workerPerimeter, Set.of(), Set.of(), Set.of()
         );
 
         when(guardedRuntime.execute(any(), any(), eq("manager"), anyMap(), any())).thenAnswer(invocation -> {
@@ -99,7 +102,7 @@ class AgenticFabricTest {
         Map<String, Object> args = Map.of("_thought", "Attempting unauthorized delegation...");
 
         MetadataRegistry.PluginManifest workerManifest = new MetadataRegistry.PluginManifest(
-            "worker", "Worker Plugin", "1.0", Map.of(), workerPerimeter, Set.of()
+            "worker", "Worker Plugin", "1.0", Map.of(), workerPerimeter, Set.of(), Set.of(), Set.of()
         );
 
         when(intentValidator.validateIntent(delegationIntent)).thenReturn("worker");
@@ -125,12 +128,13 @@ class AgenticFabricTest {
         args.put("_thought", "Using session context...");
 
         MetadataRegistry.PluginManifest manifest = new MetadataRegistry.PluginManifest(
-            "p1", "Plugin 1", "1.0", Map.of(), workerPerimeter, Set.of()
+            "p1", "Plugin 1", "1.0", Map.of(), workerPerimeter, Set.of(), Set.of(), Set.of()
         );
 
         when(intentValidator.validateIntent(anyString())).thenReturn("p1");
         when(metadataRegistry.getManifest("p1")).thenReturn(manifest);
         when(schemaEnforcer.enforce(anyString(), anyMap())).thenReturn(args);
+        when(intentValidator.performSafetyAudit(anyString(), anyString(), anyString())).thenReturn(true);
 
         bridge.invoke(principal, workerPerimeter, "some.intent", args);
 

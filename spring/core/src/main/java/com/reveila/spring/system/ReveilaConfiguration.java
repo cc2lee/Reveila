@@ -1,5 +1,10 @@
 package com.reveila.spring.system;
 
+import com.reveila.ai.GeminiProvider;
+import com.reveila.ai.LlmGovernanceConfig;
+import com.reveila.ai.LlmProviderFactory;
+import com.reveila.ai.OpenAiProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -32,6 +37,28 @@ public class ReveilaConfiguration {
                 throw new IllegalStateException("Failed to start Reveila with SpringPlatformAdapter", e);
             }
         };
+    }
+
+    @Bean
+    public LlmGovernanceConfig llmGovernanceConfig(
+            @Value("${ai.governance.worker:openai}") String worker,
+            @Value("${ai.governance.guardrail:gemini}") String guardrail) {
+        return new LlmGovernanceConfig(worker, guardrail);
+    }
+
+    @Bean
+    public OpenAiProvider openAiProvider() {
+        return new OpenAiProvider();
+    }
+
+    @Bean
+    public GeminiProvider geminiProvider() {
+        return new GeminiProvider();
+    }
+
+    @Bean
+    public LlmProviderFactory llmProviderFactory(OpenAiProvider openAi, GeminiProvider gemini) {
+        return new LlmProviderFactory(openAi, gemini);
     }
 
 }

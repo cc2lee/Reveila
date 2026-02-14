@@ -14,4 +14,14 @@ public interface IntentValidator {
      * @throws IllegalArgumentException If the intent is unauthorized or unknown.
      */
     String validateIntent(String intent);
+
+    /**
+     * Performs a safety audit on the tool arguments using a secondary guardrail model.
+     *
+     * @param pluginId      The target plugin ID.
+     * @param maskedArgs    The masked arguments to audit.
+     * @param systemContext The context for the safety audit.
+     * @return true if approved, false otherwise.
+     */
+    boolean performSafetyAudit(String pluginId, String maskedArgs, String systemContext);
 }

@@ -25,6 +25,8 @@ import java.util.Map;
  */
 public class UniversalInvocationBridge {
     private final IntentValidator intentValidator;
+    private final LlmProviderFactory llmFactory;
+    private final LlmGovernanceConfig govConfig;
     private final SchemaEnforcer schemaEnforcer;
     private final GuardedRuntime guardedRuntime;
     private final FlightRecorder flightRecorder;
@@ -39,7 +41,9 @@ public class UniversalInvocationBridge {
             FlightRecorder flightRecorder,
             MetadataRegistry metadataRegistry,
             CredentialManager credentialManager,
-            OrchestrationService orchestrationService) {
+            OrchestrationService orchestrationService,
+            LlmProviderFactory llmFactory,
+            LlmGovernanceConfig govConfig) {
         this.intentValidator = intentValidator;
         this.schemaEnforcer = schemaEnforcer;
         this.guardedRuntime = guardedRuntime;
@@ -47,6 +51,8 @@ public class UniversalInvocationBridge {
         this.metadataRegistry = metadataRegistry;
         this.credentialManager = credentialManager;
         this.orchestrationService = orchestrationService;
+        this.llmFactory = llmFactory;
+        this.govConfig = govConfig;
     }
 
     /**
@@ -91,7 +97,34 @@ public class UniversalInvocationBridge {
             throw new IllegalArgumentException("Plugin not registered in Metadata Registry: " + pluginId);
         }
 
+        // Multi-Model Governance: Use OpenAI to simulate/generate response if needed,
+        // then Gemini for Safety Audit on masked arguments.
         Map<String, Object> validatedArgs = schemaEnforcer.enforce(pluginId, rawArguments);
+
+        // Mask Sensitive Parameters before Safety Audit
+        Map<String, Object> maskedArgs = new java.util.HashMap<>(validatedArgs);
+        if (manifest.secretParameters() != null) {
+            for (String secretKey : manifest.secretParameters()) {
+                if (maskedArgs.containsKey(secretKey)) {
+                    maskedArgs.put(secretKey, "[REDACTED_SECRET]");
+                }
+            }
+        }
+
+        boolean safe = intentValidator.performSafetyAudit(pluginId, maskedArgs.toString(), "Safety Guardrail Context");
+        if (!safe) {
+            flightRecorder.recordStep(principal, "safety_audit_failed", Map.of("pluginId", pluginId));
+            
+            // Check if it's a security breach or just a general rejection
+            String auditResponse = llmFactory.getProvider(govConfig.guardrailProvider())
+                .generateResponse(maskedArgs.toString(), "Safety Guardrail Context");
+                
+            if (auditResponse.contains("SECURITY_BREACH")) {
+                return InvocationResult.securityBreach("Governance Pipeline: SECURITY_BREACH detected by Gemini RailGuard.");
+            }
+            
+            return InvocationResult.error("Governance Pipeline: Safety audit failed by Gemini RailGuard.");
+        }
 
         // Phase 3: Agency Perimeters & HITL Triggers
         // 1. Perform 'Perimeter Intersection'
@@ -121,7 +154,20 @@ public class UniversalInvocationBridge {
 
         try {
             Object result = guardedRuntime.execute(principal, activePerimeter, pluginId, validatedArgs, jitCreds);
-            flightRecorder.recordToolOutput(principal, pluginId, result);
+            
+            // Log output, but mask parameters marked as MASKED in the manifest
+            Object loggedOutput = result;
+            if (manifest.maskedParameters() != null && result instanceof Map) {
+                Map<String, Object> outputMap = new java.util.HashMap<>((Map<String, Object>) result);
+                for (String maskedKey : manifest.maskedParameters()) {
+                    if (outputMap.containsKey(maskedKey)) {
+                        outputMap.put(maskedKey, "[MASKED]");
+                    }
+                }
+                loggedOutput = outputMap;
+            }
+            
+            flightRecorder.recordToolOutput(principal, pluginId, loggedOutput);
             return InvocationResult.success(result);
         } catch (Exception e) {
             flightRecorder.recordStep(principal, "execution_failed", Map.of("error", e.getMessage()));

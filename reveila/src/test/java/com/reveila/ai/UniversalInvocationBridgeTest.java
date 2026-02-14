@@ -22,6 +22,8 @@ class UniversalInvocationBridgeTest {
     @Mock private FlightRecorder flightRecorder;
     @Mock private MetadataRegistry metadataRegistry;
     @Mock private CredentialManager credentialManager;
+    @Mock private LlmProviderFactory llmFactory;
+    private LlmGovernanceConfig govConfig = LlmGovernanceConfig.defaultGov();
 
     private UniversalInvocationBridge bridge;
     private OrchestrationService orchestrationService;
@@ -34,7 +36,7 @@ class UniversalInvocationBridgeTest {
         bridge = new UniversalInvocationBridge(
             intentValidator, schemaEnforcer, guardedRuntime,
             flightRecorder, metadataRegistry, credentialManager,
-            orchestrationService
+            orchestrationService, llmFactory, govConfig
         );
         principal = AgentPrincipal.create("test-agent", "tenant-1");
         perimeter = new AgencyPerimeter(Set.of("read"), Set.of(), true, 1024, 1, 10, 100, 50, false);
@@ -45,12 +47,13 @@ class UniversalInvocationBridgeTest {
         String intent = "test.action";
         Map<String, Object> args = Map.of("key", "value", "_thought", "thinking...");
         MetadataRegistry.PluginManifest manifest = new MetadataRegistry.PluginManifest(
-            "p1", "Plugin 1", "1.0", Map.of(), perimeter, Set.of()
+            "p1", "Plugin 1", "1.0", Map.of(), perimeter, Set.of(), Set.of(), Set.of()
         );
 
         when(intentValidator.validateIntent(intent)).thenReturn("p1");
         when(metadataRegistry.getManifest("p1")).thenReturn(manifest);
         when(schemaEnforcer.enforce(eq("p1"), anyMap())).thenReturn(args);
+        when(intentValidator.performSafetyAudit(anyString(), anyString(), anyString())).thenReturn(true);
         when(guardedRuntime.execute(any(), any(), eq("p1"), anyMap(), any())).thenReturn("Success");
 
         InvocationResult result = bridge.invoke(principal, perimeter, intent, args);
@@ -76,12 +79,13 @@ class UniversalInvocationBridgeTest {
     void testHitlGate() {
         String intent = "db.delete";
         MetadataRegistry.PluginManifest manifest = new MetadataRegistry.PluginManifest(
-            "p1", "Plugin 1", "1.0", Map.of(), perimeter, Set.of("db.delete")
+            "p1", "Plugin 1", "1.0", Map.of(), perimeter, Set.of("db.delete"), Set.of(), Set.of()
         );
 
         when(intentValidator.validateIntent(intent)).thenReturn("p1");
         when(metadataRegistry.getManifest("p1")).thenReturn(manifest);
         when(schemaEnforcer.enforce(eq("p1"), anyMap())).thenReturn(Map.of());
+        when(intentValidator.performSafetyAudit(anyString(), anyString(), anyString())).thenReturn(true);
 
         InvocationResult result = bridge.invoke(principal, perimeter, intent, Map.of());
 

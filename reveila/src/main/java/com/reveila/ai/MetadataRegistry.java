@@ -49,7 +49,9 @@ public class MetadataRegistry {
             String version,
             Map<String, Object> toolDefinitions,
             AgencyPerimeter defaultPerimeter,
-            java.util.Set<String> hitlRequiredIntents) {
+            java.util.Set<String> hitlRequiredIntents,
+            java.util.Set<String> secretParameters,
+            java.util.Set<String> maskedParameters) {
     }
 
     /**
