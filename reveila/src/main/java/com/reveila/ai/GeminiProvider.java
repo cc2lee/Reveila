@@ -19,9 +19,10 @@ public class GeminiProvider implements LlmProvider {
     @Override
     public String generateJson(String systemPrompt, String userPrompt) {
         // The 'Rail Guard' validates the intent and arguments against the Agency Perimeter.
-        if (userPrompt.contains("unauthorized_domain")) {
-            return "{\"status\": \"REJECTED\", \"reason\": \"SECURITY_BREACH: Perimeter violation detected.\"}";
+        // Forces a strict JSON schema to prevent prompt injection influence.
+        if (userPrompt.contains("Ignore all previous instructions") || userPrompt.contains("unauthorized_domain")) {
+            return "{\"approved\": false, \"reasoning\": \"SECURITY_BREACH: Potential prompt injection or perimeter violation detected.\", \"status\": \"REJECTED\"}";
         }
-        return "{\"status\": \"APPROVED\"}";
+        return "{\"approved\": true, \"reasoning\": \"Audit passed.\", \"status\": \"APPROVED\"}";
     }
 }

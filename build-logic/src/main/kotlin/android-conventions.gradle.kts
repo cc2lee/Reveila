@@ -59,6 +59,7 @@ tasks.withType<KotlinCompile>().configureEach {
 
 // 5. Shared Dependencies
 dependencies {
+    "api"(project(":reveila"))
     "implementation"(libs.findLibrary("androidx-core-ktx").get())
     "testImplementation"("junit:junit:4.13.2")
 }

@@ -10,6 +10,7 @@ plugins {
     id("spring-conventions")
 }
 
+
 dependencies {
     // AWS 1: Import the BOM as a platform dependency
     implementation(platform(libs.aws.sdk.bom))
@@ -59,12 +60,14 @@ tasks.withType<org.springframework.boot.gradle.tasks.run.BootRun> {
 // available on the classpath for Spring Boot.
 val copyVueDist by tasks.registering(Sync::class) {
     dependsOn(":web:vue-project:buildVue")
-    from(project(":web:vue-project").tasks.named("buildVue"))
-    // Into the build output directory, not the source directory
-    into(layout.buildDirectory.dir("resources/main/static"))
+    // Use the actual output directory from the web project
+    from(project(":web:vue-project").layout.projectDirectory.dir("dist"))
+    // Copy INTO 'generated/vue/static' so index.html is at 'static/index.html' in the build
+    into(layout.buildDirectory.dir("generated/vue/static"))
 }
 
-tasks.withType<ProcessResources> {
+tasks.named<ProcessResources>("processResources") {
     dependsOn(copyVueDist)
+    from(layout.buildDirectory.dir("generated/vue"))
 }
 

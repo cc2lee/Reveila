@@ -26,6 +26,7 @@ jackson = "2.17.1"
 okhttp = "4.12.0"
 slf4j = "2.0.13"
 junit = "5.12.2"
+commons-compress = "1.27.1"
 
 # https://github.com/GradleUp/shadow
 shadow = "9.3.0"
@@ -109,6 +110,8 @@ spring-dependency-management-plugin = { module = "io.spring.dependency-managemen
 shadow-gradle-plugin = { module = "com.gradleup.shadow:shadow-gradle-plugin", version.ref = "shadow" }
 android-gradle-plugin = { module = "com.android.tools.build:gradle", version.ref = "androidGradlePlugin" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidxCore" }
+
+commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commons-compress" }
 
 # The API (Interfaces)
 jakarta-persistence-api = { module = "jakarta.persistence:jakarta.persistence-api", version.ref = "jakarta-persistence" }

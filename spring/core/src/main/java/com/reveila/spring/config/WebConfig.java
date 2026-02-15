@@ -36,6 +36,9 @@ public class WebConfig implements WebMvcConfigurer {
     public void addViewControllers(@NonNull ViewControllerRegistry registry) {
         // Redirect any path that doesn't contain a dot (to avoid matching files like .js)
         // and isn't an /api call back to index.html
+        // The regex {spring:.*} is used to avoid issues with dots in some path segments
+        registry.addViewController("/")
+                .setViewName("forward:/index.html");
         registry.addViewController("/{spring:[^\\.]*}")
                 .setViewName("forward:/index.html");
         registry.addViewController("/**/{spring:[^\\.]*}")

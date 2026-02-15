@@ -65,6 +65,10 @@ dependencies {
     
     // Database drivers (Example: MySQL or PostgreSQL as per your interest)
     "runtimeOnly"("com.mysql:mysql-connector-j")
+
+    // Force consistent version of commons-compress to fix ZipArchiveOutputStream error
+    // which occurs during BootJar creation when multiple versions are on the classpath.
+    "implementation"(libs.commons.compress)
 }
 
 // 6. Kotlin All-Open for Spring Proxies

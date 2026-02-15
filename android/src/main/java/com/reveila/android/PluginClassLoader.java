@@ -17,9 +17,7 @@ public class PluginClassLoader extends DexClassLoader {
 
     @Override
     protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-        // Thread-safe class loading lock
-        synchronized (getClassLoadingLock(name)) {
-            // 1. Always check if already loaded
+        // 1. Always check if already loaded
             Class<?> c = findLoadedClass(name);
             if (c != null) return c;
 
@@ -40,7 +38,6 @@ public class PluginClassLoader extends DexClassLoader {
                 // 4. FALLBACK TO PARENT: If not in plugin, check the main app
                 return super.loadClass(name, resolve);
             }
-        }
     }
 
     private boolean isSystemClass(String name) {

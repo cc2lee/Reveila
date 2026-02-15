@@ -1,9 +1,6 @@
 package com.reveila.spring.system;
 
-import com.reveila.ai.GeminiProvider;
-import com.reveila.ai.LlmGovernanceConfig;
-import com.reveila.ai.LlmProviderFactory;
-import com.reveila.ai.OpenAiProvider;
+import com.reveila.ai.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.ApplicationContext;
@@ -59,6 +56,64 @@ public class ReveilaConfiguration {
     @Bean
     public LlmProviderFactory llmProviderFactory(OpenAiProvider openAi, GeminiProvider gemini) {
         return new LlmProviderFactory(openAi, gemini);
+    }
+
+    @Bean
+    public IntentValidator intentValidator(GeminiProvider gemini) {
+        return new GeminiIntentValidator(gemini);
+    }
+
+    @Bean
+    public UniversalInvocationBridge universalInvocationBridge(
+            IntentValidator intentValidator,
+            SchemaEnforcer schemaEnforcer,
+            GuardedRuntime guardedRuntime,
+            FlightRecorder flightRecorder,
+            MetadataRegistry metadataRegistry,
+            CredentialManager credentialManager,
+            OrchestrationService orchestrationService,
+            LlmProviderFactory llmFactory,
+            LlmGovernanceConfig govConfig) {
+        return new UniversalInvocationBridge(
+                intentValidator, schemaEnforcer, guardedRuntime,
+                flightRecorder, metadataRegistry, credentialManager,
+                orchestrationService, llmFactory, govConfig);
+    }
+
+    @Bean
+    public OrchestrationService orchestrationService() {
+        return new OrchestrationService();
+    }
+
+    @Bean
+    public AgenticFabric agenticFabric(UniversalInvocationBridge bridge, AgentSessionManager sessionManager) {
+        return new AgenticFabric(bridge, sessionManager);
+    }
+
+    @Bean
+    public SchemaEnforcer schemaEnforcer(MetadataRegistry registry) {
+        return new JsonSchemaEnforcer(registry);
+    }
+
+    @Bean
+    public GuardedRuntime guardedRuntime() {
+        return new DockerGuardedRuntime();
+    }
+
+
+    @Bean
+    public MetadataRegistry metadataRegistry() {
+        return new MetadataRegistry();
+    }
+
+    @Bean
+    public CredentialManager credentialManager() {
+        return new CredentialManager();
+    }
+
+    @Bean
+    public AgentSessionManager agentSessionManager() {
+        return new AgentSessionManager();
     }
 
 }

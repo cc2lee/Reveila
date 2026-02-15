@@ -1,6 +1,6 @@
 package com.reveila.standalone;
 
-import com.reveila.Reveila;
+import com.reveila.system.Reveila;
 import com.reveila.system.DefaultPlatformAdapter;
 import com.reveila.system.RuntimeUtil;
 

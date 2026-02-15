@@ -21,6 +21,19 @@ import java.util.Map;
  * Perimeter Application: It intelligently merges agent-level perimeters with
  * manifest defaults, ensuring a baseline security posture is always active.
  * 
+ * The Validation Pipeline:
+ * 
+ * Intercept: The bridge catches the Worker's intent.
+ * 
+ * Mask: Parameters marked as SECRET in the MetadataRegistry are redacted to
+ * prevent PII/PHI leakage to the safety model.
+ * 
+ * Audit: The GeminiIntentValidator performs the performSafetyAudit.
+ * 
+ * Enforce: If Gemini detects a violation (e.g., an unauthorized domain or a
+ * prompt injection attempt), the bridge returns a SECURITY_BREACH status and
+ * blocks the sandbox from spawning.
+ * 
  * @author CL
  */
 public class UniversalInvocationBridge {
@@ -67,7 +80,7 @@ public class UniversalInvocationBridge {
      */
     public InvocationResult invoke(AgentPrincipal principal, AgencyPerimeter perimeter, String intent,
             Map<String, Object> rawArguments) {
-        
+
         // Phase 5: Recursive Invocation & Delegation Handling
         String sessionId = (String) rawArguments.get("_session_id");
         AgentSession session = null;
@@ -114,15 +127,15 @@ public class UniversalInvocationBridge {
         boolean safe = intentValidator.performSafetyAudit(pluginId, maskedArgs.toString(), "Safety Guardrail Context");
         if (!safe) {
             flightRecorder.recordStep(principal, "safety_audit_failed", Map.of("pluginId", pluginId));
-            
-            // Check if it's a security breach or just a general rejection
-            String auditResponse = llmFactory.getProvider(govConfig.guardrailProvider())
-                .generateResponse(maskedArgs.toString(), "Safety Guardrail Context");
-                
-            if (auditResponse.contains("SECURITY_BREACH")) {
-                return InvocationResult.securityBreach("Governance Pipeline: SECURITY_BREACH detected by Gemini RailGuard.");
+
+            // Use structured audit to check for security breach
+            if (intentValidator instanceof GeminiIntentValidator geminiValidator) {
+                GuardrailResponse audit = geminiValidator.getGuardrailResponse(pluginId, maskedArgs.toString(), "Safety Guardrail Context");
+                if ("REJECTED".equals(audit.status()) && audit.reasoning().contains("SECURITY_BREACH")) {
+                    return InvocationResult.securityBreach("Governance Pipeline: SECURITY_BREACH detected by Gemini RailGuard: " + audit.reasoning());
+                }
             }
-            
+
             return InvocationResult.error("Governance Pipeline: Safety audit failed by Gemini RailGuard.");
         }
 
@@ -154,7 +167,7 @@ public class UniversalInvocationBridge {
 
         try {
             Object result = guardedRuntime.execute(principal, activePerimeter, pluginId, validatedArgs, jitCreds);
-            
+
             // Log output, but mask parameters marked as MASKED in the manifest
             Object loggedOutput = result;
             if (manifest.maskedParameters() != null && result instanceof Map) {
@@ -166,7 +179,7 @@ public class UniversalInvocationBridge {
                 }
                 loggedOutput = outputMap;
             }
-            
+
             flightRecorder.recordToolOutput(principal, pluginId, loggedOutput);
             return InvocationResult.success(result);
         } catch (Exception e) {

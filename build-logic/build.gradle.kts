@@ -23,4 +23,7 @@ dependencies {
     // For compiling classes using JPA annotations
     implementation(libs.jakarta.persistence.api)
     implementation(libs.hibernate.core)
+    
+    // Fix for ZipArchiveOutputStream putArchiveEntry error
+    implementation(libs.commons.compress)
 }
