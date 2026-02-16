@@ -2,13 +2,15 @@ package com.reveila.ai;
 
 import java.util.Map;
 
+import com.reveila.system.AbstractService;
+
 /**
  * Abstract base class for all guarded runtimes.
  * Provides a common foundation for executing plugins in isolated environments.
  * 
  * @author CL
  */
-public abstract class AbstractGuardedRuntime implements GuardedRuntime {
+public abstract class AbstractGuardedRuntime extends AbstractService implements GuardedRuntime {
     
     /**
      * Common validation logic for perimeters and principals.

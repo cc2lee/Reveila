@@ -1,19 +1,18 @@
 package com.reveila.ai;
 
-import com.reveila.system.AbstractService;
+import java.time.Duration;
+import java.util.Map;
+
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
+import com.github.dockerjava.api.model.AccessMode;
 import com.github.dockerjava.api.model.Bind;
 import com.github.dockerjava.api.model.HostConfig;
 import com.github.dockerjava.api.model.Volume;
-import com.github.dockerjava.api.model.AccessMode;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
-
-import java.time.Duration;
-import java.util.Map;
 
 /**
  * Docker-based implementation of GuardedRuntime using gVisor (runsc).
@@ -21,7 +20,7 @@ import java.util.Map;
  * 
  * @author CL
  */
-public class DockerGuardedRuntime extends AbstractGuardedRuntime implements GuardedRuntime {
+public class DockerGuardedRuntime extends AbstractGuardedRuntime {
     
     private final DockerClient dockerClient;
 
@@ -91,5 +90,17 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime implements Guar
         dockerClient.startContainerCmd(container.getId()).exec();
 
         return "Execution started in Docker container " + container.getId() + " (gVisor)";
+    }
+
+    @Override
+    protected void onStop() throws Exception {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'onStop'");
+    }
+
+    @Override
+    protected void onStart() throws Exception {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'onStart'");
     }
 }

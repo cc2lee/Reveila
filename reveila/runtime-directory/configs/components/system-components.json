@@ -30,6 +30,7 @@
       "description": "A simple service that echoes back input messages after an optional delay.",
       "author": "Charles Lee",
       "class": "com.reveila.service.EchoService",
+      "isolation": "physical",
       "plugin": {
           "directory": "C:/IDE/Projects/Reveila-Suite/reveila/runtime-directory/plugins/example",
           "capabilities": ["UI", "NETWORK", "FILESYSTEM"],

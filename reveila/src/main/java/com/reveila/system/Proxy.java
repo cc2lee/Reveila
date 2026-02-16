@@ -14,6 +14,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 
+import com.reveila.ai.GuardedRuntime;
 import com.reveila.error.ConfigurationException;
 import com.reveila.event.EventConsumer;
 import com.reveila.util.ExceptionCollection;
