@@ -443,4 +443,8 @@ public final class Proxy extends AbstractService {
 				return Class.forName(typeName);
 		}
 	}
+
+	public String getVersion() {
+		return this.metaObject.getVersion();
+	}
 }

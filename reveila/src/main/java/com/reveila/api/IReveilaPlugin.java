@@ -9,7 +9,7 @@ public interface IReveilaPlugin {
     /**
      * Called when the plugin is initialized.
      */
-    void onInitialize();
+    void onStart();
 
     /**
      * Returns the name of the plugin.
