@@ -1,5 +1,7 @@
 package com.reveila.ai;
 
+import java.util.Optional;
+import org.mockito.Mockito;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,15 +31,36 @@ class UniversalInvocationBridgeTest {
     private OrchestrationService orchestrationService;
     private AgentPrincipal principal;
     private AgencyPerimeter perimeter;
+    @Mock private com.reveila.system.SystemContext systemContext;
+    @Mock private com.reveila.system.Proxy proxy;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         orchestrationService = new OrchestrationService();
-        bridge = new UniversalInvocationBridge(
-            intentValidator, schemaEnforcer, guardedRuntime,
-            flightRecorder, metadataRegistry, credentialManager,
-            orchestrationService, llmFactory, govConfig
-        );
+        bridge = new UniversalInvocationBridge();
+        bridge.setSystemContext(systemContext);
+        
+        when(systemContext.getProxy(anyString())).thenReturn(Optional.of(proxy));
+        when(proxy.invoke(eq("getInstance"), any())).thenAnswer(invocation -> {
+            String name = (String) Mockito.mockingDetails(systemContext).getInvocations().stream()
+                .filter(i -> i.getMethod().getName().equals("getProxy"))
+                .reduce((first, second) -> second)
+                .get().getArgument(0);
+            
+            return switch (name) {
+                case "IntentValidator" -> intentValidator;
+                case "SchemaEnforcer" -> schemaEnforcer;
+                case "DockerGuardedRuntime" -> guardedRuntime;
+                case "FlightRecorder" -> flightRecorder;
+                case "MetadataRegistry" -> metadataRegistry;
+                case "CredentialManager" -> credentialManager;
+                case "OrchestrationService" -> orchestrationService;
+                case "LlmProviderFactory" -> llmFactory;
+                default -> null;
+            };
+        });
+        
+        bridge.start();
         principal = AgentPrincipal.create("test-agent", "tenant-1");
         perimeter = new AgencyPerimeter(Set.of("read"), Set.of(), true, 1024, 1, 10, false);
     }

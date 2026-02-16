@@ -36,36 +36,52 @@ import java.util.Map;
  * 
  * @author CL
  */
-public class UniversalInvocationBridge {
-    private final IntentValidator intentValidator;
-    private final LlmProviderFactory llmFactory;
-    private final LlmGovernanceConfig govConfig;
-    private final SchemaEnforcer schemaEnforcer;
-    private final GuardedRuntime guardedRuntime;
-    private final FlightRecorder flightRecorder;
-    private final MetadataRegistry metadataRegistry;
-    private final CredentialManager credentialManager;
-    private final OrchestrationService orchestrationService;
+public class UniversalInvocationBridge extends com.reveila.system.AbstractService {
+    private IntentValidator intentValidator;
+    private LlmProviderFactory llmFactory;
+    private LlmGovernanceConfig govConfig;
+    private SchemaEnforcer schemaEnforcer;
+    private GuardedRuntime guardedRuntime;
+    private FlightRecorder flightRecorder;
+    private MetadataRegistry metadataRegistry;
+    private CredentialManager credentialManager;
+    private OrchestrationService orchestrationService;
 
-    public UniversalInvocationBridge(
-            IntentValidator intentValidator,
-            SchemaEnforcer schemaEnforcer,
-            GuardedRuntime guardedRuntime,
-            FlightRecorder flightRecorder,
-            MetadataRegistry metadataRegistry,
-            CredentialManager credentialManager,
-            OrchestrationService orchestrationService,
-            LlmProviderFactory llmFactory,
-            LlmGovernanceConfig govConfig) {
-        this.intentValidator = intentValidator;
-        this.schemaEnforcer = schemaEnforcer;
-        this.guardedRuntime = guardedRuntime;
-        this.flightRecorder = flightRecorder;
-        this.metadataRegistry = metadataRegistry;
-        this.credentialManager = credentialManager;
-        this.orchestrationService = orchestrationService;
-        this.llmFactory = llmFactory;
-        this.govConfig = govConfig;
+    public UniversalInvocationBridge() {
+        // Dependencies will be wired via the SystemContext in onStart
+    }
+
+    @Override
+    public void onStart() throws Exception {
+        this.intentValidator = getComponent("IntentValidator", IntentValidator.class);
+        this.schemaEnforcer = getComponent("SchemaEnforcer", SchemaEnforcer.class);
+        this.guardedRuntime = getComponent("DockerGuardedRuntime", GuardedRuntime.class);
+        this.flightRecorder = getComponent("FlightRecorder", FlightRecorder.class);
+        this.metadataRegistry = getComponent("MetadataRegistry", MetadataRegistry.class);
+        this.credentialManager = getComponent("CredentialManager", CredentialManager.class);
+        this.orchestrationService = getComponent("OrchestrationService", OrchestrationService.class);
+        this.llmFactory = getComponent("LlmProviderFactory", LlmProviderFactory.class);
+        
+        // Governance config could be an argument or a separate component
+        this.govConfig = new LlmGovernanceConfig("openai", "gemini");
+    }
+
+    @Override
+    protected void onStop() throws Exception {
+    }
+
+    private <T> T getComponent(String name, Class<T> type) {
+        return systemContext.getProxy(name)
+                .map(p -> {
+                    try {
+                        return (T) p.invoke("getInstance", null);
+                    } catch (Exception e) {
+                        return null;
+                    }
+                })
+                .filter(type::isInstance)
+                .map(type::cast)
+                .orElseThrow(() -> new IllegalStateException("Component '" + name + "' not found or invalid type."));
     }
 
     /**

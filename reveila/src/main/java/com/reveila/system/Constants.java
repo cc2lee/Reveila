@@ -61,5 +61,11 @@ public final class Constants {
 	public static final String COMPONENT_START_TIMEOUT = "start-timeout";
 	public static final String LOG_CONSOLE_ENABLED = "log.console.enabled";
 	public static final String ISOLATION = "isolation";
-	public static final String PHYSICAL_ISOLATION = "physical";
+	public static final String SECURITY_PERIMETER = "security-perimeter";
+	public static final String NETWORK = "network";
+	public static final String RESTRICTED = "restricted";
+	public static final String AUTO_START = "auto-start";
+	public static final String SERVICE = "service";
+	public static final String DISPLAY_NAME = "displayName";
+	public static final String PROVIDER = "provider";
 }

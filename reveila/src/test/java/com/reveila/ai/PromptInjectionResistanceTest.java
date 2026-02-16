@@ -1,5 +1,7 @@
 package com.reveila.ai;
 
+import java.util.Optional;
+import org.mockito.Mockito;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,14 +38,39 @@ class PromptInjectionResistanceTest {
     private AgencyPerimeter perimeter;
     private LlmGovernanceConfig govConfig = LlmGovernanceConfig.defaultGov();
 
+    @Mock private com.reveila.system.SystemContext systemContext;
+    @Mock private com.reveila.system.Proxy proxy;
+
     @BeforeEach
-    void setUp() {
-        intentValidator = new GeminiIntentValidator(geminiProvider);
-        bridge = new UniversalInvocationBridge(
-            intentValidator, schemaEnforcer, guardedRuntime,
-            flightRecorder, metadataRegistry, credentialManager,
-            orchestrationService, llmFactory, govConfig
-        );
+    void setUp() throws Exception {
+        when(systemContext.getProxy(anyString())).thenReturn(Optional.of(proxy));
+        when(proxy.invoke(eq("getInstance"), any())).thenAnswer(invocation -> {
+            String name = (String) Mockito.mockingDetails(systemContext).getInvocations().stream()
+                .filter(i -> i.getMethod().getName().equals("getProxy"))
+                .reduce((first, second) -> second)
+                .get().getArgument(0);
+            
+            return switch (name) {
+                case "GeminiProvider" -> geminiProvider;
+                case "IntentValidator" -> intentValidator;
+                case "SchemaEnforcer" -> schemaEnforcer;
+                case "DockerGuardedRuntime" -> guardedRuntime;
+                case "FlightRecorder" -> flightRecorder;
+                case "MetadataRegistry" -> metadataRegistry;
+                case "CredentialManager" -> credentialManager;
+                case "OrchestrationService" -> orchestrationService;
+                case "LlmProviderFactory" -> llmFactory;
+                default -> null;
+            };
+        });
+
+        intentValidator = new GeminiIntentValidator();
+        intentValidator.setSystemContext(systemContext);
+        intentValidator.start();
+
+        bridge = new UniversalInvocationBridge();
+        bridge.setSystemContext(systemContext);
+        bridge.start();
         agent = AgentPrincipal.create("test-agent", "test-dept");
         perimeter = new AgencyPerimeter(Set.of("test"), Set.of(), false, 512, 1, 30, false);
     }

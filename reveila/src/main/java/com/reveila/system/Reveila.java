@@ -239,17 +239,25 @@ public class Reveila {
 	private List<MetaObject> parseMetaObjects() throws Exception {
 		strictMode = !"false".equalsIgnoreCase(this.properties.getProperty(Constants.LAUNCH_STRICT_MODE));
 		String[] files = this.platformAdapter.getConfigFilePaths();
+		
+		// ADR 0006: Hardcoded system-components.json path for core initialization parity
+		String systemComponentsFile = Constants.CONFIGS_DIR_NAME + "/components/system-components.json";
 
-		if (files == null || files.length == 0) {
-			logger.info("No components found to load.");
-			return null;
+		List<String> fileList = new ArrayList<>();
+		if (files != null) {
+			Collections.addAll(fileList, files);
+		}
+
+		// Ensure system-components.json is prioritized or included
+		if (!fileList.contains(systemComponentsFile)) {
+			fileList.add(0, systemComponentsFile);
 		}
 
 		logger.info("Loading components...");
 
 		// PHASE 1: DISCOVERY
 		List<MetaObject> list = new ArrayList<>();
-		for (String file : files) {
+		for (String file : fileList) {
 			try (InputStream is = this.platformAdapter.getFileInputStream(file)) {
 				Configuration config = new Configuration(is);
 				for (MetaObject mObj : config.getMetaObjects()) {
@@ -360,6 +368,12 @@ public class Reveila {
 			proxy.setName(mObj.getName());
 			try {
 				systemContext.add(proxy);
+
+				if (!mObj.isAutoStart()) {
+					logger.info("ℹ️ Skipping auto-start for component: " + mObj.getName());
+					continue;
+				}
+
 				CompletableFuture<Void> startFuture = CompletableFuture.runAsync(() -> {
 					try {
 						proxy.start();

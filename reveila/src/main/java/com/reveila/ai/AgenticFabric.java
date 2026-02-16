@@ -9,14 +9,40 @@ import java.util.Map;
  * 
  * @author CL
  */
-public class AgenticFabric {
+public class AgenticFabric extends com.reveila.system.AbstractService {
     
-    private final UniversalInvocationBridge bridge;
-    private final AgentSessionManager sessionManager;
+    private UniversalInvocationBridge bridge;
+    private AgentSessionManager sessionManager;
 
-    public AgenticFabric(UniversalInvocationBridge bridge, AgentSessionManager sessionManager) {
-        this.bridge = bridge;
-        this.sessionManager = sessionManager;
+    public AgenticFabric() {
+        // Wired in onStart
+    }
+
+    @Override
+    public void onStart() throws Exception {
+        this.bridge = systemContext.getProxy("UniversalInvocationBridge")
+                .map(p -> {
+                    try {
+                        return (UniversalInvocationBridge) p.invoke("getInstance", null);
+                    } catch (Exception e) {
+                        return null;
+                    }
+                })
+                .orElseThrow(() -> new IllegalStateException("UniversalInvocationBridge not found."));
+
+        this.sessionManager = systemContext.getProxy("AgentSessionManager")
+                .map(p -> {
+                    try {
+                        return (AgentSessionManager) p.invoke("getInstance", null);
+                    } catch (Exception e) {
+                        return null;
+                    }
+                })
+                .orElseThrow(() -> new IllegalStateException("AgentSessionManager not found."));
+    }
+
+    @Override
+    protected void onStop() throws Exception {
     }
 
     /**

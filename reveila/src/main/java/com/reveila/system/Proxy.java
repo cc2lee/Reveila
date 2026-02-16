@@ -206,11 +206,11 @@ public final class Proxy extends AbstractService {
 	/**
 	 * Gets the target object for method invocation. For a standard Proxy, this
 	 * creates a new instance on every call, making it stateless.
-	 * 
+	 *
 	 * @return A new object instance.
 	 * @throws Exception if object creation fails.
 	 */
-	private Object getTargetObject() throws Exception {
+	public Object getTargetObject() throws Exception {
 		if (this.metaObject.isThreadSafe()) {
 			if (this.singletonInstance == null) {
 				synchronized (this) {
@@ -223,6 +223,10 @@ public final class Proxy extends AbstractService {
 		} else {
 			return newInstance();
 		}
+	}
+
+	public Object getInstance() throws Exception {
+		return getTargetObject();
 	}
 
 	public void onStart() throws Exception {

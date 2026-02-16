@@ -1,6 +1,174 @@
 [
   {
     "component": {
+      "name": "MetadataRegistry",
+      "class": "com.reveila.ai.MetadataRegistry",
+      "description": "Registry for all plugin manifests and capabilities.",
+      "start-priority": 10,
+      "thread-safe": true
+    }
+  },
+  {
+    "component": {
+      "name": "CredentialManager",
+      "class": "com.reveila.ai.CredentialManager",
+      "description": "Manages JIT credentials for plugins.",
+      "start-priority": 11,
+      "thread-safe": true
+    }
+  },
+  {
+    "component": {
+      "name": "AgentSessionManager",
+      "class": "com.reveila.ai.AgentSessionManager",
+      "description": "Manages agentic sessions and context persistence.",
+      "start-priority": 12,
+      "thread-safe": true
+    }
+  },
+  {
+    "component": {
+      "name": "OrchestrationService",
+      "class": "com.reveila.ai.OrchestrationService",
+      "description": "Orchestrates multi-agent workflows.",
+      "start-priority": 13,
+      "thread-safe": true
+    }
+  },
+  {
+    "component": {
+      "name": "FlightRecorder",
+      "class": "com.reveila.spring.service.PostgresFlightRecorder",
+      "description": "Records reasoning traces and tool outputs.",
+      "start-priority": 14,
+      "thread-safe": true
+    }
+  },
+  {
+    "component": {
+      "name": "DockerGuardedRuntime",
+      "class": "com.reveila.ai.DockerGuardedRuntime",
+      "description": "Secure execution layer for plugins.",
+      "start-priority": 15,
+      "thread-safe": true
+    }
+  },
+  {
+    "component": {
+      "name": "OpenAiProvider",
+      "class": "com.reveila.ai.OpenAiProvider",
+      "description": "LLM Provider for OpenAI models.",
+      "start-priority": 20,
+      "thread-safe": true
+    }
+  },
+  {
+    "component": {
+      "name": "GeminiProvider",
+      "class": "com.reveila.ai.GeminiProvider",
+      "description": "LLM Provider for Google Gemini models.",
+      "start-priority": 21,
+      "thread-safe": true,
+      "plugin": {
+        "directory": "plugins/ai/gemini",
+        "capabilities": [
+          "intent-validation",
+          "safety-audit"
+        ],
+        "hot-deploy": false
+      }
+    }
+  },
+  {
+    "component": {
+      "name": "LlmProviderFactory",
+      "class": "com.reveila.ai.LlmProviderFactory",
+      "description": "Factory for LLM providers.",
+      "start-priority": 22,
+      "thread-safe": true,
+      "dependencies": [
+        "OpenAiProvider",
+        "GeminiProvider"
+      ]
+    }
+  },
+  {
+    "component": {
+      "name": "IntentValidator",
+      "class": "com.reveila.ai.GeminiIntentValidator",
+      "description": "Validates agent intents using Gemini.",
+      "start-priority": 23,
+      "thread-safe": true,
+      "dependencies": [
+        "GeminiProvider"
+      ]
+    }
+  },
+  {
+    "component": {
+      "name": "SchemaEnforcer",
+      "class": "com.reveila.ai.JsonSchemaEnforcer",
+      "description": "Enforces JSON schemas for tool calls.",
+      "start-priority": 24,
+      "thread-safe": true,
+      "dependencies": [
+        "MetadataRegistry"
+      ]
+    }
+  },
+  {
+    "component": {
+      "name": "UniversalInvocationBridge",
+      "class": "com.reveila.ai.UniversalInvocationBridge",
+      "description": "The sovereign entry point for all tool calls.",
+      "start-priority": 30,
+      "thread-safe": true,
+      "dependencies": [
+        "IntentValidator",
+        "SchemaEnforcer",
+        "DockerGuardedRuntime",
+        "FlightRecorder",
+        "MetadataRegistry",
+        "CredentialManager",
+        "OrchestrationService",
+        "LlmProviderFactory"
+      ]
+    }
+  },
+  {
+    "component": {
+      "name": "AgenticFabric",
+      "class": "com.reveila.ai.AgenticFabric",
+      "description": "Orchestrates complex multi-agent workflows.",
+      "start-priority": 40,
+      "thread-safe": true,
+      "dependencies": [
+        "UniversalInvocationBridge",
+        "AgentSessionManager"
+      ]
+    }
+  },
+  {
+    "component": {
+      "name": "healthcare-audit-worker",
+      "class": "com.reveila.healthcare.ClaimsAuditor",
+      "plugin": {
+        "directory": "plugins/healthcare/claims",
+        "capabilities": [
+          "phi-extraction",
+          "compliance-check"
+        ],
+        "hot-deploy": true
+      },
+      "security-perimeter": {
+        "isolation": true,
+        "network": "restricted"
+      },
+      "start-priority": 50
+    }
+  },
+  {
+    "component": {
       "name": "Performance Rating Service",
       "class": "com.reveila.service.RatedService",
       "description": "A service that manages multiple service providers and selects the best one based on ratings.",
@@ -12,7 +180,9 @@
         {
           "name": "InitialPoints",
           "type": "java.lang.String",
-          "value": ["EchoService, 10000"]
+          "value": [
+            "EchoService, 10000"
+          ]
         }
       ],
       "start-priority": 101,
@@ -30,11 +200,14 @@
       "description": "A simple service that echoes back input messages after an optional delay.",
       "author": "Charles Lee",
       "class": "com.reveila.service.EchoService",
-      "isolation": "physical",
       "plugin": {
-          "directory": "C:/IDE/Projects/Reveila-Suite/reveila/runtime-directory/plugins/example",
-          "capabilities": ["UI", "NETWORK", "FILESYSTEM"],
-          "hot-deploy": false
+        "directory": "C:/IDE/Projects/Reveila-Suite/reveila/runtime-directory/plugins/example",
+        "capabilities": [
+          "UI",
+          "NETWORK",
+          "FILESYSTEM"
+        ],
+        "hot-deploy": false
       },
       "arguments": [
         {
@@ -89,7 +262,9 @@
         {
           "name": "RemoteURLs",
           "type": "java.lang.String",
-          "value": ["http://10.0.2.2:8080, 1"]
+          "value": [
+            "http://10.0.2.2:8080, 1"
+          ]
         }
       ]
     }

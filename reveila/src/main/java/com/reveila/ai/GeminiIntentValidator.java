@@ -8,11 +8,19 @@ import java.util.Map;
  * 
  * @author CL
  */
-public class GeminiIntentValidator implements IntentValidator {
-    private final GeminiProvider gemini;
+public class GeminiIntentValidator extends com.reveila.system.AbstractService implements IntentValidator {
+    private GeminiProvider gemini;
 
-    public GeminiIntentValidator(GeminiProvider gemini) {
-        this.gemini = gemini;
+    public GeminiIntentValidator() {
+    }
+
+    @Override
+    public void onStart() throws Exception {
+        this.gemini = (GeminiProvider) systemContext.getProxy("GeminiProvider").orElseThrow().invoke("getInstance", null);
+    }
+
+    @Override
+    protected void onStop() throws Exception {
     }
 
     @Override

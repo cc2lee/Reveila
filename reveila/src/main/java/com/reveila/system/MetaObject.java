@@ -119,7 +119,32 @@ public class MetaObject {
 		return (String) this.dataMap.get(Constants.ISOLATION);
 	}
 
+	@SuppressWarnings("unchecked")
 	public boolean requiresPhysicalIsolation() {
-		return Constants.PHYSICAL_ISOLATION.equalsIgnoreCase(getIsolation());
+		Object perimeter = this.dataMap.get(Constants.SECURITY_PERIMETER);
+		if (perimeter instanceof Map) {
+			Map<String, Object> pMap = (Map<String, Object>) perimeter;
+			Object iv = pMap.get(Constants.ISOLATION);
+			if (iv instanceof Boolean) {
+				return (Boolean) iv;
+			}
+			return "true".equalsIgnoreCase(String.valueOf(iv));
+		}
+
+		return false;
+	}
+
+	@SuppressWarnings("unchecked")
+	public boolean isAutoStart() {
+		Object service = this.dataMap.get(Constants.SERVICE);
+		if (service instanceof Map) {
+			Map<String, Object> sMap = (Map<String, Object>) service;
+			Object autoStart = sMap.get(Constants.AUTO_START);
+			if (autoStart instanceof Boolean) {
+				return (Boolean) autoStart;
+			}
+			return !"false".equalsIgnoreCase(String.valueOf(autoStart));
+		}
+		return true; // Default to true
 	}
 }

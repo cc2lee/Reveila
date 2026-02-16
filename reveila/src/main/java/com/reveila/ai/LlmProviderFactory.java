@@ -8,12 +8,20 @@ import java.util.Map;
  * 
  * @author CL
  */
-public class LlmProviderFactory {
+public class LlmProviderFactory extends com.reveila.system.AbstractService {
     private final Map<String, LlmProvider> providers = new HashMap<>();
 
-    public LlmProviderFactory(OpenAiProvider openAi, GeminiProvider gemini) {
-        providers.put("openai", openAi);
-        providers.put("gemini", gemini);
+    public LlmProviderFactory() {
+    }
+
+    @Override
+    public void onStart() throws Exception {
+        providers.put("openai", (LlmProvider) systemContext.getProxy("OpenAiProvider").orElseThrow().invoke("getInstance", null));
+        providers.put("gemini", (LlmProvider) systemContext.getProxy("GeminiProvider").orElseThrow().invoke("getInstance", null));
+    }
+
+    @Override
+    protected void onStop() throws Exception {
     }
 
     /**

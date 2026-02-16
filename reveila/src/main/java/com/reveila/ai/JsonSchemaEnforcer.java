@@ -17,13 +17,21 @@ import java.util.stream.Collectors;
  *
  * @author CL
  */
-public class JsonSchemaEnforcer implements SchemaEnforcer {
-    private final MetadataRegistry registry;
+public class JsonSchemaEnforcer extends com.reveila.system.AbstractService implements SchemaEnforcer {
+    private MetadataRegistry registry;
     private final ObjectMapper mapper = new ObjectMapper();
     private final JsonSchemaFactory factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7);
 
-    public JsonSchemaEnforcer(MetadataRegistry registry) {
-        this.registry = registry;
+    public JsonSchemaEnforcer() {
+    }
+
+    @Override
+    public void onStart() throws Exception {
+        this.registry = (MetadataRegistry) systemContext.getProxy("MetadataRegistry").orElseThrow().invoke("getInstance", null);
+    }
+
+    @Override
+    protected void onStop() throws Exception {
     }
 
     @Override
