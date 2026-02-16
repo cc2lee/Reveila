@@ -6,37 +6,43 @@ import dalvik.system.DexClassLoader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.nio.file.Path;
 import com.reveila.api.IReveilaPlugin;
+import com.reveila.system.Proxy;
+import com.reveila.system.MetaObject;
+import java.util.Map;
 
+/**
+ * Realigned with Reveila Core Architecture (ADR 0006).
+ * Uses Proxy-based invocation and standardized ClassLoading.
+ */
 public class SafePluginLoader {
+
+    public static Proxy createProxy(Context context, String pluginId, String className) {
+        Map<String, Object> config = Map.of(
+            "name", pluginId,
+            "class", className,
+            "plugin", Map.of("directory", new File(context.getFilesDir(), "plugins/" + pluginId).getAbsolutePath())
+        );
+        return new Proxy(new MetaObject(config));
+    }
 
     public static IReveilaPlugin loadPlugin(Context context, String pluginFileName, String className) {
         try {
-            // 1. Target internal private storage (never SD card)
-            File pluginDir = new File(context.getFilesDir(), "plugins");
+            String pluginId = pluginFileName.replace(".jar", "").replace(".dex", "");
+            File pluginDir = new File(context.getFilesDir(), "plugins/" + pluginId);
             if (!pluginDir.exists()) pluginDir.mkdirs();
             
             File pluginFile = new File(pluginDir, pluginFileName);
-            
-            // 2. Copy from Assets to internal storage (simulating a download)
             copyAssetToFile(context, pluginFileName, pluginFile);
-
-            // 3. ANDROID 14+ CRITICAL STEP:
-            // Dynamically loaded code must be set to read-only before loading.
             pluginFile.setReadOnly();
 
-            // 4. Initialize the ClassLoader
-            // We use the App's ClassLoader as the parent
-            DexClassLoader loader = new DexClassLoader(
-                pluginFile.getAbsolutePath(),
-                null, // optimizedDirectory is deprecated/null in modern Android
-                null, 
-                context.getClassLoader()
-            );
-
-            // 5. Instantiate and cast to the Shared Interface
-            Class<?> clazz = loader.loadClass(className);
-            return (IReveilaPlugin) clazz.getDeclaredConstructor().newInstance();
+            Proxy proxy = createProxy(context, pluginId, className);
+            proxy.loadPlugin(pluginDir.toPath());
+            
+            // We return the instance for backward compatibility,
+            // but future calls should go through the Proxy.
+            return (IReveilaPlugin) proxy.invoke("getInstance", null);
 
         } catch (Exception e) {
             e.printStackTrace();

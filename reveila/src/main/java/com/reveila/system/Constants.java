@@ -60,4 +60,6 @@ public final class Constants {
 	public static final String DEPENDENCIES = "dependencies";
     public static final String COMPONENT_START_TIMEOUT = "start-timeout";
     public static final String LOG_CONSOLE_ENABLED = "log.console.enabled";
-}
+    public static final String ISOLATION = "isolation";
+    public static final String PHYSICAL_ISOLATION = "physical";
+   }

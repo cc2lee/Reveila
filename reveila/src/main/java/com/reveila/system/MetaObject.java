@@ -114,4 +114,12 @@ public class MetaObject {
 		Object value = this.dataMap.get(Constants.DEPENDENCIES);
 		return (value instanceof List) ? (List<String>) value : Collections.emptyList();
 	}
+
+	public String getIsolation() {
+		return (String) this.dataMap.get(Constants.ISOLATION);
+	}
+
+	public boolean requiresPhysicalIsolation() {
+		return Constants.PHYSICAL_ISOLATION.equalsIgnoreCase(getIsolation());
+	}
 }

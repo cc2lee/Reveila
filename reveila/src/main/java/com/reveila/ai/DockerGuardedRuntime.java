@@ -1,5 +1,6 @@
 package com.reveila.ai;
 
+import com.reveila.system.AbstractService;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.model.Bind;
@@ -20,7 +21,7 @@ import java.util.Map;
  * 
  * @author CL
  */
-public class DockerGuardedRuntime extends AbstractGuardedRuntime {
+public class DockerGuardedRuntime extends AbstractGuardedRuntime implements GuardedRuntime {
     
     private final DockerClient dockerClient;
 
@@ -77,10 +78,14 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
             jitCredentials.forEach((k, v) -> envVars.add(k + "=" + v));
         }
 
+        // ADR 0006: Pass method name to the worker agent
+        String methodName = arguments != null ? String.valueOf(arguments.get("method")) : "execute";
+        envVars.add("METHOD_NAME=" + methodName);
+
         CreateContainerResponse container = dockerClient.createContainerCmd("reveila-plugin-executor:latest")
                 .withHostConfig(hostConfig)
                 .withEnv(envVars)
-                .withCmd("java", "-cp", "/app/plugin.jar", "com.reveila.system.PluginRunner")
+                .withCmd("java", "-cp", "/app/plugin.jar:/app/reveila-core.jar", "com.reveila.system.PluginRunner")
                 .exec();
 
         dockerClient.startContainerCmd(container.getId()).exec();

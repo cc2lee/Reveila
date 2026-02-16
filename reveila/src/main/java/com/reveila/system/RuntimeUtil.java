@@ -72,6 +72,37 @@ public final class RuntimeUtil {
 				.collect(Collectors.toList());
 
 		URL[] urlArray = urls.toArray(new URL[0]);
+		
+		// ADR 0006: Check if we are on Android to use DexClassLoader
+		String os = System.getProperty("os.name").toLowerCase();
+		if (os.contains("android") || System.getProperty("java.vm.name").equalsIgnoreCase("Dalvik")) {
+			// On Android, we need to handle DEX files.
+			// This assumes the jars in the directory are actually DEX-optimized or contain classes.dex
+			// For a true core-shared implementation, we'd use a PlatformAdapter-provided loader.
+			return createAndroidClassLoader(dir, parentClassLoader);
+		}
+
 		return new ChildFirstURLClassLoader(urlArray, parentClassLoader);
+	}
+
+	private static ClassLoader createAndroidClassLoader(String dir, ClassLoader parent) {
+		try {
+			// Reflection used here to avoid hard dependency on Android SDK in the core Java project
+			Class<?> dexClass = Class.forName("dalvik.system.DexClassLoader");
+			java.io.File fileDir = new java.io.File(dir);
+			java.io.File[] files = fileDir.listFiles((d, name) -> name.endsWith(".jar") || name.endsWith(".dex"));
+			if (files == null || files.length == 0) return parent;
+
+			StringBuilder pathBuilder = new StringBuilder();
+			for (java.io.File f : files) {
+				if (pathBuilder.length() > 0) pathBuilder.append(java.io.File.pathSeparator);
+				pathBuilder.append(f.getAbsolutePath());
+			}
+
+			return (ClassLoader) dexClass.getConstructor(String.class, String.class, String.class, ClassLoader.class)
+					.newInstance(pathBuilder.toString(), null, null, parent);
+		} catch (Exception e) {
+			return parent;
+		}
 	}
 }
