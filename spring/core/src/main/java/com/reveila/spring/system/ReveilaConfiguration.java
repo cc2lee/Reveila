@@ -1,7 +1,5 @@
 package com.reveila.spring.system;
 
-import com.reveila.ai.*;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;

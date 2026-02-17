@@ -1,14 +1,14 @@
 package com.reveila.spring.service;
 
+import java.util.Map;
+
+import org.springframework.lang.NonNull;
+import org.springframework.scheduling.annotation.Async;
+
 import com.reveila.ai.AgentPrincipal;
 import com.reveila.ai.FlightRecorder;
 import com.reveila.spring.model.jpa.AuditLog;
 import com.reveila.spring.repository.jpa.JdbcAuditLogRepository;
-import org.springframework.lang.NonNull;
-import org.springframework.scheduling.annotation.Async;
-import org.springframework.stereotype.Service;
-
-import java.util.Map;
 
 /**
  * Phase 4: Long-term Forensic Auditability using PostgreSQL.
@@ -16,13 +16,25 @@ import java.util.Map;
  * 
  * @author CL
  */
-@Service
-public class PostgresFlightRecorder implements FlightRecorder {
+public class PostgresFlightRecorder extends com.reveila.system.AbstractService implements FlightRecorder {
 
-    private final JdbcAuditLogRepository auditRepository;
+    private JdbcAuditLogRepository auditRepository;
 
-    public PostgresFlightRecorder(JdbcAuditLogRepository auditRepository) {
-        this.auditRepository = auditRepository;
+    public PostgresFlightRecorder() {
+    }
+
+    @Override
+    protected void onStart() throws Exception {
+        // ADR 0006: Platform-agnostic repository retrieval.
+        // We cast to our shared functional interface or a platform-specific helper.
+        Object repo = systemContext.getPlatformAdapter().getRepository("AuditLog");
+        if (repo instanceof JdbcAuditLogRepository) {
+            this.auditRepository = (JdbcAuditLogRepository) repo;
+        }
+    }
+
+    @Override
+    protected void onStop() throws Exception {
     }
 
     @Override

@@ -21,6 +21,10 @@ import com.reveila.ai.AgenticFabric;
 import com.reveila.ai.InvocationResult;
 import com.reveila.ai.UniversalInvocationBridge;
 import com.reveila.spring.service.PostgresFlightRecorder;
+import com.reveila.system.Reveila;
+import com.reveila.system.SystemContext;
+import com.reveila.system.Proxy;
+import java.util.Optional;
 
 @ExtendWith(MockitoExtension.class)
 class FabricDemoControllerTest {
@@ -28,12 +32,26 @@ class FabricDemoControllerTest {
     @Mock private UniversalInvocationBridge bridge;
     @Mock private AgenticFabric fabric;
     @Mock private PostgresFlightRecorder flightRecorder;
+    @Mock private Reveila reveila;
+    @Mock private SystemContext systemContext;
+    @Mock private Proxy bridgeProxy;
+    @Mock private Proxy fabricProxy;
+    @Mock private Proxy recorderProxy;
 
     private FabricDemoController controller;
 
     @BeforeEach
-    void setUp() {
-        controller = new FabricDemoController(bridge, fabric, flightRecorder);
+    void setUp() throws Exception {
+        when(reveila.getSystemContext()).thenReturn(systemContext);
+        when(systemContext.getProxy("UniversalInvocationBridge")).thenReturn(Optional.of(bridgeProxy));
+        when(systemContext.getProxy("AgenticFabric")).thenReturn(Optional.of(fabricProxy));
+        when(systemContext.getProxy("FlightRecorder")).thenReturn(Optional.of(recorderProxy));
+        
+        when(bridgeProxy.getInstance()).thenReturn(bridge);
+        when(fabricProxy.getInstance()).thenReturn(fabric);
+        when(recorderProxy.getInstance()).thenReturn(flightRecorder);
+
+        controller = new FabricDemoController(reveila);
     }
 
     @Test

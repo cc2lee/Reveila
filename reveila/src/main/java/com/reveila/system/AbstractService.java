@@ -2,6 +2,8 @@ package com.reveila.system;
 
 import java.util.EventObject;
 import java.util.logging.Logger;
+import java.time.Duration;
+import java.time.Instant;
 
 import com.reveila.event.EventConsumer;
 
@@ -12,11 +14,13 @@ import com.reveila.event.EventConsumer;
 public abstract class AbstractService implements EventConsumer, Startable, Stoppable {
 
     protected SystemContext systemContext;
-    private volatile boolean running = false;
     protected Logger logger;
+    private ServiceState state = ServiceState.INITIALIZED;
+    private Instant startTime;
+    private Duration startupLatency;
 
     public boolean isRunning() {
-        return running;
+        return state == ServiceState.ACTIVE;
     }
 
     public void setSystemContext(SystemContext context) {
@@ -29,8 +33,14 @@ public abstract class AbstractService implements EventConsumer, Startable, Stopp
 
     @Override
     public final synchronized void stop() throws Exception {
-        running = false;
-        onStop();
+        this.state = ServiceState.STOPPING;
+        try {
+            onStop();
+            this.state = ServiceState.STOPPED;
+        } catch (Exception e) {
+            this.state = ServiceState.FAILED;
+            throw e;
+        }
     }
 
     protected abstract void onStop() throws Exception;
@@ -41,19 +51,43 @@ public abstract class AbstractService implements EventConsumer, Startable, Stopp
      */
     @Override
     public final synchronized void start() throws Exception {
-        if (running) return;
+        if (state == ServiceState.ACTIVE || state == ServiceState.STARTING) return;
         
-        onStart();
-        
-        // Check: did we time out or get interrupted during onStart?
-        if (Thread.currentThread().isInterrupted()) {
-            stop();
-            throw new InterruptedException("Service start interrupted.");
+        this.startTime = Instant.now();
+        this.state = ServiceState.STARTING;
+
+        try {
+            onStart(); // Hook for subclass implementation
+            
+            // Check: did we time out or get interrupted during onStart?
+            if (Thread.currentThread().isInterrupted()) {
+                stop();
+                throw new InterruptedException("Service start interrupted.");
+            }
+            
+            this.startupLatency = Duration.between(startTime, Instant.now());
+            this.state = ServiceState.ACTIVE;
+        } catch (Exception e) {
+            this.state = ServiceState.FAILED;
+            throw e;
         }
-        
-        running = true;
     }
 
+    /**
+     * @return The exact time in milliseconds it took for the service to boot.
+     * Useful for Slide 8 (Operational Performance) data.
+     */
+    public long getStartupLatencyMs() {
+        return startupLatency != null ? startupLatency.toMillis() : 0;
+    }
+
+    /**
+     * @return The current operational state of the service.
+     */
+    public ServiceState getServiceState() {
+        return state;
+    }
+    
     /**
      * Subclasses implement their specific startup logic here.
      * Must check isInterrupted() if performing long-running tasks.
