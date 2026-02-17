@@ -77,9 +77,14 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
             jitCredentials.forEach((k, v) -> envVars.add(k + "=" + v));
         }
 
-        // ADR 0006: Pass method name to the worker agent
+        // ADR 0006: Pass method name and network policy to the worker agent
         String methodName = arguments != null ? String.valueOf(arguments.get("method")) : "execute";
         envVars.add("METHOD_NAME=" + methodName);
+
+        // Network Policy from Perimeter
+        if (perimeter != null) {
+            envVars.add("NETWORK_RESTRICTED=" + (perimeter.internetAccessBlocked() || (perimeter.allowedDomains() != null && !perimeter.allowedDomains().isEmpty())));
+        }
 
         CreateContainerResponse container = dockerClient.createContainerCmd("reveila-plugin-executor:latest")
                 .withHostConfig(hostConfig)

@@ -115,12 +115,8 @@ public class MetaObject {
 		return (value instanceof List) ? (List<String>) value : Collections.emptyList();
 	}
 
-	public String getIsolation() {
-		return (String) this.dataMap.get(Constants.ISOLATION);
-	}
-
 	@SuppressWarnings("unchecked")
-	public boolean requiresPhysicalIsolation() {
+	public boolean requiresRuntimeIsolation() {
 		Object perimeter = this.dataMap.get(Constants.SECURITY_PERIMETER);
 		if (perimeter instanceof Map) {
 			Map<String, Object> pMap = (Map<String, Object>) perimeter;
@@ -132,6 +128,21 @@ public class MetaObject {
 		}
 
 		return false;
+	}
+
+	/**
+	 * ADR 0006: Retrieves the network policy from the security-perimeter.
+	 * 
+	 * @return The network policy string (e.g., "restricted"), or null if not defined.
+	 */
+	@SuppressWarnings("unchecked")
+	public String getNetworkPolicy() {
+		Object perimeter = this.dataMap.get(Constants.SECURITY_PERIMETER);
+		if (perimeter instanceof Map) {
+			Map<String, Object> pMap = (Map<String, Object>) perimeter;
+			return (String) pMap.get(Constants.NETWORK);
+		}
+		return null;
 	}
 
 	@SuppressWarnings("unchecked")

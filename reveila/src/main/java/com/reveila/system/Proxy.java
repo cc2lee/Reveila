@@ -136,7 +136,7 @@ public final class Proxy extends AbstractService {
 			throw new IllegalArgumentException("Method name must not be null");
 
 		// ADR 0006: Proxy-Based Invocations with Physical Isolation
-		if (metaObject.requiresPhysicalIsolation()) {
+		if (metaObject.requiresRuntimeIsolation()) {
 			GuardedRuntime runtime = systemContext.getProxy("DockerGuardedRuntime")
 					.map(p -> {
 						try {
