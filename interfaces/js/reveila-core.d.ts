@@ -4,4 +4,9 @@ export class ReveilaClient {
     invoke(componentName: string, methodName: string, args?: any[]): Promise<any>;
     search(searchRequest: any): Promise<any>;
 }
+export interface Entity {
+    id: { id: string };
+    attributes: Record<string, any>;
+}
+
 export const reveila: ReveilaClient;

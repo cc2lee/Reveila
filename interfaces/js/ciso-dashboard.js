@@ -161,8 +161,14 @@ class CisoKillSwitch extends HTMLElement {
   }
 
   handleRevoke(sessionId) {
+    // ADR: Oversight Token must be sent to the backend
+    const oversightToken = 'REV-OVR-9921-X'; // In production, retrieved from secure hardware or ENV
+    
     const event = new CustomEvent('revoke-perimeter', {
-      detail: { sessionId },
+      detail: {
+        sessionId,
+        headers: { 'X-Reveila-Oversight-Token': oversightToken }
+      },
       bubbles: true,
       composed: true
     });

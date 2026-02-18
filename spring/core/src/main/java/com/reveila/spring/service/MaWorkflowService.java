@@ -1,79 +1,48 @@
-package com.reveila.spring.system;
+package com.reveila.spring.service;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
 import com.reveila.ai.AgencyPerimeter;
 import com.reveila.ai.AgentPrincipal;
 import com.reveila.ai.AgenticFabric;
+import com.reveila.ai.FlightRecorder;
 import com.reveila.ai.InvocationResult;
 import com.reveila.ai.PerformanceReport;
 import com.reveila.ai.UniversalInvocationBridge;
 import com.reveila.system.AbstractService;
-import com.reveila.system.Reveila;
 
 /**
- * FabricDemoController simulates a high-risk M&A workflow.
- * 
- * Workflow:
- * 1. A Manager agent receives a prompt.
- * 2. It delegates 'Document Extraction' to a Worker agent.
- * 3. It triggers a 'HITL Approval' for the final summary.
- * 4. The entire trace is persisted to the Postgres Flight Recorder.
- * 
- * @author CL
+ * Sovereign Service for M&A Workflow orchestration.
+ * ADR 0006: Realigned to use Proxy-based invocation pattern.
  */
-@RestController
-@RequestMapping("/api/v1/fabric-demo")
-public class FabricDemoController {
+public class MaWorkflowService extends AbstractService {
 
-    private final Reveila reveila;
+    private UniversalInvocationBridge bridge;
+    private AgenticFabric fabric;
+    private FlightRecorder flightRecorder;
 
-    public FabricDemoController(Reveila reveila) {
-        this.reveila = reveila;
+    @Override
+    protected void onStart() throws Exception {
+        this.bridge = (UniversalInvocationBridge) systemContext.getProxy("UniversalInvocationBridge").orElseThrow().getInstance();
+        this.fabric = (AgenticFabric) systemContext.getProxy("AgenticFabric").orElseThrow().getInstance();
+        this.flightRecorder = (FlightRecorder) systemContext.getProxy("FlightRecorder").orElseThrow().getInstance();
     }
 
-    private <T> T getComponent(String name, Class<T> type) {
-        return reveila.getSystemContext().getProxy(name)
-                .map(p -> {
-                    try {
-                        return p.getInstance();
-                    } catch (Exception e) {
-                        return null;
-                    }
-                })
-                .filter(type::isInstance)
-                .map(type::cast)
-                .orElse(null);
-    }
+    @Override
+    protected void onStop() throws Exception {}
 
     /**
-     * Starts the M&A Workflow simulation.
-     * 
-     * @param request A map containing the initial prompt.
-     * @return The result of the workflow.
+     * Entry point for unified invocation.
      */
-    @PostMapping("/ma-workflow")
-    public Map<String, Object> runMaWorkflow(@RequestBody Map<String, Object> request) {
-        UniversalInvocationBridge bridge = getComponent("UniversalInvocationBridge", UniversalInvocationBridge.class);
-        AgenticFabric fabric = getComponent("AgenticFabric", AgenticFabric.class);
-        com.reveila.ai.FlightRecorder flightRecorder = getComponent("FlightRecorder", com.reveila.ai.FlightRecorder.class);
-
+    public Map<String, Object> runMaWorkflow(Map<String, Object> request) {
         String prompt = (String) request.getOrDefault("prompt", "Analyze M&A documents for Project X");
         AgentPrincipal managerPrincipal = AgentPrincipal.create("manager-agent", "m&a-dept");
         String traceId = managerPrincipal.traceId();
 
-        // 1. Manager reasoning
         flightRecorder.recordReasoning(managerPrincipal, "Starting M&A high-risk workflow for prompt: " + prompt);
 
-        // 2. Delegate 'Document Extraction' to Worker
         Map<String, Object> workerArgs = new HashMap<>();
         workerArgs.put("document_type", "SEC Filing");
         workerArgs.put("target_company", "Project X");
@@ -82,7 +51,6 @@ public class FabricDemoController {
         flightRecorder.recordStep(managerPrincipal, "delegating_extraction", Map.of("target", "worker-agent"));
         Object extractionResult = fabric.delegate(managerPrincipal, "doc_extraction.extract", workerArgs);
 
-        // 3. Trigger HITL Approval for the final summary
         Map<String, Object> summaryArgs = new HashMap<>();
         summaryArgs.put("summary", "Project X shows 15% revenue growth but has outstanding litigation.");
         summaryArgs.put("extraction_data", extractionResult);
@@ -112,21 +80,29 @@ public class FabricDemoController {
     }
 
     /**
-     * Generates a Performance Report for the Investor Pitch Deck.
+     * ADR 0006: Diagnostic method for performance tracking.
      */
-    @GetMapping("/performance-report")
     public PerformanceReport getPerformanceReport() {
-        AbstractService bridge = getComponent("UniversalInvocationBridge", AbstractService.class);
-        AbstractService gemini = getComponent("GeminiProvider", AbstractService.class);
-        AbstractService auditor = getComponent("healthcare-audit-worker", AbstractService.class);
+        AbstractService bridgeService = (AbstractService) bridge;
+        
+        // Dynamic lookups for providers as they might be isolated
+        AbstractService gemini = null;
+        try {
+            gemini = (AbstractService) systemContext.getProxy("GeminiProvider").orElseThrow().getInstance();
+        } catch (Exception e) {}
+
+        AbstractService auditor = null;
+        try {
+            auditor = (AbstractService) systemContext.getProxy("healthcare-audit-worker").orElseThrow().getInstance();
+        } catch (Exception e) {}
 
         Map<String, Long> details = new HashMap<>();
-        if (bridge != null) details.put("UniversalInvocationBridge", bridge.getStartupLatencyMs());
+        if (bridgeService != null) details.put("UniversalInvocationBridge", bridgeService.getStartupLatencyMs());
         if (gemini != null) details.put("GeminiProvider", gemini.getStartupLatencyMs());
         if (auditor != null) details.put("ClaimsAuditor", auditor.getStartupLatencyMs());
 
         return new PerformanceReport(
-            bridge != null ? bridge.getStartupLatencyMs() : 0,
+            bridgeService != null ? bridgeService.getStartupLatencyMs() : 0,
             gemini != null ? gemini.getStartupLatencyMs() : 0,
             auditor != null ? auditor.getStartupLatencyMs() : 0,
             details

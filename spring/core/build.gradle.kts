@@ -10,6 +10,19 @@ plugins {
     id("spring-conventions")
 }
 
+sourceSets {
+    main {
+        resources {
+            // Tell Spring to include the Vue build output in the JAR's classpath
+            srcDir("../../web/vue-project/dist") 
+        }
+    }
+}
+
+// Ensure Vue is built BEFORE Spring processes resources
+tasks.named<ProcessResources>("processResources") {
+    dependsOn(":web:vue-project:build")
+}
 
 dependencies {
     // AWS 1: Import the BOM as a platform dependency
@@ -45,6 +58,7 @@ dependencies {
     runtimeOnly("com.h2database:h2")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-data-mongodb")
+    developmentOnly("org.springframework.boot:spring-boot-devtools")
 }
 
 tasks.withType<org.springframework.boot.gradle.tasks.bundling.BootJar> {
@@ -56,18 +70,4 @@ tasks.withType<org.springframework.boot.gradle.tasks.run.BootRun> {
 }
 
 
-// Copies the Vue.js distributables to the resources directory so that they are
-// available on the classpath for Spring Boot.
-val copyVueDist by tasks.registering(Sync::class) {
-    dependsOn(":web:vue-project:buildVue")
-    // Use the actual output directory from the web project
-    from(project(":web:vue-project").layout.projectDirectory.dir("dist"))
-    // Copy INTO 'generated/vue/static' so index.html is at 'static/index.html' in the build
-    into(layout.buildDirectory.dir("generated/vue/static"))
-}
-
-tasks.named<ProcessResources>("processResources") {
-    dependsOn(copyVueDist)
-    from(layout.buildDirectory.dir("generated/vue"))
-}
 

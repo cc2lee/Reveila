@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue';
-import { ReveilaClient } from '@reveila/core';
+import { ReveilaClient, type Entity } from '@reveila/core';
 
 const props = defineProps({
     entityType: { type: String, required: true },
@@ -15,8 +15,7 @@ const searchQuery = ref('');
 // 3. User-selectable search field, initialized by prop
 const currentSearchField = ref(props.searchField);
 
-/** @type {import('vue').Ref<Array<{id: {id: string}, attributes: Record<string, any>}>>} */
-const entities = ref([]);
+const entities = ref<Entity[]>([]);
 
 const headers = computed(() => {
     if (entities.value.length === 0) return [];
@@ -30,9 +29,9 @@ watch(currentSearchField, () => {
     if (searchQuery.value) fetchData();
 });
 
-let debounceTimer;
+let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 const debouncedSearch = () => {
-    clearTimeout(debounceTimer);
+    if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => fetchData(), 300);
 };
 

@@ -32,7 +32,21 @@ public class ApiController {
         String callerIp = httpRequest.getRemoteAddr();
 
         Object result = reveila.invoke(componentName, request.getMethodName(), args, callerIp);
+        
+        // Wrap result if it's not already a JSON-friendly object/map
         String jsonResponse = objectMapper.writeValueAsString(result);
         return ResponseEntity.ok(jsonResponse);
+    }
+
+    /**
+     * Dual-Key Overwatch Endpoint.
+     * Protected by OversightInterceptor via /api/v1/overwatch prefix.
+     */
+    @PostMapping("/v1/overwatch/components/{componentName}/invoke")
+    public ResponseEntity<?> invokeOversightComponent(
+            @PathVariable("componentName") String componentName,
+            @RequestBody MethodDTO request,
+            HttpServletRequest httpRequest) throws Exception {
+        return invokeComponent(componentName, request, httpRequest);
     }
 }

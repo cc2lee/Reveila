@@ -5,20 +5,30 @@ import java.util.Objects;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.lang.NonNull;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 import com.reveila.spring.security.TenantInterceptor;
+import com.reveila.spring.security.OversightInterceptor;
 
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
     private final TenantInterceptor tenantInterceptor;
+    private final OversightInterceptor oversightInterceptor;
 
-    public WebConfig(@NonNull TenantInterceptor tenantInterceptor) {
-        // Objects.requireNonNull provides a runtime check that satisfies
-        // most strict static analysis tools (like Eclipse/JDT or FindBugs)
+    public WebConfig(@NonNull TenantInterceptor tenantInterceptor, @NonNull OversightInterceptor oversightInterceptor) {
         this.tenantInterceptor = Objects.requireNonNull(tenantInterceptor, "tenantInterceptor must not be null");
+        this.oversightInterceptor = Objects.requireNonNull(oversightInterceptor, "oversightInterceptor must not be null");
+    }
+
+    @Override
+    public void addResourceHandlers(@NonNull ResourceHandlerRegistry registry) {
+        registry.addResourceHandler("/**")
+                .addResourceLocations("file:../../web/vue-project/dist/")
+                .setCachePeriod(0)
+                .resourceChain(true);
     }
 
     @Override
@@ -30,11 +40,17 @@ public class WebConfig implements WebMvcConfigurer {
                     // Exclude public endpoints like login or status if they are under /api
                     .excludePathPatterns("/api/auth/**", "/api/public/**");
         }
+
+        if (this.oversightInterceptor != null) {
+            registry.addInterceptor(this.oversightInterceptor)
+                    .addPathPatterns("/api/v1/overwatch/**");
+        }
     }
 
     @Override
     public void addViewControllers(@NonNull ViewControllerRegistry registry) {
-        // Redirect any path that doesn't contain a dot (to avoid matching files like .js)
+        // Redirect any path that doesn't contain a dot (to avoid matching files like
+        // .js)
         // and isn't an /api call back to index.html
         // The regex {spring:.*} is used to avoid issues with dots in some path segments
         registry.addViewController("/")

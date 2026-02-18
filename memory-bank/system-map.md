@@ -52,6 +52,7 @@ The suite is organized into specialized modules to maintain strict separation of
 | `/spring` | **Backend.** Spring Boot 3.5+ implementation providing JPA persistence and Security. |
 | `/android` | **Mobile Infrastructure.** Android-specific adapters and DEX loading logic. |
 | `/web` | **Web Frontend.** Vue.js based administrative and user interfaces. |
+| `/interfaces` | **External Bridges.** Official home for the Universal SDK, framework-agnostic bridges, and specialized oversight UIs (like the CISO Dashboard). |
 
 ## 🔌 Communication & Invocation Path
 

@@ -69,9 +69,24 @@ public class PostgresFlightRecorder extends com.reveila.system.AbstractService i
     @Async
     public void recordForensicMetadata(AgentPrincipal principal, Map<String, Object> metadata) {
         AuditLog log = createBaseLog(principal, "FORENSIC_METRICS");
-        if (metadata != null) {
-            log.setMetadata(metadata.toString());
+        
+        // ADR: Track "Who watches the watchers"
+        java.util.Map<String, Object> forensicData = new java.util.HashMap<>();
+        if (metadata != null) forensicData.putAll(metadata);
+        
+        try {
+            // Check for oversight token in current request context if available
+            jakarta.servlet.http.HttpServletRequest request = ((org.springframework.web.context.request.ServletRequestAttributes)
+                org.springframework.web.context.request.RequestContextHolder.getRequestAttributes()).getRequest();
+            Object tokenId = request.getAttribute("OVERSIGHT_TOKEN_ID");
+            if (tokenId != null) {
+                forensicData.put("oversight_token_id", tokenId);
+            }
+        } catch (Exception e) {
+            // Not in a request context, skip token enrichment
         }
+
+        log.setMetadata(forensicData.toString());
         auditRepository.save(log);
     }
 

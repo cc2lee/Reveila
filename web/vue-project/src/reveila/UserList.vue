@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { ReveilaClient } from '@reveila/core';
+import { ReveilaClient, type Entity } from '@reveila/core';
 
-const users = ref([]);
+const users = ref<Entity[]>([]);
 const loading = ref(false);
 
 const fetchUsers = async () => {
@@ -23,7 +23,8 @@ const fetchUsers = async () => {
             includeCount: true
         };
 
-        const response = await ReveilaClient.search(searchRequest);
+        const api = new ReveilaClient();
+        const response = await api.search(searchRequest);
         users.value = response.content; // 'content' comes from the Page<Entity> object
     } finally {
         loading.value = false;

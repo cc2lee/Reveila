@@ -13,9 +13,16 @@ import java.util.stream.Collectors;
 /**
  * Service to manage plugin metadata and generate OpenAI-compatible tool definitions.
  */
-@Service
-public class MetadataRegistryService {
+public class MetadataRegistryService extends com.reveila.system.AbstractService {
     private final Map<String, PluginManifest> registry = new ConcurrentHashMap<>();
+
+    public MetadataRegistryService() {}
+
+    @Override
+    protected void onStart() throws Exception {}
+
+    @Override
+    protected void onStop() throws Exception {}
 
     public void registerPlugin(PluginManifest manifest) {
         registry.put(manifest.id(), manifest);

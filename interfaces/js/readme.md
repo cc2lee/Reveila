@@ -9,7 +9,7 @@ The component is a standard Web Component (`<ciso-kill-switch>`).
 ### 1. Include the Script
 Include the script in your project:
 ```javascript
-import './connectors/js/ciso-dashboard.js';
+import './interfaces/js/ciso-dashboard.js';
 ```
 
 ### 2. React / Expo Integration
