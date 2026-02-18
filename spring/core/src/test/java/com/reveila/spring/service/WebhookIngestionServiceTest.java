@@ -13,6 +13,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import org.mockito.Mockito;
 
 @ExtendWith(MockitoExtension.class)
 class WebhookIngestionServiceTest {
@@ -23,13 +24,33 @@ class WebhookIngestionServiceTest {
     @Mock private AgentSession session;
     @Mock private LlmProviderFactory llmFactory;
     @Mock private LlmProvider llmProvider;
-    private LlmGovernanceConfig govConfig = LlmGovernanceConfig.defaultGov();
+    @Mock private com.reveila.system.Reveila reveila;
+    @Mock private com.reveila.system.SystemContext systemContext;
+    @Mock private com.reveila.system.Proxy proxy;
 
     private WebhookIngestionService ingestionService;
 
     @BeforeEach
-    void setUp() {
-        ingestionService = new WebhookIngestionService(bridge, orchestrationService, flightRecorder, llmFactory, govConfig);
+    void setUp() throws Exception {
+        when(reveila.getSystemContext()).thenReturn(systemContext);
+        when(systemContext.getProxy(anyString())).thenReturn(java.util.Optional.of(proxy));
+        
+        when(proxy.getInstance()).thenAnswer(invocation -> {
+            String name = (String) Mockito.mockingDetails(systemContext).getInvocations().stream()
+                .filter(i -> i.getMethod().getName().equals("getProxy"))
+                .reduce((first, second) -> second)
+                .get().getArgument(0);
+            
+            return switch (name) {
+                case "UniversalInvocationBridge" -> bridge;
+                case "OrchestrationService" -> orchestrationService;
+                case "FlightRecorder" -> flightRecorder;
+                case "LlmProviderFactory" -> llmFactory;
+                default -> null;
+            };
+        });
+
+        ingestionService = new WebhookIngestionService(reveila);
     }
 
     @Test
@@ -54,12 +75,12 @@ class WebhookIngestionServiceTest {
 
         // Verify session management
         verify(orchestrationService).createSession(anyString());
-        verify(session).put(eq("ingestion_source"), eq("Filo"));
+        verify(session).put(eq("ingestion_source"), eq("filo_ai"));
         
         // Verify flight recorder
-        verify(flightRecorder).recordStep(any(), eq("webhook_ingested"), anyMap());
+        verify(flightRecorder).recordStep(any(), eq("filo_handshake_received"), anyMap());
         
         // Verify bridge was called with mapped intent
-        verify(bridge).invoke(any(), isNull(), eq("finance.transfer"), anyMap());
+        verify(bridge).invoke(any(), isNull(), eq("doc_extraction.extract"), anyMap());
     }
 }

@@ -99,13 +99,25 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
 
     @Override
     protected void onStop() throws Exception {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'onStop'");
+        if (dockerClient != null) {
+            try {
+                dockerClient.close();
+                logger.info("DockerGuardedRuntime stopped: DockerClient connection closed.");
+            } catch (Exception e) {
+                logger.warning("Error closing DockerClient: " + e.getMessage());
+            }
+        }
     }
 
     @Override
     protected void onStart() throws Exception {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'onStart'");
+        // Ensure the Docker client is responsive during boot
+        try {
+            dockerClient.pingCmd().exec();
+            logger.info("DockerGuardedRuntime started: Successfully pinged Docker daemon.");
+        } catch (Exception e) {
+            logger.severe("Failed to initialize DockerGuardedRuntime: " + e.getMessage());
+            throw new com.reveila.error.SystemException("Docker daemon not reachable", e);
+        }
     }
 }

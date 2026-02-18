@@ -13,31 +13,34 @@ import com.reveila.ai.LlmProvider;
 import com.reveila.ai.LlmProviderFactory;
 import com.reveila.ai.OrchestrationService;
 import com.reveila.ai.UniversalInvocationBridge;
+import com.reveila.system.Reveila;
 
 /**
  * Service for ingesting external webhook signals from AI tools like Filo.
- * 
+ *
  * @author CL
  */
 @Service
 public class WebhookIngestionService {
 
-    private final UniversalInvocationBridge bridge;
-    private final OrchestrationService orchestrationService;
-    private final FlightRecorder flightRecorder;
-    private final LlmProviderFactory llmFactory;
-    private final LlmGovernanceConfig govConfig;
+    private final Reveila reveila;
 
-    public WebhookIngestionService(UniversalInvocationBridge bridge, 
-                                   OrchestrationService orchestrationService,
-                                   FlightRecorder flightRecorder,
-                                   LlmProviderFactory llmFactory,
-                                   LlmGovernanceConfig govConfig) {
-        this.bridge = bridge;
-        this.orchestrationService = orchestrationService;
-        this.flightRecorder = flightRecorder;
-        this.llmFactory = llmFactory;
-        this.govConfig = govConfig;
+    public WebhookIngestionService(Reveila reveila) {
+        this.reveila = reveila;
+    }
+
+    private <T> T getComponent(String name, Class<T> type) {
+        return reveila.getSystemContext().getProxy(name)
+                .map(p -> {
+                    try {
+                        return p.getInstance();
+                    } catch (Exception e) {
+                        return null;
+                    }
+                })
+                .filter(type::isInstance)
+                .map(type::cast)
+                .orElseThrow(() -> new IllegalStateException("Component '" + name + "' not found in Reveila context."));
     }
 
     /**
@@ -48,6 +51,13 @@ public class WebhookIngestionService {
      * @return The result of the intent invocation.
      */
     public InvocationResult ingest(Map<String, Object> payload) {
+        UniversalInvocationBridge bridge = getComponent("UniversalInvocationBridge", UniversalInvocationBridge.class);
+        OrchestrationService orchestrationService = getComponent("OrchestrationService", OrchestrationService.class);
+        FlightRecorder flightRecorder = getComponent("FlightRecorder", FlightRecorder.class);
+        LlmProviderFactory llmFactory = getComponent("LlmProviderFactory", LlmProviderFactory.class);
+        // Default governance config as it's no longer a standalone bean
+        LlmGovernanceConfig govConfig = new LlmGovernanceConfig("openai", "gemini");
+
         // 1. Filo Handshake: Validate trigger source and priority
         String source = (String) payload.getOrDefault("trigger_source", "unknown");
         String perimeter = (String) payload.getOrDefault("agency_perimeter", "default");
@@ -72,8 +82,6 @@ public class WebhookIngestionService {
         ));
 
         // 4. Trigger Dual-Model Governance Audit via the Bridge
-        // In a real scenario, we'd parse workerOutput to get the intent and args.
-        // For simulation, we map to a known intent based on context.
         Map<String, Object> context = (Map<String, Object>) payload.getOrDefault("context", Map.of());
         String action = (String) context.getOrDefault("required_action", "generic_task");
         
