@@ -14,3 +14,4 @@ This folder contains the architectural brain of the project. It tracks decisions
 ## 🏗️ Standards & Rules
 * [Global Standards](../.roo/rules/global-standards.md)
 * [Android Standards](../android/.roo/rules/android-standards.md)
+* [Configuration Requirements](./configuration-requirements.md)

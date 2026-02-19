@@ -15,10 +15,10 @@ public class PluginWatcher implements Runnable {
     private final Proxy proxy;
     private final AtomicBoolean running = new AtomicBoolean(true);
 
-    public PluginWatcher(String dir, Proxy proxy) {
-        this.pluginPath = Paths.get(dir);
+    public PluginWatcher(Path pluginPath, Proxy proxy) {
+        this.pluginPath = pluginPath;
         if (!Files.isDirectory(this.pluginPath)) {
-            throw new IllegalArgumentException("Plugin path must be a valid directory: " + dir);
+            throw new IllegalArgumentException("Plugin path must be a valid directory: " + pluginPath);
         }
         if (proxy == null) {
             throw new IllegalArgumentException("Proxy cannot be null.");

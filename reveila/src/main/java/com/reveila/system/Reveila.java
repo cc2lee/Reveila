@@ -239,18 +239,10 @@ public class Reveila {
 	private List<MetaObject> parseMetaObjects() throws Exception {
 		strictMode = !"false".equalsIgnoreCase(this.properties.getProperty(Constants.LAUNCH_STRICT_MODE));
 		String[] files = this.platformAdapter.getConfigFilePaths();
-		
-		// ADR 0006: Hardcoded system-components.json path for core initialization parity
-		String systemComponentsFile = Constants.CONFIGS_DIR_NAME + "/components/system-components.json";
 
 		List<String> fileList = new ArrayList<>();
 		if (files != null) {
 			Collections.addAll(fileList, files);
-		}
-
-		// Ensure system-components.json is prioritized or included
-		if (!fileList.contains(systemComponentsFile)) {
-			fileList.add(0, systemComponentsFile);
 		}
 
 		logger.info("Loading components...");
@@ -275,7 +267,7 @@ public class Reveila {
 
 		// PHASE 2: VALIDATION (Linting & Cycle Detection)
 		try {
-			new ConfigurationLinter().lint(list);
+			new ConfigurationLinter().lint(list, this.properties);
 			logger.info("✅ Configuration validation complete. No issues found.");
 		} catch (Exception e) {
 			handleStartError("Configuration validation failed.", e);
@@ -360,7 +352,7 @@ public class Reveila {
 		// 1. Sort based on priority (Ascending)
 		list.sort(Comparator.comparingInt(m -> m.getStartPriority()));
 		long startTimeoutSeconds = Long.parseLong(
-				this.properties.getProperty(Constants.COMPONENT_START_TIMEOUT, "30"));
+				this.properties.getProperty(Constants.COMPONENT_START_TIMEOUT, "60"));
 
 		// 2. Sequential Bootstrapping
 		for (MetaObject mObj : list) {

@@ -17,16 +17,42 @@ public class WebConfig implements WebMvcConfigurer {
 
     private final TenantInterceptor tenantInterceptor;
     private final OversightInterceptor oversightInterceptor;
+    private final org.springframework.core.env.Environment env;
 
-    public WebConfig(@NonNull TenantInterceptor tenantInterceptor, @NonNull OversightInterceptor oversightInterceptor) {
+    public WebConfig(@NonNull TenantInterceptor tenantInterceptor,
+                     @NonNull OversightInterceptor oversightInterceptor,
+                     @NonNull org.springframework.core.env.Environment env) {
         this.tenantInterceptor = Objects.requireNonNull(tenantInterceptor, "tenantInterceptor must not be null");
         this.oversightInterceptor = Objects.requireNonNull(oversightInterceptor, "oversightInterceptor must not be null");
+        this.env = Objects.requireNonNull(env, "env must not be null");
     }
 
     @Override
     public void addResourceHandlers(@NonNull ResourceHandlerRegistry registry) {
+        // ADR: Resolve system home without relying on Reveila runtime state (avoid NPE during startup)
+        String systemHome = env.getProperty(com.reveila.system.Constants.SYSTEM_HOME);
+        if (systemHome == null) {
+            systemHome = System.getProperty(com.reveila.system.Constants.SYSTEM_HOME);
+        }
+        if (systemHome == null) {
+            systemHome = System.getenv("REVEILA_HOME");
+        }
+        
+        java.nio.file.Path webDistPath;
+        if (systemHome != null) {
+            // Priority 1: Check for 'web' folder in Reveila Home
+            webDistPath = java.nio.file.Path.of(systemHome).resolve("web").toAbsolutePath().normalize();
+            if (!java.nio.file.Files.exists(webDistPath)) {
+                // Priority 2: Fallback to development source tree
+                webDistPath = java.nio.file.Path.of(systemHome).resolve("../../web/vue-project/dist/").toAbsolutePath().normalize();
+            }
+        } else {
+            // Ultimate Fallback
+            webDistPath = java.nio.file.Path.of("./web/vue-project/dist/").toAbsolutePath().normalize();
+        }
+
         registry.addResourceHandler("/**")
-                .addResourceLocations("file:../../web/vue-project/dist/")
+                .addResourceLocations("file:" + webDistPath.toString() + "/")
                 .setCachePeriod(0)
                 .resourceChain(true);
     }

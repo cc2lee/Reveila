@@ -232,10 +232,22 @@ public final class Proxy extends AbstractService {
 	public void onStart() throws Exception {
 		String pluginDir = metaObject.getPluginDir();
 		if (pluginDir != null && !pluginDir.isBlank()) {
-			loadPlugin(Path.of(pluginDir));
+			Path pluginPath = Path.of(pluginDir);
+
+			// ADR: Resolve relative plugin paths against SYSTEM_HOME
+			if (!pluginPath.isAbsolute()) {
+				String systemHome = systemContext.getProperties().getProperty(Constants.SYSTEM_HOME);
+				if (systemHome != null && !systemHome.isBlank()) {
+					pluginPath = Path.of(systemHome).resolve(pluginPath);
+				}
+			}
+
+			loadPlugin(pluginPath);
+
 			if (metaObject.isHotDeployEnabled()) {
 				// Launch watcher in background
-				watcherThread = new Thread(new PluginWatcher(pluginDir, this));
+				activeWatcher = new PluginWatcher(pluginPath, this);
+				watcherThread = new Thread(activeWatcher);
 				watcherThread.setDaemon(true); // Ensures it doesn't block app shutdown
 				watcherThread.start();
 			}

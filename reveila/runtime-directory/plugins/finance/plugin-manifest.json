@@ -1,0 +1,29 @@
+{
+  "plugin_id": "com.reveila.finance",
+  "name": "Finance Skill Bundle",
+  "version": "1.0.0",
+  "tool_definitions": {
+    "calculateRoi": {
+      "description": "Calculates Return on Investment for a given financial profile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "initial_investment": { "type": "number" },
+          "final_value": { "type": "number" }
+        },
+        "required": ["initial_investment", "final_value"]
+      }
+    }
+  },
+  "agency_perimeter": {
+    "access_scopes": ["finance.read", "finance.calculate"],
+    "allowed_domains": [],
+    "internet_access_blocked": true,
+    "max_memory_mb": 1024,
+    "max_cpu_cores": 2,
+    "max_execution_sec": 60,
+    "delegation_allowed": false
+  },
+  "secret_parameters": [],
+  "masked_parameters": []
+}
