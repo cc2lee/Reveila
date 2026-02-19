@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import TheWelcome from '../components/TheWelcome.vue'
+import CisoDashboard from '../reveila/CisoDashboard.vue'
 </script>
 
 <template>
   <main>
-    <TheWelcome />
+    <CisoDashboard />
   </main>
 </template>

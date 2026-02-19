@@ -5,6 +5,7 @@
     "main": "reveila-core.js",
     "type": "module",
     "exports": {
-        ".": "./reveila-core.js"
+        ".": "./reveila-core.js",
+        "./ciso-dashboard.js": "./ciso-dashboard.js"
     }
 }
