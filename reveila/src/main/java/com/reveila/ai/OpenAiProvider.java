@@ -6,11 +6,32 @@ package com.reveila.ai;
  * @author CL
  */
 public class OpenAiProvider implements LlmProvider {
+    private String apiKey;
+    private String model = "gpt-4";
+
+    /**
+     * Required by LlmProviderFactory to retrieve the instance via Proxy.
+     * 
+     * @return The provider instance.
+     */
+    @Override
+    public LlmProvider getInstance() {
+        return this;
+    }
+
+    public void setApiKey(String apiKey) {
+        this.apiKey = apiKey;
+    }
+
+    public void setModel(String model) {
+        this.model = model;
+    }
+
     @Override
     public String generateResponse(String prompt, String systemContext) {
         // Real-world implementation would use OpenAi SDK/Retrofit here.
         // For this implementation, we simulate the LLM's response generation for tools.
-        return "SIMULATED_OPENAI_RESPONSE: Tool call generated for " + prompt;
+        return "SIMULATED_OPENAI_RESPONSE (Model: " + model + "): Tool call generated for " + prompt;
     }
 
     @Override

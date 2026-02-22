@@ -7,6 +7,13 @@ package com.reveila.ai;
  */
 public interface LlmProvider {
     /**
+     * Required by LlmProviderFactory to retrieve the instance via Proxy.
+     * 
+     * @return The provider instance.
+     */
+    LlmProvider getInstance();
+
+    /**
      * Generates a response based on the provided prompt and context.
      *
      * @param prompt        The user or system-generated prompt.
