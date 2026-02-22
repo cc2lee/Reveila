@@ -43,13 +43,6 @@
             "vmArgs": "-Xmx2048m -Dspring.profiles.active=dev"
         },
         {
-            "type": "java",
-            "name": "MongoDB",
-            "request": "launch",
-            "mainClass": "reveila.adapters.mongo.MongoDB",
-            "projectName": "adapters"
-        },
-        {
             "name": "Debug Android Hermes",
             "request": "attach",
             "type": "reactnativedirect",

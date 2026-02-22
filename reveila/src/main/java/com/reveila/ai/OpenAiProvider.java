@@ -1,13 +1,19 @@
 package com.reveila.ai;
 
+import java.util.List;
+import java.util.Map;
+import com.reveila.service.HttpClientService;
+import com.reveila.util.json.JsonUtil;
+
 /**
  * ChatGPT Worker Implementation: Handles task-specific tool generation.
  * 
  * @author CL
  */
-public class OpenAiProvider implements LlmProvider {
+public class OpenAiProvider extends com.reveila.system.AbstractService implements LlmProvider {
     private String apiKey;
     private String model = "gpt-4";
+    private double temperature = 0.7;
 
     /**
      * Required by LlmProviderFactory to retrieve the instance via Proxy.
@@ -27,11 +33,56 @@ public class OpenAiProvider implements LlmProvider {
         this.model = model;
     }
 
+    public void setTemperature(double temperature) {
+        this.temperature = temperature;
+    }
+
+    @Override
+    protected void onStart() throws Exception {
+    }
+
+    @Override
+    protected void onStop() throws Exception {
+    }
+
     @Override
     public String generateResponse(String prompt, String systemContext) {
-        // Real-world implementation would use OpenAi SDK/Retrofit here.
-        // For this implementation, we simulate the LLM's response generation for tools.
-        return "SIMULATED_OPENAI_RESPONSE (Model: " + model + "): Tool call generated for " + prompt;
+        try {
+            HttpClientService httpClient = (HttpClientService) this.systemContext.getProxy("HttpClientService")
+                    .orElseThrow(() -> new IllegalStateException("HttpClientService not found"))
+                    .getTargetObject();
+
+            String url = "https://api.openai.com/v1/chat/completions";
+
+            Map<String, Object> requestMap = Map.of(
+                    "model", model,
+                    "temperature", temperature,
+                    "messages", List.of(
+                            Map.of("role", "system", "content", systemContext != null ? systemContext : ""),
+                            Map.of("role", "user", "content", prompt)));
+
+            String payload = JsonUtil.toJsonString(requestMap);
+            Map<String, String> headers = Map.of("Authorization", "Bearer " + apiKey);
+
+            String responseJson = httpClient.invokeRest(url, "POST", payload, HttpClientService.JSON, headers);
+
+            // Parse response
+            Map<String, Object> responseMap = JsonUtil.parseJsonStringToMap(responseJson);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> choices = (List<Map<String, Object>>) responseMap.get("choices");
+            if (choices != null && !choices.isEmpty()) {
+                Map<String, Object> choice = choices.get(0);
+                @SuppressWarnings("unchecked")
+                Map<String, Object> message = (Map<String, Object>) choice.get("message");
+                if (message != null) {
+                    return (String) message.get("content");
+                }
+            }
+
+            return "ERROR: No valid response choice from OpenAI. Raw response: " + responseJson;
+        } catch (Exception e) {
+            return "ERROR invoking OpenAI API: " + e.getMessage();
+        }
     }
 
     @Override

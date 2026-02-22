@@ -51,7 +51,55 @@ public class HttpClientService extends AbstractService {
     // OkHttpClient is thread-safe and designed to be shared.
     // Making it static ensures a single instance is reused across all invocations,
     // which is more efficient as it allows for connection pooling.
-    private OkHttpClient httpClient;
+    private static OkHttpClient httpClient;
+
+    public String invokeRest(String url, String method, String payload, String payloadFormat, java.util.Map<String, String> headers) throws Exception {
+        Builder builder = new Request.Builder().url(url);
+
+        if (headers != null) {
+            for (java.util.Map.Entry<String, String> entry : headers.entrySet()) {
+                builder.addHeader(entry.getKey(), entry.getValue());
+            }
+        }
+
+        switch (method.toUpperCase()) {
+            case "GET":
+                builder = builder.get();
+                break;
+
+            case "POST":
+                builder = builder.post(RequestBody.create(payload, MediaType.get(payloadFormat)));
+                break;
+
+            case "PUT":
+                builder = builder.put(RequestBody.create(payload, MediaType.get(payloadFormat)));
+                break;
+
+            case "PATCH":
+                builder = builder.patch(RequestBody.create(payload, MediaType.get(payloadFormat)));
+                break;
+
+            case "DELETE":
+                builder = builder.delete(RequestBody.create(payload, MediaType.get(payloadFormat)));
+                break;
+
+            default:
+                throw new IllegalArgumentException("Unsupported HTTP method: " + method);
+        }
+
+        Request request = builder.build();
+        Response response = httpClient.newCall(request).execute();
+
+        final ResponseBody responseBody = response.body();
+        final String responseBodyString = responseBody != null ? responseBody.string() : null;
+
+        if (!response.isSuccessful()) {
+            throw new IOException("Remote invocation failed with HTTP code " + response.code() + " for " + url
+                    + ". Response body: " + responseBodyString);
+        }
+
+        return responseBodyString;
+    }
 
     /**
      * This method expects at least one argument for the URL. Then, followed by
