@@ -48,11 +48,18 @@ public class GeminiProvider extends com.reveila.system.AbstractService implement
     @Override
     public String generateResponse(String prompt, String systemContext) {
         try {
-            HttpClientService httpClient = (HttpClientService) this.systemContext.getProxy("HttpClientService")
-                    .orElseThrow(() -> new IllegalStateException("HttpClientService not found"))
-                    .getTargetObject();
+            String resolvedApiKey = apiKey;
+            if (apiKey != null && apiKey.startsWith("REF:")) {
+                resolvedApiKey = (String) this.systemContext.getProxy("CredentialManager")
+                        .orElseThrow(() -> new IllegalStateException("CredentialManager not found"))
+                        .invoke("getSecret", new Object[] { apiKey.substring(4) });
+            }
 
-            String url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + apiKey;
+            if (resolvedApiKey == null || resolvedApiKey.isBlank()) {
+                throw new IllegalStateException("Gemini API Key could not be resolved.");
+            }
+
+            String url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + resolvedApiKey;
 
             // Build Gemini request JSON
             Map<String, Object> requestMap;
@@ -72,7 +79,9 @@ public class GeminiProvider extends com.reveila.system.AbstractService implement
             }
 
             String payload = JsonUtil.toJsonString(requestMap);
-            String responseJson = httpClient.invokeRest(url, "POST", payload);
+            String responseJson = (String) this.systemContext.getProxy("HttpClientService")
+                    .orElseThrow(() -> new IllegalStateException("HttpClientService not found"))
+                    .invoke("invokeRest", new Object[] { url, "POST", payload });
 
             // Parse response
             Map<String, Object> responseMap = JsonUtil.parseJsonStringToMap(responseJson);

@@ -48,9 +48,16 @@ public class OpenAiProvider extends com.reveila.system.AbstractService implement
     @Override
     public String generateResponse(String prompt, String systemContext) {
         try {
-            HttpClientService httpClient = (HttpClientService) this.systemContext.getProxy("HttpClientService")
-                    .orElseThrow(() -> new IllegalStateException("HttpClientService not found"))
-                    .getTargetObject();
+            String resolvedApiKey = apiKey;
+            if (apiKey != null && apiKey.startsWith("REF:")) {
+                resolvedApiKey = (String) this.systemContext.getProxy("CredentialManager")
+                        .orElseThrow(() -> new IllegalStateException("CredentialManager not found"))
+                        .invoke("getSecret", new Object[] { apiKey.substring(4) });
+            }
+
+            if (resolvedApiKey == null || resolvedApiKey.isBlank()) {
+                throw new IllegalStateException("OpenAI API Key could not be resolved.");
+            }
 
             String url = "https://api.openai.com/v1/chat/completions";
 
@@ -62,9 +69,11 @@ public class OpenAiProvider extends com.reveila.system.AbstractService implement
                             Map.of("role", "user", "content", prompt)));
 
             String payload = JsonUtil.toJsonString(requestMap);
-            Map<String, String> headers = Map.of("Authorization", "Bearer " + apiKey);
+            Map<String, String> headers = Map.of("Authorization", "Bearer " + resolvedApiKey);
 
-            String responseJson = httpClient.invokeRest(url, "POST", payload, HttpClientService.JSON, headers);
+            String responseJson = (String) this.systemContext.getProxy("HttpClientService")
+                    .orElseThrow(() -> new IllegalStateException("HttpClientService not found"))
+                    .invoke("invokeRest", new Object[] { url, "POST", payload, HttpClientService.JSON, headers });
 
             // Parse response
             Map<String, Object> responseMap = JsonUtil.parseJsonStringToMap(responseJson);

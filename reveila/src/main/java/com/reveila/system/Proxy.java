@@ -137,17 +137,9 @@ public final class Proxy extends AbstractService {
 
 		// ADR 0006: Proxy-Based Invocations with Physical Isolation
 		if (metaObject.requiresRuntimeIsolation()) {
-			GuardedRuntime runtime = systemContext.getProxy("DockerGuardedRuntime")
-					.map(p -> {
-						try {
-							return p.getTargetObject();
-						} catch (Exception e) {
-							return null;
-						}
-					})
-					.filter(obj -> obj instanceof GuardedRuntime)
-					.map(obj -> (GuardedRuntime) obj)
-					.orElseThrow(() -> new IllegalStateException("DockerGuardedRuntime not found or invalid"));
+			GuardedRuntime runtime = (GuardedRuntime) systemContext.getProxy("DockerGuardedRuntime")
+					.orElseThrow(() -> new IllegalStateException("DockerGuardedRuntime not found or invalid"))
+					.invoke("getInstance", null);
 
 			// In a real scenario, we'd need an AgentPrincipal and AgencyPerimeter here.
 			// For now, we'll use defaults if they're not provided in the context.
@@ -210,7 +202,7 @@ public final class Proxy extends AbstractService {
 	 * @return A new object instance.
 	 * @throws Exception if object creation fails.
 	 */
-	public Object getTargetObject() throws Exception {
+	private Object getTargetObject() throws Exception {
 		if (this.metaObject.isThreadSafe()) {
 			if (this.singletonInstance == null) {
 				synchronized (this) {
@@ -380,6 +372,10 @@ public final class Proxy extends AbstractService {
 				}
 				value = coerceValue(value, argClass);
 				method.invoke(target, value);
+
+				if (value instanceof String && ((String) value).startsWith("REF:")) {
+					logger.info("Configuring secret reference for '" + name + "': " + value);
+				}
 			} catch (Exception e) {
 				throw new ConfigurationException(
 						"Failed to set '" + name + "' using method '" + setterName + "(" + argClass == null ? "null"

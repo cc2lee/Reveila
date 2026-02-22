@@ -90,6 +90,10 @@ public class DataService extends AbstractService {
         getRepo(entityType).disposeById(key);
     }
 
+    public Repository<Entity, Map<String, Map<String, Object>>> getRepository(String entityType) {
+        return getRepo(entityType);
+    }
+
     private Repository<Entity, Map<String, Map<String, Object>>> getRepo(String entityType) {
         Repository<Entity, Map<String, Map<String, Object>>> repo = platform.getRepository(entityType);
         if (repo == null) {
