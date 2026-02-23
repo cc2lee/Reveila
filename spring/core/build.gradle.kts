@@ -56,13 +56,15 @@ dependencies {
     //implementation("org.apache.httpcomponents.client5:httpclient5")
     
     runtimeOnly("com.h2database:h2")
+    runtimeOnly("org.postgresql:postgresql")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-data-mongodb")
     developmentOnly("org.springframework.boot:spring-boot-devtools")
 }
 
 tasks.withType<org.springframework.boot.gradle.tasks.bundling.BootJar> {
-    archiveClassifier.set("boot")
+    archiveFileName.set("reveila-suite-fat.jar")
+    destinationDirectory.set(file("${project.rootDir}/reveila/runtime-directory/libs"))
 }
 
 tasks.withType<org.springframework.boot.gradle.tasks.run.BootRun> {

@@ -1,0 +1,45 @@
+services:
+  # The Agentic AI Runtime Fabric (Generic Environment)
+  reveila-fabric:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: reveila-fabric-prod
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - DB_HOST=reveila-db-prod
+      - DB_USER=charles
+      - DB_PASSWORD=reveila_secure_pass
+      - REVEILA_HOME=/reveila
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount the local bin and libs from the runtime directory
+      - ../bin:/reveila/bin
+      - ../libs:/reveila/libs
+      # Mount configuration and resource directories
+      - ../configs:/reveila/configs
+      - ../resources:/reveila/resources
+      # Mount local data directory for persistent logs and plugins
+      - ../data:/reveila/data
+      - ../logs:/reveila/logs
+      - ../plugins:/reveila/plugins
+    depends_on:
+      reveila-db-prod:
+        condition: service_healthy
+
+  # The Sovereign Data Node (Postgres)
+  reveila-db-prod:
+    image: postgres:15-alpine
+    container_name: reveila-db-prod
+    environment:
+      - POSTGRES_USER=charles
+      - POSTGRES_PASSWORD=reveila_secure_pass
+      - POSTGRES_DB=reveila_db
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U charles -d reveila_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

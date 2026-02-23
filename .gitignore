@@ -41,3 +41,6 @@ local.properties
 
 # IDE module files
 *.iml
+
+# Sovereign Data (Local Persistence)
+**/infrastructure/data/postgres/

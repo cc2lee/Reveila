@@ -1,116 +1,28 @@
-REM Start Server Batch File
-REM @author Charles Lee
-
 @echo off
-@if "%OS%" == "Windows_NT" setlocal
+SETLOCAL
 
-set PROGNAME=App-X
-if "%OS%" == "Windows_NT" set PROGNAME=%~nx0%
-if "%OS%" == "Windows_NT" set DIRNAME=%~dp0%
+REM Get the directory where the script is located (the /bin folder)
+SET BIN_DIR=%~dp0
+REM Set REVEILA_HOME as one level up from /bin
+SET REVEILA_HOME=%BIN_DIR%..
+REM Point to the stable distribution in /libs
+SET APP_JAR=%REVEILA_HOME%\libs\reveila-suite-fat.jar
 
-if not "%APPX_HOME%" == "" goto FOUND_APPX_HOME
-set APPX_HOME=..
-echo APPX_HOME is not set. Defaults to %APPX_HOME%.
+REM 1. Bootstrap Sovereign Infrastructure
+if exist "%BIN_DIR%reveila-up.ps1" (
+    powershell -ExecutionPolicy Bypass -File "%BIN_DIR%reveila-up.ps1"
+)
 
-:FOUND_APPX_HOME
-set BOOT_LIB=%APPX_HOME%\lib\appx-server.jar
-set J2EE_LIB=%APPX_HOME%\lib\jboss-j2ee.jar
+REM 2. Set Architectural Constraints
+SET JAVA_OPTS=-Xms512m -Xmx2g -Dspring.profiles.active=demo -Dfile.encoding=UTF-8
 
-if exist "%BOOT_LIB%" goto FOUND_BOOT_LIB
-echo Could not locate %BOOT_LIB%.
-goto END
+REM 3. Launch the Sovereign Fabric
+echo [Reveila] Starting Agentic AI Runtime Fabric...
+if exist "%APP_JAR%" (
+    java %JAVA_OPTS% -jar "%APP_JAR%"
+) else (
+    echo [Error] Fat JAR not found at %APP_JAR%
+    pause
+)
 
-:FOUND_BOOT_LIB
-if exist "%J2EE_LIB%" goto FOUND_J2EE_LIB
-echo Could not locate %J2EE_LIB%.
-goto END
-
-:FOUND_J2EE_LIB
-set ARGS=
-:loop
-if [%1] == [] goto endloop
-        set ARGS=%ARGS% %1
-        shift
-        goto loop
-:endloop
-
-if not "%JAVA_HOME%" == "" goto FOUND_JAVA_HOME
-set JAVA=java
-echo JAVA_HOME is not set. Unexpected results may occur.
-echo Set JAVA_HOME to the directory of your local JDK to avoid this message.
-
-:FOUND_JAVA_HOME
-set JAVA=%JAVA_HOME%\bin\java
-
-:BUILD_CLASSPATH
-set CLASSPATH=%APPX_HOME%\conf
-set CLASSPATH=%CLASSPATH%;%BOOT_LIB%
-set CLASSPATH=%CLASSPATH%;%APPX_HOME%\lib\appx-client.jar
-set CLASSPATH=%CLASSPATH%;%APPX_HOME%\lib\appx-remote.jar
-set CLASSPATH=%CLASSPATH%;%APPX_HOME%\lib\appx-lib.jar
-set CLASSPATH=%CLASSPATH%;%APPX_HOME%\lib\appx-ejb.jar
-set CLASSPATH=%CLASSPATH%;%APPX_HOME%\lib\appx-web.jar
-set CLASSPATH=%CLASSPATH%;%J2EE_LIB%
-
-REM ADD ADDITIONAL LIBRARIES
-set CLASSPATH=%CLASSPATH%;%APPX_HOME%\lib\Gate.jar
-set CLASSPATH=%CLASSPATH%;%APPX_HOME%\lib\mail.jar
-set CLASSPATH=%CLASSPATH%;%APPX_HOME%\lib\activation.jar
-set CLASSPATH=%CLASSPATH%;%APPX_HOME%\lib\jmxri.jar
-set CLASSPATH=%CLASSPATH%;%APPX_HOME%\lib\jmxtools.jar
-
-REM WEBCENTER LIBRARIES
-rem set BACKSTAGE_LIB=..\..\..\..\BackStage\bin
-rem set WORKERBEAN_LIB=..\..\..\..\WorkerBeans\bin
-rem set WORKEREJBS_LIB=..\..\..\..\WorkerEJBs\bin
-set BACKSTAGE_LIB=..\..\jboss\server\default\lib\BackStage.jar
-set WORKERBEAN_LIB=..\..\jboss\server\default\lib\webcenter4_0-server.jar
-set WORKEREJBS_LIB=..\..\jboss\server\default\deploy\workerejbs.jar
-set CADX_LIB=..\..\CadXServer\bin\webcenter4_0-cadxserver.jar
-
-set CLASSPATH=%CLASSPATH%;%BACKSTAGE_LIB%
-set CLASSPATH=%CLASSPATH%;%WORKERBEAN_LIB%
-set CLASSPATH=%CLASSPATH%;%WORKEREJBS_LIB%
-set CLASSPATH=%CLASSPATH%;%CADX_LIB%
-
-REM SET RMI SERVER CODE BASE
-set JAVA_OPTS=-Djava.rmi.server.codebase="
-set JAVA_OPTS=%JAVA_OPTS% file:/%BOOT_LIB%
-set JAVA_OPTS=%JAVA_OPTS% file:/%APPX_HOME%\lib\appx-client.jar
-set JAVA_OPTS=%JAVA_OPTS% file:/%APPX_HOME%\lib\appx-remote.jar
-set JAVA_OPTS=%JAVA_OPTS% file:/%APPX_HOME%\lib\appx-lib.jar
-set JAVA_OPTS=%JAVA_OPTS% file:/%APPX_HOME%\lib\appx-ejb.jar
-set JAVA_OPTS=%JAVA_OPTS% file:/%APPX_HOME%\lib\appx-web.jar
-set JAVA_OPTS=%JAVA_OPTS%"
-
-REM SET ADDITIONAL JAVA OPTIONS
-set JAVA_OPTS=%JAVA_OPTS% -Djava.rmi.server.hostname="localhost"
-set JAVA_OPTS=%JAVA_OPTS% -Djava.security.policy="file:/%APPX_HOME%\conf\java.policy"
-set JAVA_OPTS=%JAVA_OPTS% -Djava.security.auth.login.config="file:/%APPX_HOME%\conf\java.login.config"
-set JAVA_OPTS=%JAVA_OPTS% -Djava.util.logging.config.file="%APPX_HOME%\conf\logging.properties"
-set JAVA_OPTS=%JAVA_OPTS% -Dcom.sun.management.config.file="%APPX_HOME%\conf\management.properties"
-set JAVA_OPTS=%JAVA_OPTS% -Dprogram.name=%PROGNAME% -Xrs
-
-REM JPDA Options.
-REM Uncomment and modify as appropriate to enable remote debugging.
-rem set JAVA_OPTS=%JAVA_OPTS% -classic -Xdebug -Xnoagent -Djava.compiler=NONE
-rem set JAVA_OPTS=%JAVA_OPTS% -Xrunjdwp:transport=dt_socket,address=8787,server=y,suspend=y
-
-
-echo Starting App-X Application Server...
-echo ================================================================================
-echo App-X Application Server Bootstrap Environment
-echo .
-echo JAVA: %JAVA%
-echo .
-echo JAVA_OPTS: %JAVA_OPTS%
-echo .
-echo CLASSPATH: %CLASSPATH%
-echo .
-echo COMMAND: %COMMAND%
-echo .
-echo ================================================================================
-
-"%JAVA%" %JAVA_OPTS% -classpath "%CLASSPATH%" appx.Server %ARGS%
-
-:END
+ENDLOCAL

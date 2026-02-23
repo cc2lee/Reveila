@@ -48,6 +48,7 @@ tasks.withType<Test>().configureEach {
 
 // 5. Native BOM Management
 dependencies {
+    "developmentOnly"(platform(SpringBootPlugin.BOM_COORDINATES))
     "developmentOnly"("org.springframework.boot:spring-boot-devtools")
     // SpringBootPlugin.BOM_COORDINATES is safer than manual strings because 
     // it automatically stays in sync with the applied Spring Boot plugin version.
