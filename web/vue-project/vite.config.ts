@@ -11,7 +11,7 @@ export default defineConfig({
     vue({
       template: {
         compilerOptions: {
-          isCustomElement: (tag) => tag === 'ciso-kill-switch'
+          isCustomElement: (tag) => ['ciso-kill-switch', 'reveila-table'].includes(tag)
         }
       }
     }),

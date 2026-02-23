@@ -50,7 +50,7 @@ public class Reveila {
 	private Logger logger;
 	private String localAddress;
 	private URL localUrl;
-	private boolean standaloneMode = true;
+	private boolean standalone = true;
 	private boolean shutdown = false;
 
 	public synchronized void shutdown() {
@@ -146,7 +146,7 @@ public class Reveila {
 		long beginTime = System.currentTimeMillis();
 
 		try {
-			this.standaloneMode = !"false"
+			this.standalone = !"false"
 					.equalsIgnoreCase(this.properties.getProperty(Constants.STANDALONE_MODE));
 		} catch (Exception e) {
 		}
@@ -498,7 +498,7 @@ public class Reveila {
 
 		Proxy proxy = null;
 
-		if (standaloneMode == false) {
+		if (standalone == false) {
 			// Use the fastest node in the cluster to handle the request
 			URL url = PerformanceTracker.getInstance().getBestNodeUrl();
 

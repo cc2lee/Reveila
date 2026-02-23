@@ -293,6 +293,10 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         }
     }
 
+    protected Path getSystemHome() {
+        return this.systemHome;
+    }
+
     @Override
     public Logger getLogger() {
         return this.logger;

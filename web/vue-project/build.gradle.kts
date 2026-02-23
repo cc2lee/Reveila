@@ -18,6 +18,12 @@ val buildVue = tasks.register<com.github.gradle.node.npm.task.NpmTask>("buildVue
     outputs.dir("dist")
 }
 
-tasks.named("assemble") {
+val copyToRuntime = tasks.register<Copy>("copyToRuntime") {
     dependsOn(buildVue)
+    from("dist")
+    into("../../reveila/runtime-directory/web")
+}
+
+tasks.named("assemble") {
+    dependsOn(copyToRuntime)
 }

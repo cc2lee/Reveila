@@ -33,9 +33,7 @@ public class ApiController {
 
         Object result = reveila.invoke(componentName, request.getMethodName(), args, callerIp);
         
-        // Wrap result if it's not already a JSON-friendly object/map
-        String jsonResponse = objectMapper.writeValueAsString(result);
-        return ResponseEntity.ok(jsonResponse);
+        return ResponseEntity.ok(result);
     }
 
     /**

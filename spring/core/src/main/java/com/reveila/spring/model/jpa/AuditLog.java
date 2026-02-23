@@ -23,6 +23,8 @@ public class AuditLog {
 
     private String metadata;
     
+    private java.time.Instant timestamp = java.time.Instant.now();
+
     @ManyToOne(fetch = FetchType.LAZY)
     private User user;
 
@@ -64,6 +66,14 @@ public class AuditLog {
 
     public void setMetadata(String metadata) {
         this.metadata = metadata;
+    }
+
+    public java.time.Instant getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(java.time.Instant timestamp) {
+        this.timestamp = timestamp;
     }
 
     public User getUser() {

@@ -3,7 +3,7 @@ package com.reveila.ai;
 import java.util.Map;
 
 /**
- * Phase 4: Observability (The Flight Recorder).
+ * Implementation of Forensic Auditability using Amazon S3.
  * Captures reasoning traces and tool outputs for compliance and audit.
  * S3 implementation ensures immutable append-only logs.
  * 

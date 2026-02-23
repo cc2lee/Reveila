@@ -7,18 +7,19 @@ import org.springframework.scheduling.annotation.Async;
 
 import com.reveila.ai.AgentPrincipal;
 import com.reveila.ai.FlightRecorder;
+import com.reveila.data.Repository;
 import com.reveila.spring.model.jpa.AuditLog;
 import com.reveila.spring.repository.jpa.JdbcAuditLogRepository;
 
 /**
- * Phase 4: Long-term Forensic Auditability using PostgreSQL.
+ * Implementation of Forensic Auditability using PostgreSQL.
  * Persists reasoning traces and tool outputs to a secure database entity for compliance.
  * 
  * @author CL
  */
 public class PostgresFlightRecorder extends com.reveila.system.AbstractService implements FlightRecorder {
 
-    private JdbcAuditLogRepository auditRepository;
+    private Repository<AuditLog, java.util.UUID> auditRepository;
 
     public PostgresFlightRecorder() {
     }
@@ -26,10 +27,9 @@ public class PostgresFlightRecorder extends com.reveila.system.AbstractService i
     @Override
     protected void onStart() throws Exception {
         // ADR 0006: Platform-agnostic repository retrieval.
-        // We cast to our shared functional interface or a platform-specific helper.
         Object repo = systemContext.getPlatformAdapter().getRepository("AuditLog");
-        if (repo instanceof JdbcAuditLogRepository) {
-            this.auditRepository = (JdbcAuditLogRepository) repo;
+        if (repo instanceof Repository) {
+            this.auditRepository = (Repository<AuditLog, java.util.UUID>) repo;
         }
     }
 
@@ -44,7 +44,7 @@ public class PostgresFlightRecorder extends com.reveila.system.AbstractService i
         if (data != null) {
             log.setMetadata(data.toString());
         }
-        auditRepository.save(log);
+        if (auditRepository != null) auditRepository.store(log);
     }
 
     @Override
@@ -52,7 +52,7 @@ public class PostgresFlightRecorder extends com.reveila.system.AbstractService i
     public void recordReasoning(AgentPrincipal principal, String reasoning) {
         AuditLog log = createBaseLog(principal, "REASONING_TRACE");
         log.setReasoningTrace(reasoning);
-        auditRepository.save(log);
+        if (auditRepository != null) auditRepository.store(log);
     }
 
     @Override
@@ -62,7 +62,7 @@ public class PostgresFlightRecorder extends com.reveila.system.AbstractService i
         if (output != null) {
             log.setMetadata(output.toString());
         }
-        auditRepository.save(log);
+        if (auditRepository != null) auditRepository.store(log);
     }
 
     @Override
@@ -87,7 +87,7 @@ public class PostgresFlightRecorder extends com.reveila.system.AbstractService i
         }
 
         log.setMetadata(forensicData.toString());
-        auditRepository.save(log);
+        if (auditRepository != null) auditRepository.store(log);
     }
 
     private @NonNull AuditLog createBaseLog(AgentPrincipal principal, String action) {

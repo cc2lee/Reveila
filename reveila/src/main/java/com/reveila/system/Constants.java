@@ -24,6 +24,14 @@ public final class Constants {
 	public static final String CHARACTER_ENCODING = "text.character.encoding";
 	public static final String LAUNCH_STRICT_MODE = "launch.strict.mode";
 
+	/**
+	 * System mode can be 'development', 'production' or 'demo'.
+	 * In development mode, additional logging and debugging information may be available.
+	 * In production mode, the system is optimized for performance and security.
+	 * In demo mode, the system may use mock data and limited functionality for demonstration purposes.
+	 */
+	public static final String SYSTEM_MODE = "system.mode";
+
 	/*
 	 * **************************************************
 	 * Used in configuration JSON files
@@ -51,7 +59,7 @@ public final class Constants {
 	public static final String JOB_DATE_FORMAT = "yyyy-MM-dd HH:mm:ss";
 	public static final String TASK = "task";
 	public static final String LIB_DIR_NAME = "libs";
-	public static final String STANDALONE_MODE = "standalone.mode";
+	public static final String STANDALONE_MODE = "system.standalone";
 	public static final String PLUGIN = "plugin";
 	public static final String DIRECTORY = "directory";
 	public static final String CAPABILITIES = "capabilities";

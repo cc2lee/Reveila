@@ -6,6 +6,7 @@
     "type": "module",
     "exports": {
         ".": "./reveila-core.js",
-        "./ciso-dashboard.js": "./ciso-dashboard.js"
+        "./ciso-dashboard.js": "./ciso-dashboard.js",
+        "./ReveilaTable.js": "./ReveilaTable.js"
     }
 }
