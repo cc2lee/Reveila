@@ -203,10 +203,8 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         if (homeValue == null || homeValue.isBlank()) {
             homeValue = System.getenv("REVEILA_HOME");
             if (homeValue == null || homeValue.isBlank()) {
-                homeValue = Paths.get(System.getProperty("user.dir"))
-                        .resolve("reveila")
-                        .toAbsolutePath()
-                        .toString();
+                throw new ConfigurationException("SYSTEM STARTUP ERROR: System Home directory not specified. Please set the "
+                        + Constants.SYSTEM_HOME + " system property as a command line argument, or the REVEILA_HOME environment variable.", null, "101");
             }
             args.setProperty(Constants.SYSTEM_HOME, homeValue);
         }

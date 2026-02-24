@@ -6,8 +6,11 @@ import java.sql.Connection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+
 import javax.sql.DataSource;
+
 import org.springframework.context.ApplicationContext;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reveila.data.Entity;
@@ -16,7 +19,6 @@ import com.reveila.data.GenericRepository;
 import com.reveila.data.JavaObjectRepository;
 import com.reveila.data.Repository;
 import com.reveila.platform.BasePlatformAdapter;
-import com.reveila.system.Constants;
 
 public class SpringPlatformAdapter extends BasePlatformAdapter {
 

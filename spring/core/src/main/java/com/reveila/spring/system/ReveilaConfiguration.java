@@ -45,20 +45,15 @@ public class ReveilaConfiguration {
      */
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
-    public ApplicationRunner reveilaRunner(Reveila reveila, 
-                                          ApplicationContext context, 
-                                          JdbcAuditLogRepository auditRepository,
-                                          AgentSessionManager sessionManager,
-                                          OrganizationEntityMapper organizationEntityMapper,
-                                          Environment springEnv) {
+    public ApplicationRunner reveilaRunner(Reveila reveila,
+            ApplicationContext context,
+            JdbcAuditLogRepository auditRepository,
+            AgentSessionManager sessionManager,
+            OrganizationEntityMapper organizationEntityMapper,
+            Environment springEnv) {
         return args -> {
             try {
                 Properties props = RuntimeUtil.getArgsAsProperties(args.getSourceArgs());
-                
-                if (props.getProperty(Constants.SYSTEM_HOME) == null) {
-                    props.setProperty(Constants.SYSTEM_HOME, "reveila/runtime-directory");
-                }
-                
                 reveila.start(new SpringPlatformAdapter(context, props));
 
                 // DIRECT SEEDING LOGIC
@@ -84,14 +79,18 @@ public class ReveilaConfiguration {
         // M&A Project Falcon
         String trace1 = "PROJECT-FALCON-" + UUID.randomUUID().toString().substring(0, 8);
         Instant now = Instant.now();
-        
+
         Map<String, Object> ctx1 = new HashMap<>();
         ctx1.put("title", "M&A Due Diligence - Project Falcon");
         sessionManager.saveContext(trace1, ctx1);
 
-        createLog(auditRepository, trace1, "Orchestrator requesting financial risk summary for 10,000 sensitive PDFs.", now.minus(115, ChronoUnit.MINUTES));
-        createLog(auditRepository, trace1, "Docker Sandbox ID sandbox-7721 spawned. lateral_movement=BLOCKED.", now.minus(110, ChronoUnit.MINUTES));
-        createLog(auditRepository, trace1, "Gemini Auditor: Validated intent. No exfiltration detected. Reasoning monologue verified.", now.minus(105, ChronoUnit.MINUTES));
+        createLog(auditRepository, trace1, "Orchestrator requesting financial risk summary for 10,000 sensitive PDFs.",
+                now.minus(115, ChronoUnit.MINUTES));
+        createLog(auditRepository, trace1, "Docker Sandbox ID sandbox-7721 spawned. lateral_movement=BLOCKED.",
+                now.minus(110, ChronoUnit.MINUTES));
+        createLog(auditRepository, trace1,
+                "Gemini Auditor: Validated intent. No exfiltration detected. Reasoning monologue verified.",
+                now.minus(105, ChronoUnit.MINUTES));
 
         // Healthcare Audit
         String trace2 = "HIPAA-CLAIMS-" + UUID.randomUUID().toString().substring(0, 8);
@@ -99,8 +98,11 @@ public class ReveilaConfiguration {
         ctx2.put("title", "HIPAA Compliance - Claims Lineage Audit");
         sessionManager.saveContext(trace2, ctx2);
 
-        createLog(auditRepository, trace2, "Worker (ChatGPT): Calculating patient liability for Claim #9982.", now.minus(45, ChronoUnit.MINUTES));
-        createLog(auditRepository, trace2, "Auditor (Gemini): REJECTED: PII exposure risk detected in reasoning trace. Redacting and rerouting.", now.minus(40, ChronoUnit.MINUTES));
+        createLog(auditRepository, trace2, "Worker (ChatGPT): Calculating patient liability for Claim #9982.",
+                now.minus(45, ChronoUnit.MINUTES));
+        createLog(auditRepository, trace2,
+                "Auditor (Gemini): REJECTED: PII exposure risk detected in reasoning trace. Redacting and rerouting.",
+                now.minus(40, ChronoUnit.MINUTES));
     }
 
     private void createLog(JdbcAuditLogRepository repo, String traceId, String action, Instant ts) {
