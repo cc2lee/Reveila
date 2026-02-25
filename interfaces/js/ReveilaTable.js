@@ -306,6 +306,7 @@ export class ReveilaTable extends HTMLElement {
                 let label = h.charAt(0).toUpperCase() + h.slice(1);
                 if (h === 'id') label = 'Record ID';
                 if (h === 'traceId') label = 'Trace ID';
+                if (h === 'reasoningTrace') label = 'Reasoning';
                 return `<option value="${h}" ${this.currentSearchField === h ? 'selected' : ''}>${label}</option>`;
             }).join('');
         } else if (select.value !== this.currentSearchField) {
@@ -321,6 +322,7 @@ export class ReveilaTable extends HTMLElement {
                 let label = h.charAt(0).toUpperCase() + h.slice(1);
                 if (h === 'id') label = 'Record ID';
                 if (h === 'traceId') label = 'Trace ID';
+                if (h === 'reasoningTrace') label = 'Reasoning';
                 return `<th>${label}</th>`;
             }).join('');
 
