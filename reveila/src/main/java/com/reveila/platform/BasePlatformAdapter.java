@@ -153,15 +153,17 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     }
 
     private InputStream openPropertiesStream(Properties jvmArgs) throws IOException, ConfigurationException {
-
+        System.out.println("Attempting to load system properties...");
         URL url = null;
 
         // 1. try JVM argument first
         try {
             url = resolveConfigurationResource(jvmArgs.getProperty(Constants.SYSTEM_PROPERTIES_FILE_NAME));
+            System.out.println("Loading system properties from JVM argument: " + url);
         } catch (Exception e) {
             // 2. try looking in classpath
             url = BasePlatformAdapter.class.getClassLoader().getResource(Constants.SYSTEM_PROPERTIES_FILE_NAME);
+            System.out.println("Loading system properties from classpath: " + url);
         }
 
         if (url == null) {
@@ -169,6 +171,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
             try {
                 url = this.systemHome.resolve(Constants.CONFIGS_DIR_NAME)
                         .resolve(Constants.SYSTEM_PROPERTIES_FILE_NAME).toUri().toURL();
+                System.out.println("Loading system properties from home directory: " + url);
             } catch (Exception e) {
                 String message = "SYSTEM STARTUP ERROR: " + Constants.SYSTEM_PROPERTIES_FILE_NAME
                         + "  not found. Please ensure it is passed in as a command line argument in URL format,"
@@ -215,6 +218,8 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         try (InputStream stream = openPropertiesStream(args)) {
             this.properties.load(stream);
         } catch (Exception e) {
+            System.err.println("Failed to load " + Constants.SYSTEM_PROPERTIES_FILE_NAME + ": " + e.getMessage());
+            e.printStackTrace();
             // If the file is missing, we might still continue if defaults are enough
             // but since you throw IOException, we'll keep that contract.
             throw new IOException("Failed to load " + Constants.SYSTEM_PROPERTIES_FILE_NAME, e);

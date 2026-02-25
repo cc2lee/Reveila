@@ -1,16 +1,25 @@
+# [Key]	          [Purpose]
+# build:	        Tells Compose how to create the image from source code.	Optional if the image already exists in a registry (Docker Hub/ECR). Required if you want docker-compose up --build to work.
+# context: .	    Defines the "scope" of files the Docker daemon can see.	Required if using build. . means "everything in this folder."
+# dockerfile:	    Points to the specific recipe file.	Optional if your file is named exactly Dockerfile. Required if you use names like Dockerfile.prod.
+# container_name: Forces a specific name for the running instance.	Optional. If removed, Docker names it [project]_[service]_1.
+
 services:
-  # The Agentic AI Runtime Fabric
-  reveila-fabric:
-    build: 
-      context: .
-      dockerfile: Dockerfile
-    container_name: reveila-fabric-prod
+  reveila-fabric:       # 1. SERVICE NAME
+    # image: reveila-fabric:1.0.0  # Without build, pull the pre-built artifact from Docker Hub (if available)
+    build:              # 2. BUILD INSTRUCTIONS (only needed if not using a pre-built image, or if you want to enable docker-compose up --build)
+      context: .        # 3. BUILD CONTEXT FOLDER (. means current folder)
+      dockerfile: Dockerfile # 4. SPECIFIC FILE (only needed if not named Dockerfile)
+    image: reveila-fabric:1.0.0  # Docker will build AND name the image this way
+    container_name: reveila-fabric-container # 5. CONTAINER NAME (optional, but useful for clarity and management)
     environment:
       - REVEILA_HOME=/reveila
+      - WEB_ROOT=/reveila/web  # Spring translates WEB_ROOT to web-root automatically
+      - SPRING_CONFIG_LOCATION=file:/reveila/configs/reveila.properties
       - SPRING_PROFILES_ACTIVE=prod
       - DB_HOST=reveila-db-prod
-      - DB_USER=charles
-      - DB_PASSWORD=reveila_secure_pass
+      - DB_USER=admin
+      - DB_PASSWORD=6788565119
     ports:
       - "8080:8080"
     volumes:
@@ -18,6 +27,7 @@ services:
       - ../bin:/reveila/bin:ro
       - ../libs:/reveila/libs:ro
       - ../configs:/reveila/configs:ro
+      - ../web:/reveila/web:ro
       - ../resources:/reveila/resources:ro
       - ../data:/reveila/data:rw
       - ../logs:/reveila/logs:rw
@@ -30,12 +40,13 @@ services:
   reveila-db-prod:
     image: postgres:15-alpine
     container_name: reveila-db-prod
+    ports:
+      - "5432:5432"  # This bridges the container to the host machine for external access
     environment:
       - POSTGRES_USER=charles
       - POSTGRES_PASSWORD=reveila_secure_pass
       - POSTGRES_DB=reveila_db
     volumes:
-      # Map DB files to the sovereign data silo
       - ../data/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U charles -d reveila_db"]

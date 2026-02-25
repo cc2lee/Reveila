@@ -138,6 +138,7 @@ const styles = `
   }
 
   .empty-state {
+    grid-column: 1 / -1;
     text-align: center;
     padding: 4rem;
     color: var(--text-secondary);

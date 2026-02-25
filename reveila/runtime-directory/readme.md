@@ -25,3 +25,9 @@ Hot-Swapping Logic: To update the AI logic without a full rebuild, replace the r
 Data Sovereignty: All audit logs and forensic data are stored in /data/postgres. This folder should be included in your standard enterprise backup rotation.
 
 Environment Overrides: You can modify JVM memory constraints or Spring profiles by setting JAVA_MEMORY_OPTS or SPRING_PROFILES_ACTIVE in your host environment variables.
+
+
+Deployment Steps: In the infrastructure directory,
+Wipe the old container: docker-compose down
+Rebuild and Launch: docker-compose up --build -d
+Verify: docker logs -f reveila-fabric-prod
