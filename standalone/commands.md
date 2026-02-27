@@ -4,7 +4,7 @@
 
 ## Gradle runArgs Project Argument
 
-../standalone> ./gradlew.bat :app:run -PrunArgs="reveila.properties=file:///C:/IDE/Projects/Reveila-Suite/reveila/runtime-directory/configs/reveila.properties
+../standalone> ./gradlew.bat :app:run -PrunArgs="reveila.properties=file:///${system.home}/configs/reveila.properties"
 
 ## Run in Debug Mode
 

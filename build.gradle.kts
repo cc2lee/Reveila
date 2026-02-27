@@ -22,3 +22,15 @@ plugins {
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.kotlin.android) apply false
 }
+
+tasks.register<Copy>("release") {
+    group = "reveila"
+    description = "Prepares files for release e.g. normalizing line endings."
+
+    from("./releases/current/bin") {
+        include("*.sh")
+        filter { line -> line.replace("\r", "") }
+    }
+    
+    into("./releases/current/bin")
+}

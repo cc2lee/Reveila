@@ -64,7 +64,7 @@ dependencies {
 
 tasks.withType<org.springframework.boot.gradle.tasks.bundling.BootJar> {
     archiveFileName.set("reveila-suite-fat.jar")
-    destinationDirectory.set(file("${project.rootDir}/reveila/runtime-directory/libs"))
+    destinationDirectory.set(file("${project.rootDir}/releases/current/libs"))
 }
 
 tasks.withType<org.springframework.boot.gradle.tasks.run.BootRun> {

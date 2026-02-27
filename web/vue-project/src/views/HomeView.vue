@@ -6,8 +6,7 @@ import '@reveila/core/ReveilaTable.js'
 <template>
   <div class="landing-page">
     <header class="top-banner">
-      <img src="/images/brother.png" alt="Reveila Logo" class="banner-logo" />
-      <h1 class="banner-heading">Reveila AI Runtime Fabric Control Center</h1>
+      <h1 class="banner-heading"><span class="reveila-logo">REVEILA</span> AI Runtime Fabric Control Center</h1>
     </header>
     
     <main class="content-stack">
@@ -51,9 +50,9 @@ import '@reveila/core/ReveilaTable.js'
   z-index: 10;
 }
 
-.banner-logo {
-  height: 40px;
-  width: auto;
+.reveila-logo {
+  color: #ff6600; /* Bright Orange */
+  margin-right: 0.5rem;
 }
 
 .banner-heading {

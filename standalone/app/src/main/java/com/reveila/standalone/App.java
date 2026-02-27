@@ -9,7 +9,7 @@ public class App {
         System.out.println("Starting Reveila..."); // Need this printout for attaching debugger.
 
         // A URL pointing to the Reveila properties file can be passed in as an argument to the Java main class, using the following format:
-        // "reveila.properties=file:///C:/IDE/Projects/Reveila-Suite/reveila/runtime-directory/configs/reveila.properties"
+        // "reveila.properties=file:///${system.home}/configs/reveila.properties"
         
         Thread serverThread = new Thread(() -> {
             Reveila reveila = new Reveila();

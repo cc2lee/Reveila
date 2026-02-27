@@ -73,7 +73,7 @@ tasks.withType<JavaExec>().configureEach {
 
 
         // 2. Define the reveila.properties argument to check/add to the args list
-        val arg = "reveila.properties=file:///C:/IDE/Projects/Reveila-Suite/reveila/runtime-directory/configs/reveila.properties"
+        val arg = "reveila.properties=file:///\${system.home}/configs/reveila.properties"
 
         // 3. Add the reveila.properties argument if it's not already present in the args list
         if (!args.contains(arg)) {

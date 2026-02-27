@@ -60,15 +60,3 @@ tasks.register("displayRoot") {
         println("Gradle root directory: ${rootDir.absolutePath}")
     }
 }
-
-tasks.register<Copy>("deployToRuntime") {
-    group = "reveila"
-    description = "Prepares the runtime directory by copying and filtering scripts."
-
-    from("runtime-directory/bin") {
-        include("*.sh")
-        filter { line -> line.replace("\r", "") }
-    }
-    
-    into("runtime-directory/bin")
-}
