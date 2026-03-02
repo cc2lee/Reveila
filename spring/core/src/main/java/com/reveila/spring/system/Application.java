@@ -21,6 +21,15 @@ import org.springframework.scheduling.annotation.EnableAsync;
 
 public class Application {
     public static void main(String[] args) {
+        // Pre-load critical Tomcat/Spring classes to prevent NoClassDefFoundError during JVM shutdown
+        // especially when running from a fat JAR.
+        try {
+            Class.forName("org.apache.catalina.Lifecycle$SingleUse");
+            Class.forName("org.springframework.boot.web.server.GracefulShutdownCallback");
+        } catch (ClassNotFoundException e) {
+            // Ignore if not on classpath
+        }
+        
         SpringApplication.run(Application.class, args);
     }
 }

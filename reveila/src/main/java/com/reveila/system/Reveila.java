@@ -34,7 +34,7 @@ import com.reveila.error.SystemException;
 import com.reveila.event.EventManager;
 import com.reveila.util.TimeFormat;
 
-public class Reveila {
+public class Reveila implements AutoCloseable {
 
 	private final ExecutorService startExecutor = Executors.newCachedThreadPool();
 	private PlatformAdapter platformAdapter;
@@ -52,6 +52,11 @@ public class Reveila {
 	private URL localUrl;
 	private boolean standalone = true;
 	private boolean shutdown = false;
+
+	@Override
+	public void close() {
+		shutdown();
+	}
 
 	public synchronized void shutdown() {
 
@@ -107,7 +112,9 @@ public class Reveila {
 
 		try {
 			if (!startExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-				logger.warning("Some start-up threads did not exit cleanly.");
+				if (logger != null) {
+					logger.warning("Some start-up threads did not exit cleanly.");
+				}
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
@@ -126,10 +133,6 @@ public class Reveila {
 	}
 
 	public synchronized void start(PlatformAdapter platformAdapter) throws Exception {
-		Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-			shutdown();
-		}));
-
 		if (platformAdapter == null) {
 			throw new IllegalArgumentException("PlatformAdapter cannot be null");
 		}

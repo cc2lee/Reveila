@@ -29,8 +29,9 @@ public class ReveilaConfiguration {
 
     /**
      * Creates a singleton instance of the Reveila engine.
+     * The destroyMethod="shutdown" ensures clean cleanup during Spring Context closure.
      */
-    @Bean
+    @Bean(destroyMethod = "shutdown")
     public Reveila reveila() {
         return new Reveila();
     }
