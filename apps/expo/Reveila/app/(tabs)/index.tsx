@@ -1,99 +1,200 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { StyleSheet, TouchableOpacity, ScrollView, View } from 'react-native';
+import { useEffect, useState } from 'react';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
 import ReveilaModule from '@/modules/reveila';
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const [isRunning, setIsRunning] = useState(false);
+  const [logs, setLogs] = useState<any[]>([]);
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
+  useEffect(() => {
+    const checkStatus = () => {
+      try {
+        setIsRunning(ReveilaModule.isRunning());
+      } catch (e) {
+        // Module might not be available yet
+      }
+    };
+    checkStatus();
+    const interval = setInterval(checkStatus, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleStart = async () => {
+    try {
+      await ReveilaModule.startService();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleFetchLogs = async () => {
+    if (!isRunning) return;
+    try {
+      const payload = JSON.stringify({
+        componentName: 'DataService',
+        methodName: 'search',
+        methodArguments: [{
+          entityType: 'AuditLog',
+          page: 0,
+          size: 5
+        }]
+      });
+      const result = await ReveilaModule.invoke(payload);
+      const parsed = JSON.parse(result);
+      if (parsed && parsed.content) {
+        setLogs(parsed.content);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  return (
+    <ThemedView style={styles.container}>
+      <ThemedView style={styles.header}>
+        <ThemedText type="title">
+          <ThemedText style={{ color: '#ff6600' }}>REVEILA</ThemedText> Control Center
         </ThemedText>
       </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+
+      <ScrollView contentContainerStyle={styles.content}>
+        <ThemedView style={styles.section}>
+          <ThemedText type="subtitle">Agent Sovereignty</ThemedText>
+          <ThemedText style={styles.description}>Instant perimeter enforcement and hardware-level control</ThemedText>
+          
+          <ThemedView style={styles.card}>
+            <ThemedView style={styles.statusRow}>
+              <ThemedText>System Status: </ThemedText>
+              <ThemedText style={{ color: isRunning ? '#22c55e' : '#ef4444', fontWeight: 'bold' }}>
+                {isRunning ? 'RUNNING' : 'STOPPED'}
+              </ThemedText>
+            </ThemedView>
+            
+            {!isRunning && (
+              <TouchableOpacity style={styles.button} onPress={handleStart}>
+                <ThemedText style={styles.buttonText}>Start Reveila Engine</ThemedText>
+              </TouchableOpacity>
+            )}
+          </ThemedView>
+        </ThemedView>
+
+        <ThemedView style={styles.section}>
+          <ThemedView style={styles.sectionHeader}>
+            <ThemedView style={{backgroundColor: 'transparent'}}>
+              <ThemedText type="subtitle">Flight Recorder</ThemedText>
+              <ThemedText style={styles.description}>Real-time audit logs of fabric invocations</ThemedText>
+            </ThemedView>
+            <TouchableOpacity onPress={handleFetchLogs} disabled={!isRunning}>
+              <ThemedText style={{ color: isRunning ? '#3b82f6' : '#94a3b8' }}>Refresh</ThemedText>
+            </TouchableOpacity>
+          </ThemedView>
+
+          <ThemedView style={styles.tableCard}>
+            {logs.length === 0 ? (
+              <ThemedText style={styles.emptyText}>No logs available. Start engine and refresh.</ThemedText>
+            ) : (
+              logs.map((log, i) => (
+                <ThemedView key={i} style={[styles.tableRow, i === logs.length - 1 && { borderBottomWidth: 0 }]}>
+                  <ThemedText style={styles.logAction}>{log.attributes?.action || 'Unknown Action'}</ThemedText>
+                  <ThemedText style={styles.logTime}>{new Date().toLocaleTimeString()}</ThemedText>
+                </ThemedView>
+              ))
+            )}
+          </ThemedView>
+        </ThemedView>
+      </ScrollView>
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  container: {
+    flex: 1,
+    backgroundColor: '#f1f5f9',
+  },
+  header: {
+    backgroundColor: '#0f172a',
+    paddingTop: 60,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+  },
+  content: {
+    padding: 20,
+    gap: 20,
+  },
+  section: {
+    backgroundColor: 'transparent',
     gap: 8,
   },
-  stepContainer: {
-    gap: 8,
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    backgroundColor: 'transparent',
+  },
+  description: {
+    fontSize: 14,
+    color: '#64748b',
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
+  tableCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    backgroundColor: 'transparent',
+  },
+  button: {
+    backgroundColor: '#0f172a',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    backgroundColor: 'transparent',
+  },
+  logAction: {
+    fontWeight: '600',
+    color: '#1e293b',
+  },
+  logTime: {
+    fontSize: 12,
+    color: '#94a3b8',
+  },
+  emptyText: {
+    padding: 20,
+    textAlign: 'center',
+    color: '#94a3b8',
+  }
 });

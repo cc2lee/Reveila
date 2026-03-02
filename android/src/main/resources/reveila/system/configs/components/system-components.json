@@ -20,8 +20,8 @@
   {
     "component": {
       "name": "DataService",
-      "class": "com.reveila.android.AndroidDataService",
-      "description": "Data service implementation for the Android environment.",
+      "class": "com.reveila.service.DataService",
+      "description": "Data service implementation using Hexagonal Architecture ports.",
       "thread-safe": true,
       "start": true
     }
