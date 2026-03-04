@@ -5,13 +5,7 @@
     "maven.terminal.useJavaHome": true,
     
     "java.project.sourcePaths": [
-        "adapters/android/src/main/java",
-        "adapters/db/src/main/java",
-        "apps/android/src/main/java",
-        "apps/expo/Reveila/android/app/src/main/java",
-        "reveila/src/main/java",
-        "spring/admin/src/main/java",
-        "spring/reveila/src/main/java"
+        "android/src/main/java"
     ],
 
     // Set "org.gradle.java.home" in each project's "gradle.properties" file

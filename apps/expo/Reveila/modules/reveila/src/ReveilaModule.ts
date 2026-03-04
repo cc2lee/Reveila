@@ -3,7 +3,7 @@ import { NativeModule, requireNativeModule } from 'expo';
 import { ReveilaModuleEvents } from './Reveila.types';
 
 declare class ReveilaModule extends NativeModule<ReveilaModuleEvents> {
-  startService(): Promise<void>;
+  startService(systemHome?: string): Promise<void>;
   invoke(payload: string): Promise<string>;
   isRunning(): boolean;
 }

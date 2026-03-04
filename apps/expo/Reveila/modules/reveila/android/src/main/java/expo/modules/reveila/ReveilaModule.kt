@@ -12,14 +12,18 @@ class ReveilaModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("Reveila")
 
-    AsyncFunction("startService") {
-        val context = appContext.reactContext ?: return@AsyncFunction
+    AsyncFunction("startService") { systemHome: String? ->
+        val context = appContext.reactContext ?: return@AsyncFunction null
         val intent = Intent(context, ReveilaService::class.java)
+        if (systemHome != null) {
+            intent.putExtra("systemHome", systemHome)
+        }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
         } else {
             context.startService(intent)
         }
+        null
     }
 
     AsyncFunction("invoke") { payload: String ->
@@ -32,6 +36,13 @@ class ReveilaModule : Module() {
 
     Function("isRunning") {
         ReveilaService.isRunning()
+    }
+
+    View(ReveilaView::class) {
+      Prop("url") { view: ReveilaView, url: URL ->
+        view.webView.loadUrl(url.toString())
+      }
+      Events("onLoad")
     }
   }
 }

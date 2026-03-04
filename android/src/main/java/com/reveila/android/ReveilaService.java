@@ -36,6 +36,7 @@ import android.content.Intent;
 import android.os.IBinder;
 import android.util.Log;
 import java.io.File;
+import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import androidx.annotation.Nullable;
@@ -52,9 +53,11 @@ public class ReveilaService extends Service {
     private ServiceManager serviceManager;
     private static volatile boolean isReveilaRunning = false;
     private static final String LOCK_FILE_NAME = "running.lock";
-    // Use a single-threaded executor to serialize all service startup and shutdown operations.
+    // Use a single-threaded executor to serialize all service startup and shutdown
+    // operations.
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private File lockFile;
+
     public static Reveila getReveilaInstance() {
         return reveila;
     }
@@ -67,24 +70,41 @@ public class ReveilaService extends Service {
     public void onCreate() {
         super.onCreate();
         serviceManager = new ServiceManager(this);
+        // Start foreground as early as possible to avoid "did not call startForeground" crash.
+        serviceManager.startForeground(this, "Reveila service is initializing...");
         reveila = new Reveila();
         isReveilaRunning = false;
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        // Prevent starting the service multiple times
+        // ALWAYS call startForeground immediately on every onStartCommand call
+        // to satisfy Android's foreground service requirements and prevent crashes.
+        serviceManager.startForeground(this, "Reveila is running.");
+
+        // Prevent starting the engine logic multiple times
         if (!ReveilaService.isReveilaRunning) {
-            serviceManager.startForeground(this, "Reveila is running.");
+            final String customSystemHome = intent != null ? intent.getStringExtra("systemHome") : null;
             
             // Offload all initialization, including file I/O, to a background thread
             // to prevent blocking the main thread and causing ANRs.
             executor.execute(() -> {
                 try {
-                    // All file operations are now on the background thread.
-                    File systemHome = new File(AndroidPlatformAdapter.getSystemHome(this));
-                    if (!systemHome.exists()) {
-                        systemHome.mkdirs();
+                    Log.i("ReveilaService", "Starting engine background initialization...");
+                    
+                    // Resolve SYSTEM_HOME
+                    String homePath;
+                    if (customSystemHome != null) {
+                        homePath = customSystemHome;
+                        Log.i("ReveilaService", "Using custom system home: " + homePath);
+                    } else {
+                        homePath = AndroidPlatformAdapter.getSystemHome(this);
+                        Log.i("ReveilaService", "Using default system home: " + homePath);
+                    }
+
+                    File systemHome = new File(homePath);
+                    if (!systemHome.exists() && !systemHome.mkdirs()) {
+                         Log.e("ReveilaService", "Failed to create system home directory: " + homePath);
                     }
                     lockFile = new File(systemHome, LOCK_FILE_NAME);
 
@@ -100,17 +120,22 @@ public class ReveilaService extends Service {
                     lockFile.createNewFile();
 
                     // Copy assets, overwriting only if the last shutdown was unclean.
+                    // Note: If using customSystemHome, we might still want to seed it from assets
+                    // if it's empty, but usually a custom path implies external management.
                     new ReveilaSetup(this, wasUncleanShutdown);
 
-                    PlatformAdapter platformAdapter = new AndroidPlatformAdapter(this);
+                    Properties props = new Properties();
+                    if (customSystemHome != null) {
+                        props.setProperty(com.reveila.system.Constants.SYSTEM_HOME, customSystemHome);
+                    }
+
+                    PlatformAdapter platformAdapter = new AndroidPlatformAdapter(this, props);
                     reveila.start(platformAdapter);
 
                     ReveilaService.isReveilaRunning = true;
                     Log.i("ReveilaService", "Reveila service started successfully.");
-                } catch (Exception e) {
-                    Log.e("ReveilaService", "Failed to start Reveila service", e);
-                    // If Reveila fails to start, stop the service to remove the notification
-                    stopSelf();
+                } catch (Throwable e) {
+                    Log.e("ReveilaService", "CRITICAL: Failed to start Reveila engine", e);
                 }
             });
         }

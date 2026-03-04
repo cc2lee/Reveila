@@ -55,7 +55,7 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
     public void onStart() throws Exception {
         this.intentValidator = getComponent("IntentValidator", IntentValidator.class);
         this.schemaEnforcer = getComponent("SchemaEnforcer", SchemaEnforcer.class);
-        this.guardedRuntime = getComponent("DockerGuardedRuntime", GuardedRuntime.class);
+        this.guardedRuntime = getComponent("GuardedRuntime", GuardedRuntime.class);
         this.flightRecorder = getComponent("FlightRecorder", FlightRecorder.class);
         this.metadataRegistry = getComponent("MetadataRegistry", MetadataRegistry.class);
         this.credentialManager = getComponent("CredentialManager", CredentialManager.class);

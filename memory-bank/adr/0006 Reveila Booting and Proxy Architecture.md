@@ -30,6 +30,6 @@ Reveila requires a platform-agnostic, secure, and predictable execution environm
 
 The Docker implementation is a **Specialized Platform Adapter** behavior:
 
-*   **The Container is the Proxy:** For "Guarded Components," the `Proxy` triggers the `DockerGuardedRuntime` instead of local JVM execution.
-*   **The Mini-Reveila Runtime:** The Docker image contains a "Reveila Worker Agent" (minimal Java app) that receives method calls via an entry point, executes in isolation, and returns results.
+*   **The Container is the Proxy:** For "Guarded Components," the `Proxy` triggers the `GuardedRuntime` instead of local JVM execution.
+*   **The Mini-Reveila Runtime:** The Guarded Runtime environment (Docker/gVisor or Android Dex) contains a "Reveila Worker Agent" (minimal Java app) that receives method calls via an entry point, executes in isolation, and returns results.
 

@@ -50,8 +50,15 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
     private final Map<String, java.util.concurrent.ScheduledFuture<?>> autoCalls = new HashMap<>();
 
     public AndroidPlatformAdapter(Context context) throws IOException {
+        this(context, new Properties());
+    }
+
+    public AndroidPlatformAdapter(Context context, Properties initialProperties) throws IOException {
         this.context = context;
         this.properties = new Properties();
+        if (initialProperties != null) {
+            this.properties.putAll(initialProperties);
+        }
         // Load default properties
         loadProperties();
         this.logger = configureLogging(this.properties);
@@ -65,8 +72,10 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
             android.util.Log.w("AndroidPlatformAdapter", "Failed to load reveila.properties from assets", e);
         }
         
-        // Ensure SYSTEM_HOME is set for Android
-        properties.setProperty(Constants.SYSTEM_HOME, getSystemHome(context));
+        // Ensure SYSTEM_HOME is set for Android, prioritizing existing value if set
+        if (!properties.containsKey(Constants.SYSTEM_HOME)) {
+            properties.setProperty(Constants.SYSTEM_HOME, getSystemHome(context));
+        }
         
         // Use a default secret key if not provided (for development)
         if (!properties.containsKey(Constants.CRYPTOGRAPHER_SECRETKEY)) {

@@ -137,8 +137,8 @@ public final class Proxy extends AbstractService {
 
 		// ADR 0006: Proxy-Based Invocations with Physical Isolation
 		if (metaObject.requiresRuntimeIsolation()) {
-			GuardedRuntime runtime = (GuardedRuntime) systemContext.getProxy("DockerGuardedRuntime")
-					.orElseThrow(() -> new IllegalStateException("DockerGuardedRuntime not found or invalid"))
+			GuardedRuntime runtime = (GuardedRuntime) systemContext.getProxy("GuardedRuntime")
+					.orElseThrow(() -> new IllegalStateException("GuardedRuntime not found or invalid"))
 					.invoke("getInstance", null);
 
 			// In a real scenario, we'd need an AgentPrincipal and AgencyPerimeter here.

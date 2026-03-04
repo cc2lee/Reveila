@@ -18,6 +18,8 @@ import com.github.dockerjava.transport.DockerHttpClient;
  * Docker-based implementation of GuardedRuntime using gVisor (runsc).
  * Maps AgencyPerimeter resource records to Docker HostConfig settings.
  * 
+ * Registered as "GuardedRuntime" in standard server environments.
+ * 
  * @author CL
  */
 public class DockerGuardedRuntime extends AbstractGuardedRuntime {
@@ -30,6 +32,13 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
 
     public DockerGuardedRuntime() {
         this(createDefaultClient());
+    }
+
+    /**
+     * Required for Proxy-based retrieval.
+     */
+    public GuardedRuntime getInstance() {
+        return this;
     }
 
     private static DockerClient createDefaultClient() {
@@ -50,7 +59,7 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
     public Object execute(AgentPrincipal principal, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials) {
         validateRequest(principal, perimeter);
         long startTime = System.currentTimeMillis();
-        System.out.println("Executing via DockerGuardedRuntime for " + pluginId + " [Trace: " + principal.traceId() + "] Started at: " + startTime);
+        logger.info("Executing via DockerGuardedRuntime for " + pluginId + " [Trace: " + principal.traceId() + "] Started at: " + startTime);
 
         // Filesystem Isolation: Mount the plugin JAR as a read-only volume
         String pluginJarPath = "/opt/reveila/plugins/" + pluginId + ".jar";

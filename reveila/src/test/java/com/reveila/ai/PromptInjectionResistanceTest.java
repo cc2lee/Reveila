@@ -54,7 +54,7 @@ class PromptInjectionResistanceTest {
                 case "GeminiProvider" -> geminiProvider;
                 case "IntentValidator" -> intentValidator;
                 case "SchemaEnforcer" -> schemaEnforcer;
-                case "DockerGuardedRuntime" -> guardedRuntime;
+                case "GuardedRuntime" -> guardedRuntime;
                 case "FlightRecorder" -> flightRecorder;
                 case "MetadataRegistry" -> metadataRegistry;
                 case "CredentialManager" -> credentialManager;

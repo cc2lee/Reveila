@@ -22,7 +22,9 @@ public class ReveilaAdapterFacade {
         java.util.Map<String, Object> request = gson.fromJson(payload, java.util.Map.class);
         String componentName = (String) request.get("componentName");
         String methodName = (String) request.get("methodName");
-        Object[] methodArguments = request.containsKey("methodArguments") ? ((java.util.List<?>) request.get("methodArguments")).toArray() : null;
+        Object[] methodArguments = request.containsKey("methodArguments")
+                ? ((java.util.List<?>) request.get("methodArguments")).toArray()
+                : null;
 
         if (componentName == null || methodName == null) {
             throw new Exception("Invalid payload: componentName and methodName are required.");

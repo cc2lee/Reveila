@@ -8,6 +8,7 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.util.Log;
 import android.content.pm.ServiceInfo;
 import androidx.core.app.NotificationCompat;
 
@@ -35,8 +36,7 @@ public class ServiceManager {
             NotificationChannel serviceChannel = new NotificationChannel(
                     CHANNEL_ID,
                     "Reveila Service Channel",
-                    NotificationManager.IMPORTANCE_DEFAULT
-            );
+                    NotificationManager.IMPORTANCE_DEFAULT);
             notificationManager.createNotificationChannel(serviceChannel);
         }
     }
@@ -44,13 +44,15 @@ public class ServiceManager {
     public Notification buildNotification(String contentText, Class<?> serviceClass) {
         // Intent to open the app when the notification is tapped
         Intent notificationIntent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
-        PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, notificationIntent,
+                PendingIntent.FLAG_IMMUTABLE);
 
         // Intent for the "Restart" action, targeting the RestartReceiver
         Intent restartIntent = new Intent(context, RestartReceiver.class);
         restartIntent.setAction(ACTION_RESTART);
         restartIntent.putExtra("serviceClass", serviceClass.getName());
-        PendingIntent restartPendingIntent = PendingIntent.getBroadcast(context, 1, restartIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent restartPendingIntent = PendingIntent.getBroadcast(context, 1, restartIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
         // Find the app's launcher icon
         int smallIconResId = context.getResources().getIdentifier("ic_launcher", "mipmap", context.getPackageName());
@@ -69,13 +71,27 @@ public class ServiceManager {
     }
 
     public void startForeground(Service service, String contentText) {
-        createNotificationChannel();
-        Notification notification = buildNotification(contentText, service.getClass());
-        // For Android 10 (API 29) and above, we must specify the foreground service type.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            service.startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
-        } else {
-            service.startForeground(NOTIFICATION_ID, notification);
+        try {
+            Log.i("ServiceManager", "Attempting to start foreground service...");
+            createNotificationChannel();
+            Notification notification = buildNotification(contentText, service.getClass());
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                Log.i("ServiceManager", "Using foregroundServiceType: specialUse");
+                service.startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                Log.i("ServiceManager", "Using foregroundServiceType: dataSync");
+                service.startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            } else {
+                service.startForeground(NOTIFICATION_ID, notification);
+            }
+            Log.i("ServiceManager", "Successfully called startForeground");
+        } catch (Exception e) {
+            Log.e("ServiceManager", "CRITICAL ERROR: Failed to call startForeground", e);
+            // Re-throw if it's a SecurityException as it indicates missing manifest entries
+            if (e instanceof SecurityException) {
+                throw e;
+            }
         }
     }
 }

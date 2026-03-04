@@ -7,31 +7,52 @@ import ReveilaModule from '@/modules/reveila';
 
 export default function HomeScreen() {
   const [isRunning, setIsRunning] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
+  const [autoRestart, setAutoRestart] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
 
   useEffect(() => {
     const checkStatus = () => {
       try {
-        setIsRunning(ReveilaModule.isRunning());
+        const running = ReveilaModule.isRunning();
+        setIsRunning(running);
+        
+        if (running) {
+          setIsStarting(false);
+        }
+
+        // WATCHDOG LOGIC: Only restart if not already starting and watchdog is on
+        if (autoRestart && !running && !isStarting) {
+          console.log('Watchdog: Service died, restarting...');
+          handleStart();
+        }
       } catch (e) {
         // Module might not be available yet
       }
     };
     checkStatus();
-    const interval = setInterval(checkStatus, 2000);
+    const interval = setInterval(checkStatus, 5000); // Slower interval
     return () => clearInterval(interval);
-  }, []);
+  }, [autoRestart, isStarting]);
 
   const handleStart = async () => {
+    if (isStarting) return;
+    setIsStarting(true);
     try {
-      await ReveilaModule.startService();
+      // Allow overriding system home for development if needed.
+      // The path provided by the user is a Windows path, which only works if bridged (e.g. on certain emulators/debug setups)
+      // otherwise it falls back to internal storage.
+      const customPath = "C:\\IDE\\Projects\\Reveila-Suite\\apps\\expo\\Reveila\\assets\\reveila\\system";
+      await ReveilaModule.startService(customPath);
+      setAutoRestart(true); // Enable watchdog once started manually
     } catch (e) {
       console.error(e);
+      setIsStarting(false);
     }
   };
 
   const handleFetchLogs = async () => {
-    if (!isRunning) return;
+    if (!isRunning || isStarting) return;
     try {
       const payload = JSON.stringify({
         componentName: 'DataService',
@@ -68,14 +89,41 @@ export default function HomeScreen() {
           <ThemedView style={styles.card}>
             <ThemedView style={styles.statusRow}>
               <ThemedText>System Status: </ThemedText>
-              <ThemedText style={{ color: isRunning ? '#22c55e' : '#ef4444', fontWeight: 'bold' }}>
-                {isRunning ? 'RUNNING' : 'STOPPED'}
+              <ThemedText style={{ 
+                color: isStarting ? '#eab308' : (isRunning ? '#22c55e' : '#ef4444'), 
+                fontWeight: 'bold' 
+              }}>
+                {isStarting ? 'STARTING...' : (isRunning ? 'RUNNING' : 'STOPPED')}
+              </ThemedText>
+            </ThemedView>
+
+            <ThemedView style={styles.statusRow}>
+              <ThemedText>Watchdog Mode: </ThemedText>
+              <ThemedText style={{ color: autoRestart ? '#3b82f6' : '#64748b', fontWeight: 'bold' }}>
+                {autoRestart ? 'ACTIVE' : 'INACTIVE'}
               </ThemedText>
             </ThemedView>
             
-            {!isRunning && (
+            {!isRunning && !isStarting && (
               <TouchableOpacity style={styles.button} onPress={handleStart}>
                 <ThemedText style={styles.buttonText}>Start Reveila Engine</ThemedText>
+              </TouchableOpacity>
+            )}
+
+            {isStarting && (
+              <ThemedText style={styles.startingText}>
+                Engine is initializing background components. This may take a few seconds...
+              </ThemedText>
+            )}
+            
+            {isRunning && (
+              <TouchableOpacity 
+                style={[styles.button, { backgroundColor: autoRestart ? '#334155' : '#0f172a' }]} 
+                onPress={() => setAutoRestart(!autoRestart)}
+              >
+                <ThemedText style={styles.buttonText}>
+                  {autoRestart ? 'Disable Watchdog' : 'Enable Watchdog'}
+                </ThemedText>
               </TouchableOpacity>
             )}
           </ThemedView>
@@ -175,6 +223,12 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontWeight: 'bold',
+  },
+  startingText: {
+    fontSize: 12,
+    color: '#eab308',
+    fontStyle: 'italic',
+    marginTop: 8,
   },
   tableRow: {
     flexDirection: 'row',

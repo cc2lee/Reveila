@@ -11,10 +11,6 @@ import com.reveila.system.Proxy;
 import com.reveila.system.MetaObject;
 import java.util.Map;
 
-/**
- * Realigned with Reveila Core Architecture (ADR 0006).
- * Uses Proxy-based invocation and standardized ClassLoading.
- */
 public class SafePluginLoader {
 
     public static Proxy createProxy(Context context, String pluginId, String className) {
