@@ -1,0 +1,29 @@
+{
+  "plugin_id": "reveila.ai.gemini",
+  "name": "Gemini AI Provider",
+  "version": "1.5.0",
+  "tool_definitions": {
+    "validateIntent": {
+      "description": "Validates the intent of a proposed agentic action.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "intent": { "type": "string" },
+          "context": { "type": "string" }
+        },
+        "required": ["intent"]
+      }
+    }
+  },
+  "agency_perimeter": {
+    "access_scopes": ["intent-validation", "safety-audit"],
+    "allowed_domains": ["generativelanguage.googleapis.com"],
+    "internet_access_blocked": false,
+    "max_memory_mb": 1024,
+    "max_cpu_cores": 2,
+    "max_execution_sec": 30,
+    "delegation_allowed": true
+  },
+  "secret_parameters": ["api_key"],
+  "masked_parameters": ["api_key"]
+}
