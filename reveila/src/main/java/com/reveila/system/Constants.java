@@ -15,11 +15,12 @@ public final class Constants {
 	public static final String SYSTEM_NAME = "system.name";
 	public static final String SYSTEM_VERSION = "system.version";
 	public static final String SYSTEM_HOME = "system.home";
+	public static final String RESET_HOME = "reset.home";
 	public static final String PLATFORM_OS = "platform.os";
 	public static final String LOG_FILE_SIZE = "logging.file.size";
 	public static final String LOG_FILE_COUNT = "logging.file.count";
 	public static final String LOG_LEVEL = "logging.level";
-	public static final String SYSTEM_PROPERTIES_FILE_NAME = "reveila.properties";
+	public static final String SYSTEM_PROPERTIES = "reveila.properties";
 	public static final String CRYPTOGRAPHER_SECRETKEY = "cryptographer.secretkey";
 	public static final String CHARACTER_ENCODING = "text.character.encoding";
 	public static final String LAUNCH_STRICT_MODE = "launch.strict.mode";
@@ -76,4 +77,5 @@ public final class Constants {
 	public static final String SERVICE = "service";
 	public static final String DISPLAY_NAME = "displayName";
 	public static final String PROVIDER = "provider";
+    
 }

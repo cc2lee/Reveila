@@ -1,4 +1,4 @@
-package com.reveila.platform;
+package com.reveila.system;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -34,9 +34,6 @@ import com.reveila.error.ConfigurationException;
 import com.reveila.error.SystemException;
 import com.reveila.event.AutoCallEvent;
 import com.reveila.event.EventConsumer;
-import com.reveila.system.Constants;
-import com.reveila.system.PlatformAdapter;
-import com.reveila.system.Reveila;
 import com.reveila.util.FileUtil;
 
 /**
@@ -50,13 +47,12 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     private int jobThreadPoolSize = 1; // Use single thread for serial execution by default
     private ScheduledExecutorService scheduler;
     private final Map<String, ScheduledFuture<?>> autoCallTasks = new ConcurrentHashMap<>();
-    private Path systemHome;
+    private SystemHome systemHome;
     private ClassLoader classLoader;
 
     public BasePlatformAdapter(Properties commandLineArgs) throws Exception {
         super();
         loadProperties(commandLineArgs);
-        setupDirectories();
         configureLogging();
         setupClassLoader();
         createScheduler();
@@ -75,16 +71,6 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         this.scheduler = Executors.newScheduledThreadPool(jobThreadPoolSize, threadFactory);
     }
 
-    private void setupDirectories() throws IOException {
-        Files.createDirectories(systemHome);
-        Files.createDirectories(systemHome.resolve("configs").resolve("components"));
-        Files.createDirectories(systemHome.resolve("data"));
-        Files.createDirectories(systemHome.resolve("libs"));
-        Files.createDirectories(systemHome.resolve("logs"));
-        Files.createDirectories(systemHome.resolve("plugins"));
-        Files.createDirectories(systemHome.resolve("temp"));
-    }
-
     @Override
     public String getPlatformDescription() {
         return properties.getProperty(Constants.PLATFORM_OS);
@@ -93,7 +79,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     @Override
     public String[] getConfigFilePaths() throws IOException {
         // 1. Ensure we have a clean, absolute path to the components dir
-        Path configDir = this.systemHome.resolve(Constants.CONFIGS_DIR_NAME)
+        Path configDir = this.systemHome.getSystemHome().resolve(Constants.CONFIGS_DIR_NAME)
                 .resolve("components")
                 .toAbsolutePath()
                 .normalize();
@@ -102,7 +88,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         String[] files = FileUtil.findRelativePaths(configDir.toString(), ".json");
 
         // 3. Ensure systemHome is also absolute and normalized for a clean comparison
-        Path normalizedHome = this.systemHome.toAbsolutePath().normalize();
+        Path home = this.systemHome.getSystemHome().toAbsolutePath().normalize();
 
         return Stream.of(files)
                 .map(file -> {
@@ -110,14 +96,14 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
                     Path absoluteFilePath = configDir.resolve(file).normalize();
 
                     // Relativize from home to the specific file
-                    return normalizedHome.relativize(absoluteFilePath).toString();
+                    return home.relativize(absoluteFilePath).toString();
                 })
                 .toArray(String[]::new);
     }
 
     @Override
     public InputStream getFileInputStream(String path) throws IOException {
-        Path absolutePath = FileUtil.toSafePath(this.systemHome, path);
+        Path absolutePath = FileUtil.toSafePath(this.systemHome.getSystemHome(), path);
         if (!Files.exists(absolutePath)) {
             throw new IOException("File not found: " + absolutePath.toString());
         }
@@ -127,7 +113,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
 
     @Override
     public OutputStream getFileOutputStream(String path, boolean append) throws IOException {
-        Path absolutePath = FileUtil.toSafePath(this.systemHome, path);
+        Path absolutePath = FileUtil.toSafePath(this.systemHome.getSystemHome(), path);
         if (append) {
             return Files.newOutputStream(absolutePath, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } else {
@@ -135,7 +121,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         }
     }
 
-    private URL resolveConfigurationResource(String location) throws Exception {
+    private URL toUrl(String location) throws Exception {
         if (location == null || location.isBlank()) {
             throw new IllegalArgumentException("Location string is null or empty");
         }
@@ -152,28 +138,28 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         return path.toUri().toURL();
     }
 
-    private InputStream openPropertiesStream(Properties jvmArgs) throws IOException, ConfigurationException {
+    private InputStream openSystemProperties(Properties jvmArgs) throws IOException, ConfigurationException {
         System.out.println("Attempting to load system properties...");
         URL url = null;
 
         // 1. try JVM argument first
         try {
-            url = resolveConfigurationResource(jvmArgs.getProperty(Constants.SYSTEM_PROPERTIES_FILE_NAME));
+            url = toUrl(jvmArgs.getProperty(Constants.SYSTEM_PROPERTIES));
             System.out.println("Loading system properties from JVM argument: " + url);
         } catch (Exception e) {
             // 2. try looking in classpath
-            url = BasePlatformAdapter.class.getClassLoader().getResource(Constants.SYSTEM_PROPERTIES_FILE_NAME);
+            url = BasePlatformAdapter.class.getClassLoader().getResource(Constants.SYSTEM_PROPERTIES);
             System.out.println("Loading system properties from classpath: " + url);
         }
 
         if (url == null) {
             // 3. last place - home directory
             try {
-                url = this.systemHome.resolve(Constants.CONFIGS_DIR_NAME)
-                        .resolve(Constants.SYSTEM_PROPERTIES_FILE_NAME).toUri().toURL();
+                url = this.systemHome.getSystemHome().resolve(Constants.CONFIGS_DIR_NAME)
+                        .resolve(Constants.SYSTEM_PROPERTIES).toUri().toURL();
                 System.out.println("Loading system properties from home directory: " + url);
             } catch (Exception e) {
-                String message = "SYSTEM STARTUP ERROR: " + Constants.SYSTEM_PROPERTIES_FILE_NAME
+                String message = "SYSTEM STARTUP ERROR: " + Constants.SYSTEM_PROPERTIES
                         + "  not found. Please ensure it is passed in as a command line argument in URL format,"
                         + " or included in the classpath, or available in the " + Constants.CONFIGS_DIR_NAME
                         + " directory of the Reveila System Home.";
@@ -198,35 +184,27 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     }
 
     private void loadProperties(Properties jvmArgs) throws IOException, ConfigurationException {
-        
-        Properties args = (jvmArgs != null) ? jvmArgs : new Properties();
-        
-        // Resolve SYSTEM_HOME
-        String homeValue = args.getProperty(Constants.SYSTEM_HOME);
-        if (homeValue == null || homeValue.isBlank()) {
-            homeValue = System.getenv("REVEILA_HOME");
-            if (homeValue == null || homeValue.isBlank()) {
-                throw new ConfigurationException("SYSTEM STARTUP ERROR: System Home directory not specified. Please set the "
-                        + Constants.SYSTEM_HOME + " system property as a command line argument, or the REVEILA_HOME environment variable.", null, "101");
-            }
-            args.setProperty(Constants.SYSTEM_HOME, homeValue);
+
+        if (jvmArgs == null) {
+            jvmArgs = new Properties();
         }
-        this.systemHome = Paths.get(homeValue).toAbsolutePath().normalize();
+        
+        setupSystemHome(jvmArgs);
         
         // Load properties file using Try-with-Resources
         this.properties = new Properties();
-        try (InputStream stream = openPropertiesStream(args)) {
+        try (InputStream stream = openSystemProperties(jvmArgs)) {
             this.properties.load(stream);
         } catch (Exception e) {
-            System.err.println("Failed to load " + Constants.SYSTEM_PROPERTIES_FILE_NAME + ": " + e.getMessage());
+            System.err.println("Failed to load " + Constants.SYSTEM_PROPERTIES + ": " + e.getMessage());
             e.printStackTrace();
             // If the file is missing, we might still continue if defaults are enough
             // but since you throw IOException, we'll keep that contract.
-            throw new IOException("Failed to load " + Constants.SYSTEM_PROPERTIES_FILE_NAME, e);
+            throw new IOException("Failed to load " + Constants.SYSTEM_PROPERTIES, e);
         }
 
         // Apply command-line overwrites
-        this.properties.putAll(args);
+        this.properties.putAll(jvmArgs);
 
         // Set OS Metadata
         if (properties.getProperty(Constants.PLATFORM_OS) == null) {
@@ -239,6 +217,24 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         // Set Defaults for missing properties
         resolveProperty(Constants.CHARACTER_ENCODING, StandardCharsets.UTF_8.name());
         resolveProperty(Constants.LAUNCH_STRICT_MODE, "true");
+    }
+
+    private void setupSystemHome(Properties jvmArgs) throws ConfigurationException {
+        // Resolve SYSTEM_HOME
+        String path = jvmArgs.getProperty(Constants.SYSTEM_HOME);
+        if (path == null || path.isBlank()) {
+            path = System.getenv("REVEILA_HOME");
+            if (path == null || path.isBlank()) {
+                throw new ConfigurationException("SYSTEM STARTUP ERROR: System Home directory not specified. Please set the "
+                        + Constants.SYSTEM_HOME + " system property as a command line argument, or the REVEILA_HOME environment variable.", null, "101");
+            }
+            jvmArgs.setProperty(Constants.SYSTEM_HOME, path);
+        }
+
+        // Initialize System Home
+        boolean resetHome = "true".equalsIgnoreCase(jvmArgs.getProperty(Constants.RESET_HOME));
+        this.systemHome = new SystemHome(path);
+        this.systemHome.createDirectoryStructure(resetHome);
     }
 
     // Helper to keep the main logic readable
@@ -297,7 +293,10 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     }
 
     protected Path getSystemHome() {
-        return this.systemHome;
+        if (this.systemHome == null) {
+            return null;
+        }   
+        return this.systemHome.getSystemHome();
     }
 
     @Override

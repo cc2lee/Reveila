@@ -18,7 +18,7 @@ import com.reveila.data.EntityMapper;
 import com.reveila.data.GenericRepository;
 import com.reveila.data.JavaObjectRepository;
 import com.reveila.data.Repository;
-import com.reveila.platform.BasePlatformAdapter;
+import com.reveila.system.BasePlatformAdapter;
 
 public class SpringPlatformAdapter extends BasePlatformAdapter {
 
