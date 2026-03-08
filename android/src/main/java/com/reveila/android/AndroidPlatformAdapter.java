@@ -53,23 +53,28 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
         this(context, new Properties());
     }
 
-    public AndroidPlatformAdapter(Context context, Properties initialProperties) throws IOException {
+    public AndroidPlatformAdapter(Context context, Properties overwrites) throws IOException {
         this.context = context;
         this.properties = new Properties();
-        if (initialProperties != null) {
-            this.properties.putAll(initialProperties);
-        }
-        // Load default properties
         loadProperties();
+        if (overwrites != null) {
+            this.properties.putAll(overwrites);
+        }
         this.logger = configureLogging(this.properties);
     }
 
     private void loadProperties() {
-        try (InputStream is = context.getAssets().open("reveila/system/configs/reveila.properties")) {
-            properties.load(is);
-        } catch (IOException e) {
-            // Fallback or log error
-            android.util.Log.w("AndroidPlatformAdapter", "Failed to load reveila.properties from assets", e);
+        File externalProps = new File(getSystemHome(context), "configs/reveila.properties");
+        if (externalProps.exists()) {
+            try (InputStream is = new FileInputStream(externalProps)) {
+                properties.load(is);
+                android.util.Log.i("AndroidPlatformAdapter", "Loaded reveila.properties from filesystem: " + externalProps.getAbsolutePath());
+            } catch (IOException e) {
+                android.util.Log.w("AndroidPlatformAdapter", "Failed to load reveila.properties from filesystem, falling back to assets", e);
+                loadPropertiesFromAssets();
+            }
+        } else {
+            loadPropertiesFromAssets();
         }
         
         // Ensure SYSTEM_HOME is set for Android, prioritizing existing value if set
@@ -80,6 +85,29 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
         // Use a default secret key if not provided (for development)
         if (!properties.containsKey(Constants.CRYPTOGRAPHER_SECRETKEY)) {
             properties.setProperty(Constants.CRYPTOGRAPHER_SECRETKEY, "ReveilaAndroidDefaultSecretKey123");
+        }
+
+        resolvePlaceholders();
+    }
+
+    private void resolvePlaceholders() {
+        String home = properties.getProperty(Constants.SYSTEM_HOME);
+        if (home == null) return;
+
+        for (String key : properties.stringPropertyNames()) {
+            String value = properties.getProperty(key);
+            if (value != null && value.contains("${system.home}")) {
+                properties.setProperty(key, value.replace("${system.home}", home));
+            }
+        }
+    }
+
+    private void loadPropertiesFromAssets() {
+        try (InputStream is = context.getAssets().open("reveila/system/configs/reveila.properties")) {
+            properties.load(is);
+            android.util.Log.i("AndroidPlatformAdapter", "Loaded reveila.properties from assets");
+        } catch (IOException e) {
+            android.util.Log.w("AndroidPlatformAdapter", "Failed to load reveila.properties from assets", e);
         }
     }
 

@@ -43,9 +43,16 @@ import androidx.annotation.Nullable;
 
 import com.reveila.system.Reveila;
 import com.reveila.system.PlatformAdapter;
+import com.reveila.android.BuildConfig;
 
 import com.reveila.android.AndroidPlatformAdapter;
 import com.reveila.android.ServiceManager;
+
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.io.InputStream;
+import java.io.FileOutputStream;
+import java.io.BufferedInputStream;
 
 public class ReveilaService extends Service {
 
@@ -124,6 +131,9 @@ public class ReveilaService extends Service {
                     // if it's empty, but usually a custom path implies external management.
                     new ReveilaSetup(this, wasUncleanShutdown);
 
+                    // Attempt to fetch remote properties if configured
+                    fetchRemoteProperties(systemHome);
+
                     Properties props = new Properties();
                     if (customSystemHome != null) {
                         props.setProperty(com.reveila.system.Constants.SYSTEM_HOME, customSystemHome);
@@ -142,6 +152,47 @@ public class ReveilaService extends Service {
 
         // If the system kills the service, it will be automatically restarted.
         return START_STICKY;
+    }
+
+    private void fetchRemoteProperties(File systemHome) {
+        String urlString = BuildConfig.REVEILA_PROPERTIES_URL;
+        if (urlString == null || urlString.isEmpty()) return;
+
+        File configFile = new File(systemHome, "configs/reveila.properties");
+        File configDir = configFile.getParentFile();
+        if (configDir != null && !configDir.exists()) {
+            configDir.mkdirs();
+        }
+
+        HttpURLConnection urlConnection = null;
+        try {
+            Log.i("ReveilaService", "Attempting to fetch remote properties from: " + urlString);
+            URL url = new URL(urlString);
+            urlConnection = (HttpURLConnection) url.openConnection();
+            urlConnection.setConnectTimeout(5000);
+            urlConnection.setReadTimeout(5000);
+            
+            int responseCode = urlConnection.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                try (InputStream in = new BufferedInputStream(urlConnection.getInputStream());
+                     FileOutputStream out = new FileOutputStream(configFile)) {
+                    byte[] buffer = new byte[1024];
+                    int len;
+                    while ((len = in.read(buffer)) != -1) {
+                        out.write(buffer, 0, len);
+                    }
+                }
+                Log.i("ReveilaService", "Successfully updated reveila.properties from remote URL.");
+            } else {
+                Log.w("ReveilaService", "Remote properties URL returned status: " + responseCode + ". Defaulting to local assets.");
+            }
+        } catch (Exception e) {
+            Log.w("ReveilaService", "Failed to fetch remote properties: " + e.getMessage() + ". Defaulting to local assets.");
+        } finally {
+            if (urlConnection != null) {
+                urlConnection.disconnect();
+            }
+        }
     }
 
     @Override

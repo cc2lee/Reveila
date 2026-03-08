@@ -21,7 +21,7 @@ val buildVue = tasks.register<com.github.gradle.node.npm.task.NpmTask>("buildVue
 val copyToRuntime = tasks.register<Copy>("copyToRuntime") {
     dependsOn(buildVue)
     from("dist")
-    into("../../releases/current/web")
+    into("../../system-home/standard/web")
 }
 
 tasks.named("assemble") {

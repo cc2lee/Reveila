@@ -40,10 +40,8 @@ export default function HomeScreen() {
     setIsStarting(true);
     try {
       // Allow overriding system home for development if needed.
-      // The path provided by the user is a Windows path, which only works if bridged (e.g. on certain emulators/debug setups)
-      // otherwise it falls back to internal storage.
-      const customPath = "C:\\IDE\\Projects\\Reveila-Suite\\apps\\expo\\Reveila\\assets\\reveila\\system";
-      await ReveilaModule.startService(customPath);
+      // Removed hardcoded Windows path as it's unlikely to work on standard Android environments.
+      await ReveilaModule.startService(undefined);
       setAutoRestart(true); // Enable watchdog once started manually
     } catch (e) {
       console.error(e);

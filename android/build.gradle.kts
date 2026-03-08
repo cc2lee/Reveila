@@ -10,6 +10,10 @@ android {
     defaultConfig {
         minSdk = libs.versions.androidMinSdk.get().toInt()
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
+
+        // Bundled URL for fetching reveila.properties at startup
+        // 10.0.2.2 is the default alias for the host machine in Android Emulator
+        buildConfigField("String", "REVEILA_PROPERTIES_URL", "\"http://10.0.2.2:8080/configs/reveila.properties\"")
     }
 
     buildFeatures {
