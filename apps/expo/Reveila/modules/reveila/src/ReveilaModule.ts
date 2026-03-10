@@ -1,12 +1,11 @@
-import { NativeModule, requireNativeModule } from 'expo';
+import { NativeModules } from 'react-native';
 
-import { ReveilaModuleEvents } from './Reveila.types';
+const { ReveilaModule } = NativeModules;
 
-declare class ReveilaModule extends NativeModule<ReveilaModuleEvents> {
-  startService(systemHome?: string): Promise<void>;
-  invoke(payload: string): Promise<string>;
-  isRunning(): boolean;
+export interface IReveilaModule {
+  startService(systemHome?: string): Promise<boolean>;
+  invoke(componentName: string, methodName: string, params: any[]): Promise<any>;
+  isRunning(): Promise<boolean>;
 }
 
-// This call loads the native module object from the JSI.
-export default requireNativeModule<ReveilaModule>('Reveila');
+export default ReveilaModule as IReveilaModule;

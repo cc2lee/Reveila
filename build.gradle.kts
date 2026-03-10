@@ -90,9 +90,9 @@ val prepareStandardHome = tasks.register<Copy>("prepareStandardHome") {
 
 // Hook into the build lifecycle for the android project
 project(":android") {
-    afterEvaluate {
-        tasks.named("processResources") {
-            dependsOn(prepareAndroidHome)
-        }
+    // We use withType to catch all variants (debug, release, etc.)
+    // and configureEach to remain lazy (modern Gradle best practice).
+    tasks.withType<com.android.build.gradle.tasks.ProcessAndroidResources> {
+        dependsOn(prepareAndroidHome)
     }
 }

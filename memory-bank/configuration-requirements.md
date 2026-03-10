@@ -4,7 +4,7 @@ This document outlines the strict validation rules and structural requirements f
 
 ## 1. Plugin Configuration Rules
 
-When defining a component with a `plugin` block in the configuration files (e.g., `core.json`), the following rules apply:
+When defining a component with a `plugin` block in the configuration files (e.g., `standard.json`), the following rules apply:
 
 ### 1.1 Directory Pathing
 - **Prefix Requirement:** The `directory` property MUST start with `plugins/`.
@@ -50,7 +50,7 @@ Every plugin directory MUST contain a `plugin-manifest.json` file at its root. T
 }
 ```
 
-## 2. Component Configuration (`core.json`)
+## 2. Component Configuration (`standard.json`)
 
 - **Component Naming:** Every component must have a unique `name`.
 - **Class Mapping:** The `class` property must point to a valid implementation class.

@@ -22,7 +22,7 @@ dependencyResolutionManagement {
     }
 }
 
-includeBuild("build-logic") // Convention plugins
+includeBuild("build-logic") // Include my convention plugins
 
 // Multi-Project Rule: 
 // Every subproject must be included in the root settings.gradle.kts via include("project-name"). 
@@ -36,5 +36,6 @@ includeBuild("build-logic") // Convention plugins
 include(":reveila")
 include(":spring:admin")
 include(":spring:core")
+include(":standalone")
 include(":web:vue-project")
 include(":android")

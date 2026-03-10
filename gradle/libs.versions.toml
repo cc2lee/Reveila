@@ -19,7 +19,7 @@
 [versions]
 
 java = "21"
-kotlin = "2.0.0"
+kotlin = "2.1.20"
 
 # Common libs:
 jackson = "2.17.1"

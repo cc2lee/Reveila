@@ -4,6 +4,7 @@
     "modules": ["ReveilaModule"]
   },
   "android": {
-    "modules": ["expo.modules.reveila.ReveilaModule"]
+    "modules": [],
+    "packages": ["com.reveila.android.ReveilaPackage"]
   }
 }

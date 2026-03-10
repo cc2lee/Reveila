@@ -8,6 +8,8 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableArray;
 
+import android.content.Intent;
+import android.os.Build;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -30,6 +32,31 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
     }
 
     /**
+     * Starts the Reveila background service.
+     * @param systemHome Optional path to the system home directory.
+     * @param promise Promise to resolve when the service is starting.
+     */
+    @ReactMethod
+    public void startService(String systemHome, Promise promise) {
+        try {
+            ReactApplicationContext context = getReactApplicationContext();
+            Intent intent = new Intent(context, ReveilaService.class);
+            if (systemHome != null && !systemHome.isEmpty()) {
+                intent.putExtra("systemHome", systemHome);
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent);
+            } else {
+                context.startService(intent);
+            }
+            promise.resolve(true);
+        } catch (Exception e) {
+            promise.reject("E_START_FAILED", e.getMessage(), e);
+        }
+    }
+
+    /**
      * This method is called when the React Native instance is destroyed.
      * It's the ideal place to clean up resources like the thread pool.
      */
@@ -39,7 +66,7 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void isReady(Promise promise) {
+    public void isRunning(Promise promise) {
         // This method allows the UI to check if the backend service is fully initialized.
         promise.resolve(ReveilaService.isRunning());
     }

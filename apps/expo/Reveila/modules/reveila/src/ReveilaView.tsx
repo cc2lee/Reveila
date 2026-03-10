@@ -1,11 +1,13 @@
-import { requireNativeView } from 'expo';
+import { requireNativeComponent, ViewProps } from 'react-native';
 import * as React from 'react';
 
-import { ReveilaViewProps } from './Reveila.types';
+export interface ReveilaViewProps extends ViewProps {
+  url?: string;
+  onLoad?: (event: { nativeEvent: { url: string } }) => void;
+}
 
-const NativeView: React.ComponentType<ReveilaViewProps> =
-  requireNativeView('Reveila');
+const NativeReveilaView = requireNativeComponent<ReveilaViewProps>('ReveilaView');
 
 export default function ReveilaView(props: ReveilaViewProps) {
-  return <NativeView {...props} />;
+  return <NativeReveilaView {...props} />;
 }

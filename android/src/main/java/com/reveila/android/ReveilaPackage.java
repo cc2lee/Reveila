@@ -17,6 +17,6 @@ public class ReveilaPackage implements ReactPackage {
 
     @Override
     public List<ViewManager> createViewManagers(ReactApplicationContext reactContext) {
-        return Collections.emptyList();
+        return Collections.singletonList(new ReveilaViewManager());
     }
 }
