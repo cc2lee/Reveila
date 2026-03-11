@@ -447,6 +447,11 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     }
 
     @Override
+    public ExecutorService getExecutor() {
+        return scheduler;
+    }
+
+    @Override
     public synchronized void plug(Reveila reveila) {
         if (reveila == null) {
             throw new IllegalArgumentException("Reveila cannot be null");

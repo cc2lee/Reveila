@@ -12,9 +12,9 @@ export default function HomeScreen() {
   const [logs, setLogs] = useState<any[]>([]);
 
   useEffect(() => {
-    const checkStatus = () => {
+    const checkStatus = async () => {
       try {
-        const running = ReveilaModule.isRunning();
+        const running = await ReveilaModule.isRunning();
         setIsRunning(running);
         
         if (running) {
@@ -52,19 +52,19 @@ export default function HomeScreen() {
   const handleFetchLogs = async () => {
     if (!isRunning || isStarting) return;
     try {
-      const payload = JSON.stringify({
-        componentName: 'DataService',
-        methodName: 'search',
-        methodArguments: [{
-          entityType: 'AuditLog',
-          page: 0,
-          size: 5
-        }]
-      });
-      const result = await ReveilaModule.invoke(payload);
-      const parsed = JSON.parse(result);
-      if (parsed && parsed.content) {
-        setLogs(parsed.content);
+      const componentName = 'DataService';
+      const methodName = 'search';
+      const params = [{
+        entityType: 'AuditLog',
+        page: 0,
+        size: 5
+      }];
+      
+      const result = await ReveilaModule.invoke(componentName, methodName, params);
+      
+      // The native module returns a parsed object, no need for JSON.parse
+      if (result && result.content) {
+        setLogs(result.content);
       }
     } catch (e) {
       console.error(e);

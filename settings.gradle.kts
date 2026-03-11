@@ -33,7 +33,8 @@ includeBuild("build-logic") // Convention plugins
 // In a flat structure, if you want the project to be named :reveila but its files are physically inside spring/reveila/,
 // Example 2: include("reveila"); project(":reveila").projectDir = file("spring/reveila")
 // include(":connectors")
-include(":reveila")
+include(":reveila:core")
+include(":reveila:server")
 include(":spring:admin")
 include(":spring:core")
 include(":web:vue-project")

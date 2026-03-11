@@ -3,6 +3,7 @@
  */
 package com.reveila.system;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -10,8 +11,6 @@ import java.net.URI;
 import java.net.URL;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -36,7 +35,7 @@ import com.reveila.util.TimeFormat;
 
 public class Reveila implements AutoCloseable {
 
-	private final ExecutorService startExecutor = Executors.newCachedThreadPool();
+	private ExecutorService startExecutor;
 	private PlatformAdapter platformAdapter;
 	private Properties properties;
 	private SystemContext systemContext;
@@ -138,6 +137,7 @@ public class Reveila implements AutoCloseable {
 		}
 
 		this.platformAdapter = platformAdapter;
+		this.startExecutor = platformAdapter.getExecutor();
 		this.properties = platformAdapter.getProperties();
 		this.logger = platformAdapter.getLogger();
 		this.localAddress = getLocalHost();
@@ -176,11 +176,19 @@ public class Reveila implements AutoCloseable {
 	private String loadLogoContent() {
 		// 1. Try to load from External Configuration Directory
 		try {
-			Path home = Path.of(this.properties.getProperty(Constants.SYSTEM_HOME)).toAbsolutePath().normalize();
-			Path externalLogo = home.resolve(Constants.CONFIGS_DIR_NAME).resolve("logo.txt");
+			File home = new File(this.properties.getProperty(Constants.SYSTEM_HOME));
+			File externalLogo = new File(new File(home, Constants.CONFIGS_DIR_NAME), "logo.txt");
 
-			if (Files.exists(externalLogo)) {
-				return Files.readString(externalLogo, StandardCharsets.UTF_8);
+			if (externalLogo.exists()) {
+				try (InputStream is = new java.io.FileInputStream(externalLogo)) {
+					java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+					byte[] data = new byte[1024];
+					int nRead;
+					while ((nRead = is.read(data, 0, data.length)) != -1) {
+						buffer.write(data, 0, nRead);
+					}
+					return buffer.toString(StandardCharsets.UTF_8.name());
+				}
 			}
 		} catch (Exception e) {
 			// Fall through to classpath
@@ -189,7 +197,13 @@ public class Reveila implements AutoCloseable {
 		// 2. Fallback: Try to load from Classpath
 		try (InputStream is = getClass().getClassLoader().getResourceAsStream("logo.txt")) {
 			if (is != null) {
-				return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+				java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+				byte[] data = new byte[1024];
+				int nRead;
+				while ((nRead = is.read(data, 0, data.length)) != -1) {
+					buffer.write(data, 0, nRead);
+				}
+				return buffer.toString(StandardCharsets.UTF_8.name());
 			}
 		} catch (IOException e) {
 			// Fall through to hardcoded default

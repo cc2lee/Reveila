@@ -6,7 +6,9 @@ dependencyResolutionManagement {
     }
     versionCatalogs {
         create("libs") {
-            from(files("../gradle/libs.versions.toml"))
+            // 'settingsDir' is the build-logic folder. 
+            // This ensures it ALWAYS finds the root gradle folder correctly.
+            from(files(File(settingsDir.parentFile, "gradle/libs.versions.toml")))
         }
     }
 }

@@ -14,14 +14,8 @@ plugins {
     id("project-conventions") // Apply project-wide conventions
 }
 
-val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
-
-// Use Java version defined in version catalog
-extensions.configure<JavaPluginExtension> {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(libs.findVersion("java").get().toString()))
-    }
-}
+// Gradle 8.5+ native way for precompiled scripts
+val libs = versionCatalogs.named("libs")
 
 // Preserve parameter names for reflection at runtime
 tasks.withType<JavaCompile>().configureEach {

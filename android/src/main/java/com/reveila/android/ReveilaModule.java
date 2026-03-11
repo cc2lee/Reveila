@@ -15,13 +15,50 @@ import java.util.concurrent.Executors;
 
 import com.reveila.system.Reveila;
 
+import com.facebook.react.modules.core.DeviceEventManagerModule;
+import com.facebook.react.bridge.WritableMap;
+import com.facebook.react.bridge.Arguments;
+import com.reveila.android.safety.MobileKillSwitch;
+import com.reveila.core.safety.AgentSafetyCommand;
+import com.reveila.core.safety.CommandType;
+import androidx.fragment.app.FragmentActivity;
+
 public class ReveilaModule extends ReactContextBaseJavaModule {
+
+    private MobileKillSwitch killSwitch;
 
     // It's a best practice to run network operations on a dedicated background thread pool.
     private final ExecutorService executorService = Executors.newFixedThreadPool(2);
 
     ReveilaModule(ReactApplicationContext context) {
         super(context);
+    }
+
+    @ReactMethod
+    public void triggerEmergencyStop(Promise promise) {
+        FragmentActivity activity = (FragmentActivity) getCurrentActivity();
+        if (activity == null) {
+            promise.reject("E_NO_ACTIVITY", "Activity is not available");
+            return;
+        }
+
+        if (killSwitch == null) {
+            killSwitch = new MobileKillSwitch(activity, this::sendSafetyEvent);
+        }
+
+        killSwitch.emergencyStopAll();
+        promise.resolve(true);
+    }
+
+    private void sendSafetyEvent(AgentSafetyCommand command) {
+        WritableMap params = Arguments.createMap();
+        params.putString("agentId", command.agentId());
+        params.putString("commandType", command.commandType().name());
+        params.putString("securityToken", command.securityToken());
+
+        getReactApplicationContext()
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                .emit("onSafetyCommand", params);
     }
 
     @NonNull

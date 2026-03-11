@@ -1,11 +1,14 @@
 buildscript {
     repositories {
+        google()
         mavenCentral()
     }
     dependencies {
         // Force the version of commons-compress at the buildscript level
         // to prevent classpath leakage during BootJar packaging.
         classpath("org.apache.commons:commons-compress:1.27.1")
+        classpath("com.android.tools.build:gradle:8.7.2")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.20")
     }
 }
 
@@ -90,9 +93,11 @@ val prepareStandardHome = tasks.register<Copy>("prepareStandardHome") {
 
 // Hook into the build lifecycle for the android project
 project(":android") {
-    // We use withType to catch all variants (debug, release, etc.)
-    // and configureEach to remain lazy (modern Gradle best practice).
-    tasks.withType<com.android.build.gradle.tasks.ProcessAndroidResources> {
-        dependsOn(prepareAndroidHome)
+    afterEvaluate {
+        // Android Library projects don't have a 'processResources' task. 
+        // We hook into all tasks that process resources (debug/release) to ensure our home files are synced.
+        tasks.matching { it.name.startsWith("process") && it.name.endsWith("Resources") }.configureEach {
+            dependsOn(prepareAndroidHome)
+        }
     }
 }

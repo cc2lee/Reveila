@@ -20,7 +20,7 @@
   {
     "component": {
       "name": "DataService",
-      "class": "com.reveila.android.AndroidDataService",
+      "class": "com.reveila.service.DataService",
       "description": "Data service implementation for the Android environment.",
       "thread-safe": true,
       "start": true

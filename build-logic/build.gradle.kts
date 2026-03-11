@@ -1,29 +1,28 @@
 // build-logic/build.gradle.kts
-// build-logic is treated as an independent composite build
-
 plugins {
     `kotlin-dsl`
 }
 
+// Ensure the local build-logic can find its own dependencies
 repositories {
-    mavenCentral()
     google()
+    mavenCentral()
     gradlePluginPortal()
 }
 
 dependencies {
+    // Standard library references work directly here
     implementation(libs.kotlin.gradle.plugin)
     implementation(libs.kotlin.allopen)
     implementation(libs.android.gradle.plugin)
     implementation(libs.shadow.gradle.plugin)
     implementation(libs.spring.boot.gradle.plugin)
-    // This allows 'libs' to be used inside your .gradle.kts convention scripts
+    
+    // THIS is the replacement for the "asProvider" or manual file pathing.
+    // It allows your precompiled scripts (*.gradle.kts) to see the 'libs' catalog.
     implementation(files(libs.javaClass.superclass.protectionDomain.codeSource.location))
 
-    // For compiling classes using JPA annotations
     implementation(libs.jakarta.persistence.api)
     implementation(libs.hibernate.core)
-    
-    // Fix for ZipArchiveOutputStream putArchiveEntry error
     implementation(libs.commons.compress)
 }

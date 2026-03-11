@@ -28,6 +28,7 @@
     },
     "plugins": [
       "expo-router",
+      "./withReveila.js",
       [
         "expo-splash-screen",
         {

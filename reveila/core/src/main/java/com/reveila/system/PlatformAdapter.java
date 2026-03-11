@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ExecutorService;
 import java.util.logging.Logger;
 
 import com.reveila.data.Entity;
@@ -28,5 +29,6 @@ public interface PlatformAdapter {
     public void plug(Reveila reveila);
     public void unplug();
     public Repository<Entity, Map<String, Map<String, Object>>> getRepository(String entityType);
+    public ExecutorService getExecutor();
 
 }

@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
 import com.reveila.data.GenericRepository;
 import com.reveila.data.JsonFileRepository;
 import com.reveila.data.EntityMapper;
@@ -335,6 +336,11 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
 
         repositories.put(entityType, repo);
         return repo;
+    }
+
+    @Override
+    public ExecutorService getExecutor() {
+        return scheduler;
     }
 
     public static String getSystemHome(Context context) {
