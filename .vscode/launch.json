@@ -10,17 +10,11 @@
         },
         {
             "type": "java",
-            "name": "Application",
-            "request": "launch",
-            "mainClass": "com.reveila.spring.system.Application",
-            "projectName": "core"
-        },
-        {
-            "type": "java",
             "name": "Reveila-on-Spring",
             "request": "launch",
             "mainClass": "com.reveila.spring.system.Application",
             "projectName": "spring:core",
+            "vmArgs": "-Xmx2048m -Dsystem.home=../../system-home/standard -Dspring.profiles.active=dev",
             "env": {
                 "MONGO_PWD": "4DNC9GMenknPbhnh"
             }
@@ -33,93 +27,11 @@
             "port": 5005
         },
         {
-            "name": "Reveila Standalone (Gradle)",
-            "type": "java",
-            "request": "launch",
-            "preLaunchTask": "Run Reveila Standalone (Gradle)",
-            "mainClass": "com.reveila.standalone.App",
-            "projectName": "app",
-            "cwd": "${workspaceFolder}/standalone"
-        },
-        {
-            "type": "java",
-            "name": "Reveila Spring",
-            "request": "launch",
-            "mainClass": "reveila.spring.Application",
-            "projectName": "spring",
-            "vmArgs": "-Xmx2048m -Dspring.profiles.active=dev"
-        },
-        {
             "name": "Debug Android Hermes",
             "request": "attach",
             "type": "reactnativedirect",
             "cwd": "${workspaceFolder}/mobile/template",
             "platform": "android"
-        },
-        {
-            "name": "Reveila Android",
-            "type": "android-debug",
-            "request": "launch",
-            "target": "select",
-            "mode": "java",
-            "packageName": "com.reveila.android",
-            "launchActivity": ".MainActivity",
-            "native": {
-                "symbolSearchPaths": [
-                    "${workspaceFolder}/mobile/template/android/app/build/intermediates/cxx/Debug/p682u211/obj/${command:abi}/"
-                ]
-            },
-            "java": {
-                "sourcePaths": [
-                    "${workspaceFolder}/mobile/template/android/app/src/main/java"
-                ]
-            }
-        },
-        {
-            "name": "Attach Android Debugger",
-            "type": "android-debug",
-            "request": "attach",
-            "target": "select",
-            "pid": "${command:pickAndroidProcess}",
-            "mode": "java",
-            "packageName": "com.reveila.android",
-            "native": {
-                "symbolSearchPaths": [
-                    "${workspaceFolder}/mobile/template/android/app/build/intermediates/cxx/Debug/p682u211/obj/${command:abi}/"
-                ]
-            },
-            "java": {
-                "sourcePaths": [
-                    "${workspaceFolder}/mobile/template/android/app/src/main/java"
-                ]
-            }
-        },
-        {
-            "name": "Profile Android App",
-            "type": "android-profile",
-            "request": "launch",
-            "target": "select",
-            "packageName": "com.reveila.android",
-            "native": {
-                "symbolSearchPaths": [
-                    "${workspaceFolder}/mobile/template/android/app/build/intermediates/cxx/Debug/p682u211/obj/${command:abi}/"
-                ]
-            }
-        },
-        {
-            "type": "java",
-            "name": "Vaadin Application",
-            "request": "launch",
-            "mainClass": "com.reveila.web.Application",
-            "projectName": "reveila-web-app"
-        },
-        {
-            "type": "java",
-            "name": "Debug Vaadin Application using Hotswap Agent",
-            "request": "launch",
-            "javaExec": "C:\\IDE\\JetBrains\\jbr_jcef-17.0.14-windows-x64-b1367.22\\bin\\java.exe",
-            "mainClass": "com.reveila.web.Application",
-            "vmArgs": "-XX:+AllowEnhancedClassRedefinition -XX:+ClassUnloading -XX:HotswapAgent=fatjar"
         }
     ]
 }

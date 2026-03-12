@@ -64,7 +64,7 @@ public class ReveilaConfiguration {
 
                 if ("demo".equalsIgnoreCase(mode) || isDemoProfile || count == 0) {
                     if (!"production".equalsIgnoreCase(mode)) {
-                        System.out.println("SEEDER: Initializing demo data in H2...");
+                        System.out.println("SEEDER: Initializing demo data...");
                         seedDemoData(auditRepository, sessionManager);
                         auditRepository.flush();
                         System.out.println("SEEDER: Done. Count: " + auditRepository.count());
