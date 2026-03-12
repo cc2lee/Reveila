@@ -15,10 +15,6 @@ import org.springframework.scheduling.annotation.EnableAsync;
     repositoryBaseClass = com.reveila.spring.repository.jpa.BaseRepository.class
 )
 @EntityScan(basePackages = "com.reveila.spring.model.jpa")
-@org.springframework.data.mongodb.repository.config.EnableMongoRepositories(
-    basePackages = "com.reveila.spring.repository.mongo"
-)
-
 public class Application {
     public static void main(String[] args) {
         // Pre-load critical Tomcat/Spring classes to prevent NoClassDefFoundError during JVM shutdown

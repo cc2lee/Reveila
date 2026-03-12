@@ -20,7 +20,6 @@ import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.bridge.Arguments;
 import com.reveila.android.safety.MobileKillSwitch;
 import com.reveila.core.safety.AgentSafetyCommand;
-import com.reveila.core.safety.CommandType;
 import androidx.fragment.app.FragmentActivity;
 
 public class ReveilaModule extends ReactContextBaseJavaModule {
@@ -53,8 +52,8 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
     private void sendSafetyEvent(AgentSafetyCommand command) {
         WritableMap params = Arguments.createMap();
         params.putString("agentId", command.agentId());
-        params.putString("commandType", command.commandType().name());
-        params.putString("securityToken", command.securityToken());
+        params.putString("action", command.action().name());
+        params.putString("timestamp", String.valueOf(command.timestamp()));
 
         getReactApplicationContext()
                 .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)

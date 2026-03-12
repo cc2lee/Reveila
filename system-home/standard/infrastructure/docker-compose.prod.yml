@@ -43,13 +43,13 @@ services:
     ports:
       - "5432:5432"  # This bridges the container to the host machine for external access
     environment:
-      - POSTGRES_USER=charles
-      - POSTGRES_PASSWORD=reveila_secure_pass
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=6788565119
       - POSTGRES_DB=reveila_db
     volumes:
       - ../data/postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U charles -d reveila_db"]
+      test: ["CMD-SHELL", "pg_isready -U admin -d reveila_db"]
       interval: 5s
       timeout: 5s
       retries: 5

@@ -1,0 +1,32 @@
+{
+    "plugin_id": "reveila.analytics.sql_runner",
+    "name": "SQL Runner Plugin",
+    "version": "1.2.0",
+    "tool_definitions": {
+        "runQuery": {
+            "description": "Runs a SQL query against the internal database.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string" }
+                }
+            }
+        }
+    },
+    "agency_perimeter": {
+        "access_scopes": [
+            "db.read",
+            "fs.read:/reports/tmp"
+        ],
+        "allowed_domains": [
+            "api.internal-analytics.com"
+        ],
+        "internet_access_blocked": false,
+        "max_memory_mb": 512,
+        "max_cpu_cores": 1,
+        "max_execution_sec": 30,
+        "delegation_allowed": false
+    },
+    "secret_parameters": [],
+    "masked_parameters": []
+}

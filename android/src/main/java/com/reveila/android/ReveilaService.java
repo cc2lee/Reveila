@@ -49,6 +49,7 @@ import com.reveila.android.AndroidPlatformAdapter;
 import com.reveila.android.ServiceManager;
 
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.io.InputStream;
 import java.io.FileOutputStream;
@@ -105,14 +106,17 @@ public class ReveilaService extends Service {
                         homePath = customSystemHome;
                         Log.i("ReveilaService", "Using custom system home: " + homePath);
                     } else {
-                        homePath = AndroidPlatformAdapter.getSystemHome(this);
+                        homePath = new File(getFilesDir(), "reveila/system").getAbsolutePath();
                         Log.i("ReveilaService", "Using default system home: " + homePath);
                     }
 
                     File systemHome = new File(homePath);
                     if (!systemHome.exists() && !systemHome.mkdirs()) {
                          Log.e("ReveilaService", "Failed to create system home directory: " + homePath);
+                         return; // cannot continue without a valid system home
                     }
+
+                    // Continue if 'systemHome' is not null
                     lockFile = new File(systemHome, LOCK_FILE_NAME);
 
                     // Check for the lock file to determine if the last shutdown was clean.
@@ -127,9 +131,7 @@ public class ReveilaService extends Service {
                     lockFile.createNewFile();
 
                     // Copy assets, overwriting only if the last shutdown was unclean.
-                    // Note: If using customSystemHome, we might still want to seed it from assets
-                    // if it's empty, but usually a custom path implies external management.
-                    new ReveilaSetup(this, wasUncleanShutdown);
+                    new ReveilaSetup(this, homePath, wasUncleanShutdown);
 
                     // Attempt to fetch remote properties if configured
                     fetchRemoteProperties(systemHome);
@@ -167,7 +169,7 @@ public class ReveilaService extends Service {
         HttpURLConnection urlConnection = null;
         try {
             Log.i("ReveilaService", "Attempting to fetch remote properties from: " + urlString);
-            URL url = new URL(urlString);
+            URL url = new URI(urlString).toURL();
             urlConnection = (HttpURLConnection) url.openConnection();
             urlConnection.setConnectTimeout(5000);
             urlConnection.setReadTimeout(5000);

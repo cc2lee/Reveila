@@ -11,7 +11,7 @@ tasks.withType<Test>().configureEach {
 }
 
 dependencies {
-    implementation(project(":reveila:core"))
+    api(project(":reveila:core"))
     
     // AI / Security Runtime dependencies (Server-specific or high-performance)
     implementation(libs.docker.java.api)

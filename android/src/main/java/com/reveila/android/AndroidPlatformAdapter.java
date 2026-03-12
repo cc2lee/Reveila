@@ -42,6 +42,7 @@ import java.util.logging.Logger;
  */
 public class AndroidPlatformAdapter implements PlatformAdapter {
 
+    private String systemHome;
     private final Context context;
     private Properties properties;
     private Logger logger;
@@ -56,20 +57,23 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
 
     public AndroidPlatformAdapter(Context context, Properties overwrites) throws IOException {
         this.context = context;
+        this.systemHome = overwrites != null && overwrites.containsKey(Constants.SYSTEM_HOME) ? 
+                overwrites.getProperty(Constants.SYSTEM_HOME) : 
+                new File(context.getFilesDir(), "reveila/system").getAbsolutePath();
         this.properties = new Properties();
-        loadProperties();
+        loadProperties(this.systemHome);
         if (overwrites != null) {
             this.properties.putAll(overwrites);
         }
         this.logger = configureLogging(this.properties);
     }
 
-    private void loadProperties() {
-        File externalProps = new File(getSystemHome(context), "configs/reveila.properties");
-        if (externalProps.exists()) {
-            try (InputStream is = new FileInputStream(externalProps)) {
+    private void loadProperties(String systemHome) throws IOException {
+        File pf = new File(systemHome, "configs/reveila.properties");
+        if (pf.exists()) {
+            try (InputStream is = new FileInputStream(pf)) {
                 properties.load(is);
-                android.util.Log.i("AndroidPlatformAdapter", "Loaded reveila.properties from filesystem: " + externalProps.getAbsolutePath());
+                android.util.Log.i("AndroidPlatformAdapter", "Loaded reveila.properties from filesystem: " + pf.getAbsolutePath());
             } catch (IOException e) {
                 android.util.Log.w("AndroidPlatformAdapter", "Failed to load reveila.properties from filesystem, falling back to assets", e);
                 loadPropertiesFromAssets();
@@ -78,10 +82,8 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
             loadPropertiesFromAssets();
         }
         
-        // Ensure SYSTEM_HOME is set for Android, prioritizing existing value if set
-        if (!properties.containsKey(Constants.SYSTEM_HOME)) {
-            properties.setProperty(Constants.SYSTEM_HOME, getSystemHome(context));
-        }
+        // Ensure SYSTEM_HOME is set for Android
+        properties.setProperty(Constants.SYSTEM_HOME, systemHome);
         
         // Use a default secret key if not provided (for development)
         if (!properties.containsKey(Constants.CRYPTOGRAPHER_SECRETKEY)) {
@@ -124,7 +126,7 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
 
     @Override
     public InputStream getFileInputStream(String relativePath) throws IOException {
-        File file = new File(getSystemHome(context), relativePath);
+        File file = new File(getSystemHome(), relativePath);
         if (!file.exists()) {
             // Try to load from assets if not in filesystem
             return context.getAssets().open("reveila/" + relativePath);
@@ -134,7 +136,7 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
 
     @Override
     public OutputStream getFileOutputStream(String relativePath, boolean append) throws IOException {
-        File file = new File(getSystemHome(context), relativePath);
+        File file = new File(getSystemHome(), relativePath);
         File parent = file.getParentFile();
         if (parent != null && !parent.exists()) {
             parent.mkdirs();
@@ -144,7 +146,7 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
 
     @Override
     public String[] getConfigFilePaths() throws IOException {
-        File componentsDir = new File(getSystemHome(context), Constants.CONFIGS_DIR_NAME + File.separator + "components");
+        File componentsDir = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + "components");
         
         List<String> paths = new ArrayList<>();
         
@@ -225,7 +227,7 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
             return repositories.get(entityType);
         }
 
-        File dataDir = new File(getSystemHome(context), "data");
+        File dataDir = new File(getSystemHome(), "data");
         if (!dataDir.exists()) {
             dataDir.mkdirs();
         }
@@ -343,8 +345,8 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
         return scheduler;
     }
 
-    public static String getSystemHome(Context context) {
-        return new File(context.getFilesDir(), "reveila/system").getAbsolutePath();
+    public String getSystemHome() {
+        return this.systemHome;
     }
 
     private Logger configureLogging(Properties props) {

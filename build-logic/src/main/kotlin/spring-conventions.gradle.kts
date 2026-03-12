@@ -26,7 +26,7 @@ val libs = the<LibrariesForLibs>()
 extensions.configure<JavaPluginExtension> {
     toolchain {
         // Use .get() to extract the version string from the catalog provider
-        languageVersion.set(JavaLanguageVersion.of(libs.versions.java.get()))
+        languageVersion.set(JavaLanguageVersion.of(libs.versions.java.server.get()))
     }
 }
 

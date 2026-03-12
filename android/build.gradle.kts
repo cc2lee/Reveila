@@ -16,6 +16,10 @@ android {
         buildConfigField("String", "REVEILA_PROPERTIES_URL", "\"\"")
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     // Dependency Guard: Prevent Java 21 leakage into Android
     configurations.all {
         resolutionStrategy.eachDependency {

@@ -51,7 +51,7 @@ class PostgresFlightRecorderTest {
         flightRecorder.recordReasoning(principal, reasoning);
 
         ArgumentCaptor<AuditLog> captor = ArgumentCaptor.forClass(AuditLog.class);
-        verify(auditRepository).save(Objects.requireNonNull(captor.capture()));
+        verify(auditRepository).store(captor.capture());
 
         AuditLog savedLog = captor.getValue();
         assertEquals(principal.traceId(), savedLog.getTraceId());
@@ -67,7 +67,7 @@ class PostgresFlightRecorderTest {
         flightRecorder.recordToolOutput(principal, toolName, output);
 
         ArgumentCaptor<AuditLog> captor = ArgumentCaptor.forClass(AuditLog.class);
-        verify(auditRepository).save(Objects.requireNonNull(captor.capture()));
+        verify(auditRepository).store(captor.capture());
 
         AuditLog savedLog = captor.getValue();
         assertEquals(principal.traceId(), savedLog.getTraceId());

@@ -10,6 +10,9 @@ import android.content.Context;
 import android.content.res.AssetManager;
 import android.util.Log;
 
+/*
+ * This class is used to copy the Reveila system files from the assets folder to the app's files directory.
+ */
 public class ReveilaSetup {
 
   private static final String TAG = "ReveilaSetup";
