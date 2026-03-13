@@ -154,3 +154,135 @@ Verify connectivity between the Fabric and the Database:
 ## 🔗 Useful Links
 - **Dashboard:** [http://localhost:8080/](http://localhost:8080/)
 - **Health Check:** [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health)
+
+
+## Miseneous
+---
+To avoid broken paths, run Docker commands at the root of `system-home`.
+
+Docker merges compose files if more than one is specified, following the rule:
+Simple Values (image, container_name): The last file wins. It replaces the value.
+Mappings (environment, labels): They are merged. If both files have DEBUG, the value in the second file wins. If only one has API_KEY, it stays.
+Lists (ports, volumes): These are concatenated (appended). This is usually where the trouble starts if both define port 5432:5432 - Docker will try to bind it twice and fail.
+
+Instead of one giant file, we use docker-compose.prod.yml as the "base" and use additional compose files, e.g. the docker-compose.sandbox.yml, to only add what's missing.
+
+To see what the final, merged file looks like before you run it, use the config command:
+
+Bash
+
+docker compose \
+  -f standard/infrastructure/docker-compose.prod.yml \
+  -f sandbox/infrastructure/docker-compose.sandbox.yml \
+  --project-directory . \
+  config
+
+
+If that looks good, spin it up with:
+
+Bash
+
+docker compose \
+  -f standard/infrastructure/docker-compose.prod.yml \
+  -f sandbox/infrastructure/docker-compose.sandbox.yml \
+  --project-directory . \
+  up -d
+
+One "Gotcha" to watch for:
+If your docker-compose.prod.yml has ports: - "5432:5432" for Postgres, do not include a ports section for Postgres in the sandbox file. If you do, Docker will try to open the port twice, and you'll get a "Bind for 0.0.0.0:5432 failed" error.
+
+### Switch .env file
+docker compose --env-file .env.prod up -d
+
+To Run the Sandbox (Merge Mode):
+
+Run from "infrastructure" directory:
+
+docker compose -f docker-compose.prod.yml -f sandbox/docker-compose.sandbox.yml up -d --build
+
+What happens: In addition to services from prod.yml, Docker loads additional services defined in sandbox.yml including the ollama-service and model-puller.
+
+
+To Run Production Only:
+
+Bash
+
+docker compose -f docker-compose.prod.yml up -d
+
+What happens: Only the core app and the DB start. Clean and lean.
+
+
+standard/
+├── infrastructure/
+│   ├── docker-compose.prod.yml
+│   └── sandbox/
+│       ├── docker-compose.sandbox.yml
+│       └── .env.sandbox
+├── bin/
+├── configs/
+└── (other app folders)
+
+
+Run this command in PowerShell to see exactly what is hogging the port:
+netstat -ano | findstr :8080
+
+
+
+
+"Handshake Check" to ensure the Reveila Fabric can actually talk to the Ollama model engine through the internal Docker network.
+
+1. Verify the AI Model Status
+First, let's see if Llama 3 is actually inside the engine. Run this in your PowerShell:
+
+PowerShell
+
+docker exec -it infrastructure-ollama-service-1 ollama list
+If you see llama3: We are in business.
+
+If the list is empty: The model-puller might still be working or needs a kickstart.
+
+2. The "Fabric-to-Model" Ping
+This is the most important test. It confirms that your Spring Boot app (the Fabric) can reach the AI "brain." We'll use curl from within the Fabric container to simulate the internal connection:
+
+PowerShell
+
+curl http://localhost:11434/api/tags
+Why this matters: If this returns a JSON list of models, it proves your Docker networking is perfect. The Fabric "referee" now has a clear line of sight to the LLM.
+
+Why the models are missing?
+If you see {"models": []}, it means the Ollama service started but never received the command to download Llama 3. This usually happens if the model-puller container ran into an error or started before Ollama was ready to receive API calls.
+
+Let's force the pull manually from your host (since port 11434 is open):
+Run this in PowerShell to start the download right now:
+
+PowerShell
+
+curl -X POST http://localhost:11434/api/pull -d '{"name": "llama3"}'
+Wait for this to finish (you'll see a progress bar if using a modern terminal). Once done, run your api/tags command again, and you should see Llama 3 listed.
+
+
+3. Check the Sovereign Ledger (Postgres)
+Let's make sure the database is ready to record those agentic interactions. Run this to verify the table we created earlier is visible to the container:
+
+PowerShell
+
+docker exec -it reveila-db-prod psql -U admin -d reveila_db -c "\dt governance_audit"
+
+
+It looks like you’re ready to run ollama list to see what’s inside. Since your container is named infrastructure-ollama-service-1, run this command to see the status of your models:
+
+PowerShell
+
+docker exec -it infrastructure-ollama-service-1 ollama list
+What to look for:
+If you see llama3 and phi3: Your pre-pulling strategy worked perfectly. You are ready to start the "Negotiation" demo.
+
+If the list is empty: The model-puller container might have hit a network snag or is still downloading. (Llama 3 is about 4.7 GB, so it can take a few minutes depending on your Montgomery ISP speed).
+
+How to check the download progress:
+If the list was empty, run this to see the "live" status of the puller:
+
+PowerShell
+
+docker logs -f model_puller
+docker logs model_puller

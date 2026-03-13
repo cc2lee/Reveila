@@ -1,0 +1,43 @@
+# system-home/standard/infrastructure/sandbox/docker-compose.sandbox.yml
+services:
+  ollama-service:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama  # This is where Ollama stores its data; the name is defined underneath in the volumes: section
+
+  model-puller:
+    image: ollama/ollama:latest  # <--- Indented 2 spaces
+    entrypoint: /bin/sh          # <--- Indented 2 spaces
+    command:                     # <--- Indented 2 spaces
+      - "-c"
+      - "sleep 10 && ollama pull llama3"
+    depends_on:
+      - ollama-service           # Ensures the engine is there to receive the command
+
+  reveila-fabric:
+    volumes:
+      # These are LISTS (use dashes)
+      - ../bin:/reveila/bin:ro
+      - ../configs:/reveila/configs:ro
+      - ../libs:/reveila/libs:ro
+    env_file:
+      - ./sandbox/.env.sandbox
+    build:
+      context: ../  # Go up one level to 'standard'
+      dockerfile: infrastructure/Dockerfile # Path from 'standard' to Dockerfile
+    environment:
+      - OLLAMA_API_URL=http://ollama-service:11434
+    depends_on:
+      - reveila-db-prod
+      - ollama-service
+
+  # EXTENDS the existing service from the prod file
+  reveila-db-prod:  # <--- MUST MATCH THE NAME IN PROD.YML EXACTLY
+    # We don't specify image or build here because they are in PROD.YML
+    environment:
+      - POSTGRES_DB=reveila_db
+
+volumes:
+  ollama_data: {}  # Use '{}' or just a newline to define it as a mapping

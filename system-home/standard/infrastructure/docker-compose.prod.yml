@@ -1,11 +1,26 @@
+# docker-compose.prod.yml
+
+# This file should only contain the "Mission Critical" services:
+#   1. The Reveila AI Fabric (Spring Boot app).
+#   2. The PostgreSQL database.
+#   3. The Reverse Proxy (if you use one).
+
+# https://docs.docker.com/compose/compose-file/compose-file-v3/#services
 # [Key]	          [Purpose]
 # build:	        Tells Compose how to create the image from source code.	Optional if the image already exists in a registry (Docker Hub/ECR). Required if you want docker-compose up --build to work.
 # context: .	    Defines the "scope" of files the Docker daemon can see.	Required if using build. . means "everything in this folder."
 # dockerfile:	    Points to the specific recipe file.	Optional if your file is named exactly Dockerfile. Required if you use names like Dockerfile.prod.
 # container_name: Forces a specific name for the running instance.	Optional. If removed, Docker names it [project]_[service]_1.
 
+# https://docs.docker.com/compose/compose-file/compose-file-v3/#extending-compose
+# include:
+#   - path: sandbox/docker-compose.sandbox.yml
+
 services:
   reveila-fabric:       # 1. SERVICE NAME
+    env_file:
+      - .env.prod  
+    
     # image: reveila-fabric:1.0.0  # Without build, pull the pre-built artifact from Docker Hub (if available)
     build:              # 2. BUILD INSTRUCTIONS (only needed if not using a pre-built image, or if you want to enable docker-compose up --build)
       context: .        # 3. BUILD CONTEXT FOLDER (. means current folder)
@@ -15,7 +30,17 @@ services:
     environment:
       - REVEILA_HOME=/reveila
       - WEB_ROOT=/reveila/web  # Spring translates WEB_ROOT to web-root automatically
-      - SPRING_CONFIG_LOCATION=file:/reveila/configs/reveila.properties
+      # SPRING_CONFIG_LOCATION: This is an environment variable that Spring Boot looks for at startup. 
+      # It defines the search path for configuration files (like application.properties or your custom reveila.properties).
+      # file: This prefix tells Spring that the location is on the filesystem rather than the "classpath" 
+      # (the compiled code inside your JAR). This is how you "externalize" your config.
+      # /reveila/configs/reveila.properties: This is the absolute path inside the Docker container.
+      # If you want to keep some default "fallback" settings inside your JAR and only use the external file 
+      # for secrets (passwords/keys), you should use this variable instead:
+      # SPRING_CONFIG_ADDITIONAL_LOCATION
+      # How it differs: This adds the external file to the list of search locations without removing the defaults.
+      # Precedence: Properties in the "Additional Location" will still override the defaults in your JAR if they share the same key.
+      - SPRING_CONFIG_ADDITIONAL_LOCATION=file:/reveila/configs/reveila.properties
       - SPRING_PROFILES_ACTIVE=prod
       - DB_HOST=reveila-db-prod
       - DB_USER=admin
