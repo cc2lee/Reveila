@@ -24,6 +24,7 @@ public final class Constants {
 	public static final String CRYPTOGRAPHER_SECRETKEY = "cryptographer.secretkey";
 	public static final String CHARACTER_ENCODING = "text.character.encoding";
 	public static final String LAUNCH_STRICT_MODE = "launch.strict.mode";
+	public static final String DB_CREATE_SCHEMA = "db.create.schema";
 
 	/**
 	 * System mode can be 'development', 'production' or 'demo'.

@@ -193,19 +193,20 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         setupSystemHome(jvmArgs);
         
         // Load properties file using Try-with-Resources
-        this.properties = new Properties();
+        Properties rawProps = new Properties();
         try (InputStream stream = openSystemProperties(jvmArgs)) {
-            this.properties.load(stream);
+            rawProps.load(stream);
         } catch (Exception e) {
             System.err.println("Failed to load " + Constants.SYSTEM_PROPERTIES + ": " + e.getMessage());
             e.printStackTrace();
-            // If the file is missing, we might still continue if defaults are enough
-            // but since you throw IOException, we'll keep that contract.
             throw new IOException("Failed to load " + Constants.SYSTEM_PROPERTIES, e);
         }
 
-        // Apply command-line overwrites
-        this.properties.putAll(jvmArgs);
+        // Apply command-line overwrites to raw properties before resolution
+        rawProps.putAll(jvmArgs);
+
+        // Resolve placeholders in all properties
+        this.properties = resolveAllPlaceholders(rawProps);
 
         // Set OS Metadata
         if (properties.getProperty(Constants.PLATFORM_OS) == null) {
@@ -218,6 +219,65 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         // Set Defaults for missing properties
         resolveProperty(Constants.CHARACTER_ENCODING, StandardCharsets.UTF_8.name());
         resolveProperty(Constants.LAUNCH_STRICT_MODE, "true");
+    }
+
+    private Properties resolveAllPlaceholders(Properties props) {
+        Properties resolved = new Properties();
+        for (String key : props.stringPropertyNames()) {
+            String value = props.getProperty(key);
+            resolved.setProperty(key, resolveValue(value, props));
+        }
+        return resolved;
+    }
+
+    private String resolveValue(String value, Properties props) {
+        if (value == null || !value.contains("${")) {
+            return value;
+        }
+
+        StringBuilder result = new StringBuilder();
+        int cursor = 0;
+        while (cursor < value.length()) {
+            int start = value.indexOf("${", cursor);
+            if (start == -1) {
+                result.append(value.substring(cursor));
+                break;
+            }
+            result.append(value.substring(cursor, start));
+            int end = value.indexOf("}", start);
+            if (end == -1) {
+                result.append(value.substring(start));
+                break;
+            }
+
+            String placeholder = value.substring(start + 2, end);
+            String defaultValue = null;
+            int separator = placeholder.indexOf(":");
+            if (separator != -1) {
+                defaultValue = placeholder.substring(separator + 1);
+                placeholder = placeholder.substring(0, separator);
+            }
+
+            // Lookup order: System Property -> Environment Variable -> Other Properties in file -> Default
+            String resolvedValue = System.getProperty(placeholder);
+            if (resolvedValue == null) {
+                resolvedValue = System.getenv(placeholder);
+            }
+            if (resolvedValue == null) {
+                resolvedValue = props.getProperty(placeholder);
+            }
+            if (resolvedValue == null) {
+                resolvedValue = defaultValue;
+            }
+
+            if (resolvedValue != null) {
+                result.append(resolvedValue);
+            } else {
+                result.append("${").append(placeholder).append("}");
+            }
+            cursor = end + 1;
+        }
+        return result.toString();
     }
 
     private void setupSystemHome(Properties jvmArgs) throws ConfigurationException {

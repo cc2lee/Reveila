@@ -97,11 +97,9 @@ import '@reveila/core/ReveilaTable.js'
   width: 100%;
 }
 
-/* Ensure the table component doesn't overflow */
+/* Ensure the table component doesn't overflow its section */
 reveila-table {
+  display: block;
   width: 100%;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 </style>

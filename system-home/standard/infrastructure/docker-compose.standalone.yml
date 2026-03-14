@@ -1,0 +1,53 @@
+# docker-compose.standalone.yml
+# Use this for a truly portable deployment where all code is baked into the image.
+
+services:
+  reveila-fabric:
+    env_file:
+      - .env  # Load database credentials from the local .env file
+    
+    build:
+      context: ../             # Go up one level to 'system-home/standard'
+      dockerfile: infrastructure/Dockerfile.standalone
+    
+    image: reveila-fabric-standalone:1.0.0
+    container_name: reveila-fabric-standalone
+    
+    environment:
+      - REVEILA_HOME=/reveila
+      - WEB_ROOT=/reveila/web
+      - SPRING_CONFIG_ADDITIONAL_LOCATION=file:/reveila/configs/reveila.properties
+      - SPRING_PROFILES_ACTIVE=prod
+      - DB_HOST=reveila-db-prod
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+    
+    ports:
+      - "8080:8080"
+    
+    volumes:
+      # Only map volumes for persistent state (not for code/configs)
+      - ../data:/reveila/data:rw
+      - ../logs:/reveila/logs:rw
+    
+    depends_on:
+      reveila-db-prod:
+        condition: service_healthy
+
+  # The Sovereign Data Node (Shared with the prod stack)
+  reveila-db-prod:
+    image: ankane/pgvector:latest
+    container_name: reveila-db-prod
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME:-reveila_db}
+    volumes:
+      - ../data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME:-reveila_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

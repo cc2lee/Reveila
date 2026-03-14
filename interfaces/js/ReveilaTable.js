@@ -5,59 +5,73 @@ const styles = `
     display: block;
     font-family: 'Inter', system-ui, sans-serif;
     color: #334155;
+    width: 100%;
   }
 
   .reveila-table-container {
-    padding: 1rem;
+    padding: 1.5rem;
     background: #ffffff;
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    border-radius: 12px;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
   }
 
   .search-bar-group {
     display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
+    gap: 12px;
+    margin-bottom: 1.5rem;
     align-items: flex-end;
+    flex-wrap: wrap;
   }
 
   .column-select, .search-input, .ok-button {
-    height: 38px;
+    height: 42px;
     box-sizing: border-box;
+    border: 1px solid #e2e8f0;
+    font-size: 0.95rem;
   }
 
   .column-select {
-    padding: 0 10px;
-    border-radius: 4px;
-    border: 1px solid #ccc;
-    background-color: #f9f9f9;
+    padding: 0 12px;
+    border-radius: 8px;
+    background-color: #f8fafc;
     cursor: pointer;
+    min-width: 160px;
   }
 
   .search-input {
     flex-grow: 1;
-    padding: 0 15px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    font-size: 0.875rem;
+    min-width: 200px;
+    padding: 0 16px;
+    border-radius: 8px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
   }
 
   .ok-button {
-    padding: 0 20px;
+    padding: 0 24px;
     background-color: #0f172a;
     color: white;
-    border: 1px solid #0f172a;
-    border-radius: 4px;
+    border: none;
+    border-radius: 8px;
     font-weight: 600;
     cursor: pointer;
-    transition: background-color 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    transition: background-color 0.2s, transform 0.1s;
   }
 
   .ok-button:hover {
     background-color: #1e293b;
+  }
+
+  .ok-button:active {
+    transform: translateY(1px);
   }
 
   .ok-button:disabled {
@@ -68,50 +82,132 @@ const styles = `
   .input-wrapper {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
   }
 
   .input-label {
     font-size: 0.75rem;
-    font-weight: 600;
+    font-weight: 700;
     color: #64748b;
     text-transform: uppercase;
+    letter-spacing: 0.025em;
+  }
+
+  .table-scroll-area {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #fcfcfd;
   }
 
   .reveila-table {
     width: 100%;
     border-spacing: 0;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    overflow: hidden;
+    table-layout: auto;
+    min-width: 800px;
   }
 
   .reveila-table th {
     background: #f8fafc;
-    padding: 12px;
+    padding: 14px 16px;
     text-align: left;
     border-bottom: 2px solid #e2e8f0;
-    color: #64748b;
-    font-size: 0.875rem;
+    color: #475569;
+    font-size: 0.8rem;
+    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    white-space: nowrap;
   }
 
   .reveila-table td {
-    padding: 10px 12px;
+    padding: 12px 16px;
     border-bottom: 1px solid #f1f5f9;
-    font-size: 0.875rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: #334155;
+    vertical-align: top;
+  }
+
+  .reveila-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .reveila-table tr:hover td {
+    background-color: #f1f5f9;
   }
 
   .id-cell {
-    font-family: monospace;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
     color: #64748b;
+    font-size: 0.8rem;
+    background: #f8fafc;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid #e2e8f0;
+  }
+
+  .pagination-group {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid #f1f5f9;
+  }
+
+  .pagination-info {
+    font-size: 0.875rem;
+    color: #64748b;
+  }
+
+  .pagination-controls {
+    display: flex;
+    gap: 8px;
+  }
+
+  .page-btn {
+    padding: 6px 12px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    color: #475569;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .page-btn:hover:not(:disabled) {
+    border-color: #3b82f6;
+    color: #3b82f6;
+    background-color: #eff6ff;
+  }
+
+  .page-btn:disabled {
+    color: #cbd5e1;
+    cursor: not-allowed;
+    background-color: #f8fafc;
   }
 
   .loading-state, .no-data {
     text-align: center;
-    padding: 2rem;
+    padding: 3rem 2rem;
     color: #94a3b8;
+    font-style: italic;
+  }
+
+  /* Custom Scrollbar */
+  .table-scroll-area::-webkit-scrollbar {
+    height: 8px;
+  }
+  .table-scroll-area::-webkit-scrollbar-track {
+    background: #f1f5f9;
+  }
+  .table-scroll-area::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
   }
 `;
 
@@ -126,8 +222,11 @@ export class ReveilaTable extends HTMLElement {
         this.currentSearchField = '';
         this.entityType = '';
         this.pageSize = 10;
+        this.currentPage = 0;
+        this.hasNext = false;
+        this.totalElements = 0;
         this.headers = [];
-        this.pollingInterval = 15000; // 15s default
+        this.pollingInterval = 15000;
         this.pollingTimer = null;
     }
 
@@ -146,6 +245,7 @@ export class ReveilaTable extends HTMLElement {
         }
         
         if (this.isConnected) {
+            this.currentPage = 0; // Reset on attribute change
             this.fetchData();
         }
     }
@@ -178,23 +278,19 @@ export class ReveilaTable extends HTMLElement {
     }
 
     smartFetch() {
-        // Only fetch if:
-        // 1. Not already loading
-        // 2. Search input is not focused (user is not interacting)
-        // 3. Current input value matches the last searched query (no pending manual search)
         const input = this.shadowRoot.querySelector('.search-input');
         const isInteracting = input && (this.shadowRoot.activeElement === input || input.value !== this.searchQuery);
         
         if (!this.loading && !isInteracting) {
-            this.fetchData(true); // isBackground = true
+            this.fetchData(this.currentPage, true);
         }
     }
 
-    async fetchData(isBackground = false) {
+    async fetchData(page = 0, isBackground = false) {
         if (!this.entityType) return;
         this.loading = true;
+        this.currentPage = page;
         
-        // Only render loading state if not a background fetch or if we have no data yet
         if (!isBackground || this.entities.length === 0) {
             this.render();
         }
@@ -208,20 +304,21 @@ export class ReveilaTable extends HTMLElement {
                     } : {},
                     logicalOp: 'AND'
                 },
-                page: 0,
-                size: this.pageSize
+                page: this.currentPage,
+                size: this.pageSize,
+                includeCount: true
             };
 
             const response = await this.api.search(searchRequest);
             this.entities = response.content || [];
+            this.hasNext = response.hasNext || false;
+            this.totalElements = response.totalElements || 0;
             
-            // Auto-detect headers if not set
             if (this.entities.length > 0 && this.headers.length === 0) {
                 const excluded = ['password', 'secret_key'];
                 this.headers = Object.keys(this.entities[0].attributes || {})
                     .filter(key => !excluded.includes(key));
                 
-                // If no attributes found but we have entities, try to use keys from the entity itself as fallback
                 if (this.headers.length === 0) {
                     this.headers = ['id', 'action', 'timestamp', 'traceId'].filter(h => h in this.entities[0].attributes || h === 'id');
                 }
@@ -234,22 +331,19 @@ export class ReveilaTable extends HTMLElement {
         }
     }
 
-    handleSearchInput(e) {
-        this.searchQuery = e.target.value;
+    handleSearch() {
+        this.currentPage = 0;
+        this.fetchData();
     }
 
-    handleKeyDown(e) {
-        if (e.key === 'Enter') {
-            this.fetchData();
+    changePage(delta) {
+        const next = this.currentPage + delta;
+        if (next >= 0 && (delta < 0 || this.hasNext)) {
+            this.fetchData(next);
         }
     }
 
-    handleFieldChange(e) {
-        this.currentSearchField = e.target.value;
-    }
-
     render() {
-        // 1. Initial structure setup if not present
         if (!this.shadowRoot.querySelector('.reveila-table-container')) {
             this.shadowRoot.innerHTML = `
                 <style>${styles}</style>
@@ -265,40 +359,35 @@ export class ReveilaTable extends HTMLElement {
                         </div>
                         <button class="ok-button">OK</button>
                     </div>
-                    <div class="table-content-area"></div>
+                    <div class="table-scroll-area"></div>
+                    <div class="pagination-area"></div>
                 </div>
             `;
             
-            // Initial event listeners
-            this.shadowRoot.querySelector('.search-input').addEventListener('input', (e) => this.handleSearchInput(e));
-            this.shadowRoot.querySelector('.search-input').addEventListener('keydown', (e) => this.handleKeyDown(e));
-            this.shadowRoot.querySelector('.column-select').addEventListener('change', (e) => this.handleFieldChange(e));
-            this.shadowRoot.querySelector('.ok-button').addEventListener('click', () => this.fetchData());
+            this.shadowRoot.querySelector('.search-input').addEventListener('input', (e) => this.searchQuery = e.target.value);
+            this.shadowRoot.querySelector('.search-input').addEventListener('keydown', (e) => e.key === 'Enter' && this.handleSearch());
+            this.shadowRoot.querySelector('.column-select').addEventListener('change', (e) => this.currentSearchField = e.target.value);
+            this.shadowRoot.querySelector('.ok-button').addEventListener('click', () => this.handleSearch());
         }
 
-        // 2. Reference elements
         const container = this.shadowRoot.querySelector('.reveila-table-container');
         const select = container.querySelector('.column-select');
         const input = container.querySelector('.search-input');
         const okButton = container.querySelector('.ok-button');
-        const contentArea = container.querySelector('.table-content-area');
+        const scrollArea = container.querySelector('.table-scroll-area');
+        const paginationArea = container.querySelector('.pagination-area');
 
-        // 3. Update Search Controls State
-        // Logic: Disable if loading OR if no results and no query (initial empty state)
         const isDisabled = this.loading || (this.entities.length === 0 && !this.searchQuery);
         
         select.disabled = isDisabled;
         input.disabled = isDisabled;
-        okButton.disabled = this.loading; // Button only disabled during loading
+        okButton.disabled = this.loading;
         okButton.textContent = this.loading ? '...' : 'OK';
         
-        // Only update input value if it's different to avoid cursor jumps
         if (input.value !== this.searchQuery) {
             input.value = this.searchQuery;
         }
-        input.placeholder = `Type and press OK/Enter to filter records...`;
 
-        // Update Select options only if they changed
         const currentOptions = Array.from(select.options).map(opt => opt.value).join(',');
         const newOptions = this.headers.join(',');
         if (currentOptions !== newOptions) {
@@ -309,14 +398,10 @@ export class ReveilaTable extends HTMLElement {
                 if (h === 'reasoningTrace') label = 'Reasoning';
                 return `<option value="${h}" ${this.currentSearchField === h ? 'selected' : ''}>${label}</option>`;
             }).join('');
-        } else if (select.value !== this.currentSearchField) {
-            select.value = this.currentSearchField;
         }
 
-        // 4. Update Table Content
-        // Only show loading state if we have no data at all
         if (this.loading && this.entities.length === 0) {
-            contentArea.innerHTML = `<div class="loading-state">Loading...</div>`;
+            scrollArea.innerHTML = `<div class="loading-state">Syncing with Flight Recorder...</div>`;
         } else if (this.entities.length > 0) {
             const headersHtml = this.headers.map(h => {
                 let label = h.charAt(0).toUpperCase() + h.slice(1);
@@ -341,14 +426,28 @@ export class ReveilaTable extends HTMLElement {
                 `;
             }).join('');
 
-            contentArea.innerHTML = `
-                <table class="reveila-table">
-                    <thead><tr>${headersHtml}</tr></thead>
-                    <tbody>${rowsHtml}</tbody>
-                </table>
+            scrollArea.innerHTML = `<table class="reveila-table"><thead><tr>${headersHtml}</tr></thead><tbody>${rowsHtml}</tbody></table>`;
+            
+            // Pagination Logic
+            const start = (this.currentPage * this.pageSize) + 1;
+            const end = start + this.entities.length - 1;
+            const total = this.totalElements;
+
+            paginationArea.innerHTML = `
+                <div class="pagination-group">
+                    <div class="pagination-info">Showing <b>${start}-${end}</b> of <b>${total}</b> records</div>
+                    <div class="pagination-controls">
+                        <button class="page-btn prev-btn" ${this.currentPage === 0 ? 'disabled' : ''}>Previous</button>
+                        <button class="page-btn next-btn" ${!this.hasNext ? 'disabled' : ''}>Next</button>
+                    </div>
+                </div>
             `;
+
+            paginationArea.querySelector('.prev-btn').addEventListener('click', () => this.changePage(-1));
+            paginationArea.querySelector('.next-btn').addEventListener('click', () => this.changePage(1));
         } else {
-            contentArea.innerHTML = `<div class="no-data">No results found for "${this.entityType}"</div>`;
+            scrollArea.innerHTML = `<div class="no-data">No records found for "${this.entityType}"</div>`;
+            paginationArea.innerHTML = '';
         }
     }
 }

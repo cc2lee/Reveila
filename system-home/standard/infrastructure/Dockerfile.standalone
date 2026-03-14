@@ -1,0 +1,26 @@
+# Dockerfile.standalone
+# Use this to create a self-contained image including all application assets.
+
+FROM eclipse-temurin:21-jre-alpine
+
+# Define the Sovereign Root
+ENV REVEILA_HOME=/reveila
+WORKDIR /reveila
+
+# 1. Create necessary directory structure
+RUN mkdir -p /reveila/bin /reveila/libs /reveila/configs /reveila/data /reveila/logs /reveila/resources /reveila/web /reveila/plugins
+
+# 2. Copy application assets (Assuming context is system-home/standard/)
+# Note: We copy directories selectively to avoid copying the 'infrastructure' folder itself into the image root.
+COPY bin/ /reveila/bin/
+COPY libs/ /reveila/libs/
+COPY configs/ /reveila/configs/
+COPY resources/ /reveila/resources/
+COPY web/ /reveila/web/
+COPY plugins/ /reveila/plugins/
+
+# 3. Set persistent volume points for data and logs
+VOLUME ["/reveila/data", "/reveila/logs"]
+
+# 4. Standard entrypoint pointing to the internal JAR
+ENTRYPOINT ["java", "-Xms512m", "-Xmx2g", "-DREVEILA_HOME=/reveila", "-jar", "/reveila/libs/reveila-suite-fat.jar"]

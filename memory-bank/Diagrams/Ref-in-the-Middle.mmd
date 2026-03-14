@@ -1,0 +1,16 @@
+sequenceDiagram
+    participant User as Agent / External Request
+    participant Fabric as Reveila Fabric (Spring Boot)
+    participant Ollama as Ollama (Llama 3)
+    participant Postgres as Sovereign Ledger (Postgres)
+
+    User->>Fabric: 1. Proposed Action (e.g., Access DB)
+    Fabric->>Ollama: 2. Request Context / Monologue
+    Ollama-->>Fabric: 3. AI Intent / Risk Analysis
+    
+    Note over Fabric: 4. Sovereign Policy Filter<br/>(Scoring Risk & Intent)
+    
+    Fabric->>Postgres: 5. Log Audit Entry (JSONB)
+    Note right of Postgres: Risk Score: 0.98<br/>Status: FLAGGED
+    
+    Fabric-->>User: 6. Intercepted / Redacted Response

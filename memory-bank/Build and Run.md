@@ -4,6 +4,33 @@ This guide provides the necessary steps to build the **Reveila Suite** and run i
 
 ---
 
+## ☀️ Your Morning "One-Click" Cheat Sheet
+
+### Option 1: Hybrid Development (Local App + Docker Infrastructure)
+Use this if you are running the Spring Boot application from VS Code or Gradle (`bootRun`).
+1. **The Launch (Infrastructure Only):**
+   ```powershell
+   cd system-home/standard/infrastructure
+   docker compose -f docker-compose.prod.yml -f sandbox/docker-compose.sandbox.yml up -d reveila-db-prod ollama-service
+   ```
+2. **The App Start:** Run `.\gradlew.bat :spring:core:bootRun` or press **F5** in VS Code.
+3. **The AI Check:**
+   ```powershell
+   docker exec -it infrastructure-ollama-service-1 ollama list
+   ```
+
+### Option 2: Full Stack (Everything in Docker)
+Use this for a production-like demonstration or testing the portable image.
+1. **The Launch (Everything):**
+   ```powershell
+   cd system-home/standard/infrastructure
+   docker compose -f docker-compose.prod.yml -f sandbox/docker-compose.sandbox.yml up -d
+   ```
+2. **The Log Check:** `docker logs -f reveila-fabric-container`
+3. **The AI Check:** `docker exec -it infrastructure-ollama-service-1 ollama list`
+
+---
+
 ## 📋 Requirements
 - **Java:** Version 21 or higher.
 - **Docker:** Installed and running (for database or containerized deployment).
@@ -11,278 +38,212 @@ This guide provides the necessary steps to build the **Reveila Suite** and run i
 
 ---
 
+## 📂 Deployment Directory Structure
+
+The system is designed to run within a structured home directory:
+
+```text
+${REVEILA_HOME}/
+├── bin/            # Startup and control scripts
+├── configs/        # Environment-specific properties and component JSONs
+├── data/           # Persistent storage (Postgres data, JSON fallbacks)
+├── infrastructure/ # Docker Compose and Dockerfiles
+├── libs/           # Compiled Java artifacts (Fat JAR)
+├── logs/           # System and audit logs
+├── plugins/        # Dynamic AI agent plugins
+├── resources/      # Static assets and DB schemas
+└── web/            # Built Vue.js dashboard files
+```
+
+---
+
 ## 💻 Development (Local JVM)
 
-This mode is ideal for active development, allowing for fast iterations and direct debugging.
+### 1. Choose the Mode for Development
 
-### 1. Build the Artifacts
-Build the executable fat JAR using the Gradle wrapper:
-```powershell
-.\gradlew.bat clean bootJar
-```
+#### Running Locally via Gradle (`bootRun`)
+**No need** to manually build the JAR.
+- When you run `.\gradlew.bat :spring:core:bootRun`, Gradle automatically detects changed source files, recompiles them, and launches the application with the latest classes.
+- **Tip:** Since [`spring-boot-devtools`](spring/core/build.gradle.kts:61) is already in your project, if you are running in an IDE (like VS Code or IntelliJ), the app will often "hot-reload" automatically when you save a file.
 
-### 2. Start the Docker PostgreSQL Database
-Ensure Docker is running, then start the PostgreSQL container in the background:
+#### Running via Docker (`docker compose`)
+**Must** rebuild the JAR.
+- The Docker container is configured to run the fat JAR located at [`system-home/standard/libs/reveila-suite-fat.jar`](system-home/standard/infrastructure/docker-compose.prod.yml:53).
+- **Workflow:**
+  1. Make code changes.
+  2. Run `.\gradlew.bat bootJar` (to update the file in `libs`).
+  3. Restart your Docker container: `docker compose -f docker-compose.prod.yml restart reveila-fabric`.
+
+### 2. Start the Sovereign Data Node (Postgres + pgvector)
+The system uses `ankane/pgvector` for native AI embedding support.
 ```powershell
 cd system-home/standard/infrastructure
-docker-compose -f docker-compose.prod.yml up -d reveila-db-prod
+docker compose -f docker-compose.prod.yml up -d reveila-db-prod
 ```
 > [!NOTE]
-> Since the `docker-compose.prod.yml` maps port `5432:5432`, the database is accessible at `localhost:5432` from your Windows host.
+> The database is accessible at `localhost:5432` from your host machine.
 
 ### 3. Configure `system.home`
-The Reveila engine requires the `system.home` property to locate configurations, plugins, and data. You can set it in two ways:
-
-1. **Environment Variable (Recommended):** Set `REVEILA_HOME` on your host machine to the absolute path of `system-home/standard`.
-2. **Application Argument:** Pass it to the Gradle task using `--args`.
-
-#### VS Code `launch.json` Example:
-```json
-{
-    "type": "java",
-    "name": "Reveila-on-Spring",
-    "request": "launch",
-    "mainClass": "com.reveila.spring.system.Application",
-    "projectName": "spring:core",
-    "vmArgs": "-Xmx2048m -Dsystem.home=../../system-home/standard -Dspring.profiles.active=dev"
-}
-```
+The Reveila engine requires the `system.home` property to locate its resources.
+1. **Environment Variable (Recommended):** Set `REVEILA_HOME` to the absolute path of `system-home/standard`.
+2. **Application Argument:** Pass it directly to Gradle using `--args`.
 
 ### 4. Start the Reveila Server
-Launch the server using Gradle. If you haven't set `REVEILA_HOME`, you must pass the path as an argument:
 ```powershell
-# Using environment variable (REVEILA_HOME)
+# Using REVEILA_HOME env variable
 .\gradlew.bat :spring:core:bootRun
 
-# Using application arguments
+# Using explicit path argument
 .\gradlew.bat :spring:core:bootRun --args="system.home=../../system-home/standard"
 ```
 
-💡 **Tip:** To see standard logs without Gradle's progress bar (useful for debugging hangs):
-```powershell
-.\gradlew.bat :spring:core:bootRun --console=plain
-```
-
-### 5. Debugging
-In VS Code, select the **Reveila-on-Spring** configuration and press **F5**. The application will connect to the PostgreSQL instance running inside Docker.
+💡 **Tip:** Use `--console=plain` to see raw logs without the Gradle progress bar.
 
 ---
 
-## 🚀 Deployment (Bare Metal)
+## 🐳 Production Deployment (Docker)
 
-### 1. Build the Artifacts
+For production, you have two options depending on how you want to manage your files.
+
+### Option A: Portable Standalone Image (Recommended for Demos)
+This method bakes your JAR, configs, and web files directly into the Docker image. You can deploy **just the image** to a new machine without copying the project folders.
+
+#### 1. Build the Standalone Image
 ```powershell
-.\gradlew.bat clean bootJar
+cd system-home/standard/infrastructure
+docker compose -f docker-compose.standalone.yml build
 ```
 
-### 2. Prepare the System Home
-The build process places the fat JAR in `system-home/standard/libs`. You can copy the entire `system-home/standard` directory to your target server.
-
-### 3. Launch the Node
-Use the provided startup scripts in the `bin` directory:
+#### 2. Launch the Stack
 ```powershell
-# Windows
-cd system-home/standard/bin
-.\startup.bat
-
-# Linux
-cd system-home/standard/bin
-./startup.sh
+docker compose -f docker-compose.standalone.yml up -d
 ```
 
 ---
 
-## 🐳 Production (Docker Sandbox)
+### Option B: Bind Mounts (Recommended for Local Testing)
+This method "borrows" the files from your host machine. It is great for testing small changes without rebuilding the image. **Requires copying the `system-home/standard` folder to the target machine.**
 
-For production, it is recommended to run the entire stack within Docker for maximum isolation.
-
-### 1. Build the Production Image
+#### 1. Build the Generic Image
 ```powershell
 cd system-home/standard/infrastructure
 docker build -t reveila-fabric:1.0.0 .
 ```
 
-### 2. Orchestrate the Stack
+#### 2. Launch the Stack
 ```powershell
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 ```
 
-### 3. Monitor and Verify
+---
+
+## 🛠️ Common Deployment Steps (All Docker Modes)
+
+### 1. Build the Clean Fat Jar
+Regardless of the mode, ensure you have a fresh JAR:
+```powershell
+.\gradlew.bat clean bootJar
+```
+
+### 2. Orchestrate the Secrets
+Create a `.env` file in `system-home/standard/infrastructure` to securely store your credentials:
+```text
+DB_USER=admin
+DB_PASSWORD=your_secure_password
+DB_NAME=reveila_db
+```
+
+### 3. Verify and Monitor
 ```powershell
 docker ps
 docker logs -f reveila-fabric-container
 ```
 
-💡 **One-liner:** `docker-compose -f docker-compose.prod.yml up --build -d; docker logs -f reveila-fabric-container`
+---
+
+## 🎮 The Experimental Sandbox ("Playground")
+
+To run the full suite including local AI models (**Ollama**), use the merge mode:
+```powershell
+docker compose -f docker-compose.prod.yml -f sandbox/docker-compose.sandbox.yml up -d --build
+```
+
+### AI Handshake Verification
+```powershell
+# Check available models
+curl http://localhost:11434/api/tags
+
+# Manually pull Llama 3 if missing
+curl -X POST http://localhost:11434/api/pull -d '{"name": "llama3"}'
+```
 
 ---
 
-## 🛠️ Maintenance & Operations
+## 🛠️ Maintenance & Troubleshooting
 
-### Switching Environments
-- **Local → Docker:** Stop the Gradle process, run `docker-compose down`, then `docker-compose up -d`.
-- **Docker → Local:** Run `docker-compose down`, start only the DB with `docker-compose up -d reveila-db-prod`, then launch via Gradle.
+### 🔑 Resetting Credentials
+If you encounter "password authentication failed," your Docker volume may contain stale data.
+1. `docker compose -f docker-compose.prod.yml down`
+2. Delete `system-home/standard/data/postgres` folder.
+3. `docker compose -f docker-compose.prod.yml up -d reveila-db-prod`
 
-### Docker Cleanup
-| Command | Action |
-| :--- | :--- |
-| `docker-compose stop` | Pauses containers (fast restart). |
-| `docker-compose down` | Stops and removes containers (clean slate). |
-| `docker system prune` | Removes unused data/images (maintenance). |
+### 🌐 Networking Check
+Verify internal communication between containers:
+```powershell
+docker exec -it reveila-fabric-container ping reveila-db-prod
+```
 
----
-
-## 🔍 Troubleshooting
-
-### 🔑 Database Authentication Failure
-If you see "password authentication failed," your Docker volume might have old credentials.
-
-**To reset:**
-1. Stop containers: `docker-compose down`
-2. Delete persisted data: Remove `system-home/standard/data/postgres`
-3. Restart: `docker-compose up -d reveila-db-prod`
-
-### 🌐 Docker Networking Handshake
-Verify connectivity between the Fabric and the Database:
-
-1. **Inspect Network:** `docker network inspect infrastructure_default`
-2. **Ping Database:** `docker exec -it reveila-fabric-container ping reveila-db-prod`
-3. **Check Connection Logs:** `docker logs reveila-fabric-container | findstr "HikariPool"`
-
----
-
-## 🔗 Useful Links
+### 🔗 Useful Links
 - **Dashboard:** [http://localhost:8080/](http://localhost:8080/)
 - **Health Check:** [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health)
 
 
-## Miseneous
+## Development Tips
+
+1. Force a Full Rebuild
+The most reliable way to ensure the changes in the reveila:core module are linked to your spring:core application is to run a full build from the terminal:
+
+.\gradlew.bat clean classes
+
+Wait for this to finish successfully. It will recompile the new resolver logic in the core module.
+
+2. Refresh the Java Language Server (If Step 1 fails)
+If you still see the error, VS Code's internal Java cache might be stuck:
+
+Open the Command Palette (Ctrl+Shift+P).
+Type: Java: Clean Java Language Server Workspace.
+Click Restart and delete.
+
+3. Check your launch.json
+If you are using a custom launch configuration and do not have the system environment variable REVEILA_HOME set, ensure you are passing the system.home property correctly, as the Spring app needs it to find the reveila.properties file:
+
+"vmArgs": "-Dsystem.home=../../system-home/standard"
+
+4. Monitor Logs
+From the "infrastructure" directory, run:
+docker compose -f docker-compose.prod.yml -f sandbox/docker-compose.sandbox.yml logs -f reveila-db-prod ollama-service
+
+
+5. bootRun vs. bootJar
+
+### 🚀 `.\gradlew.bat clean bootRun`
+*   **What it does:** Compiles your code and **immediately launches** the application.
+*   **Result:** You get a live, running server in your terminal.
+*   **Primary Use:** **Daily Development**. Use this when you want to quickly test your changes locally on your machine.
+
+### 📦 `.\gradlew.bat clean bootJar`
+*   **What it does:** Compiles your code and packages it into a **standalone executable file** (the "Fat JAR").
+*   **Result:** A file is created at [`system-home/standard/libs/reveila-suite-fat.jar`](memory-bank/Build%20and%20Run.md:61).
+*   **Primary Use:** **Deployment**. Use this when you are ready to update your **Docker** containers or move the application to a different server.
+
 ---
-To avoid broken paths, run Docker commands at the root of `system-home`.
 
-Docker merges compose files if more than one is specified, following the rule:
-Simple Values (image, container_name): The last file wins. It replaces the value.
-Mappings (environment, labels): They are merged. If both files have DEBUG, the value in the second file wins. If only one has API_KEY, it stays.
-Lists (ports, volumes): These are concatenated (appended). This is usually where the trouble starts if both define port 5432:5432 - Docker will try to bind it twice and fail.
+### Summary Table
+| Feature | `bootRun` | `bootJar` |
+| :--- | :--- | :--- |
+| **Action** | Run the app | Build the file |
+| **Output** | A running process | A `.jar` file |
+| **Docker** | No impact | **Required** for Docker updates |
+| **Speed** | Faster iteration | Slower (packaging overhead) |
 
-Instead of one giant file, we use docker-compose.prod.yml as the "base" and use additional compose files, e.g. the docker-compose.sandbox.yml, to only add what's missing.
-
-To see what the final, merged file looks like before you run it, use the config command:
-
-Bash
-
-docker compose \
-  -f standard/infrastructure/docker-compose.prod.yml \
-  -f sandbox/infrastructure/docker-compose.sandbox.yml \
-  --project-directory . \
-  config
-
-
-If that looks good, spin it up with:
-
-Bash
-
-docker compose \
-  -f standard/infrastructure/docker-compose.prod.yml \
-  -f sandbox/infrastructure/docker-compose.sandbox.yml \
-  --project-directory . \
-  up -d
-
-One "Gotcha" to watch for:
-If your docker-compose.prod.yml has ports: - "5432:5432" for Postgres, do not include a ports section for Postgres in the sandbox file. If you do, Docker will try to open the port twice, and you'll get a "Bind for 0.0.0.0:5432 failed" error.
-
-### Switch .env file
-docker compose --env-file .env.prod up -d
-
-To Run the Sandbox (Merge Mode):
-
-Run from "infrastructure" directory:
-
-docker compose -f docker-compose.prod.yml -f sandbox/docker-compose.sandbox.yml up -d --build
-
-What happens: In addition to services from prod.yml, Docker loads additional services defined in sandbox.yml including the ollama-service and model-puller.
-
-
-To Run Production Only:
-
-Bash
-
-docker compose -f docker-compose.prod.yml up -d
-
-What happens: Only the core app and the DB start. Clean and lean.
-
-
-standard/
-├── infrastructure/
-│   ├── docker-compose.prod.yml
-│   └── sandbox/
-│       ├── docker-compose.sandbox.yml
-│       └── .env.sandbox
-├── bin/
-├── configs/
-└── (other app folders)
-
-
-Run this command in PowerShell to see exactly what is hogging the port:
-netstat -ano | findstr :8080
-
-
-
-
-"Handshake Check" to ensure the Reveila Fabric can actually talk to the Ollama model engine through the internal Docker network.
-
-1. Verify the AI Model Status
-First, let's see if Llama 3 is actually inside the engine. Run this in your PowerShell:
-
-PowerShell
-
-docker exec -it infrastructure-ollama-service-1 ollama list
-If you see llama3: We are in business.
-
-If the list is empty: The model-puller might still be working or needs a kickstart.
-
-2. The "Fabric-to-Model" Ping
-This is the most important test. It confirms that your Spring Boot app (the Fabric) can reach the AI "brain." We'll use curl from within the Fabric container to simulate the internal connection:
-
-PowerShell
-
-curl http://localhost:11434/api/tags
-Why this matters: If this returns a JSON list of models, it proves your Docker networking is perfect. The Fabric "referee" now has a clear line of sight to the LLM.
-
-Why the models are missing?
-If you see {"models": []}, it means the Ollama service started but never received the command to download Llama 3. This usually happens if the model-puller container ran into an error or started before Ollama was ready to receive API calls.
-
-Let's force the pull manually from your host (since port 11434 is open):
-Run this in PowerShell to start the download right now:
-
-PowerShell
-
-curl -X POST http://localhost:11434/api/pull -d '{"name": "llama3"}'
-Wait for this to finish (you'll see a progress bar if using a modern terminal). Once done, run your api/tags command again, and you should see Llama 3 listed.
-
-
-3. Check the Sovereign Ledger (Postgres)
-Let's make sure the database is ready to record those agentic interactions. Run this to verify the table we created earlier is visible to the container:
-
-PowerShell
-
-docker exec -it reveila-db-prod psql -U admin -d reveila_db -c "\dt governance_audit"
-
-
-It looks like you’re ready to run ollama list to see what’s inside. Since your container is named infrastructure-ollama-service-1, run this command to see the status of your models:
-
-PowerShell
-
-docker exec -it infrastructure-ollama-service-1 ollama list
-What to look for:
-If you see llama3 and phi3: Your pre-pulling strategy worked perfectly. You are ready to start the "Negotiation" demo.
-
-If the list is empty: The model-puller container might have hit a network snag or is still downloading. (Llama 3 is about 4.7 GB, so it can take a few minutes depending on your Montgomery ISP speed).
-
-How to check the download progress:
-If the list was empty, run this to see the "live" status of the puller:
-
-PowerShell
-
-docker logs -f model_puller
-docker logs model_puller
+**Recommendation:** For your current task of verifying the new Java logic, use **`bootRun`**.

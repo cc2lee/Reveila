@@ -1,5 +1,6 @@
 package com.reveila.spring.system;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -10,6 +11,7 @@ import java.util.Properties;
 import javax.sql.DataSource;
 
 import org.springframework.context.ApplicationContext;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,6 +21,7 @@ import com.reveila.data.GenericRepository;
 import com.reveila.data.JavaObjectRepository;
 import com.reveila.data.Repository;
 import com.reveila.system.BasePlatformAdapter;
+import com.reveila.system.Constants;
 
 public class SpringPlatformAdapter extends BasePlatformAdapter {
 
@@ -82,6 +85,37 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
             } catch (Exception e) {
                 System.err.println("Failed to read database schema: " + e.getMessage());
             }
+        }
+
+        // AUTO-SCHEMA EXECUTION
+        if ("true".equalsIgnoreCase(getProperties().getProperty(Constants.DB_CREATE_SCHEMA))) {
+            executeSqlScript("resources/db/scripts/schema.sql");
+        }
+    }
+
+    private void executeSqlScript(String relativePath) {
+        try {
+            Path scriptPath = getSystemHome().resolve(relativePath);
+            if (!Files.exists(scriptPath)) {
+                System.err.println("Reveila SQL Executor: Script not found at " + scriptPath);
+                return;
+            }
+
+            System.out.println("Reveila SQL Executor: Executing " + scriptPath);
+            String content = Files.readString(scriptPath, StandardCharsets.UTF_8);
+            
+            // Basic SQL splitter (improves compatibility with some drivers for multi-statement execution)
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(springContext.getBean(DataSource.class));
+            String[] statements = content.split(";");
+            for (String statement : statements) {
+                if (!statement.trim().isEmpty()) {
+                    jdbcTemplate.execute(statement.trim());
+                }
+            }
+            System.out.println("Reveila SQL Executor: Successfully applied " + relativePath);
+        } catch (Exception e) {
+            System.err.println("Reveila SQL Executor FAILED for " + relativePath + ": " + e.getMessage());
+            // We don't throw here to avoid blocking system startup, but it will be logged.
         }
     }
 

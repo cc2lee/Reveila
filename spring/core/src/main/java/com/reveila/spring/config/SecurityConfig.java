@@ -32,7 +32,7 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/public/**", "/api/sandbox/**").permitAll()
+                        .requestMatchers("/api/public/**", "/api/sandbox/**", "/api/governance/**").permitAll()
                         .anyRequest().authenticated())
                 .httpBasic(basic -> {
                 });
