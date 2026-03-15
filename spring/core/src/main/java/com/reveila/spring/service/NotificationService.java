@@ -1,11 +1,13 @@
 package com.reveila.spring.service;
 
 import com.reveila.spring.model.jpa.AuditLog;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.stereotype.Service;
+
+import java.util.Properties;
 
 /**
  * Service for handling notifications and alerts.
@@ -13,14 +15,35 @@ import org.springframework.stereotype.Service;
 @Service
 public class NotificationService {
 
-    @Autowired(required = false)
     private JavaMailSender mailSender;
 
     @Value("${notification.alert.email:admin@reveila.com}")
     private String alertEmail;
 
-    @Value("${spring.mail.username:reveila.dev@gmail.com}")
+    @Value("${notification.email.smtp.username:reveila.dev@gmail.com}")
     private String fromEmail;
+
+    public NotificationService(
+            @Value("${notification.email.smtp.server:smtp.gmail.com}") String host,
+            @Value("${notification.email.smtp.port:587}") int port,
+            @Value("${notification.email.smtp.username:}") String username,
+            @Value("${notification.email.smtp.password:}") String password,
+            @Value("${notification.email.smtp.auth:true}") String auth) {
+        
+        JavaMailSenderImpl sender = new JavaMailSenderImpl();
+        sender.setHost(host);
+        sender.setPort(port);
+        sender.setUsername(username);
+        sender.setPassword(password);
+
+        Properties props = sender.getJavaMailProperties();
+        props.put("mail.transport.protocol", "smtp");
+        props.put("mail.smtp.auth", auth);
+        props.put("mail.smtp.starttls.enable", "true");
+        props.put("mail.debug", "false");
+
+        this.mailSender = sender;
+    }
 
     /**
      * Sends a sovereignty alert to the configured email address.
@@ -29,14 +52,8 @@ public class NotificationService {
      */
     public void sendSovereigntyAlert(AuditLog log) {
         System.out.println("--------------------------------------------------");
-        System.out.println("📧 [NOTIFICATION] Dispatching real-time alert...");
+        System.out.println("📧 [NOTIFICATION] Dispatching real-time alert via " + fromEmail);
         
-        if (mailSender == null) {
-            System.err.println("❌ ERROR: JavaMailSender not initialized. Check SMTP settings.");
-            logConsoleFallback(log);
-            return;
-        }
-
         try {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(fromEmail);

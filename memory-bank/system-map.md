@@ -41,6 +41,7 @@ The system is anchored by **Reveila-Core**, a platform-agnostic engine that resi
 
 - **Hexagonal Pattern:** Business logic is isolated in the Domain layer, while infrastructure (Spring Boot, Android, Standalone) is injected via the `PlatformAdapter` interface.
 - **Universal Invocation Model:** Clients interact with components through a proxy mechanism rather than hardcoded endpoints. This ensures the Core logic is exposed consistently across all platforms.
+- **Dynamic Settings & Hot Reload:** A multi-tab configuration interface allows for runtime updates to system properties. Changes are persisted to `reveila.properties` and hot-reloaded into the `PlatformAdapter` without requiring a full JVM restart.
 - **Dynamic Component Loading:** Components are discovered, sequenced by priority, and validated via JSON metadata and the system's internal `ConfigurationLinter` at startup.
 
 ## 📦 Project Structure (Monorepo)

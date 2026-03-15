@@ -184,6 +184,12 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         }
     }
 
+    @Override
+    public void reloadProperties() throws Exception {
+        logger.info("Reloading system properties...");
+        loadProperties(null);
+    }
+
     private void loadProperties(Properties jvmArgs) throws IOException, ConfigurationException {
 
         if (jvmArgs == null) {

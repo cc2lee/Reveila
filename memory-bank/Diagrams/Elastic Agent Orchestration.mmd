@@ -1,0 +1,28 @@
+graph TD
+    subgraph "Global Sovereign Layer"
+        DB[(Postgres: Plugin Registry)]
+        Store[Sovereign Object Storage: JARs/Binaries]
+    end
+
+    subgraph "Montgomery Node (Cluster Role: Audit)"
+        Instance1[Reveila Fabric Instance A]
+        LocalDir1[/plugins folder/]
+    end
+
+    subgraph "Georgia Node (Cluster Role: Processing)"
+        Instance2[Reveila Fabric Instance B]
+        LocalDir2[/plugins folder/]
+    end
+
+    %% Sync Flow
+    Instance1 -- "1. Poll Desired State" --> DB
+    Instance2 -- "1. Poll Desired State" --> DB
+    
+    DB -- "2. Assigned: Agent-X" --> Instance1
+    DB -- "2. Assigned: Agent-Y" --> Instance2
+    
+    Instance1 -- "3. Pull Binary" --> Store
+    Store -- "4. Verified Checksum" --> LocalDir1
+    
+    Instance1 -- "5. Hot-Load" --> Instance1
+    Instance2 -- "5. Hot-Load" --> Instance2

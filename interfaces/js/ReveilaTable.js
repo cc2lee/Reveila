@@ -148,6 +148,20 @@ const styles = `
     border: 1px solid #e2e8f0;
   }
 
+  .risk-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+  }
+
+  .risk-high { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+  .risk-medium { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+  .risk-low { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+
   .pagination-group {
     display: flex;
     justify-content: space-between;
@@ -245,7 +259,7 @@ export class ReveilaTable extends HTMLElement {
         }
         
         if (this.isConnected) {
-            this.currentPage = 0; // Reset on attribute change
+            this.currentPage = 0;
             this.fetchData();
         }
     }
@@ -343,6 +357,33 @@ export class ReveilaTable extends HTMLElement {
         }
     }
 
+    formatHeader(key) {
+        if (key === 'id') return 'Record ID';
+        if (key === 'traceId') return 'Trace ID';
+        if (key === 'sessionId') return 'Session ID';
+        
+        // Convert camelCase to Title Case with Spaces
+        const result = key.replace(/([A-Z])/g, " $1");
+        return result.charAt(0).toUpperCase() + result.slice(1);
+    }
+
+    getRiskBadge(score) {
+        if (score === null || score === undefined) return '';
+        const num = parseFloat(score);
+        let cls = 'risk-low';
+        let label = 'Low';
+        
+        if (num >= 0.8) {
+            cls = 'risk-high';
+            label = 'High';
+        } else if (num >= 0.4) {
+            cls = 'risk-medium';
+            label = 'Medium';
+        }
+        
+        return `<span class="risk-badge ${cls}">${label} (${num.toFixed(2)})</span>`;
+    }
+
     render() {
         if (!this.shadowRoot.querySelector('.reveila-table-container')) {
             this.shadowRoot.innerHTML = `
@@ -392,24 +433,14 @@ export class ReveilaTable extends HTMLElement {
         const newOptions = this.headers.join(',');
         if (currentOptions !== newOptions) {
             select.innerHTML = this.headers.map(h => {
-                let label = h.charAt(0).toUpperCase() + h.slice(1);
-                if (h === 'id') label = 'Record ID';
-                if (h === 'traceId') label = 'Trace ID';
-                if (h === 'reasoningTrace') label = 'Reasoning';
-                return `<option value="${h}" ${this.currentSearchField === h ? 'selected' : ''}>${label}</option>`;
+                return `<option value="${h}" ${this.currentSearchField === h ? 'selected' : ''}>${this.formatHeader(h)}</option>`;
             }).join('');
         }
 
         if (this.loading && this.entities.length === 0) {
             scrollArea.innerHTML = `<div class="loading-state">Syncing with Flight Recorder...</div>`;
         } else if (this.entities.length > 0) {
-            const headersHtml = this.headers.map(h => {
-                let label = h.charAt(0).toUpperCase() + h.slice(1);
-                if (h === 'id') label = 'Record ID';
-                if (h === 'traceId') label = 'Trace ID';
-                if (h === 'reasoningTrace') label = 'Reasoning';
-                return `<th>${label}</th>`;
-            }).join('');
+            const headersHtml = this.headers.map(h => `<th>${this.formatHeader(h)}</th>`).join('');
 
             const rowsHtml = this.entities.map(entity => {
                 const attributes = entity.attributes || {};
@@ -420,6 +451,11 @@ export class ReveilaTable extends HTMLElement {
                         if (h === 'id' && !value) {
                             value = (entity.key && entity.key.id && entity.key.id.value) || (entity.id && entity.id.id) || 'N/A';
                         }
+                        
+                        if (h === 'riskScore') {
+                            return `<td>${this.getRiskBadge(value)}</td>`;
+                        }
+                        
                         return `<td>${h === 'id' ? `<span class="id-cell">${value}</span>` : `<span>${value || ''}</span>`}</td>`;
                     }).join('')}
                 </tr>
@@ -428,7 +464,6 @@ export class ReveilaTable extends HTMLElement {
 
             scrollArea.innerHTML = `<table class="reveila-table"><thead><tr>${headersHtml}</tr></thead><tbody>${rowsHtml}</tbody></table>`;
             
-            // Pagination Logic
             const start = (this.currentPage * this.pageSize) + 1;
             const end = start + this.entities.length - 1;
             const total = this.totalElements;

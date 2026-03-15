@@ -247,3 +247,44 @@ docker compose -f docker-compose.prod.yml -f sandbox/docker-compose.sandbox.yml 
 | **Speed** | Faster iteration | Slower (packaging overhead) |
 
 **Recommendation:** For your current task of verifying the new Java logic, use **`bootRun`**.
+
+## Refresh Changes During Development
+
+### 1. From project root directory Reveila-Suite, run:
+```powershell
+# Clean and recompile Java classes
+./gradlew.bat clean classes
+# Rebuild the Vue project
+./gradlew.bat :web:vue-project:build
+# Refresh and start the Reveila Server
+./gradlew.bat clean bootRun
+```
+
+### 2. Start your Infrastructure
+Ensure your database is running so the new schema can be applied:
+```powershell
+cd system-home/standard/infrastructure
+docker compose -f docker-compose.prod.yml -f sandbox/docker-compose.sandbox.yml up -d reveila-db-prod ollama-service
+```
+
+### 3. Launch the Backend Server
+Start the application from the project root. This will trigger the PluginScannerService and apply the new schema.sql:
+```powershell
+.\gradlew.bat :spring:core:bootRun
+```
+
+### 4. Restart Vite: Stop the Vue dev server and run from `vue-project` root:
+```powershell
+npm run dev
+```
+
+### 5. Access the Dashboard UI
+*   Vue Dev Server: http://localhost:5173
+*   Local Browser: http://localhost:8080
+
+### 🔍 Verification Checklist:
+*   **Database:** Check for the new tables using `docker exec -it reveila-db-prod psql -U admin -d reveila_db -c "\dt"`.
+*   **UI:** Open [**http://localhost:8080**](http://localhost:8080), click the **Gear Icon**, and verify you see the new **Plugins** tab.
+*   **Logs:** Look for the message: `Sovereign Plugin Discovered` during startup.
+
+Once these steps are complete, your fabric is fully upgraded to the Sovereign Plugin Registry architecture!

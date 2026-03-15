@@ -37,7 +37,7 @@ public class AuditLog {
     private String innerMonologue;
 
     @Column(name = "proposed_action", columnDefinition = "TEXT")
-    private String proposedAction;
+    private String action; // Renamed back to 'action' for JPA property consistency
 
     @Column(name = "actual_output", columnDefinition = "TEXT")
     private String actualOutput;
@@ -55,18 +55,13 @@ public class AuditLog {
     @Column(name = "metadata", columnDefinition = "jsonb")
     private String metadata;
 
-    // --- Backward Compatibility Methods ---
-    
-    public void setAction(String action) { this.proposedAction = action; }
-    public String getAction() { return this.proposedAction; }
+    // --- Backward Compatibility & Helper Methods ---
     
     public void setTraceId(String traceId) { 
         this.agentId = traceId; 
-        // If traceId is a valid UUID, also set sessionId
         try {
             this.sessionId = UUID.fromString(traceId);
         } catch (Exception e) {
-            // Default or ignore if not a UUID
             if (this.sessionId == null) this.sessionId = UUID.randomUUID();
         }
     }
@@ -74,6 +69,10 @@ public class AuditLog {
     
     public void setReasoningTrace(String trace) { this.innerMonologue = trace; }
     public String getReasoningTrace() { return this.innerMonologue; }
+
+    // For frontend/JSON consistency
+    public String getProposedAction() { return this.action; }
+    public void setProposedAction(String action) { this.action = action; }
 
     // --- Standard Getters and Setters ---
     public UUID getId() { return id; }
@@ -94,8 +93,8 @@ public class AuditLog {
     public String getInnerMonologue() { return innerMonologue; }
     public void setInnerMonologue(String innerMonologue) { this.innerMonologue = innerMonologue; }
 
-    public String getProposedAction() { return proposedAction; }
-    public void setProposedAction(String proposedAction) { this.proposedAction = proposedAction; }
+    public String getAction() { return action; }
+    public void setAction(String action) { this.action = action; }
 
     public String getActualOutput() { return actualOutput; }
     public void setActualOutput(String actualOutput) { this.actualOutput = actualOutput; }
@@ -119,7 +118,7 @@ public class AuditLog {
             timestamp,
             status,
             agentId,
-            proposedAction,
+            action,
             riskScore != null ? riskScore.toPlainString() : "N/A",
             policyTriggered != null ? policyTriggered : "NONE"
         );

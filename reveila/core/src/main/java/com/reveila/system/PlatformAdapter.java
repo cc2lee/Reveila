@@ -28,6 +28,7 @@ public interface PlatformAdapter {
     public void unregisterAutoCall(String componentName);
     public void plug(Reveila reveila);
     public void unplug();
+    public void reloadProperties() throws Exception;
     public Repository<Entity, Map<String, Map<String, Object>>> getRepository(String entityType);
     public ExecutorService getExecutor();
 
