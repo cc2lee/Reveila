@@ -43,7 +43,7 @@ import com.reveila.util.FileUtil;
 public abstract class BasePlatformAdapter implements PlatformAdapter {
 
     private Reveila reveila;
-    private Properties properties;
+    protected Properties properties;
     private Logger logger;
     private int jobThreadPoolSize = 1; // Use single thread for serial execution by default
     private ScheduledExecutorService scheduler;

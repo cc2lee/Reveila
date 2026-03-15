@@ -52,8 +52,35 @@ CREATE TABLE IF NOT EXISTS plugin_registry (
     target_cluster_role VARCHAR(50)  -- e.g., 'high-cpu-node' or 'audit-node'
 );
 
+-- Global Settings Table
+CREATE TABLE IF NOT EXISTS global_settings (
+    key VARCHAR(255) PRIMARY KEY,
+    value TEXT,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_audit_session ON governance_audit(session_id);
 CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON governance_audit(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_plugin_registry_status ON plugin_registry(status);
 CREATE INDEX IF NOT EXISTS idx_users_org ON users(org_id);
+
+-- Create the notification function
+CREATE OR REPLACE FUNCTION notify_config_change() RETURNS trigger AS $$
+BEGIN
+  -- Broadcast the name of the table that changed as the payload
+  PERFORM pg_notify('reveila_config_updates', TG_TABLE_NAME);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Attach triggers for reactive updates
+DROP TRIGGER IF EXISTS plugin_update_trigger ON plugin_registry;
+CREATE TRIGGER plugin_update_trigger
+AFTER INSERT OR UPDATE OR DELETE ON plugin_registry
+FOR EACH ROW EXECUTE FUNCTION notify_config_change();
+
+DROP TRIGGER IF EXISTS settings_update_trigger ON global_settings;
+CREATE TRIGGER settings_update_trigger
+AFTER INSERT OR UPDATE OR DELETE ON global_settings
+FOR EACH ROW EXECUTE FUNCTION notify_config_change();

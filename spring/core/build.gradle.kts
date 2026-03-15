@@ -58,7 +58,7 @@ dependencies {
     //implementation("org.apache.httpcomponents.client5:httpclient5")
     
     runtimeOnly("com.h2database:h2")
-    runtimeOnly("org.postgresql:postgresql")
+    implementation("org.postgresql:postgresql")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     developmentOnly("org.springframework.boot:spring-boot-devtools")
 }

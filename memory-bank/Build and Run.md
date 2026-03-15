@@ -256,8 +256,8 @@ docker compose -f docker-compose.prod.yml -f sandbox/docker-compose.sandbox.yml 
 ./gradlew.bat clean classes
 # Rebuild the Vue project
 ./gradlew.bat :web:vue-project:build
-# Refresh and start the Reveila Server
-./gradlew.bat clean bootRun
+# Or, run both on one line
+./gradlew.bat clean classes :web:vue-project:build
 ```
 
 ### 2. Start your Infrastructure
@@ -270,7 +270,11 @@ docker compose -f docker-compose.prod.yml -f sandbox/docker-compose.sandbox.yml 
 ### 3. Launch the Backend Server
 Start the application from the project root. This will trigger the PluginScannerService and apply the new schema.sql:
 ```powershell
-.\gradlew.bat :spring:core:bootRun
+# Only recompiles the files that have changed
+./gradlew.bat :spring:core:bootRun
+# Deletes all previous build artifacts across every module in the project, then perform Full Recompile
+./gradlew.bat clean :spring:core:bootRun
+
 ```
 
 ### 4. Restart Vite: Stop the Vue dev server and run from `vue-project` root:

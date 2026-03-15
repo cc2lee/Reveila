@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -152,6 +153,32 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
         // We capture T and ID here, so the GenericRepository
         // is instantiated with the correct 'identity'
         return genericRepo;
+    }
+
+    @Override
+    public void reloadProperties() throws Exception {
+        // 1. Reload from local file first (standard base behavior)
+        super.reloadProperties();
+
+        // 2. Override with values from Global Settings table (Sovereign Authority)
+        if (databaseAvailable) {
+            System.out.println("Reveila: Syncing properties with Global Settings table...");
+            try {
+                JdbcTemplate jdbcTemplate = new JdbcTemplate(springContext.getBean(DataSource.class));
+                List<Map<String, Object>> rows = jdbcTemplate.queryForList("SELECT key, value FROM global_settings");
+                
+                for (Map<String, Object> row : rows) {
+                    String key = (String) row.get("key");
+                    String value = (String) row.get("value");
+                    if (key != null && value != null) {
+                        this.properties.setProperty(key, value);
+                    }
+                }
+                System.out.println("Reveila: Sync complete. " + rows.size() + " properties updated from Database.");
+            } catch (Exception e) {
+                System.err.println("Reveila: Failed to sync with Global Settings table: " + e.getMessage());
+            }
+        }
     }
 
     @Override

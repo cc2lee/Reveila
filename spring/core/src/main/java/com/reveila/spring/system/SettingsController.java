@@ -1,6 +1,8 @@
 package com.reveila.spring.system;
 
+import com.reveila.spring.model.jpa.GlobalSetting;
 import com.reveila.spring.model.jpa.PluginRegistry;
+import com.reveila.spring.repository.jpa.GlobalSettingRepository;
 import com.reveila.spring.repository.jpa.PluginRegistryRepository;
 import com.reveila.system.Reveila;
 import org.springframework.http.ResponseEntity;
@@ -18,11 +20,15 @@ public class SettingsController {
 
     private final Reveila reveila;
     private final PluginRegistryRepository pluginRepository;
+    private final GlobalSettingRepository globalSettingRepository;
     private final com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
 
-    public SettingsController(Reveila reveila, PluginRegistryRepository pluginRepository) {
+    public SettingsController(Reveila reveila, 
+                              PluginRegistryRepository pluginRepository,
+                              GlobalSettingRepository globalSettingRepository) {
         this.reveila = reveila;
         this.pluginRepository = pluginRepository;
+        this.globalSettingRepository = globalSettingRepository;
     }
 
     private Path getSettingsDir() {
@@ -91,7 +97,14 @@ public class SettingsController {
             mainProps.store(os, "Merged from Settings tab: " + tab);
         }
 
-        // 3. Trigger Hot Reload in the engine
+        // 3. Update the Global Settings table (Triggers Postgres Pulse)
+        updates.forEach((key, value) -> {
+            GlobalSetting setting = new GlobalSetting(key, value);
+            globalSettingRepository.save(setting);
+        });
+
+        // 4. Trigger Hot Reload in the engine locally
+        // (Other nodes will be triggered via ClusterSyncService notification)
         reveila.getSystemContext().getPlatformAdapter().reloadProperties();
 
         return ResponseEntity.ok().build();
@@ -106,7 +119,7 @@ public class SettingsController {
     public ResponseEntity<PluginRegistry> registerPlugin(@RequestBody PluginRegistry plugin) throws IOException {
         if (plugin.getStatus() == null) plugin.setStatus("ACTIVE");
         
-        // 1. Persist to Sovereign Ledger (Database)
+        // 1. Persist to Sovereign Ledger (Database) - triggers Pulse for plugins
         PluginRegistry saved = pluginRepository.save(plugin);
         
         // 2. Export manifest to Centralized Repository (Filesystem)
@@ -127,5 +140,26 @@ public class SettingsController {
     public ResponseEntity<Void> deletePlugin(@PathVariable String pluginId) {
         pluginRepository.deleteById(pluginId);
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/ui/text")
+    public ResponseEntity<Map<String, String>> getUiText(@RequestParam(defaultValue = "en") String lang) throws IOException {
+        String home = reveila.getSystemContext().getProperties().getProperty("system.home");
+        Path file = Path.of(home).resolve("resources/ui/" + lang + "/text." + lang + ".properties");
+        
+        if (!Files.exists(file)) {
+            file = Path.of(home).resolve("resources/ui/en/text.en.properties");
+        }
+
+        if (!Files.exists(file)) return ResponseEntity.notFound().build();
+
+        Properties props = new Properties();
+        try (InputStream is = Files.newInputStream(file)) {
+            props.load(is);
+        }
+
+        Map<String, String> map = new HashMap<>();
+        props.forEach((k, v) -> map.put(k.toString(), v.toString()));
+        return ResponseEntity.ok(map);
     }
 }
