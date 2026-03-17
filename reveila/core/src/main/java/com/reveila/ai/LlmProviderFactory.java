@@ -18,6 +18,7 @@ public class LlmProviderFactory extends com.reveila.system.AbstractService {
     public void onStart() throws Exception {
         providers.put("openai", (LlmProvider) systemContext.getProxy("OpenAiProvider").orElseThrow().invoke("getInstance", null));
         providers.put("gemini", (LlmProvider) systemContext.getProxy("GeminiProvider").orElseThrow().invoke("getInstance", null));
+        providers.put("ollama", (LlmProvider) systemContext.getProxy("OllamaProvider").orElseThrow().invoke("getInstance", null));
     }
 
     @Override

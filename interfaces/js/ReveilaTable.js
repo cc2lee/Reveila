@@ -304,6 +304,22 @@ export class ReveilaTable extends HTMLElement {
         if (!this.entityType) return;
         this.loading = true;
         this.currentPage = page;
+
+        // Fetch UI configuration
+        let displayPriority = [];
+        let excludedCols = ['password', 'secret_key'];
+        try {
+            const configResponse = await fetch(`/api/config/ui?tableId=${this.entityType}`);
+            if (configResponse.ok) {
+                const config = await configResponse.json();
+                if (config && config.table) {
+                    if (config.table.displayColumns) displayPriority = config.table.displayColumns;
+                    if (config.table.excludeColumns) excludedCols = config.table.excludeColumns;
+                }
+            }
+        } catch (e) {
+            console.warn("Could not fetch UI config, using defaults.");
+        }
         
         if (!isBackground || this.entities.length === 0) {
             this.render();
@@ -329,10 +345,16 @@ export class ReveilaTable extends HTMLElement {
             this.totalElements = response.totalElements || 0;
             
             if (this.entities.length > 0 && this.headers.length === 0) {
-                const excluded = ['password', 'secret_key'];
-                this.headers = Object.keys(this.entities[0].attributes || {})
-                    .filter(key => !excluded.includes(key));
+                const attributes = Object.keys(this.entities[0].attributes || {});
                 
+                if (displayPriority && displayPriority.length > 0) {
+                    // Strict mode: Only show what is in displayColumns
+                    this.headers = displayPriority;
+                } else {
+                    // Fallback: Show all except excluded
+                    this.headers = attributes.filter(key => !excludedCols.includes(key));
+                }
+
                 if (this.headers.length === 0) {
                     this.headers = ['id', 'action', 'timestamp', 'traceId'].filter(h => h in this.entities[0].attributes || h === 'id');
                 }
@@ -454,6 +476,15 @@ export class ReveilaTable extends HTMLElement {
                         
                         if (h === 'riskScore') {
                             return `<td>${this.getRiskBadge(value)}</td>`;
+                        }
+
+                        if (h === 'timestamp' && value) {
+                            try {
+                                const date = new Date(value);
+                                if (!isNaN(date.getTime())) {
+                                    value = date.toLocaleString('en-US');
+                                }
+                            } catch (e) {}
                         }
                         
                         return `<td>${h === 'id' ? `<span class="id-cell">${value}</span>` : `<span>${value || ''}</span>`}</td>`;

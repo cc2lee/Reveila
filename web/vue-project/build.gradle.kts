@@ -22,6 +22,14 @@ val copyToRuntime = tasks.register<Copy>("copyToRuntime") {
     dependsOn(buildVue)
     from("dist")
     into("../../system-home/standard/web")
+    
+    // Force copy if inputs change
+    inputs.dir("dist")
+    outputs.dir("../../system-home/standard/web")
+}
+
+tasks.named("build") {
+    dependsOn(copyToRuntime)
 }
 
 tasks.named("assemble") {

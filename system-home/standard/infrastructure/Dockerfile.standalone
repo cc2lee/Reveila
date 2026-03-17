@@ -23,4 +23,4 @@ COPY plugins/ /reveila/plugins/
 VOLUME ["/reveila/data", "/reveila/logs"]
 
 # 4. Standard entrypoint pointing to the internal JAR
-ENTRYPOINT ["java", "-Xms512m", "-Xmx2g", "-DREVEILA_HOME=/reveila", "-jar", "/reveila/libs/reveila-suite-fat.jar"]
+ENTRYPOINT ["java", "-Xms512m", "-Xmx2g", "-Dsystem.home=/reveila", "-jar", "/reveila/libs/reveila-suite-fat.jar"]

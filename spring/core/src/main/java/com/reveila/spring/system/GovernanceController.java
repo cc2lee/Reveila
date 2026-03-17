@@ -59,6 +59,7 @@ public class GovernanceController {
             notificationService.sendSovereigntyAlert(log);
         }
 
+        System.err.println("[DEBUG] Saving AuditLog with Risk Score: " + log.getRiskScore());
         AuditLog saved = auditRepository.save(log);
         return ResponseEntity.ok(saved);
     }
@@ -72,12 +73,17 @@ public class GovernanceController {
         try {
             // Load Policy from system home
             String systemHome = reveila.getSystemContext().getProperties().getProperty("system.home");
+            if (systemHome == null) systemHome = System.getenv("REVEILA_HOME");
+            if (systemHome == null) systemHome = "../../system-home/standard";
+            
             File policyFile = new File(systemHome, "configs/governance-policy.json");
             
             if (!policyFile.exists()) {
                 System.err.println("Governance Policy File missing: " + policyFile.getAbsolutePath());
-                record.setStatus("APPROVED");
-                record.setRiskScore(BigDecimal.valueOf(0.10));
+                if (record.getRiskScore() == null) {
+                    record.setStatus("APPROVED");
+                    record.setRiskScore(BigDecimal.valueOf(0.10));
+                }
                 return;
             }
 
@@ -85,15 +91,18 @@ public class GovernanceController {
             List<String> restrictedKeywords = new ArrayList<>();
             policy.get("restrictedKeywords").forEach(node -> restrictedKeywords.add(node.asText()));
 
-            if (record.getProposedAction() == null) {
-                record.setStatus("APPROVED");
-                record.setRiskScore(BigDecimal.valueOf(0.10));
+            String action = record.getProposedAction();
+            if (action == null) {
+                if (record.getRiskScore() == null) {
+                    record.setStatus("APPROVED");
+                    record.setRiskScore(BigDecimal.valueOf(0.10));
+                }
                 return;
             }
 
             // Score the intent
             long matchCount = restrictedKeywords.stream()
-                .filter(keyword -> record.getProposedAction().toUpperCase().contains(keyword.toUpperCase()))
+                .filter(keyword -> action.toUpperCase().contains(keyword.toUpperCase()))
                 .count();
 
             if (matchCount > 0) {
@@ -104,14 +113,18 @@ public class GovernanceController {
                 double penalty = policy.get("keywordPenalty").asDouble();
                 
                 BigDecimal calculatedScore = BigDecimal.valueOf(baseRisk + (matchCount * penalty));
-                record.setRiskScore(calculatedScore.min(BigDecimal.ONE));
-            } else {
+                // Only override if calculated is higher or current is null
+                if (record.getRiskScore() == null || calculatedScore.compareTo(record.getRiskScore()) > 0) {
+                    record.setRiskScore(calculatedScore.min(BigDecimal.ONE));
+                }
+            } else if (record.getRiskScore() == null) {
                 record.setStatus("APPROVED");
                 record.setRiskScore(BigDecimal.valueOf(0.10));
             }
 
         } catch (Exception e) {
             System.err.println("FAILED to enforce sovereignty policy: " + e.getMessage());
+            e.printStackTrace();
             record.setStatus("ERROR");
         }
     }

@@ -24,6 +24,9 @@ import com.reveila.data.Repository;
 import com.reveila.system.BasePlatformAdapter;
 import com.reveila.system.Constants;
 
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.core.io.FileSystemResource;
+
 public class SpringPlatformAdapter extends BasePlatformAdapter {
 
     private final ApplicationContext springContext;
@@ -105,14 +108,9 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
             System.out.println("Reveila SQL Executor: Executing " + scriptPath);
             String content = Files.readString(scriptPath, StandardCharsets.UTF_8);
             
-            // Basic SQL splitter (improves compatibility with some drivers for multi-statement execution)
             JdbcTemplate jdbcTemplate = new JdbcTemplate(springContext.getBean(DataSource.class));
-            String[] statements = content.split(";");
-            for (String statement : statements) {
-                if (!statement.trim().isEmpty()) {
-                    jdbcTemplate.execute(statement.trim());
-                }
-            }
+            jdbcTemplate.execute(content);
+            
             System.out.println("Reveila SQL Executor: Successfully applied " + relativePath);
         } catch (Exception e) {
             System.err.println("Reveila SQL Executor FAILED for " + relativePath + ": " + e.getMessage());

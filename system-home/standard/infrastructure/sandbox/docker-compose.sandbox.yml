@@ -2,6 +2,7 @@
 services:
   ollama-service:
     image: ollama/ollama:latest
+    container_name: ollama-service
     ports:
       - "11434:11434"
     volumes:
@@ -23,7 +24,7 @@ services:
       - ../configs:/reveila/configs:ro
       - ../libs:/reveila/libs:ro
     env_file:
-      - ./sandbox/.env.sandbox
+      - .env
     build:
       context: ../  # Go up one level to 'standard'
       dockerfile: infrastructure/Dockerfile # Path from 'standard' to Dockerfile

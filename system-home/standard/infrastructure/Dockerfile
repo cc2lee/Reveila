@@ -10,4 +10,4 @@ RUN mkdir -p /reveila/bin /reveila/libs /reveila/configs /reveila/data /reveila/
 
 # The JAR is mapped via volumes in Compose for development flexibility, 
 # but we set the entrypoint to look in the mapped /libs folder.
-ENTRYPOINT ["java", "-Xms512m", "-Xmx2g", "-DREVEILA_HOME=/reveila", "-jar", "/reveila/libs/reveila-suite-fat.jar"]
+ENTRYPOINT ["java", "-Xms512m", "-Xmx2g", "-Dsystem.home=/reveila", "-jar", "/reveila/libs/reveila-suite-fat.jar"]

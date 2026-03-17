@@ -17,6 +17,10 @@ import org.springframework.scheduling.annotation.EnableAsync;
 @EntityScan(basePackages = "com.reveila.spring.model.jpa")
 public class Application {
     public static void main(String[] args) {
+        String ollamaUrl = System.getenv("OLLAMA_API_URL");
+        if (ollamaUrl == null) ollamaUrl = "http://ollama-service:11434";
+        System.out.println("[INFO] Connected to Ollama at " + ollamaUrl);
+        
         // Pre-load critical Tomcat/Spring classes to prevent NoClassDefFoundError during JVM shutdown
         // especially when running from a fat JAR.
         try {

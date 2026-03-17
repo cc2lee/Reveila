@@ -221,6 +221,18 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
     }
 
     @Override
+    public void reloadProperties() throws Exception {
+        Properties newProps = new Properties();
+        // Save the current OVERWRITES or default behavior that shouldn't be overridden
+        String currentSysHome = properties.getProperty(Constants.SYSTEM_HOME);
+        
+        loadProperties(this.systemHome);
+        if (currentSysHome != null) {
+            properties.setProperty(Constants.SYSTEM_HOME, currentSysHome);
+        }
+    }
+
+    @Override
     @SuppressWarnings({ "unchecked", "rawtypes" })
     public synchronized Repository<Entity, Map<String, Map<String, Object>>> getRepository(String entityType) {
         if (repositories.containsKey(entityType)) {

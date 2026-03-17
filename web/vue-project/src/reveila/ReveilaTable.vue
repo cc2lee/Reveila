@@ -16,13 +16,38 @@ const searchQuery = ref('');
 const currentSearchField = ref(props.searchField);
 
 const entities = ref<Entity[]>([]);
+const displayColumns = ref<string[]>([]);
+const excludeColumns = ref<string[]>(['password', 'secret_key']);
 
 const headers = computed(() => {
-    if (entities.value.length === 0) return [];
-    const excluded = ['password', 'secret_key'];
-    return Object.keys(entities.value[0].attributes)
-        .filter(key => !excluded.includes(key));
+    if (entities.value.length === 0 && (!displayColumns.value || displayColumns.value.length === 0)) return [];
+    
+    if (displayColumns.value && displayColumns.value.length > 0) {
+        // Strict mode: Only show what is in displayColumns
+        return displayColumns.value;
+    } else {
+        // Fallback: Show all except excluded
+        const attributes = Object.keys(entities.value[0]?.attributes || {});
+        return attributes.filter(key => !excludeColumns.value.includes(key));
+    }
 });
+
+const formatHeader = (key: string) => {
+    if (key === 'id') return 'Record ID';
+    if (key === 'traceId') return 'Trace ID';
+    if (key === 'sessionId') return 'Session ID';
+    
+    // Convert camelCase to Title Case with Spaces
+    const result = key.replace(/([A-Z])/g, " $1");
+    return result.charAt(0).toUpperCase() + result.slice(1);
+};
+
+const formatDate = (dateString: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    return date.toLocaleString();
+};
 
 // 4. Watch for column changes to trigger a re-search if text exists
 watch(currentSearchField, () => {
@@ -37,6 +62,21 @@ const debouncedSearch = () => {
 
 const fetchData = async () => {
     loading.value = true;
+
+    // Fetch UI configuration
+    try {
+        const configResponse = await fetch(`/api/config/ui?tableId=${props.entityType}`);
+        if (configResponse.ok) {
+            const config = await configResponse.json();
+            if (config && config.table) {
+                if (config.table.displayColumns) displayColumns.value = config.table.displayColumns;
+                if (config.table.excludeColumns) excludeColumns.value = config.table.excludeColumns;
+            }
+        }
+    } catch {
+        console.warn("Could not fetch UI config, using defaults.");
+    }
+
     try {
         const searchRequest = {
             entityType: props.entityType,
@@ -53,6 +93,9 @@ const fetchData = async () => {
 
         const response = await api.search(searchRequest);
         entities.value = response.content || [];
+        if (entities.value.length > 0) {
+            console.log("Reveila Table Data Attributes:", Object.keys(entities.value[0].attributes));
+        }
     } catch (err) {
         console.error("Reveila Search Error:", err);
     } finally {
@@ -68,7 +111,7 @@ onMounted(fetchData);
         <div class="search-bar-group">
             <select v-model="currentSearchField" class="column-select">
                 <option v-for="h in headers" :key="h" :value="h">
-                    Search by {{ h.charAt(0).toUpperCase() + h.slice(1) }}
+                    Search by {{ formatHeader(h) }}
                 </option>
             </select>
 
@@ -80,7 +123,7 @@ onMounted(fetchData);
             <thead>
                 <tr>
                     <th v-for="h in headers" :key="h">
-                        {{ h.charAt(0).toUpperCase() + h.slice(1) }}
+                        {{ formatHeader(h) }}
                     </th>
                 </tr>
             </thead>
@@ -88,6 +131,7 @@ onMounted(fetchData);
                 <tr v-for="entity in entities" :key="entity.id.id">
                     <td v-for="h in headers" :key="h">
                         <span v-if="h === 'id'" class="id-cell">{{ entity.id.id }}</span>
+                        <span v-else-if="h === 'timestamp'">{{ formatDate(entity.attributes[h]) }}</span>
                         <span v-else>{{ entity.attributes[h] }}</span>
                     </td>
                 </tr>

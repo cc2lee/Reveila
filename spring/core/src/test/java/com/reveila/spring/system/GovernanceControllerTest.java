@@ -38,8 +38,7 @@ public class GovernanceControllerTest {
                 "agentId": "gtc-demo-agent",
                 "sessionId": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
                 "proposedAction": "HELLO_WORLD",
-                "innerMonologue": "Thinking...",
-                "riskScore": 0.0
+                "innerMonologue": "Thinking..."
             }
             """;
 
@@ -61,8 +60,7 @@ public class GovernanceControllerTest {
                 "agentId": "gtc-demo-agent",
                 "sessionId": "497f6eca-6276-4993-bfeb-53cbbbba6f08",
                 "proposedAction": "QUERY_DATABASE_AND_METADATA",
-                "innerMonologue": "Thinking...",
-                "riskScore": 0.0
+                "innerMonologue": "Thinking..."
             }
             """;
 

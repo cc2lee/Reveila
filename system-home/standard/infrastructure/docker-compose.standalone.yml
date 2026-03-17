@@ -18,21 +18,26 @@ services:
       - WEB_ROOT=/reveila/web
       - SPRING_CONFIG_ADDITIONAL_LOCATION=file:/reveila/configs/reveila.properties
       - SPRING_PROFILES_ACTIVE=prod
-      - DB_HOST=reveila-db-prod
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
+      - REVEILA_DB_HOST=reveila-db-prod
+      - REVEILA_DB_USER=${DB_USER}
+      - REVEILA_DB_PASSWORD=${DB_PASSWORD}
+      - REVEILA_DB_NAME=${DB_NAME:-reveila_db}
+      - OLLAMA_API_URL=http://ollama-service:11434
     
     ports:
       - "8080:8080"
     
     volumes:
-      # Only map volumes for persistent state (not for code/configs)
+      # Map persistent state and editable configs
       - ../data:/reveila/data:rw
       - ../logs:/reveila/logs:rw
+      - ../configs:/reveila/configs:rw
     
     depends_on:
       reveila-db-prod:
         condition: service_healthy
+      ollama-service:
+        condition: service_started
 
   # The Sovereign Data Node (Shared with the prod stack)
   reveila-db-prod:
@@ -51,3 +56,26 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # Local AI Service (Ollama)
+  ollama-service:
+    image: ollama/ollama:latest
+    container_name: ollama-service
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  # Automated Model Provisioning
+  model-puller:
+    image: ollama/ollama:latest
+    container_name: model-puller
+    entrypoint: /bin/sh
+    command:
+      - "-c"
+      - "sleep 10 && ollama pull llama3"
+    depends_on:
+      - ollama-service
+
+volumes:
+  ollama_data: {}
