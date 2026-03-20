@@ -1,10 +1,11 @@
 plugins {
     id("android-conventions")
     id("maven-publish")
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
-    namespace = "com.reveila.android"
+    namespace = "com.reveila.android.lib"
     compileSdk = libs.versions.androidCompileSdk.get().toInt()
 
     defaultConfig {
@@ -18,6 +19,7 @@ android {
 
     buildFeatures {
         buildConfig = true
+        compose = true
     }
 
     // Dependency Guard: Prevent Java 21 leakage into Android
@@ -54,6 +56,19 @@ dependencies {
     
     // Lifecycle components to help the engine survive Android backgrounding
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+    
+    // Jetpack Compose
+    val composeBom = platform("androidx.compose:compose-bom:2024.04.01")
+    implementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.activity:activity-compose:1.9.0")
+    
+    // File system tree parsing
+    implementation("androidx.documentfile:documentfile:1.0.1")
 }
 
 // Ensure the resources are ready before the library starts bundling

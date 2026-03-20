@@ -37,7 +37,7 @@ shadow = "8.3.5"
 
 # Android:
 androidCompileSdk = "35"
-androidMinSdk = "26"
+androidMinSdk = "24"
 androidTargetSdk = "35"
 androidJvmTarget = "17"
 androidGradlePlugin = "8.7.2" # Android Gradle Plugin version
@@ -63,13 +63,9 @@ shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
 android-library = { id = "com.android.library", version.ref = "androidGradlePlugin" }
 
-# Spring Boot:
-# With the following 2 plugins applied, Spring Boot will automatically use the spring-boot-dependencies BOM that corresponds to the version of the Spring Boot plugin
-# spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
-# spring-dependency-management = { id = "io.spring.dependency-management", version.ref = "springDependencyManagement" }
-
 # Kotlin
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 
 # The Gradle Node Plugin allows Gradle to manage Node.js and NPM automatically
 node = { id = "com.github.node-gradle.node", version = "7.1.0" }

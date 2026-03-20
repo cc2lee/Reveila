@@ -92,6 +92,20 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
         }
     }
 
+    @ReactMethod
+    public void startSovereignSetup(Promise promise) {
+        try {
+            ReactApplicationContext context = getReactApplicationContext();
+            Intent intent = new Intent(context, SovereignSetupActivity.class);
+            // Needed because we're starting an activity from outside an Activity context
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+            promise.resolve(true);
+        } catch (Exception e) {
+            promise.reject("E_START_SETUP_FAILED", e.getMessage(), e);
+        }
+    }
+
     /**
      * This method is called when the React Native instance is destroyed.
      * It's the ideal place to clean up resources like the thread pool.
@@ -105,6 +119,19 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
     public void isRunning(Promise promise) {
         // This method allows the UI to check if the backend service is fully initialized.
         promise.resolve(ReveilaService.isRunning());
+    }
+
+    /**
+     * Checks if the user has completed the native Sovereign setup flow.
+     */
+    @ReactMethod
+    public void isSetupComplete(Promise promise) {
+        try {
+            ModelSettings settings = new ModelSettings(getReactApplicationContext());
+            promise.resolve(settings.isSetupComplete());
+        } catch (Exception e) {
+            promise.reject("E_CHECK_SETUP_FAILED", e.getMessage(), e);
+        }
     }
 
     /**

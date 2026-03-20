@@ -1,0 +1,73 @@
+{
+  "version": "1.0",
+  "description": "Reveila Sovereign Memory Model Manifest",
+  "tiers": [
+    {
+      "tier": "Watcher",
+      "ram_requirements": {
+        "min_gb": 0,
+        "max_gb": 6
+      },
+      "models": [
+        {
+          "id": "qwen-3-0.6b-int8",
+          "name": "Qwen-3-0.6B",
+          "format": "LiteRT/GGUF",
+          "quantization": "INT8",
+          "description": "Ultra-light, fast.",
+          "recommended": true
+        }
+      ]
+    },
+    {
+      "tier": "Sovereign-Lite",
+      "ram_requirements": {
+        "min_gb": 8,
+        "max_gb": 11
+      },
+      "models": [
+        {
+          "id": "gemma-3-e2b-q4",
+          "name": "Gemma-3-E2B",
+          "format": "GGUF",
+          "quantization": "Q4_K_M",
+          "description": "Strong reasoning, multimodal.",
+          "recommended": true
+        },
+        {
+          "id": "phi-4-mini-int8",
+          "name": "Phi-4-Mini",
+          "format": "LiteRT",
+          "quantization": "INT8",
+          "description": "Strong reasoning, multimodal.",
+          "recommended": false
+        }
+      ]
+    },
+    {
+      "tier": "Sovereign",
+      "ram_requirements": {
+        "min_gb": 12,
+        "max_gb": 999
+      },
+      "models": [
+        {
+          "id": "llama-3.2-3b-q4",
+          "name": "Llama-3.2-3B",
+          "format": "GGUF",
+          "quantization": "Q4_K_M",
+          "description": "Enterprise-grade reasoning.",
+          "recommended": true
+        },
+        {
+          "id": "gemma-3-e4b-q4",
+          "name": "Gemma-3-E4B",
+          "format": "GGUF",
+          "quantization": "Q4_K_M",
+          "description": "Enterprise-grade reasoning.",
+          "recommended": false
+        }
+      ]
+    }
+  ]
+}

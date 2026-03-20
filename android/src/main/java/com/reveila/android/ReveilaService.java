@@ -43,7 +43,7 @@ import androidx.annotation.Nullable;
 
 import com.reveila.system.Reveila;
 import com.reveila.system.PlatformAdapter;
-import com.reveila.android.BuildConfig;
+import com.reveila.android.lib.BuildConfig;
 
 import com.reveila.android.AndroidPlatformAdapter;
 import com.reveila.android.ServiceManager;

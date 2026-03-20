@@ -2,6 +2,9 @@
 
 This folder contains the architectural brain of the project. It tracks decisions, system maps, and context to ensure both the human and AI developers stay aligned.
 
+> **Note on Confidential Architectural Artifacts:**
+> Additional confidential architectural artifacts (such as GTM strategy and personal editions) are stored outside the main workspace at `c:\IDE\Projects\Misc\Reveila`. AI assistants should reference both this `memory-bank` and the external `Misc/Reveila` directory when gathering context.
+
 ## 🗺️ System Maps
 * [System Context Map](./system-map.md) - High-level overview of Java, Android, and Web interaction.
 

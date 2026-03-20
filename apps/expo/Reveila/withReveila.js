@@ -61,6 +61,17 @@ const withReveila = (config) => {
       });
     }
 
+    if (!application.activity) application.activity = [];
+    if (!application.activity.some(a => a.$["android:name"] === "com.reveila.android.SovereignSetupActivity")) {
+      application.activity.push({
+        $: {
+          "android:name": "com.reveila.android.SovereignSetupActivity",
+          "android:exported": "true",
+          "android:theme": "@style/Theme.AppCompat.Light.NoActionBar"
+        }
+      });
+    }
+
     return config;
   });
 
@@ -112,9 +123,9 @@ dependencyResolutionManagement {
 // [Reveila Native Bridge]
 includeBuild('${rootDir}/build-logic')
 include ':reveila:core'
-project(':reveila:core').projectDir = new File('${rootDir}/reveila/core')
+project(':reveila:core').projectDir = new File(rootProject.projectDir, '../../../../reveila/core')
 include ':android'
-project(':android').projectDir = new File('${rootDir}/android')
+project(':android').projectDir = new File(rootProject.projectDir, '../../../../android')
 `;
     if (!contents.includes("include ':reveila:core'")) {
         contents += projectInclusions;
@@ -136,12 +147,13 @@ project(':android').projectDir = new File('${rootDir}/android')
             excludes += "META-INF/LICENSE*"
             excludes += "META-INF/NOTICE*"
             excludes += "META-INF/INDEX.LIST"
+            pickFirsts += "reveila/**"
         }
     }
 `;
     if (!contents.includes("META-INF/DEPENDENCIES")) {
         if (contents.includes("packagingOptions {")) {
-             contents = contents.replace(/packagingOptions\s?{/, `packagingOptions {\n        resources {\n            excludes += "META-INF/DEPENDENCIES"\n            excludes += "META-INF/LICENSE*"\n            excludes += "META-INF/NOTICE*"\n            excludes += "META-INF/INDEX.LIST"\n        }`);
+             contents = contents.replace(/packagingOptions\s?{/, `packagingOptions {\n        resources {\n            excludes += "META-INF/DEPENDENCIES"\n            excludes += "META-INF/LICENSE*"\n            excludes += "META-INF/NOTICE*"\n            excludes += "META-INF/INDEX.LIST"\n            pickFirsts += "reveila/**"\n        }`);
         } else {
             contents = contents.replace(/android\s?{/, `android {${packagingOptions}`);
         }
