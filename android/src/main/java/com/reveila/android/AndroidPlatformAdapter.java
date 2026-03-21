@@ -146,16 +146,22 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
 
     @Override
     public String[] getConfigFilePaths() throws IOException {
+        String platform = properties.getProperty("platform");
+        String targetFile = (platform != null && !platform.trim().isEmpty()) ? platform.trim() + ".json" : "default.json";
+        
         File componentsDir = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + "components");
         
         List<String> paths = new ArrayList<>();
         
         // Add files from filesystem
         if (componentsDir.exists()) {
-            File[] files = componentsDir.listFiles((dir, name) -> name.endsWith(".json"));
-            if (files != null) {
-                for (File f : files) {
-                    paths.add(Constants.CONFIGS_DIR_NAME + File.separator + "components" + File.separator + f.getName());
+            File f = new File(componentsDir, targetFile);
+            if (f.exists()) {
+                paths.add(Constants.CONFIGS_DIR_NAME + File.separator + "components" + File.separator + f.getName());
+            } else {
+                File fallback = new File(componentsDir, "default.json");
+                if (fallback.exists()) {
+                    paths.add(Constants.CONFIGS_DIR_NAME + File.separator + "components" + File.separator + fallback.getName());
                 }
             }
         }
@@ -165,9 +171,20 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
             try {
                 String[] assets = context.getAssets().list("reveila/system/configs/components");
                 if (assets != null) {
+                    boolean found = false;
                     for (String asset : assets) {
-                        if (asset.endsWith(".json")) {
+                        if (asset.equals(targetFile)) {
                             paths.add(Constants.CONFIGS_DIR_NAME + File.separator + "components" + File.separator + asset);
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        for (String asset : assets) {
+                            if (asset.equals("default.json")) {
+                                paths.add(Constants.CONFIGS_DIR_NAME + File.separator + "components" + File.separator + asset);
+                                break;
+                            }
                         }
                     }
                 }

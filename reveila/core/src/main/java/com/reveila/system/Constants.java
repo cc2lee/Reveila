@@ -63,6 +63,7 @@ public final class Constants {
 	public static final String LIB_DIR_NAME = "libs";
 	public static final String STANDALONE_MODE = "system.standalone";
 	public static final String PLUGIN = "plugin";
+	public static final String SYSTEM_COMPONENT = "system component";
 	public static final String DIRECTORY = "directory";
 	public static final String CAPABILITIES = "capabilities";
 	public static final String HOT_DEPLOY = "hot-deploy";
@@ -78,5 +79,6 @@ public final class Constants {
 	public static final String SERVICE = "service";
 	public static final String DISPLAY_NAME = "displayName";
 	public static final String PROVIDER = "provider";
+    public static final String MANEFEST = "manifest";
     
 }

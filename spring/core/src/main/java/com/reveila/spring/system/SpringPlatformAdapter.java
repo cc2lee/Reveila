@@ -24,9 +24,6 @@ import com.reveila.data.Repository;
 import com.reveila.system.BasePlatformAdapter;
 import com.reveila.system.Constants;
 
-import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
-import org.springframework.core.io.FileSystemResource;
-
 public class SpringPlatformAdapter extends BasePlatformAdapter {
 
     private final ApplicationContext springContext;

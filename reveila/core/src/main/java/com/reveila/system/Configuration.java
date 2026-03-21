@@ -33,7 +33,19 @@ public class Configuration {
 
     @SuppressWarnings("unchecked")
     private synchronized List<MetaObject> parse() throws JsonException {
-        List<Map<String, Object>> rawObjectList = JsonUtil.parseJsonStringToList(this.jsonContent);
+        List<Map<String, Object>> rawObjectList = null;
+        try {
+            rawObjectList = JsonUtil.parseJsonStringToList(this.jsonContent);
+        } catch (Exception e) {
+            try {
+                Map<String, Object> singleObj = JsonUtil.parseJsonStringToMap(this.jsonContent);
+                rawObjectList = new ArrayList<>();
+                rawObjectList.add(singleObj);
+            } catch (Exception e2) {
+                throw new JsonException("Failed to parse JSON content as List or Map.", e2);
+            }
+        }
+
         List<MetaObject> parsedObjects = new ArrayList<>();
 
         if (rawObjectList != null) {
@@ -41,6 +53,13 @@ public class Configuration {
                 if (wrapper.containsKey(Constants.COMPONENT)) {
                     Map<String, Object> map = (Map<String, Object>) wrapper.get(Constants.COMPONENT);
                     if (map != null) {
+                        map.put("componentType", "system");
+                        parsedObjects.add(new MetaObject(map));
+                    }
+                } else if (wrapper.containsKey("plugin")) {
+                    Map<String, Object> map = (Map<String, Object>) wrapper.get("plugin");
+                    if (map != null) {
+                        map.put("componentType", "plugin");
                         parsedObjects.add(new MetaObject(map));
                     }
                 }

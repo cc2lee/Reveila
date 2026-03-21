@@ -51,7 +51,7 @@ fun SovereignOnboardingScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Authorize a secure local folder for the AI to index your documents. No data will leave this device.",
+                text = "Authorize a secure local folder for the AI to index your documents. Your AI agent will only process data in this authorized folder. No data will leave this device.",
                 color = Color.LightGray,
                 modifier = Modifier.padding(horizontal = 32.dp),
                 fontSize = 14.sp

@@ -106,9 +106,21 @@ export default function HomeScreen() {
             <ThemedText style={styles.description}>
               {"Reveila Personal Edition runs entirely on your local hardware. Your agent's memory and data never leave this device."}
             </ThemedText>
-            <ThemedText style={[styles.description, {marginBottom: 24, marginTop: 8}]}>
-              {"Please click the Setup button below to securely initialize your local \"Brain\" and authorize your Knowledge Vault."}
-            </ThemedText>
+            
+            <ThemedView style={{ marginTop: 20, marginBottom: 20 }}>
+              <ThemedText type="defaultSemiBold" style={{marginBottom: 8}}>Setup Instructions:</ThemedText>
+              <ThemedText style={styles.description}>{"1. Click the 'Initialize Sovereign Core' button below."}</ThemedText>
+              <ThemedText style={styles.description}>{"2. Grant necessary permissions for local storage."}</ThemedText>
+              <ThemedText style={styles.description}>{"3. Wait for the local AI models to be fully provisioned."}</ThemedText>
+            </ThemedView>
+
+            <ThemedView style={{ padding: 12, backgroundColor: '#fffbeb', borderRadius: 8, borderWidth: 1, borderColor: '#fef3c7', marginBottom: 24 }}>
+              <ThemedText style={{ color: '#b45309', fontWeight: 'bold', marginBottom: 4 }}>Legal Disclaimer</ThemedText>
+              <ThemedText style={{ color: '#92400e', fontSize: 13 }}>
+                {"AI can make mistakes. Please verify important information and ensure that any critical actions or workflows are configured to require human approval before execution."}
+              </ThemedText>
+            </ThemedView>
+
             <TouchableOpacity style={[styles.button, {backgroundColor: '#00E5FF'}]} onPress={() => ReveilaModule.startSovereignSetup()}>
               <ThemedText style={[styles.buttonText, {color: '#0f172a'}]}>Initialize Sovereign Core</ThemedText>
             </TouchableOpacity>
@@ -171,9 +183,6 @@ export default function HomeScreen() {
           >
             <ThemedText style={styles.buttonText}>{isProcessing ? 'Processing...' : 'Execute Command'}</ThemedText>
           </TouchableOpacity>
-          <ThemedText style={styles.helperText}>
-            * Future updates will integrate directly with WhatsApp and Telegram for native conversational access.
-          </ThemedText>
         </ThemedView>
 
         {/* Flight Recorder */}

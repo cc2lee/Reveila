@@ -59,8 +59,8 @@
   {
     "component": {
       "name": "DataService",
-      "class": "com.reveila.service.DataService",
-      "description": "Data service implementation using Hexagonal Architecture ports.",
+      "class": "com.reveila.android.service.AndroidDataService",
+      "description": "Android data service for Flight Recorder telemetry.",
       "thread-safe": true,
       "start": true
     }

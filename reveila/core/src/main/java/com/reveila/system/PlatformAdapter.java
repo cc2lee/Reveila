@@ -22,7 +22,8 @@ public interface PlatformAdapter {
     public Properties getProperties();
     public InputStream getFileInputStream(String relativePath) throws IOException;
     public OutputStream getFileOutputStream(String relativePath, boolean append) throws IOException;
-    public String[] getConfigFilePaths() throws IOException;
+    public String[] getSystemManifests() throws IOException;
+    public String[] getPluginManifests() throws IOException;
     public Logger getLogger();
     public void registerAutoCall(String componentName, String methodName, long delaySeconds, long intervalSeconds, EventConsumer eventConsumer) throws Exception;
     public void unregisterAutoCall(String componentName);

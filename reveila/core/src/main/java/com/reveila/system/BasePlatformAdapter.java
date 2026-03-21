@@ -12,11 +12,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -26,9 +29,6 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledFuture;
-import java.util.Map;
 import java.util.stream.Stream;
 
 import com.reveila.error.ConfigurationException;
@@ -77,11 +77,13 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         return properties.getProperty(Constants.PLATFORM_OS);
     }
 
-    @Override
-    public String[] getConfigFilePaths() throws IOException {
+    private String[] getManifests(String dirName) throws IOException {
+        if (dirName == null || dirName.trim().isEmpty()) {
+            throw new IOException("Manifests directory name not specified.");
+        }
         // 1. Ensure we have a clean, absolute path to the components dir
         Path configDir = this.systemHome.getSystemHome().resolve(Constants.CONFIGS_DIR_NAME)
-                .resolve("components")
+                .resolve(dirName)
                 .toAbsolutePath()
                 .normalize();
 
@@ -100,6 +102,20 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
                     return home.relativize(absoluteFilePath).toString();
                 })
                 .toArray(String[]::new);
+    }
+
+    @Override
+    public String[] getSystemManifests() throws IOException {
+        String platform = properties.getProperty("platform");
+        if (platform == null || platform.trim().isEmpty()) {
+            throw new IOException("Platform not specified in " + Constants.SYSTEM_PROPERTIES + ".");
+        }
+        return getManifests(platform);
+    }
+
+    @Override
+    public String[] getPluginManifests() throws IOException {
+        return getManifests("plugins");
     }
 
     @Override
@@ -195,9 +211,9 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         if (jvmArgs == null) {
             jvmArgs = new Properties();
         }
-        
+
         setupSystemHome(jvmArgs);
-        
+
         // Load properties file using Try-with-Resources
         Properties rawProps = new Properties();
         try (InputStream stream = openSystemProperties(jvmArgs)) {
@@ -264,7 +280,8 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
                 placeholder = placeholder.substring(0, separator);
             }
 
-            // Lookup order: System Property -> Environment Variable -> Other Properties in file -> Default
+            // Lookup order: System Property -> Environment Variable -> Other Properties in
+            // file -> Default
             String resolvedValue = System.getProperty(placeholder);
             if (resolvedValue == null) {
                 resolvedValue = System.getenv(placeholder);
@@ -292,8 +309,11 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         if (path == null || path.isBlank()) {
             path = System.getenv("REVEILA_HOME");
             if (path == null || path.isBlank()) {
-                throw new ConfigurationException("SYSTEM STARTUP ERROR: System Home directory not specified. Please set the "
-                        + Constants.SYSTEM_HOME + " system property as a command line argument, or the REVEILA_HOME environment variable.", null, "101");
+                throw new ConfigurationException(
+                        "SYSTEM STARTUP ERROR: System Home directory not specified. Please set the "
+                                + Constants.SYSTEM_HOME
+                                + " system property as a command line argument, or the REVEILA_HOME environment variable.",
+                        null, "101");
             }
             jvmArgs.setProperty(Constants.SYSTEM_HOME, path);
         }
@@ -362,7 +382,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     protected Path getSystemHome() {
         if (this.systemHome == null) {
             return null;
-        }   
+        }
         return this.systemHome.getSystemHome();
     }
 

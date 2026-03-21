@@ -40,7 +40,7 @@ public class ModelSettings {
      * If the file is corrupted, it deletes it to automatically prompt a resetup.
      */
     public boolean isSetupComplete() {
-        File configFile = new File(context.getFilesDir(), "system-home/standard/configs/settings/sovereign-config.json");
+        File configFile = new File(context.getFilesDir(), "sovereign-config.json");
         if (!configFile.exists()) {
             return false;
         }
@@ -85,12 +85,7 @@ public class ModelSettings {
      */
     public void saveConfigurationToFile(HardwareProfiler.DeviceProfile profile) {
         try {
-            File configDir = new File(context.getFilesDir(), "system-home/standard/configs/settings");
-            if (!configDir.exists()) {
-                configDir.mkdirs();
-            }
-            
-            File configFile = new File(configDir, "sovereign-config.json");
+            File configFile = new File(context.getFilesDir(), "sovereign-config.json");
             String quant = calculateSafeDefaultQuantization(profile);
             
             JSONObject json = new JSONObject();
@@ -117,7 +112,7 @@ public class ModelSettings {
      */
     private void loadConfigurationFromFile() {
         try {
-            File configFile = new File(context.getFilesDir(), "system-home/standard/configs/settings/sovereign-config.json");
+            File configFile = new File(context.getFilesDir(), "sovereign-config.json");
             if (configFile.exists()) {
                 try (FileInputStream fis = new FileInputStream(configFile)) {
                     byte[] data = new byte[(int) configFile.length()];

@@ -156,7 +156,14 @@ public class Reveila implements AutoCloseable {
 
 		createSystemContext(this.properties);
 		this.platformAdapter.plug(this);
-		startComponents(parseMetaObjects());
+
+		strictMode = !"false".equalsIgnoreCase(this.properties.getProperty(Constants.LAUNCH_STRICT_MODE));
+		List<MetaObject> metaObjectList = parseMetaObjects(this.platformAdapter.getSystemManifests());
+		metaObjectList.sort(Comparator.comparingInt(m -> m.getStartPriority()));
+		startComponents(Constants.SYSTEM_COMPONENT, metaObjectList);
+		metaObjectList = parseMetaObjects(this.platformAdapter.getPluginManifests());
+		startComponents(Constants.PLUGIN, metaObjectList);
+
 		logStartupCompletion(beginTime);
 
 		System.out.println(getDisplayName(this.properties) + " is running...");
@@ -253,10 +260,7 @@ public class Reveila implements AutoCloseable {
 				new DefaultCryptographer(secretKey.getBytes(charset)), this.platformAdapter);
 	}
 
-	private List<MetaObject> parseMetaObjects() throws Exception {
-		strictMode = !"false".equalsIgnoreCase(this.properties.getProperty(Constants.LAUNCH_STRICT_MODE));
-		String[] files = this.platformAdapter.getConfigFilePaths();
-
+	private List<MetaObject> parseMetaObjects(String[] files) throws Exception {
 		List<String> fileList = new ArrayList<>();
 		if (files != null) {
 			Collections.addAll(fileList, files);
@@ -353,12 +357,9 @@ public class Reveila implements AutoCloseable {
 				Long.parseLong(delay), Long.parseLong(interval), proxy);
 	}
 
-	private void startComponents(List<MetaObject> list) throws Exception {
-		if (startedProxies != null && !startedProxies.isEmpty()) {
-			stopComponents();
-		}
-
-		if (list == null || list.isEmpty()) {
+	private void startComponents(String tag, List<MetaObject> metaObjectList) throws Exception {
+		
+		if (metaObjectList == null || metaObjectList.isEmpty()) {
 			return;
 		}
 
@@ -366,20 +367,18 @@ public class Reveila implements AutoCloseable {
 			startedProxies = new ArrayList<>();
 		}
 
-		// 1. Sort based on priority (Ascending)
-		list.sort(Comparator.comparingInt(m -> m.getStartPriority()));
 		long startTimeoutSeconds = Long.parseLong(
 				this.properties.getProperty(Constants.COMPONENT_START_TIMEOUT, "60"));
 
-		// 2. Sequential Bootstrapping
-		for (MetaObject mObj : list) {
+		for (MetaObject mObj : metaObjectList) {
 			Proxy proxy = new Proxy(mObj);
+			proxy.getManifest().setComponentType(tag);
 			proxy.setName(mObj.getName());
 			try {
 				systemContext.add(proxy);
 
 				if (!mObj.isAutoStart()) {
-					logger.info("ℹ️ Skipping auto-start for component: " + mObj.getName());
+					logger.info("ℹ️ Skipping auto-start for " + tag + ": " + mObj.getName());
 					continue;
 				}
 
@@ -395,7 +394,7 @@ public class Reveila implements AutoCloseable {
 				// Wait for completion or timeout
 				startFuture.get(startTimeoutSeconds, TimeUnit.SECONDS);
 
-				logger.info("✅ Started component: " + mObj.getName());
+				logger.info("✅ Started " + tag + ": " + mObj.getName());
 				startedProxies.add(proxy); // Track successful starts
 			} catch (TimeoutException e) {
 				String msg = "⏱️ Timeout: Component [" + mObj.getName() + "] failed to start within "
@@ -403,7 +402,7 @@ public class Reveila implements AutoCloseable {
 				try {
 					proxy.stop(); // Attempt to stop the proxy if start timed out
 				} catch (Exception ex) {
-					msg = msg + "\n⚠️ Failed to stop component after start timeout: " + mObj.getName() + " - "
+					msg = msg + "\n⚠️ Failed to stop " + tag + " after start timeout: " + mObj.getName() + " - "
 							+ ex.getMessage();
 				}
 
@@ -412,11 +411,11 @@ public class Reveila implements AutoCloseable {
 
 				handleStartError(msg, e);
 			} catch (Throwable t) {
-				String msg = "❌ Failed to start component [" + mObj.getName() + "].";
+				String msg = "❌ Failed to start " + tag + " [" + mObj.getName() + "].";
 				try {
 					proxy.stop(); // Attempt to stop the proxy if start timed out
 				} catch (Exception ex) {
-					msg = msg + "\n⚠️ Failed to stop component after start up error: " + mObj.getName() + " - "
+					msg = msg + "\n⚠️ Failed to stop " + tag + " after start up error: " + mObj.getName() + " - "
 							+ ex.getMessage();
 				}
 

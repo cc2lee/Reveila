@@ -18,6 +18,7 @@ import com.reveila.ai.GuardedRuntime;
 import com.reveila.error.ConfigurationException;
 import com.reveila.event.EventConsumer;
 import com.reveila.util.ExceptionCollection;
+import com.reveila.error.SecurityException;
 
 /**
  * @author Charles Lee
@@ -32,6 +33,7 @@ public final class Proxy extends AbstractService {
 	private volatile Class<?> implementationClass;
 	private volatile Object singletonInstance;
 	private String name;
+	private final Manifest manifest;
 
 	public Proxy(MetaObject metaObject) {
 		if (metaObject == null) {
@@ -39,6 +41,62 @@ public final class Proxy extends AbstractService {
 		}
 
 		this.metaObject = metaObject;
+
+		this.manifest = new Manifest();
+		Map<String, Object> map = metaObject.getDataMap();
+		if (map != null) {
+			this.manifest.setName((String) map.get("name"));
+			this.manifest.setDisplayName((String) map.get("displayName"));
+			this.manifest.setVersion((String) map.get("version"));
+			this.manifest.setDescription((String) map.get("description"));
+			this.manifest.setAuthor((String) map.get("author"));
+			this.manifest.setImplementationClass((String) map.get("class"));
+			// "componentType" is set by Reveila.startComponents()
+
+			Object methodsObj = map.get("methods");
+			if (methodsObj instanceof List) {
+				List<Manifest.ExposedMethod> parsedMethods = new java.util.ArrayList<>();
+				List<?> methodsList = (List<?>) methodsObj;
+				for (Object mObj : methodsList) {
+					if (mObj instanceof Map) {
+						Map<?, ?> mMap = (Map<?, ?>) mObj;
+						Manifest.ExposedMethod method = new Manifest.ExposedMethod();
+						method.name = (String) mMap.get("name");
+						method.description = (String) mMap.get("description");
+						method.returnType = (String) mMap.get("return");
+						
+						Object rolesObj = mMap.get("required-roles");
+						if (rolesObj instanceof List) {
+							List<?> rolesList = (List<?>) rolesObj;
+							for (Object rObj : rolesList) {
+								if (rObj instanceof String) {
+									method.requiredRoles.add((String) rObj);
+								}
+							}
+						}
+
+						Object paramsObj = mMap.get("parameters");
+						if (paramsObj instanceof List) {
+							List<?> paramsList = (List<?>) paramsObj;
+							for (Object pObj : paramsList) {
+								if (pObj instanceof Map) {
+									Map<?, ?> pMap = (Map<?, ?>) pObj;
+									Manifest.Parameter param = new Manifest.Parameter();
+									param.name = (String) pMap.get("name");
+									param.description = (String) pMap.get("description");
+									param.type = (String) pMap.get("type");
+									param.isRequired = Boolean.TRUE.equals(pMap.get("isRequired"));
+									param.isSecret = Boolean.TRUE.equals(pMap.get("isSecret"));
+									method.parameters.add(param);
+								}
+							}
+						}
+						parsedMethods.add(method);
+					}
+				}
+				this.manifest.setExposedMethods(parsedMethods);
+			}
+		}
 	}
 
 	public MetaObject getMetaObject() {
@@ -135,8 +193,26 @@ public final class Proxy extends AbstractService {
 		if (methodName == null)
 			throw new IllegalArgumentException("Method name must not be null");
 
+		// TODO: Implement ADR 0013 Proxy Guard Logic here once TokenUtils and AccessControlManager are available.
+        // // 1. Check if this is a system component being accessed externally
+        // if (Constants.SYSTEM_COMPONENT.equalsIgnoreCase(manifest.getComponentType())) {
+        //     throw new SecurityException("Access Denied: System components are reserved for local use.");
+        // }
+        // 
+        // // 2. Validate method is exposed in Manifest
+        // Manifest.ExposedMethod targetMethod = manifest.getExposedMethods().stream()
+        //     .filter(m -> m.methodName.equals(methodName))
+        //     .findFirst()
+        //     .orElseThrow(() -> new SecurityException("Method " + methodName + " is not exposed to the AI Agent."));
+        // 
+        // // 3. Authorization Matrix Check (logic to be implemented via access-control.config)
+        // String userRole = TokenUtils.extractRole(jwtToken);
+        // if (!AccessControlManager.isAllowed(userRole, manifest.getId(), methodName)) {
+        //     throw new SecurityException("User Role " + userRole + " is not authorized for " + methodName);
+        // }
+
 		// ADR 0006: Proxy-Based Invocations with Physical Isolation
-		if (metaObject.requiresRuntimeIsolation()) {
+		if (Constants.PLUGIN.equalsIgnoreCase(this.manifest.getComponentType())) {
 			GuardedRuntime runtime = (GuardedRuntime) systemContext.getProxy("GuardedRuntime")
 					.orElseThrow(() -> new IllegalStateException("GuardedRuntime not found or invalid"))
 					.invoke("getInstance", null);
@@ -222,8 +298,8 @@ public final class Proxy extends AbstractService {
 	}
 
 	public void onStart() throws Exception {
-		String pluginDir = metaObject.getPluginDir();
-		if (pluginDir != null && !pluginDir.isBlank()) {
+		if ("plugin".equalsIgnoreCase(manifest.getComponentType())) {
+			String pluginDir = "plugins/" + getName();
 			Path pluginPath = Path.of(pluginDir);
 
 			// ADR: Resolve relative plugin paths against SYSTEM_HOME
@@ -231,6 +307,31 @@ public final class Proxy extends AbstractService {
 				String systemHome = systemContext.getProperties().getProperty(Constants.SYSTEM_HOME);
 				if (systemHome != null && !systemHome.isBlank()) {
 					pluginPath = Path.of(systemHome).resolve(pluginPath);
+				}
+			}
+
+			// Download/Copy plugin JAR from repository to local directory named as plugin name
+			String repoPathStr = systemContext.getProperties().getProperty("plugin.repository.path");
+			if (repoPathStr != null && !repoPathStr.isBlank()) {
+				Path repoPath = Path.of(repoPathStr);
+				if (!repoPath.isAbsolute()) {
+					String systemHome = systemContext.getProperties().getProperty(Constants.SYSTEM_HOME);
+					if (systemHome != null && !systemHome.isBlank()) {
+						repoPath = Path.of(systemHome).resolve(repoPath);
+					}
+				}
+
+				// The JAR in the repository should be named after the plugin, e.g., "PluginName.jar"
+				// Or we just copy all contents of repoPath/PluginName to local pluginPath
+				Path sourceJar = repoPath.resolve(getName() + ".jar");
+				if (Files.exists(sourceJar)) {
+					if (!Files.exists(pluginPath)) {
+						Files.createDirectories(pluginPath);
+					}
+					Path destJar = pluginPath.resolve(getName() + ".jar");
+					// Simple copy (or overwrite if hot-deploy)
+					Files.copy(sourceJar, destJar, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+					logger.info("Downloaded/Copied plugin JAR from repository for " + getName());
 				}
 			}
 
@@ -479,5 +580,9 @@ public final class Proxy extends AbstractService {
 
 	public String getVersion() {
 		return this.metaObject.getVersion();
+	}
+
+	public Manifest getManifest() {
+		return manifest;
 	}
 }

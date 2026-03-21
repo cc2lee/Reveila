@@ -158,4 +158,8 @@ public class MetaObject {
 		}
 		return true; // Default to true
 	}
+
+	public Manifest getManifest() {
+		return (Manifest) this.dataMap.get(Constants.MANEFEST);
+	}
 }

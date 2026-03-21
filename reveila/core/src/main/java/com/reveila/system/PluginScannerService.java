@@ -25,7 +25,7 @@ public class PluginScannerService extends AbstractService {
 
     private String pluginDir;
     private final ObjectMapper mapper = new ObjectMapper();
-    private static final String MANIFEST_FILE = "reveila-plugin.json";
+    private static final String MANIFEST_FILE = "plugin-manifest.json";
 
     @Override
     protected void onStart() throws Exception {
@@ -54,8 +54,20 @@ public class PluginScannerService extends AbstractService {
                     MetaObject mObj = loadManifest(plugin);
                     if (isValid(mObj)) {
                         // Register into SystemContext for proxy creation
-                        systemContext.add(new Proxy(mObj));
+                        Proxy proxy = new Proxy(mObj);
+                        proxy.setName(mObj.getName());
+                        systemContext.add(proxy);
                         logger.info("Discovered and Registered Plugin: " + mObj.getName() + " v" + mObj.getVersion());
+                        
+                        // Start the plugin (self-contained, order doesn't matter)
+                        if (mObj.isAutoStart()) {
+                            try {
+                                proxy.start();
+                                logger.info("✅ Started Plugin: " + mObj.getName());
+                            } catch (Exception startEx) {
+                                logger.severe("❌ Failed to start Plugin: " + mObj.getName() + ". Error: " + startEx.getMessage());
+                            }
+                        }
                     }
                 } catch (Exception e) {
                     logger.severe("Failed to load plugin manifest from: " + plugin.getName() + ". Error: " + e.getMessage());
@@ -69,7 +81,14 @@ public class PluginScannerService extends AbstractService {
             File manifestFile = new File(plugin, MANIFEST_FILE);
             if (!manifestFile.exists()) throw new Exception("Manifest missing in directory");
             try (InputStream is = Files.newInputStream(manifestFile.toPath())) {
-                return mapper.readValue(is, MetaObject.class);
+                java.util.Map<String, Object> map = mapper.readValue(is, java.util.Map.class);
+                if (map.containsKey("plugin")) {
+                    java.util.Map<String, Object> pMap = (java.util.Map<String, Object>) map.get("plugin");
+                    pMap.put("componentType", "plugin");
+                    return new MetaObject(pMap);
+                }
+                map.put("componentType", "plugin");
+                return new MetaObject(map);
             }
         } else {
             // It's a JAR
@@ -77,7 +96,14 @@ public class PluginScannerService extends AbstractService {
                 ZipEntry entry = zip.getEntry(MANIFEST_FILE);
                 if (entry == null) throw new Exception("Manifest missing in JAR");
                 try (InputStream is = zip.getInputStream(entry)) {
-                    return mapper.readValue(is, MetaObject.class);
+                    java.util.Map<String, Object> map = mapper.readValue(is, java.util.Map.class);
+                    if (map.containsKey("plugin")) {
+                        java.util.Map<String, Object> pMap = (java.util.Map<String, Object>) map.get("plugin");
+                        pMap.put("componentType", "plugin");
+                        return new MetaObject(pMap);
+                    }
+                    map.put("componentType", "plugin");
+                    return new MetaObject(map);
                 }
             }
         }

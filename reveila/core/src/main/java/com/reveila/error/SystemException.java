@@ -1,12 +1,8 @@
 package com.reveila.error;
 
-public class SystemException extends Exception {
+public class SystemException extends Exception implements ErrorCode {
 
-    protected String errorCode = null;
-
-    public SystemException() {
-        super();
-    }
+    private String errorCode = "undefined";
 
     public SystemException(String message) {
         super(message);
@@ -24,5 +20,4 @@ public class SystemException extends Exception {
     public String getErrorCode() {
         return errorCode;
     }
-
 }
