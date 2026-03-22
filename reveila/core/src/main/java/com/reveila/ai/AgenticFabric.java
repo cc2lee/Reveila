@@ -20,7 +20,7 @@ public class AgenticFabric extends com.reveila.system.AbstractService {
 
     @Override
     public void onStart() throws Exception {
-        this.bridge = systemContext.getProxy("UniversalInvocationBridge")
+        this.bridge = context.getProxy("UniversalInvocationBridge")
                 .map(p -> {
                     try {
                         return (UniversalInvocationBridge) p.invoke("getInstance", null);
@@ -30,7 +30,7 @@ public class AgenticFabric extends com.reveila.system.AbstractService {
                 })
                 .orElseThrow(() -> new IllegalStateException("UniversalInvocationBridge not found."));
 
-        this.sessionManager = systemContext.getProxy("AgentSessionManager")
+        this.sessionManager = context.getProxy("AgentSessionManager")
                 .map(p -> {
                     try {
                         return (AgentSessionManager) p.invoke("getInstance", null);

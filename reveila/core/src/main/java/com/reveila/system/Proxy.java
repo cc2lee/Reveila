@@ -5,6 +5,7 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.EventObject;
 import java.util.List;
 import java.util.Map;
@@ -14,11 +15,13 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 
+import javax.security.auth.Subject;
+
 import com.reveila.ai.GuardedRuntime;
 import com.reveila.error.ConfigurationException;
+import com.reveila.error.SecurityException;
 import com.reveila.event.EventConsumer;
 import com.reveila.util.ExceptionCollection;
-import com.reveila.error.SecurityException;
 
 /**
  * @author Charles Lee
@@ -34,73 +37,21 @@ public final class Proxy extends AbstractService {
 	private volatile Object singletonInstance;
 	private String name;
 	private final Manifest manifest;
+	private List<String> requiredRoles;
 
-	public Proxy(MetaObject metaObject) {
+	public Proxy(MetaObject metaObject, Manifest manifest) {
 		if (metaObject == null) {
-			throw new IllegalArgumentException("Argument must not be null");
+			throw new IllegalArgumentException("Argument " + MetaObject.class.getName() + " must not be null");
+		}
+
+		if (manifest == null) {
+			throw new IllegalArgumentException("Argument " + Manifest.class.getName() + " must not be null");
 		}
 
 		this.metaObject = metaObject;
-
-		this.manifest = new Manifest();
-		Map<String, Object> map = metaObject.getDataMap();
-		if (map != null) {
-			this.manifest.setName((String) map.get("name"));
-			this.manifest.setDisplayName((String) map.get("displayName"));
-			this.manifest.setVersion((String) map.get("version"));
-			this.manifest.setDescription((String) map.get("description"));
-			this.manifest.setAuthor((String) map.get("author"));
-			this.manifest.setImplementationClass((String) map.get("class"));
-			// "componentType" is set by Reveila.startComponents()
-
-			Object methodsObj = map.get("methods");
-			if (methodsObj instanceof List) {
-				List<Manifest.ExposedMethod> parsedMethods = new java.util.ArrayList<>();
-				List<?> methodsList = (List<?>) methodsObj;
-				for (Object mObj : methodsList) {
-					if (mObj instanceof Map) {
-						Map<?, ?> mMap = (Map<?, ?>) mObj;
-						Manifest.ExposedMethod method = new Manifest.ExposedMethod();
-						method.name = (String) mMap.get("name");
-						method.description = (String) mMap.get("description");
-						method.returnType = (String) mMap.get("return");
-						
-						Object rolesObj = mMap.get("required-roles");
-						if (rolesObj instanceof List) {
-							List<?> rolesList = (List<?>) rolesObj;
-							for (Object rObj : rolesList) {
-								if (rObj instanceof String) {
-									method.requiredRoles.add((String) rObj);
-								}
-							}
-						}
-
-						Object paramsObj = mMap.get("parameters");
-						if (paramsObj instanceof List) {
-							List<?> paramsList = (List<?>) paramsObj;
-							for (Object pObj : paramsList) {
-								if (pObj instanceof Map) {
-									Map<?, ?> pMap = (Map<?, ?>) pObj;
-									Manifest.Parameter param = new Manifest.Parameter();
-									param.name = (String) pMap.get("name");
-									param.description = (String) pMap.get("description");
-									param.type = (String) pMap.get("type");
-									param.isRequired = Boolean.TRUE.equals(pMap.get("isRequired"));
-									param.isSecret = Boolean.TRUE.equals(pMap.get("isSecret"));
-									method.parameters.add(param);
-								}
-							}
-						}
-						parsedMethods.add(method);
-					}
-				}
-				this.manifest.setExposedMethods(parsedMethods);
-			}
-		}
-	}
-
-	public MetaObject getMetaObject() {
-		return metaObject;
+		this.manifest = manifest;
+		this.name = metaObject.getName();
+		this.requiredRoles = Collections.unmodifiableList(manifest.getRequiredRoles());
 	}
 
 	private void setClassLoader(ClassLoader newLoader) {
@@ -133,11 +84,12 @@ public final class Proxy extends AbstractService {
 		}
 	}
 
-	public void loadPlugin(Path pluginDir) throws Exception {
-		if (!Files.isDirectory(pluginDir)) {
-			throw new IllegalArgumentException("Plugin directory does not exist or is not a directory: " + pluginDir);
-		}
-		setClassLoader(RuntimeUtil.createPluginClassLoader(pluginDir.toString(), Reveila.class.getClassLoader()));
+	public void loadPlugin(String pluginDir) throws Exception {
+		setClassLoader(RuntimeUtil.createPluginClassLoader(pluginDir, Reveila.class.getClassLoader()));
+	}
+
+	public Object invoke(final String methodName, final Object[] args) throws Exception {
+		return invoke(null, methodName, args);
 	}
 
 	/**
@@ -159,10 +111,10 @@ public final class Proxy extends AbstractService {
 	 * @param args       the arguments to pass to the method
 	 * @return the result of the invoked method
 	 */
-	public CompletableFuture<Object> invokeAsync(final String methodName, final Object[] args) {
+	public CompletableFuture<Object> invokeAsync(final Subject subject, final String methodName, final Object[] args) {
 		return CompletableFuture.supplyAsync(() -> {
 			try {
-				return invoke(methodName, args);
+				return invoke(subject, methodName, args);
 			} catch (Throwable t) {
 				String msg = "Async invocation failed for " + this.toString() + "."
 						+ getMethodSignature(methodName, args);
@@ -189,38 +141,44 @@ public final class Proxy extends AbstractService {
 	 * @return the result of the invoked method
 	 * @throws Exception if object creation, method lookup, or invocation fails
 	 */
-	public Object invoke(final String methodName, final Object[] args) throws Exception {
+	public Object invoke(final Subject subject, final String methodName, final Object[] args) throws Exception {
 		if (methodName == null)
 			throw new IllegalArgumentException("Method name must not be null");
 
-		// TODO: Implement ADR 0013 Proxy Guard Logic here once TokenUtils and AccessControlManager are available.
-        // // 1. Check if this is a system component being accessed externally
-        // if (Constants.SYSTEM_COMPONENT.equalsIgnoreCase(manifest.getComponentType())) {
-        //     throw new SecurityException("Access Denied: System components are reserved for local use.");
-        // }
-        // 
-        // // 2. Validate method is exposed in Manifest
-        // Manifest.ExposedMethod targetMethod = manifest.getExposedMethods().stream()
-        //     .filter(m -> m.methodName.equals(methodName))
-        //     .findFirst()
-        //     .orElseThrow(() -> new SecurityException("Method " + methodName + " is not exposed to the AI Agent."));
-        // 
-        // // 3. Authorization Matrix Check (logic to be implemented via access-control.config)
-        // String userRole = TokenUtils.extractRole(jwtToken);
-        // if (!AccessControlManager.isAllowed(userRole, manifest.getId(), methodName)) {
-        //     throw new SecurityException("User Role " + userRole + " is not authorized for " + methodName);
-        // }
+		com.reveila.ai.AgentPrincipal principal = null;
+		SystemPrincipal systemPrincipal = null;
+
+		if (subject != null) {
+			principal = subject.getPrincipals(com.reveila.ai.AgentPrincipal.class).stream().findFirst().orElse(null);
+			systemPrincipal = subject.getPrincipals(SystemPrincipal.class).stream().findFirst().orElse(null);
+		}
+
+		// Implement ADR 0013 Proxy Guard Logic here.
+		if (systemPrincipal == null && principal != null) {
+			// 1. Check if this is a system component being accessed externally
+			if (Constants.COMPONENT.equalsIgnoreCase(manifest.getComponentType())) {
+				throw new SecurityException("Access Denied: System components are reserved for local use and cannot be accessed by an external agent.");
+			}
+
+			// 2. Validate method is exposed in Manifest
+			if (manifest.getExposedMethods() != null) {
+				Manifest.ExposedMethod targetMethod = manifest.getExposedMethods().stream()
+					.filter(m -> m.name.equals(methodName))
+					.findFirst()
+					.orElseThrow(() -> new SecurityException("Method " + methodName + " is not exposed to the AI Agent."));
+			}
+			
+			// 3. Additional Authorization Matrix Check could be placed here based on principal properties.
+		}
 
 		// ADR 0006: Proxy-Based Invocations with Physical Isolation
 		if (Constants.PLUGIN.equalsIgnoreCase(this.manifest.getComponentType())) {
-			GuardedRuntime runtime = (GuardedRuntime) systemContext.getProxy("GuardedRuntime")
+			GuardedRuntime runtime = (GuardedRuntime) context.getProxy("GuardedRuntime")
 					.orElseThrow(() -> new IllegalStateException("GuardedRuntime not found or invalid"))
-					.invoke("getInstance", null);
+					.getTargetObject();
 
-			// In a real scenario, we'd need an AgentPrincipal and AgencyPerimeter here.
-			// For now, we'll use defaults if they're not provided in the context.
-			// This demonstrates the delegation logic requested.
-			return runtime.execute(null, null, metaObject.getName(), Map.of("method", methodName, "args", args), null);
+			// Use the AgentPrincipal extracted from the Subject
+			return runtime.execute(principal, null, metaObject.getName(), Map.of("method", methodName, "args", args != null ? args : new Object[0]), null);
 		}
 
 		lock.readLock().lock();
@@ -261,7 +219,7 @@ public final class Proxy extends AbstractService {
 		setArguments(object, clazz, arguments);
 
 		if (object instanceof AbstractService) {
-			((AbstractService) object).setSystemContext(systemContext);
+			((AbstractService) object).setContext(context);
 		}
 
 		if (object instanceof Startable) {
@@ -298,24 +256,25 @@ public final class Proxy extends AbstractService {
 	}
 
 	public void onStart() throws Exception {
-		if ("plugin".equalsIgnoreCase(manifest.getComponentType())) {
+		if (Constants.PLUGIN.equalsIgnoreCase(manifest.getComponentType())) {
+			// load plugin
 			String pluginDir = "plugins/" + getName();
 			Path pluginPath = Path.of(pluginDir);
 
 			// ADR: Resolve relative plugin paths against SYSTEM_HOME
 			if (!pluginPath.isAbsolute()) {
-				String systemHome = systemContext.getProperties().getProperty(Constants.SYSTEM_HOME);
+				String systemHome = context.getProperties().getProperty(Constants.SYSTEM_HOME);
 				if (systemHome != null && !systemHome.isBlank()) {
 					pluginPath = Path.of(systemHome).resolve(pluginPath);
 				}
 			}
 
 			// Download/Copy plugin JAR from repository to local directory named as plugin name
-			String repoPathStr = systemContext.getProperties().getProperty("plugin.repository.path");
+			String repoPathStr = context.getProperties().getProperty("plugin.repository.path");
 			if (repoPathStr != null && !repoPathStr.isBlank()) {
 				Path repoPath = Path.of(repoPathStr);
 				if (!repoPath.isAbsolute()) {
-					String systemHome = systemContext.getProperties().getProperty(Constants.SYSTEM_HOME);
+					String systemHome = context.getProperties().getProperty(Constants.SYSTEM_HOME);
 					if (systemHome != null && !systemHome.isBlank()) {
 						repoPath = Path.of(systemHome).resolve(repoPath);
 					}
@@ -335,7 +294,7 @@ public final class Proxy extends AbstractService {
 				}
 			}
 
-			loadPlugin(pluginPath);
+			loadPlugin(pluginPath.toString());
 
 			if (metaObject.isHotDeployEnabled()) {
 				// Launch watcher in background
@@ -344,7 +303,7 @@ public final class Proxy extends AbstractService {
 				watcherThread.setDaemon(true); // Ensures it doesn't block app shutdown
 				watcherThread.start();
 			}
-		}
+		} // end loading plugin
 	}
 
 	public void onStop() throws Exception {
@@ -582,7 +541,11 @@ public final class Proxy extends AbstractService {
 		return this.metaObject.getVersion();
 	}
 
-	public Manifest getManifest() {
-		return manifest;
+	public String getType() {
+		return this.manifest.getComponentType();
+	}
+
+	public List<String> getRequiredRoles() {
+		return requiredRoles;
 	}
 }

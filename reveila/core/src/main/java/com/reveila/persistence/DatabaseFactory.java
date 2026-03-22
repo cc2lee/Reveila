@@ -1,8 +1,8 @@
 package com.reveila.persistence;
 
-import java.io.File;
-import java.io.InputStream;
 import java.util.Properties;
+
+import com.reveila.system.PlatformAdapter;
 
 public class DatabaseFactory {
 
@@ -10,16 +10,8 @@ public class DatabaseFactory {
      * Resolves the appropriate DatabaseEngine based on configuration or environment heuristics.
      * On first run, it initializes the schema dynamically using SchemaInitializer.
      */
-    public static DatabaseEngine getEngine() {
-        Properties props = new Properties();
-        
-        try (InputStream is = DatabaseFactory.class.getResourceAsStream("/reveila.properties")) {
-            if (is != null) {
-                props.load(is);
-            }
-        } catch (Exception e) {
-            // Ignore
-        }
+    public static DatabaseEngine getEngine(PlatformAdapter platformAdapter) {
+        Properties props = platformAdapter.getProperties();
 
         String dbType = props.getProperty("REVEILA_DB_TYPE");
         if (dbType == null || dbType.trim().isEmpty()) {
@@ -27,15 +19,16 @@ public class DatabaseFactory {
         }
 
         // [ ] 1. Persistence & Memory: DatabaseFactory defaults to reveila_memory.db
-        // In Android, System.getProperty("reveila.internal.dir") should be set to context.getFilesDir().getAbsolutePath()
-        String internalDir = System.getProperty("reveila.internal.dir", ".");
-        
         // Ensure the database is strictly mapped to the formal ${system.home}/data directory
-        File dbDir = new File(internalDir, "system-home/standard/data");
-        if (!dbDir.exists()) {
-            dbDir.mkdirs(); // SQLite requires the parent directory to exist before connection
+        String dbDir = "system-home/standard/data";
+        String sqlitePath = "";
+        try {
+            // Check if directory exists, if not, create it by writing a dummy file and deleting it
+            platformAdapter.getFileOutputStream(dbDir + "/.dummy", false).close();
+            sqlitePath = platformAdapter.getProperties().getProperty("system.home", ".") + "/" + dbDir + "/reveila_memory.db";
+        } catch (Exception e) {
+            System.err.println("Could not initialize DB dir: " + e.getMessage());
         }
-        String sqlitePath = new File(dbDir, "reveila_memory.db").getAbsolutePath();
 
         DatabaseEngine engine;
         boolean isSqlite = false;

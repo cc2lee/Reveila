@@ -44,6 +44,7 @@ public final class Constants {
 	public static final String NAME = "name";
 	public static final String VERSION = "version";
 	public static final String CLASS = "class";
+	public static final String METHODS = "methods";
 	public static final String THREAD_SAFE = "thread-safe";
 	public static final String VALUE = "value";
 	public static final String ARGUMENTS = "arguments";
@@ -63,7 +64,7 @@ public final class Constants {
 	public static final String LIB_DIR_NAME = "libs";
 	public static final String STANDALONE_MODE = "system.standalone";
 	public static final String PLUGIN = "plugin";
-	public static final String SYSTEM_COMPONENT = "system component";
+	public static final String SYSTEM = "system";
 	public static final String DIRECTORY = "directory";
 	public static final String CAPABILITIES = "capabilities";
 	public static final String HOT_DEPLOY = "hot-deploy";
@@ -80,5 +81,6 @@ public final class Constants {
 	public static final String DISPLAY_NAME = "displayName";
 	public static final String PROVIDER = "provider";
     public static final String MANEFEST = "manifest";
+	public static final String REQUIRED_ROLES = "required-roles";
     
 }

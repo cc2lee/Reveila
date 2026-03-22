@@ -68,7 +68,7 @@ public class OllamaProvider extends com.reveila.system.AbstractService implement
             );
 
             String payload = JsonUtil.toJsonString(requestMap);
-            String responseJson = (String) this.systemContext.getProxy("HttpClientService")
+            String responseJson = (String) this.context.getProxy("HttpClientService")
                     .orElseThrow(() -> new IllegalStateException("HttpClientService not found"))
                     .invoke("invokeRest", new Object[] { url, "POST", payload });
 

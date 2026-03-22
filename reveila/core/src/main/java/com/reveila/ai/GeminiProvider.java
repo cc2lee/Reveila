@@ -2,7 +2,7 @@ package com.reveila.ai;
 
 import java.util.List;
 import java.util.Map;
-import com.reveila.service.HttpClientService;
+
 import com.reveila.util.json.JsonUtil;
 
 /**
@@ -50,7 +50,7 @@ public class GeminiProvider extends com.reveila.system.AbstractService implement
         try {
             String resolvedApiKey = apiKey;
             if (apiKey != null && apiKey.startsWith("REF:")) {
-                resolvedApiKey = (String) this.systemContext.getProxy("CredentialManager")
+                resolvedApiKey = (String) this.context.getProxy("CredentialManager")
                         .orElseThrow(() -> new IllegalStateException("CredentialManager not found"))
                         .invoke("getSecret", new Object[] { apiKey.substring(4) });
             }
@@ -79,7 +79,7 @@ public class GeminiProvider extends com.reveila.system.AbstractService implement
             }
 
             String payload = JsonUtil.toJsonString(requestMap);
-            String responseJson = (String) this.systemContext.getProxy("HttpClientService")
+            String responseJson = (String) this.context.getProxy("HttpClientService")
                     .orElseThrow(() -> new IllegalStateException("HttpClientService not found"))
                     .invoke("invokeRest", new Object[] { url, "POST", payload });
 

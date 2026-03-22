@@ -3,7 +3,7 @@ package com.reveila.ai;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import com.reveila.service.DataService;
+
 import com.reveila.data.Entity;
 import com.reveila.data.Repository;
 import com.reveila.system.AbstractService;
@@ -25,7 +25,7 @@ public class CredentialManager extends AbstractService {
 
     private void ensureSecretStoreExists() {
         try {
-            this.systemContext.getProxy("DataService")
+            this.context.getProxy("DataService")
                     .orElseThrow(() -> new IllegalStateException("DataService not found"))
                     .invoke("getRepository", new Object[] { "reveila_secrets" });
 
@@ -65,7 +65,7 @@ public class CredentialManager extends AbstractService {
             // Expected ID format for the repository
             Map<String, Map<String, Object>> id = Map.of("id", Map.of("value", secretKey));
 
-            Repository<Entity, Map<String, Map<String, Object>>> repo = (Repository<Entity, Map<String, Map<String, Object>>>) this.systemContext
+            Repository<Entity, Map<String, Map<String, Object>>> repo = (Repository<Entity, Map<String, Map<String, Object>>>) this.context
                     .getProxy("DataService")
                     .orElseThrow(() -> new IllegalStateException("DataService not found"))
                     .invoke("getRepository", new Object[] { "reveila_secrets" });

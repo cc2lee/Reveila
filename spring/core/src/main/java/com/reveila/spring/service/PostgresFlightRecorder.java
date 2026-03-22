@@ -9,7 +9,6 @@ import com.reveila.ai.AgentPrincipal;
 import com.reveila.ai.FlightRecorder;
 import com.reveila.data.Repository;
 import com.reveila.spring.model.jpa.AuditLog;
-import com.reveila.spring.repository.jpa.JdbcAuditLogRepository;
 
 /**
  * Implementation of Forensic Auditability using PostgreSQL.
@@ -27,7 +26,7 @@ public class PostgresFlightRecorder extends com.reveila.system.AbstractService i
     @Override
     protected void onStart() throws Exception {
         // ADR 0006: Platform-agnostic repository retrieval.
-        Object repo = systemContext.getPlatformAdapter().getRepository("AuditLog");
+        Object repo = context.getPlatformAdapter().getRepository("AuditLog");
         if (repo instanceof Repository) {
             this.auditRepository = (Repository<AuditLog, java.util.UUID>) repo;
         }

@@ -8,7 +8,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Map;
-import java.util.Objects;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,7 +37,7 @@ class PostgresFlightRecorderTest {
         doReturn(auditRepository).when(platformAdapter).getRepository("AuditLog");
 
         flightRecorder = new PostgresFlightRecorder();
-        flightRecorder.setSystemContext(systemContext);
+        flightRecorder.setContext(systemContext);
         flightRecorder.start();
         
         principal = AgentPrincipal.create("audit-agent", "tenant-1");

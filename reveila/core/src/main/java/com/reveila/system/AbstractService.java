@@ -13,7 +13,7 @@ import com.reveila.event.EventConsumer;
  */
 public abstract class AbstractService implements EventConsumer, Startable, Stoppable {
 
-    protected SystemContext systemContext;
+    protected Context context;
     protected Logger logger;
     private ServiceState state = ServiceState.INITIALIZED;
     private Instant startTime;
@@ -23,11 +23,11 @@ public abstract class AbstractService implements EventConsumer, Startable, Stopp
         return state == ServiceState.ACTIVE;
     }
 
-    public void setSystemContext(SystemContext context) {
+    public void setContext(Context context) {
         if (context == null) {
-            throw new IllegalArgumentException("SystemContext cannot be null.");
+            throw new IllegalArgumentException("Context cannot be null.");
         }
-        this.systemContext = context;
+        this.context = context;
         this.logger = context.getLogger();
     }
 

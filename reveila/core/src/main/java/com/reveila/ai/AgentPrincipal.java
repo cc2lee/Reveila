@@ -1,5 +1,6 @@
 package com.reveila.ai;
 
+import java.security.Principal;
 import java.util.UUID;
 
 /**
@@ -8,7 +9,13 @@ import java.util.UUID;
  * 
  * @author CL
  */
-public record AgentPrincipal(UUID sessionId, String agentId, String tenantId, String traceId) {
+public record AgentPrincipal(UUID sessionId, String agentId, String tenantId, String traceId) implements Principal {
+    
+    @Override
+    public String getName() {
+        return agentId;
+    }
+
     /**
      * Creates a new AgentPrincipal with a random session ID and trace ID.
      *

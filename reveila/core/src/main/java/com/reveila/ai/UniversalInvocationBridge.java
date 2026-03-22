@@ -71,7 +71,7 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
     }
 
     private <T> T getComponent(String name, Class<T> type) {
-        return systemContext.getProxy(name)
+        return context.getProxy(name)
                 .map(p -> {
                     try {
                         return (T) p.invoke("getInstance", null);

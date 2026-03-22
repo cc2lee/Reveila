@@ -10,12 +10,17 @@ public class Manifest {
     private String version;
     private String description;
     private String author;
+    private List<String> roles = new ArrayList<>();
+    private List<String> requiredRoles = new ArrayList<>();
     
     private String implementationClass;
     
     private String componentType; // "system" or "plugin"
     
     private List<ExposedMethod> exposedMethods = new ArrayList<>();
+
+    public List<String> getRoles() { return roles; }
+    public List<String> getRequiredRoles() { return requiredRoles; }
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }

@@ -41,7 +41,7 @@ public class RatedService extends AbstractService {
 
     public synchronized Object invoke(final String methodName, final Object[] args) throws Exception {
 		String providerName = getBestProvider();
-		Optional<Proxy> localProxy = systemContext.getProxy(providerName);
+		Optional<Proxy> localProxy = context.getProxy(providerName);
 		if (!localProxy.isPresent()) {
 			throw new ConfigurationException("Component '" + providerName + "' not found.");
 		}

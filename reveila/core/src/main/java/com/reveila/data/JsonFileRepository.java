@@ -1,43 +1,47 @@
 package com.reveila.data;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reveila.system.PlatformAdapter;
 
 public class JsonFileRepository<T, ID> implements JavaObjectRepository<T, ID> {
 
-    private final Path filePath;
+    private final String filePath;
     private final Class<T> entityClass;
     private final Class<ID> idClass;
     private final String entityType;
     private final ObjectMapper mapper = EntityMapper.getObjectmapper();
     private List<T> data = new ArrayList<>();
+    private final PlatformAdapter platformAdapter;
 
-    public JsonFileRepository(Path dataDir, String entityType, Class<T> entityClass, Class<ID> idClass) {
-        this.filePath = dataDir.resolve(entityType.toLowerCase() + "s.json");
+    public JsonFileRepository(String dataDir, String entityType, Class<T> entityClass, Class<ID> idClass, PlatformAdapter platformAdapter) {
+        this.filePath = dataDir + "/" + entityType.toLowerCase() + "s.json";
         this.entityType = entityType;
         this.entityClass = entityClass;
         this.idClass = idClass;
+        this.platformAdapter = platformAdapter;
         load();
     }
 
     private void load() {
-        if (Files.exists(filePath)) {
-            try {
-                data = mapper.readValue(filePath.toFile(), mapper.getTypeFactory().constructCollectionType(List.class, entityClass));
-            } catch (IOException e) {
-                System.err.println("Failed to load JSON data from " + filePath + ": " + e.getMessage());
-            }
+        try (java.io.InputStream is = platformAdapter.getFileInputStream(filePath)) {
+            data = mapper.readValue(is, mapper.getTypeFactory().constructCollectionType(List.class, entityClass));
+        } catch (IOException e) {
+            System.err.println("Failed to load JSON data from " + filePath + ": " + e.getMessage());
         }
     }
 
     private void save() {
-        try {
-            Files.createDirectories(filePath.getParent());
-            mapper.writerWithDefaultPrettyPrinter().writeValue(filePath.toFile(), data);
+        try (java.io.OutputStream os = platformAdapter.getFileOutputStream(filePath, false)) {
+            mapper.writerWithDefaultPrettyPrinter().writeValue(os, data);
         } catch (IOException e) {
             System.err.println("Failed to save JSON data to " + filePath + ": " + e.getMessage());
         }

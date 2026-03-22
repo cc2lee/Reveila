@@ -77,18 +77,19 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         return properties.getProperty(Constants.PLATFORM_OS);
     }
 
-    private String[] getManifests(String dirName) throws IOException {
-        if (dirName == null || dirName.trim().isEmpty()) {
+    @Override
+    public String[] listRelativePaths(String relativeDirectory, String ext) throws IOException {
+        if (relativeDirectory == null || relativeDirectory.trim().isEmpty()) {
             throw new IOException("Manifests directory name not specified.");
         }
         // 1. Ensure we have a clean, absolute path to the components dir
-        Path configDir = this.systemHome.getSystemHome().resolve(Constants.CONFIGS_DIR_NAME)
-                .resolve(dirName)
+        Path dir = this.systemHome.getSystemHome()
+                .resolve(relativeDirectory)
                 .toAbsolutePath()
                 .normalize();
 
         // 2. Find the files (assuming FileUtil returns relative paths from configDir)
-        String[] files = FileUtil.findRelativePaths(configDir.toString(), ".json");
+        String[] files = FileUtil.listRelativePaths(dir.toString(), ext);
 
         // 3. Ensure systemHome is also absolute and normalized for a clean comparison
         Path home = this.systemHome.getSystemHome().toAbsolutePath().normalize();
@@ -96,26 +97,12 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         return Stream.of(files)
                 .map(file -> {
                     // Resolve the file against the configDir, then normalize
-                    Path absoluteFilePath = configDir.resolve(file).normalize();
+                    Path absoluteFilePath = dir.resolve(file).normalize();
 
                     // Relativize from home to the specific file
                     return home.relativize(absoluteFilePath).toString();
                 })
                 .toArray(String[]::new);
-    }
-
-    @Override
-    public String[] getSystemManifests() throws IOException {
-        String platform = properties.getProperty("platform");
-        if (platform == null || platform.trim().isEmpty()) {
-            throw new IOException("Platform not specified in " + Constants.SYSTEM_PROPERTIES + ".");
-        }
-        return getManifests(platform);
-    }
-
-    @Override
-    public String[] getPluginManifests() throws IOException {
-        return getManifests("plugins");
     }
 
     @Override
@@ -392,9 +379,9 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     }
 
     private void configureLogging() throws IOException {
-        // 0. Set standard format: [Date Time] [Level] Message
-        String format = "[%1$tF %1$tT] [%4$-7s] %5$s %n";
-        System.setProperty("java.util.logging.SimpleFormatter.format", format);
+        // %1=Date, %2=Source, %3=Logger Name, %4=Level, %5=Message, %6=Throwable
+        System.setProperty("java.util.logging.SimpleFormatter.format", "[%1$tF %1$tT] [%3$s] %4$s: %5$s%n");
+        
         Logger rootLogger = Logger.getLogger("");
 
         // 1. Clean out existing handlers

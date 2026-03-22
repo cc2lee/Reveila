@@ -18,10 +18,10 @@ public class InboundWebhookService extends AbstractService {
 
     @Override
     protected void onStart() throws Exception {
-        this.bridge = (UniversalInvocationBridge) systemContext.getProxy("UniversalInvocationBridge").orElseThrow().getInstance();
-        this.orchestrationService = (OrchestrationService) systemContext.getProxy("OrchestrationService").orElseThrow().getInstance();
-        this.flightRecorder = (FlightRecorder) systemContext.getProxy("FlightRecorder").orElseThrow().getInstance();
-        this.llmFactory = (LlmProviderFactory) systemContext.getProxy("LlmProviderFactory").orElseThrow().getInstance();
+        this.bridge = (UniversalInvocationBridge) context.getProxy("UniversalInvocationBridge").orElseThrow().getInstance();
+        this.orchestrationService = (OrchestrationService) context.getProxy("OrchestrationService").orElseThrow().getInstance();
+        this.flightRecorder = (FlightRecorder) context.getProxy("FlightRecorder").orElseThrow().getInstance();
+        this.llmFactory = (LlmProviderFactory) context.getProxy("LlmProviderFactory").orElseThrow().getInstance();
     }
 
     @Override

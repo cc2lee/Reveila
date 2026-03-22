@@ -14,8 +14,6 @@ import javax.sql.DataSource;
 import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reveila.data.Entity;
 import com.reveila.data.EntityMapper;
 import com.reveila.data.GenericRepository;
@@ -53,7 +51,9 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
     private void initialize() throws Exception {
         // 1. Read and apply database schema if DB is available
         if (databaseAvailable) {
-            applyDatabaseSchema();
+            if ("true".equalsIgnoreCase(getProperties().getProperty(Constants.DB_CREATE_SCHEMA))) {
+                executeSqlScript("resources/db/scripts/schema.sql");
+            }
         }
 
         // 2. Discover Spring-managed JPA repositories
@@ -74,55 +74,32 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
         }
     }
 
-    private void applyDatabaseSchema() {
-        Path schemaPath = getSystemHome().resolve("configs").resolve("database-schema.json");
-        if (Files.exists(schemaPath)) {
-            try {
-                ObjectMapper mapper = new ObjectMapper();
-                JsonNode schema = mapper.readTree(schemaPath.toFile());
-                System.out.println("Reveila: Applying database schema from " + schemaPath);
-                // Implementation for actual schema update could go here using JdbcTemplate
-                // For now, we log that we read it as requested.
-            } catch (Exception e) {
-                System.err.println("Failed to read database schema: " + e.getMessage());
-            }
+    private void executeSqlScript(String relativePath) throws Exception {
+        Path scriptPath = getSystemHome().resolve(relativePath);
+        if (!Files.exists(scriptPath)) {
+            System.err.println("Reveila SQL Executor: Script not found at " + scriptPath);
+            return;
         }
 
-        // AUTO-SCHEMA EXECUTION
-        if ("true".equalsIgnoreCase(getProperties().getProperty(Constants.DB_CREATE_SCHEMA))) {
-            executeSqlScript("resources/db/scripts/schema.sql");
+        String content = Files.readString(scriptPath, StandardCharsets.UTF_8);
+        if (content == null || content.trim().isEmpty()) {
+            System.err.println("Reveila SQL Executor: Failed to read " + scriptPath);
+            return;
         }
-    }
 
-    private void executeSqlScript(String relativePath) {
-        try {
-            Path scriptPath = getSystemHome().resolve(relativePath);
-            if (!Files.exists(scriptPath)) {
-                System.err.println("Reveila SQL Executor: Script not found at " + scriptPath);
-                return;
-            }
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(springContext.getBean(DataSource.class));
+        jdbcTemplate.execute(content);
 
-            System.out.println("Reveila SQL Executor: Executing " + scriptPath);
-            String content = Files.readString(scriptPath, StandardCharsets.UTF_8);
-            
-            JdbcTemplate jdbcTemplate = new JdbcTemplate(springContext.getBean(DataSource.class));
-            jdbcTemplate.execute(content);
-            
-            System.out.println("Reveila SQL Executor: Successfully applied " + relativePath);
-        } catch (Exception e) {
-            System.err.println("Reveila SQL Executor FAILED for " + relativePath + ": " + e.getMessage());
-            // We don't throw here to avoid blocking system startup, but it will be logged.
-        }
+        System.out.println("Reveila SQL Executor: Successfully applied " + relativePath);
     }
 
     private void setupJsonFallbacks() {
-        Path dataDir = getSystemHome().resolve("data");
         // Manually register the AuditLog fallback
         try {
             Class<?> auditLogClass = Class.forName("com.reveila.spring.model.jpa.AuditLog");
             com.reveila.data.JsonFileRepository<?, ?> auditRepo = new com.reveila.data.JsonFileRepository<>(
-                dataDir, "AuditLog", auditLogClass, java.util.UUID.class);
-            
+                    "system-home/standard/data", "AuditLog", auditLogClass, java.util.UUID.class, this);
+
             repoRegistry.put("auditlog", createGenericRepoFromGeneric(auditRepo));
             System.out.println("Reveila Fallback: AuditLog repository registered (JSON).");
         } catch (Exception e) {
@@ -130,7 +107,8 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
         }
     }
 
-    private <T, ID> GenericRepository<T, ID> createGenericRepoFromGeneric(com.reveila.data.JavaObjectRepository<T, ID> repo) {
+    private <T, ID> GenericRepository<T, ID> createGenericRepoFromGeneric(
+            com.reveila.data.JavaObjectRepository<T, ID> repo) {
         EntityMapper<T> mapper = repo.getEntityMapper();
         Class<T> entityClass = repo.getEntityClass();
         Class<ID> idClass = repo.getIdClass();
@@ -161,7 +139,7 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
             try {
                 JdbcTemplate jdbcTemplate = new JdbcTemplate(springContext.getBean(DataSource.class));
                 List<Map<String, Object>> rows = jdbcTemplate.queryForList("SELECT key, value FROM global_settings");
-                
+
                 for (Map<String, Object> row : rows) {
                     String key = (String) row.get("key");
                     String value = (String) row.get("value");

@@ -43,6 +43,14 @@ We will implement a **Broker Pattern** enforced by the existing `Proxy.invoke(..
         "description": "This example plugin manifest serves as a template for creating new plugins.",
         "author": "Publisher Name",
         "class": "com.domain.full.ClassName",
+        "hot-deploy": true,
+        "arguments": [
+            {
+                "name": "MethodNameWithoutSet",
+                "type": "FullClassName",
+                "value": "ValueToSet"
+            }
+        ],
         "methods": [
             {
                 "name": "methodName",

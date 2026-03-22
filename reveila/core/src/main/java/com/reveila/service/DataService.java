@@ -32,7 +32,7 @@ public class DataService extends AbstractService {
 
     @Override
     protected void onStart() throws Exception {
-        this.platform = systemContext.getPlatformAdapter();
+        this.platform = context.getPlatformAdapter();
         logger.info("DataService initialized and bridged to PlatformAdapter.");
     }
 

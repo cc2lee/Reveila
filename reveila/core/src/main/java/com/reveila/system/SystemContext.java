@@ -20,7 +20,7 @@ import com.reveila.util.GUID;
  * This class serves the purpose of a system container.
  * It controls the life cycle of all system level objects.
  */
-public final class SystemContext {
+public final class SystemContext implements Context {
 
 	private Properties properties;
 	private EventManager eventManager;
@@ -45,6 +45,7 @@ public final class SystemContext {
 		return eventManager;
 	}
 
+	@Override
 	public Logger getLogger() {
 		return this.logger;
 	}
@@ -81,7 +82,7 @@ public final class SystemContext {
 		}
 
 		proxy.setName(name);
-		proxy.setSystemContext(this);
+
 		proxiesByName.put(name, proxy);
 		eventManager.addEventWatcher(proxy);
 	}
@@ -101,9 +102,35 @@ public final class SystemContext {
 		cryptographer = null;
 	}
 
+	@Override
 	public Optional<Proxy> getProxy(String name) {
 		Objects.requireNonNull(name, "Component name cannot be null when getting a proxy.");
 		return Optional.ofNullable(this.proxiesByName.get(name));
+	}
+
+	public Optional<Proxy> getProxy(String name, Manifest manifest) {
+		Objects.requireNonNull(name, "Component name cannot be null when getting a proxy.");
+		Objects.requireNonNull(manifest, "Component manifest cannot be null when getting a proxy.");
+		List<String> roles = manifest.getRoles();
+		if (roles == null || roles.isEmpty()) {
+			return Optional.empty();
+		}
+		Proxy proxy = this.proxiesByName.get(name);
+		if (proxy == null) {
+			return Optional.empty();
+		}
+		List<String> requiredRoles = proxy.getRequiredRoles();
+		if (requiredRoles == null || requiredRoles.isEmpty()) {
+			return Optional.ofNullable(proxy);
+		}
+		else {
+			for (String requiredRole : requiredRoles) {
+				if (roles.contains(requiredRole)) {
+					return Optional.ofNullable(proxy);
+				}
+			}
+		}
+		return Optional.empty();
 	}
 
 	public List<Proxy> getProxies() {

@@ -25,9 +25,9 @@ public class MaWorkflowService extends AbstractService {
 
     @Override
     protected void onStart() throws Exception {
-        this.bridge = (UniversalInvocationBridge) systemContext.getProxy("UniversalInvocationBridge").orElseThrow().getInstance();
-        this.fabric = (AgenticFabric) systemContext.getProxy("AgenticFabric").orElseThrow().getInstance();
-        this.flightRecorder = (FlightRecorder) systemContext.getProxy("FlightRecorder").orElseThrow().getInstance();
+        this.bridge = (UniversalInvocationBridge) context.getProxy("UniversalInvocationBridge").orElseThrow().getInstance();
+        this.fabric = (AgenticFabric) context.getProxy("AgenticFabric").orElseThrow().getInstance();
+        this.flightRecorder = (FlightRecorder) context.getProxy("FlightRecorder").orElseThrow().getInstance();
     }
 
     @Override
@@ -88,12 +88,12 @@ public class MaWorkflowService extends AbstractService {
         // Dynamic lookups for providers as they might be isolated
         AbstractService gemini = null;
         try {
-            gemini = (AbstractService) systemContext.getProxy("GeminiProvider").orElseThrow().getInstance();
+            gemini = (AbstractService) context.getProxy("GeminiProvider").orElseThrow().getInstance();
         } catch (Exception e) {}
 
         AbstractService auditor = null;
         try {
-            auditor = (AbstractService) systemContext.getProxy("healthcare-audit-worker").orElseThrow().getInstance();
+            auditor = (AbstractService) context.getProxy("healthcare-audit-worker").orElseThrow().getInstance();
         } catch (Exception e) {}
 
         Map<String, Long> details = new HashMap<>();

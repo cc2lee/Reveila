@@ -64,12 +64,17 @@ public final class FileUtil {
 	 * @param extension the file extension to filter by (without the dot).
 	 * @return an array of {@link File} objects, or an empty array if the directory does not exist or is not a directory.
 	 */
-	public static String[] findRelativePaths(String directory, String fileExt) throws IOException {
+	public static String[] listRelativePaths(String directory, String fileExt) throws IOException {
 		Path root = Paths.get(directory);
 
 		// 1. Sanitize extension (ensure it has a dot)
 		// Making it "effectively final" or just a new variable for use in lambda
-		final String extension = fileExt.startsWith(".") ? fileExt : "." + fileExt;
+		String extension;
+		if (fileExt == null || fileExt.isEmpty()) {
+			extension = ".*";
+		} else {
+			extension = fileExt.startsWith(".") ? fileExt : "." + fileExt;
+		}
 
 		// 2. Use Files.walk to go deep (Recursive)
 		// The try-with-resources block ensures the stream is closed (crucial for file
@@ -80,7 +85,7 @@ public final class FileUtil {
 					.filter(Files::isRegularFile)
 
 					// Filter 2: Check the extension (case-insensitive)
-					.filter(path -> path.toString().toLowerCase().endsWith(extension.toLowerCase()))
+					.filter(path -> (extension.equals(".*")) || (path.toString().toLowerCase().endsWith(extension)))
 
 					// Map: Convert absolute path to relative path
 					// e.g., "/usr/data/logs/2024/jan.log" -> "logs/2024/jan.log" (if root is

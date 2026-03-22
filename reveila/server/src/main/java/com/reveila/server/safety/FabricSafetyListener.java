@@ -1,11 +1,11 @@
 package com.reveila.server.safety;
 
-import com.reveila.core.safety.AgentSafetyCommand;
-import com.reveila.core.safety.SafetyCommandListener;
-import com.reveila.core.safety.SafetyStatus;
-import com.reveila.core.safety.SafetyAction;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+import com.reveila.core.safety.AgentSafetyCommand;
+import com.reveila.core.safety.SafetyAction;
+import com.reveila.core.safety.SafetyCommandListener;
 
 /**
  * Server-side implementation of SafetyCommandListener.

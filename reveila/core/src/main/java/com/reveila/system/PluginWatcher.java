@@ -57,7 +57,7 @@ public class PluginWatcher implements Runnable {
                     Thread.sleep(500);
                     System.out.println("♻️ Change detected. Reloading plugin via Proxy...");
                     try {
-                        proxy.loadPlugin(pluginPath);
+                        proxy.loadPlugin(pluginPath.toAbsolutePath().toString());
                         System.out.println("✅ Hot-Reload successful.");
                     } catch (Exception e) {
                         System.err.println("❌ Hot-Reload failed for component '" + proxy.toString() + "': " + e.getMessage());

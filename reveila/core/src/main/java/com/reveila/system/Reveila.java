@@ -20,7 +20,6 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.logging.Handler;
@@ -158,11 +157,25 @@ public class Reveila implements AutoCloseable {
 		this.platformAdapter.plug(this);
 
 		strictMode = !"false".equalsIgnoreCase(this.properties.getProperty(Constants.LAUNCH_STRICT_MODE));
-		List<MetaObject> metaObjectList = parseMetaObjects(this.platformAdapter.getSystemManifests());
+		long timeoutSeconds = Long.parseLong(
+				this.properties.getProperty(Constants.COMPONENT_START_TIMEOUT, "60"));
+
+		String platform = properties.getProperty("platform");
+        if (platform == null) {
+            throw new ConfigurationException("Platform not specified in " + Constants.SYSTEM_PROPERTIES + ".");
+        }
+
+        platform = platform.trim().toLowerCase();
+        if (platform.isEmpty()) {
+            throw new ConfigurationException("Platform not specified in " + Constants.SYSTEM_PROPERTIES + ".");
+        }
+        
+        List<MetaObject> metaObjectList = parseMetaObjects(Constants.CONFIGS_DIR_NAME + File.separator + platform);
 		metaObjectList.sort(Comparator.comparingInt(m -> m.getStartPriority()));
-		startComponents(Constants.SYSTEM_COMPONENT, metaObjectList);
-		metaObjectList = parseMetaObjects(this.platformAdapter.getPluginManifests());
-		startComponents(Constants.PLUGIN, metaObjectList);
+		startComponents(Constants.COMPONENT, metaObjectList, timeoutSeconds);
+
+		metaObjectList = parseMetaObjects(Constants.CONFIGS_DIR_NAME + File.separator + "plugins");
+		startComponents(Constants.PLUGIN, metaObjectList, timeoutSeconds);
 
 		logStartupCompletion(beginTime);
 
@@ -183,19 +196,15 @@ public class Reveila implements AutoCloseable {
 	private String loadLogoContent() {
 		// 1. Try to load from External Configuration Directory
 		try {
-			File home = new File(this.properties.getProperty(Constants.SYSTEM_HOME));
-			File externalLogo = new File(new File(home, Constants.CONFIGS_DIR_NAME), "logo.txt");
-
-			if (externalLogo.exists()) {
-				try (InputStream is = new java.io.FileInputStream(externalLogo)) {
-					java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
-					byte[] data = new byte[1024];
-					int nRead;
-					while ((nRead = is.read(data, 0, data.length)) != -1) {
-						buffer.write(data, 0, nRead);
-					}
-					return buffer.toString(StandardCharsets.UTF_8.name());
+			String logoPath = Constants.CONFIGS_DIR_NAME + "/logo.txt";
+			try (InputStream is = this.platformAdapter.getFileInputStream(logoPath)) {
+				java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+				byte[] data = new byte[1024];
+				int nRead;
+				while ((nRead = is.read(data, 0, data.length)) != -1) {
+					buffer.write(data, 0, nRead);
 				}
+				return buffer.toString(StandardCharsets.UTF_8.name());
 			}
 		} catch (Exception e) {
 			// Fall through to classpath
@@ -260,13 +269,12 @@ public class Reveila implements AutoCloseable {
 				new DefaultCryptographer(secretKey.getBytes(charset)), this.platformAdapter);
 	}
 
-	private List<MetaObject> parseMetaObjects(String[] files) throws Exception {
+	private List<MetaObject> parseMetaObjects(String dir) throws Exception {
+		String[] fileArray = this.platformAdapter.listRelativePaths(dir, ".json");
 		List<String> fileList = new ArrayList<>();
-		if (files != null) {
-			Collections.addAll(fileList, files);
+		if (fileArray != null) {
+			Collections.addAll(fileList, fileArray);
 		}
-
-		logger.info("Loading components...");
 
 		// PHASE 1: DISCOVERY
 		List<MetaObject> list = new ArrayList<>();
@@ -314,13 +322,10 @@ public class Reveila implements AutoCloseable {
 		}
 	}
 
-	private void setupAutoCall(Proxy proxy) throws Exception {
+	private void setupAutoCall(Proxy proxy, Map<String, Object> autoRunConf) throws Exception {
 		if (proxy == null) {
 			throw new IllegalArgumentException("Argument 'proxy' cannot be null.");
 		}
-
-		MetaObject mObj = proxy.getMetaObject();
-		Map<String, Object> autoRunConf = mObj.getAutoRunConf();
 
 		if (autoRunConf == null || autoRunConf.isEmpty()) {
 			return;
@@ -357,8 +362,76 @@ public class Reveila implements AutoCloseable {
 				Long.parseLong(delay), Long.parseLong(interval), proxy);
 	}
 
-	private void startComponents(String tag, List<MetaObject> metaObjectList) throws Exception {
+	private Manifest createManifest(String tag, MetaObject mObj) {
+		Manifest manifest = new Manifest();
+		manifest.setComponentType(tag);
+
+		Map<String, Object> map = mObj.getDataMap();
+		manifest.setName((String) map.get(Constants.NAME));
+		manifest.setDisplayName((String) map.get(Constants.DISPLAY_NAME));
+		manifest.setVersion((String) map.get(Constants.VERSION));
+		manifest.setDescription((String) map.get(Constants.DESCRIPTION));
+		manifest.setAuthor((String) map.get(Constants.AUTHOR));
+		manifest.setImplementationClass((String) map.get(Constants.CLASS));
+
+		Object rolesObj = map.get(Constants.REQUIRED_ROLES);
+		if (rolesObj != null && rolesObj instanceof List) {
+			List<?> rolesList = (List<?>) rolesObj;
+			for (Object rObj : rolesList) {
+				if (rObj instanceof String) {
+					manifest.getRequiredRoles().add((String) rObj);
+				}
+			}
+		}
 		
+		Object methodsObj = map.get(Constants.METHODS);
+		if (methodsObj != null && methodsObj instanceof List) {
+			List<Manifest.ExposedMethod> parsedMethods = new java.util.ArrayList<>();
+			List<?> methodsList = (List<?>) methodsObj;
+			for (Object mDescription : methodsList) {
+				if (mDescription instanceof Map) {
+					Map<?, ?> mMap = (Map<?, ?>) mDescription;
+					Manifest.ExposedMethod method = new Manifest.ExposedMethod();
+					method.name = (String) mMap.get("name");
+					method.description = (String) mMap.get("description");
+					method.returnType = (String) mMap.get("return");
+
+					rolesObj = mMap.get(Constants.REQUIRED_ROLES);
+					if (rolesObj != null && rolesObj instanceof List) {
+						List<?> rolesList = (List<?>) rolesObj;
+						for (Object rObj : rolesList) {
+							if (rObj instanceof String) {
+								method.requiredRoles.add((String) rObj);
+							}
+						}
+					}
+
+					Object paramsObj = mMap.get("parameters");
+					if (paramsObj != null && paramsObj instanceof List) {
+						List<?> paramsList = (List<?>) paramsObj;
+						for (Object pObj : paramsList) {
+							if (pObj instanceof Map) {
+								Map<?, ?> pMap = (Map<?, ?>) pObj;
+								Manifest.Parameter param = new Manifest.Parameter();
+								param.name = (String) pMap.get("name");
+								param.description = (String) pMap.get("description");
+								param.type = (String) pMap.get("type");
+								param.isRequired = Boolean.TRUE.equals(pMap.get("isRequired"));
+								param.isSecret = Boolean.TRUE.equals(pMap.get("isSecret"));
+								method.parameters.add(param);
+							}
+						}
+					}
+					parsedMethods.add(method);
+				}
+			}
+			manifest.setExposedMethods(parsedMethods);
+		}
+		return manifest;
+	}
+
+	private void startComponents(String tag, List<MetaObject> metaObjectList, long timeoutSeconds) throws Exception {
+
 		if (metaObjectList == null || metaObjectList.isEmpty()) {
 			return;
 		}
@@ -367,38 +440,40 @@ public class Reveila implements AutoCloseable {
 			startedProxies = new ArrayList<>();
 		}
 
-		long startTimeoutSeconds = Long.parseLong(
-				this.properties.getProperty(Constants.COMPONENT_START_TIMEOUT, "60"));
-
 		for (MetaObject mObj : metaObjectList) {
-			Proxy proxy = new Proxy(mObj);
-			proxy.getManifest().setComponentType(tag);
-			proxy.setName(mObj.getName());
+			Manifest manifest = createManifest(tag, mObj);
+			Proxy proxy = new Proxy(mObj, manifest);
+			if (Constants.COMPONENT.equalsIgnoreCase(manifest.getComponentType())) {
+				proxy.setContext(systemContext);
+			} else {
+				proxy.setContext(new PluginContext(systemContext, manifest));
+			}
+			systemContext.add(proxy);
 			try {
-				systemContext.add(proxy);
-
 				if (!mObj.isAutoStart()) {
 					logger.info("ℹ️ Skipping auto-start for " + tag + ": " + mObj.getName());
 					continue;
 				}
 
+				Map<String, Object> autoRunConf = mObj.getAutoRunConf();
+
 				CompletableFuture<Void> startFuture = CompletableFuture.runAsync(() -> {
 					try {
 						proxy.start();
-						setupAutoCall(proxy);
+						setupAutoCall(proxy, autoRunConf);
 					} catch (Exception e) {
 						throw new RuntimeException(e);
 					}
 				}, startExecutor);
 
 				// Wait for completion or timeout
-				startFuture.get(startTimeoutSeconds, TimeUnit.SECONDS);
+				startFuture.get(timeoutSeconds, TimeUnit.SECONDS);
 
 				logger.info("✅ Started " + tag + ": " + mObj.getName());
 				startedProxies.add(proxy); // Track successful starts
 			} catch (TimeoutException e) {
 				String msg = "⏱️ Timeout: Component [" + mObj.getName() + "] failed to start within "
-						+ startTimeoutSeconds + " seconds.";
+						+ timeoutSeconds + " seconds.";
 				try {
 					proxy.stop(); // Attempt to stop the proxy if start timed out
 				} catch (Exception ex) {
@@ -524,7 +599,7 @@ public class Reveila implements AutoCloseable {
 					proxy = remoteProxy.get();
 					try {
 						startTime = System.currentTimeMillis();
-						Object result = proxy.invoke("invoke", new Object[] { url, componentName, methodName, params });
+						Object result = proxy.invoke(null, "invoke", new Object[] { url, componentName, methodName, params });
 						Long timeUsed = System.currentTimeMillis() - startTime;
 						PerformanceTracker.getInstance().track(timeUsed, url); // Track remote invocation time
 						return result;
@@ -550,7 +625,7 @@ public class Reveila implements AutoCloseable {
 		}
 
 		startTime = System.currentTimeMillis();
-		Object result = proxy.invoke(methodName, params);
+		Object result = proxy.invoke(null, methodName, params);
 		Long timeUsed = System.currentTimeMillis() - startTime;
 		PerformanceTracker.getInstance().track(timeUsed, this.localUrl); // Track local invocation time
 		return result;

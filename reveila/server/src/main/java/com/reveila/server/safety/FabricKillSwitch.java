@@ -2,7 +2,6 @@ package com.reveila.server.safety;
 
 import com.reveila.core.safety.ReveilaKillSwitch;
 import com.reveila.core.safety.SafetyStatus;
-import java.util.concurrent.Executors;
 
 /**
  * Server-side implementation of the Sovereign Kill Switch.

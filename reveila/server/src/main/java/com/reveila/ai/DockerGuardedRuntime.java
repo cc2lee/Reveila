@@ -37,11 +37,7 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
     /**
      * Required for Proxy-based retrieval.
      */
-    public GuardedRuntime getInstance() {
-        return this;
-    }
-
-    private static DockerClient createDefaultClient() {
+   private static DockerClient createDefaultClient() {
         DefaultDockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder().build();
         
         DockerHttpClient httpClient = new ApacheDockerHttpClient.Builder()

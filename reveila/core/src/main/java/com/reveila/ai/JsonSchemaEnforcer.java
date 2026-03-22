@@ -27,7 +27,7 @@ public class JsonSchemaEnforcer extends com.reveila.system.AbstractService imple
 
     @Override
     public void onStart() throws Exception {
-        this.registry = (MetadataRegistry) systemContext.getProxy("MetadataRegistry").orElseThrow().invoke("getInstance", null);
+        this.registry = (MetadataRegistry) context.getProxy("MetadataRegistry").orElseThrow().invoke("getInstance", null);
     }
 
     @Override

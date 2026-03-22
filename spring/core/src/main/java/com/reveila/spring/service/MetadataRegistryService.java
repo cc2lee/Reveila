@@ -1,14 +1,13 @@
 package com.reveila.spring.service;
 
-import com.reveila.spring.model.OpenAiTool;
-import com.reveila.spring.model.PluginManifest;
-import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+
+import com.reveila.spring.model.OpenAiTool;
+import com.reveila.spring.model.PluginManifest;
 
 /**
  * Service to manage plugin metadata and generate OpenAI-compatible tool definitions.

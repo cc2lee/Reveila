@@ -16,15 +16,13 @@ import com.reveila.util.json.JsonException;
 import com.reveila.util.json.JsonUtil;
 
 public class Configuration {
-    
+
     private List<MetaObject> metaObjects;
-    private final String jsonContent;
-    
+
     public Configuration(InputStream inputStream) throws IOException, JsonException {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
-            this.jsonContent = reader.lines().collect(Collectors.joining(System.lineSeparator()));
+            this.metaObjects = parse(reader.lines().collect(Collectors.joining(System.lineSeparator())));
         }
-        this.metaObjects = parse();
     }
 
     public List<MetaObject> getMetaObjects() {
@@ -32,41 +30,41 @@ public class Configuration {
     }
 
     @SuppressWarnings("unchecked")
-    private synchronized List<MetaObject> parse() throws JsonException {
-        List<Map<String, Object>> rawObjectList = null;
+    private synchronized List<MetaObject> parse(String jsonContent) throws JsonException {
+        List<Map<String, Object>> rawList = null;
         try {
-            rawObjectList = JsonUtil.parseJsonStringToList(this.jsonContent);
+            rawList = JsonUtil.parseJsonStringToList(jsonContent);
         } catch (Exception e) {
             try {
-                Map<String, Object> singleObj = JsonUtil.parseJsonStringToMap(this.jsonContent);
-                rawObjectList = new ArrayList<>();
-                rawObjectList.add(singleObj);
+                Map<String, Object> singleObj = JsonUtil.parseJsonStringToMap(jsonContent);
+                rawList = new ArrayList<>();
+                rawList.add(singleObj);
             } catch (Exception e2) {
-                throw new JsonException("Failed to parse JSON content as List or Map.", e2);
+                throw new JsonException("Failed to parse configuration.", e2);
             }
         }
 
-        List<MetaObject> parsedObjects = new ArrayList<>();
+        if (rawList == null || rawList.isEmpty()) {
+            throw new JsonException("Mulformed configuration.");
+        }
 
-        if (rawObjectList != null) {
-            for (Map<String, Object> wrapper : rawObjectList) {
-                if (wrapper.containsKey(Constants.COMPONENT)) {
-                    Map<String, Object> map = (Map<String, Object>) wrapper.get(Constants.COMPONENT);
-                    if (map != null) {
-                        map.put("componentType", "system");
-                        parsedObjects.add(new MetaObject(map));
-                    }
-                } else if (wrapper.containsKey("plugin")) {
-                    Map<String, Object> map = (Map<String, Object>) wrapper.get("plugin");
-                    if (map != null) {
-                        map.put("componentType", "plugin");
-                        parsedObjects.add(new MetaObject(map));
-                    }
+        List<MetaObject> mObjList = new ArrayList<>();
+
+        for (Map<String, Object> wrapper : rawList) {
+            if (wrapper.containsKey(Constants.COMPONENT)) {
+                Map<String, Object> map = (Map<String, Object>) wrapper.get(Constants.COMPONENT);
+                if (map != null) {
+                    mObjList.add(new MetaObject(map));
+                }
+            } else if (wrapper.containsKey(Constants.PLUGIN)) {
+                Map<String, Object> map = (Map<String, Object>) wrapper.get(Constants.PLUGIN);
+                if (map != null) {
+                    mObjList.add(new MetaObject(map));
                 }
             }
         }
 
-        return parsedObjects;
+        return mObjList;
     }
 
     public synchronized void add(MetaObject metaObject) {
@@ -83,7 +81,7 @@ public class Configuration {
 
     public synchronized void writeToStream(OutputStream outputStream) throws IOException, JsonException {
         List<Map<String, Object>> listToSave = this.metaObjects.stream()
-            .map(MetaObject::getDataMap)
+                .map(MetaObject::getDataMap)
                 .collect(Collectors.toList());
         JsonUtil.writeToStream(listToSave, outputStream);
     }

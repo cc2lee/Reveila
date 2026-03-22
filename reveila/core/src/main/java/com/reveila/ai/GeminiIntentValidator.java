@@ -16,7 +16,7 @@ public class GeminiIntentValidator extends com.reveila.system.AbstractService im
 
     @Override
     public void onStart() throws Exception {
-        this.gemini = (GeminiProvider) systemContext.getProxy("GeminiProvider").orElseThrow().invoke("getInstance", null);
+        this.gemini = (GeminiProvider) context.getProxy("GeminiProvider").orElseThrow().invoke("getInstance", null);
     }
 
     @Override

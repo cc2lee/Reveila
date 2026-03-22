@@ -63,6 +63,33 @@ class ReveilaExpoModule : Module() {
       return@AsyncFunction gson.toJson(result)
     }
 
+    AsyncFunction("getSettingsConfigs") {
+      val systemHome = System.getProperty("system.home") ?: throw Exception("system.home not set")
+      val settingsDir = java.io.File(systemHome, "configs/settings")
+      val result = mutableMapOf<String, String>()
+      if (settingsDir.exists() && settingsDir.isDirectory) {
+        settingsDir.listFiles()?.filter { it.extension == "json" }?.forEach { file ->
+          result[file.nameWithoutExtension] = file.readText()
+        }
+      }
+      return@AsyncFunction com.google.gson.Gson().toJson(result)
+    }
+
+    AsyncFunction("saveSettingsConfigs") { payload: String ->
+      val systemHome = System.getProperty("system.home") ?: throw Exception("system.home not set")
+      val settingsDir = java.io.File(systemHome, "configs/settings")
+      if (!settingsDir.exists()) {
+        settingsDir.mkdirs()
+      }
+      val gson = com.google.gson.Gson()
+      val request = gson.fromJson(payload, Map::class.java) as Map<String, String>
+      for ((key, value) in request) {
+        val file = java.io.File(settingsDir, "$key.json")
+        file.writeText(value)
+      }
+      return@AsyncFunction true
+    }
+
     // Enables the module to be used as a native view. Definition components that are accepted as part of
     // the view definition: Prop, Events.
     View(ReveilaExpoModuleView::class) {

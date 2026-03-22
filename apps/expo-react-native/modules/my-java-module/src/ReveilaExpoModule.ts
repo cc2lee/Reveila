@@ -7,6 +7,8 @@ declare class ReveilaExpoModule extends NativeModule<ReveilaExpoModuleEvents> {
   hello(): string;
   setValueAsync(value: string): Promise<void>;
   invokeAsync(payload: string): Promise<string>;
+  getSettingsConfigs(): Promise<string>;
+  saveSettingsConfigs(payload: string): Promise<boolean>;
 }
 
 // This call loads the native module object from the JSI.
