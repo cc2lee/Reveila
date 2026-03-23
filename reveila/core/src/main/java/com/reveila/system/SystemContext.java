@@ -115,7 +115,7 @@ public final class SystemContext implements Context {
 
 	@Override
 	public Optional<Proxy> getProxy(String name) {
-		return getProxy(name, this.subject);
+		return Optional.ofNullable(this.proxiesByName.get(name));
 	}
 
 	public Optional<Proxy> getProxy(String name, Subject subject) {

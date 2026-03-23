@@ -544,7 +544,6 @@ public final class SystemProxy extends AbstractService implements Proxy {
 		return requiredRoles;
 	}
 
-    @Override
     public Object invoke(String methodName, Object[] args) throws Exception {
         lock.readLock().lock();
 		final ClassLoader pluginLoader = loaderRef.get();

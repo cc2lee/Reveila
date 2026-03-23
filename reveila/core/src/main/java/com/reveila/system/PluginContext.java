@@ -23,7 +23,11 @@ public final class PluginContext implements Context {
     }
 
     public Optional<Proxy> getProxy(String name) {
-        return systemContext.getProxy(name, this.subject);
+        SystemProxy systemProxy = (SystemProxy) systemContext.getProxy(name, subject).orElse(null);
+        if (systemProxy == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new PluginProxy(systemProxy, subject));
     }
 
     @Override

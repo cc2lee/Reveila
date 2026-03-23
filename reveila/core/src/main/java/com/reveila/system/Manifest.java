@@ -14,8 +14,8 @@ public class Manifest {
     private List<String> roles = new ArrayList<>();
     private List<String> requiredRoles = new ArrayList<>();
     private String implementationClass;
-    private String componentType; // "system" ("component") or "plugin"
-    private List<ExposedMethod> exposedMethods = new ArrayList<>();
+    private String componentType; // "component" or "plugin"
+    private List<ExposedMethod> exposedMethods;
     private boolean isolate = false;
 
     public String getOrg() {

@@ -4,24 +4,7 @@ import android.content.Context;
 import android.os.Build;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.concurrent.ExecutorService;
-import com.reveila.data.GenericRepository;
-import com.reveila.data.JsonFileRepository;
-import com.reveila.data.EntityMapper;
-import com.reveila.data.Entity;
-import com.reveila.data.Repository;
-import com.reveila.data.Page;
-import com.reveila.system.Reveila;
-import com.reveila.system.PlatformAdapter;
-import com.reveila.system.Constants;
-import com.reveila.event.EventConsumer;
-
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -29,89 +12,45 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
+import com.reveila.data.Entity;
+import com.reveila.data.JsonFileRepository;
+import com.reveila.data.Page;
+import com.reveila.data.Repository;
+import com.reveila.system.BasePlatformAdapter;
+import com.reveila.system.Constants;
+
 /**
  * An implementation of {@link PlatformAdapter} for the Android environment.
  */
-public class AndroidPlatformAdapter implements PlatformAdapter {
+public class AndroidPlatformAdapter extends BasePlatformAdapter {
 
-    private String systemHome;
     private final Context context;
-    private Properties properties;
-    private Logger logger;
-    private Reveila reveila;
     private final Map<String, Repository<Entity, Map<String, Map<String, Object>>>> repositories = new HashMap<>();
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
-    private final Map<String, java.util.concurrent.ScheduledFuture<?>> autoCalls = new HashMap<>();
 
-    public AndroidPlatformAdapter(Context context) throws IOException {
+    public AndroidPlatformAdapter(Context context) throws Exception {
         this(context, new Properties());
     }
 
-    public AndroidPlatformAdapter(Context context, Properties overwrites) throws IOException {
+    public AndroidPlatformAdapter(Context context, Properties overwrites) throws Exception {
+        super(prepareProperties(context, overwrites));
         this.context = context;
-        this.systemHome = overwrites != null && overwrites.containsKey(Constants.SYSTEM_HOME) ? 
-                overwrites.getProperty(Constants.SYSTEM_HOME) : 
-                new File(context.getFilesDir(), "reveila/system").getAbsolutePath();
-        this.properties = new Properties();
-        loadProperties(this.systemHome);
+        // Re-configure logging to include logcat
+        configureAndroidLogging();
+    }
+
+    private static Properties prepareProperties(Context context, Properties overwrites) {
+        Properties props = new Properties();
+        String defaultHome = new File(context.getFilesDir(), "reveila/system").getAbsolutePath();
+        props.setProperty(Constants.SYSTEM_HOME, defaultHome);
         if (overwrites != null) {
-            this.properties.putAll(overwrites);
+            props.putAll(overwrites);
         }
-        this.logger = configureLogging(this.properties);
-    }
-
-    private void loadProperties(String systemHome) throws IOException {
-        File pf = new File(systemHome, "configs/reveila.properties");
-        if (pf.exists()) {
-            try (InputStream is = new FileInputStream(pf)) {
-                properties.load(is);
-                android.util.Log.i("AndroidPlatformAdapter", "Loaded reveila.properties from filesystem: " + pf.getAbsolutePath());
-            } catch (IOException e) {
-                android.util.Log.w("AndroidPlatformAdapter", "Failed to load reveila.properties from filesystem, falling back to assets", e);
-                loadPropertiesFromAssets();
-            }
-        } else {
-            loadPropertiesFromAssets();
-        }
-        
-        // Ensure SYSTEM_HOME is set for Android
-        properties.setProperty(Constants.SYSTEM_HOME, systemHome);
-        
-        // Use a default secret key if not provided (for development)
-        if (!properties.containsKey(Constants.CRYPTOGRAPHER_SECRETKEY)) {
-            properties.setProperty(Constants.CRYPTOGRAPHER_SECRETKEY, "ReveilaAndroidDefaultSecretKey123");
-        }
-
-        resolvePlaceholders();
-    }
-
-    private void resolvePlaceholders() {
-        String home = properties.getProperty(Constants.SYSTEM_HOME);
-        if (home == null) return;
-
-        for (String key : properties.stringPropertyNames()) {
-            String value = properties.getProperty(key);
-            if (value != null && value.contains("${system.home}")) {
-                properties.setProperty(key, value.replace("${system.home}", home));
-            }
-        }
-    }
-
-    private void loadPropertiesFromAssets() {
-        try (InputStream is = context.getAssets().open("reveila/system/configs/reveila.properties")) {
-            properties.load(is);
-            android.util.Log.i("AndroidPlatformAdapter", "Loaded reveila.properties from assets");
-        } catch (IOException e) {
-            android.util.Log.w("AndroidPlatformAdapter", "Failed to load reveila.properties from assets", e);
-        }
+        return props;
     }
 
     @Override
@@ -120,40 +59,14 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
     }
 
     @Override
-    public Properties getProperties() {
-        return this.properties;
-    }
-
-    @Override
-    public InputStream getFileInputStream(String relativePath) throws IOException {
-        File file = new File(getSystemHome(), relativePath);
-        if (!file.exists()) {
-            // Try to load from assets if not in filesystem
-            return context.getAssets().open("reveila/" + relativePath);
-        }
-        return new FileInputStream(file);
-    }
-
-    @Override
-    public OutputStream getFileOutputStream(String relativePath, boolean append) throws IOException {
-        File file = new File(getSystemHome(), relativePath);
-        File parent = file.getParentFile();
-        if (parent != null && !parent.exists()) {
-            parent.mkdirs();
-        }
-        return new FileOutputStream(file, append);
-    }
-
-    @Override
     public String[] getConfigFilePaths() throws IOException {
         String platform = properties.getProperty("platform");
         String targetFile = (platform != null && !platform.trim().isEmpty()) ? platform.trim() + ".json" : "default.json";
         
-        File componentsDir = new File(getSystemHome(), Constants.CONFIGS_DIR_NAME + File.separator + "components");
+        File componentsDir = new File(getSystemHome().toFile(), Constants.CONFIGS_DIR_NAME + File.separator + "components");
         
         List<String> paths = new ArrayList<>();
         
-        // Add files from filesystem
         if (componentsDir.exists()) {
             File f = new File(componentsDir, targetFile);
             if (f.exists()) {
@@ -166,87 +79,7 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
             }
         }
         
-        // If empty, try to list from assets (initial setup)
-        if (paths.isEmpty()) {
-            try {
-                String[] assets = context.getAssets().list("reveila/system/configs/components");
-                if (assets != null) {
-                    boolean found = false;
-                    for (String asset : assets) {
-                        if (asset.equals(targetFile)) {
-                            paths.add(Constants.CONFIGS_DIR_NAME + File.separator + "components" + File.separator + asset);
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        for (String asset : assets) {
-                            if (asset.equals("default.json")) {
-                                paths.add(Constants.CONFIGS_DIR_NAME + File.separator + "components" + File.separator + asset);
-                                break;
-                            }
-                        }
-                    }
-                }
-            } catch (IOException e) {
-                // Ignore
-            }
-        }
-        
         return paths.toArray(new String[0]);
-    }
-
-    @Override
-    public Logger getLogger() {
-        return this.logger;
-    }
-
-    @Override
-    public void registerAutoCall(String componentName, String methodName, long delaySeconds, long intervalSeconds, EventConsumer eventConsumer) throws Exception {
-        unregisterAutoCall(componentName);
-        
-        java.util.concurrent.ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
-            try {
-                if (reveila != null) {
-                    reveila.invoke(componentName, methodName, new Object[0]);
-                }
-            } catch (Exception e) {
-                logger.log(Level.SEVERE, "Error in auto-call for component: " + componentName, e);
-            }
-        }, delaySeconds, intervalSeconds, TimeUnit.SECONDS);
-        
-        autoCalls.put(componentName, future);
-    }
-
-    @Override
-    public void unregisterAutoCall(String componentName) {
-        java.util.concurrent.ScheduledFuture<?> future = autoCalls.remove(componentName);
-        if (future != null) {
-            future.cancel(true);
-        }
-    }
-
-    @Override
-    public void plug(Reveila reveila) {
-        this.reveila = reveila;
-    }
-
-    @Override
-    public void unplug() {
-        this.reveila = null;
-        scheduler.shutdownNow();
-    }
-
-    @Override
-    public void reloadProperties() throws Exception {
-        Properties newProps = new Properties();
-        // Save the current OVERWRITES or default behavior that shouldn't be overridden
-        String currentSysHome = properties.getProperty(Constants.SYSTEM_HOME);
-        
-        loadProperties(this.systemHome);
-        if (currentSysHome != null) {
-            properties.setProperty(Constants.SYSTEM_HOME, currentSysHome);
-        }
     }
 
     @Override
@@ -256,29 +89,17 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
             return repositories.get(entityType);
         }
 
-        File dataDir = new File(getSystemHome(), "data");
+        File dataDir = new File(getSystemHome().toFile(), "data");
         if (!dataDir.exists()) {
             dataDir.mkdirs();
         }
 
-        // For Android, we use JsonFileRepository by default for all entities.
-        // We wrap it in a GenericRepository to match the Port's expected return type.
-        // Since we are working with generic Entity DTOs, we use Entity as the type.
-        
-        // Note: In a more complex scenario, we would use specific POJOs.
-        // For the "Property Bag" pattern, we can use a Map-based repository or similar.
-        // Here we use Entity.class directly if the JsonFileRepository can handle it.
-        
         JsonFileRepository<Map, String> jsonRepo = new JsonFileRepository<>(
             Paths.get(dataDir.getAbsolutePath()), 
             entityType, 
             Map.class, 
             String.class
         );
-        
-        // We need a way to map between Map and Entity
-        // Since Entity is just a wrapper around a Map, we can provide a custom GenericRepository or similar.
-        // For simplicity in this port, let's assume we want to store things as Maps in the JSON file.
         
         Repository<Entity, Map<String, Map<String, Object>>> repo = new Repository<Entity, Map<String, Map<String, Object>>>() {
             @Override
@@ -290,7 +111,6 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
             @Override
             public Entity store(Entity entity) {
                 Map<String, Object> attributes = new HashMap<>(entity.getAttributes());
-                // Ensure ID is present in attributes for JsonFileRepository's getId fallback
                 Map<String, Map<String, Object>> key = entity.getKey();
                 if (key.containsKey("id")) {
                     attributes.put("id", key.get("id").get("value"));
@@ -369,24 +189,13 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
         return repo;
     }
 
-    @Override
-    public ExecutorService getExecutor() {
-        return scheduler;
-    }
-
-    public String getSystemHome() {
-        return this.systemHome;
-    }
-
-    private Logger configureLogging(Properties props) {
-        Logger newLogger = Logger.getLogger("reveila-android");
-        newLogger.setUseParentHandlers(false);
-        
+    private void configureAndroidLogging() {
+        Logger rootLogger = Logger.getLogger("");
         Handler logcatHandler = new Handler() {
             @Override
             public void publish(LogRecord record) {
                 if (record == null) return;
-                String tag = record.getLoggerName();
+                String tag = record.getLoggerName() != null && !record.getLoggerName().isEmpty() ? record.getLoggerName() : "reveila-android";
                 String msg = record.getMessage();
                 int level = record.getLevel().intValue();
 
@@ -405,8 +214,6 @@ public class AndroidPlatformAdapter implements PlatformAdapter {
             @Override
             public void close() throws SecurityException {}
         };
-        
-        newLogger.addHandler(logcatHandler);
-        return newLogger;
+        rootLogger.addHandler(logcatHandler);
     }
 }
