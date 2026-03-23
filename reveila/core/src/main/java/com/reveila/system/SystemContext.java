@@ -5,8 +5,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
+
+import javax.security.auth.Subject;
 
 import com.reveila.crypto.Cryptographer;
 import com.reveila.error.SystemException;
@@ -28,6 +31,7 @@ public final class SystemContext implements Context {
 	private Cryptographer cryptographer;
 	private Map<String, Proxy> proxiesByName = new ConcurrentHashMap<>();
 	private PlatformAdapter platformAdapter;
+	private Subject subject;
 
 	public PlatformAdapter getPlatformAdapter() {
 		return platformAdapter;
@@ -55,8 +59,15 @@ public final class SystemContext implements Context {
 			EventManager eventManager,
 			Logger logger,
 			Cryptographer cryptographer,
-			PlatformAdapter platformAdapter) {
+			PlatformAdapter platformAdapter,
+			Subject subject) {
 
+		if (subject != null) {
+			this.subject = subject;
+		} else {
+			this.subject = new Subject();
+			this.subject.getPrincipals().add(new RolePrincipal(Constants.SYSTEM));
+		}
 		this.properties = new Properties(Objects.requireNonNull(properties, "Argument 'properties' must not be null"));
 		this.eventManager = Objects.requireNonNull(eventManager, "Argument 'eventManager' must not be null");
 		this.logger = Objects.requireNonNull(logger, "Argument 'logger' must not be null");
@@ -64,7 +75,7 @@ public final class SystemContext implements Context {
 		this.platformAdapter = Objects.requireNonNull(platformAdapter, "Argument 'platformAdapter' must not be null");
 	}
 
-	public synchronized void add(Proxy proxy) throws SystemException {
+	public synchronized void add(SystemProxy proxy) throws SystemException {
 		Objects.requireNonNull(proxy, "Argument 'proxy' must not be null");
 		if (proxiesByName.size() == Integer.MAX_VALUE) {
 			throw new SystemException("Too many components (" + proxiesByName.size() + ")!");
@@ -104,29 +115,23 @@ public final class SystemContext implements Context {
 
 	@Override
 	public Optional<Proxy> getProxy(String name) {
-		Objects.requireNonNull(name, "Component name cannot be null when getting a proxy.");
-		return Optional.ofNullable(this.proxiesByName.get(name));
+		return getProxy(name, this.subject);
 	}
 
-	public Optional<Proxy> getProxy(String name, Manifest manifest) {
+	public Optional<Proxy> getProxy(String name, Subject subject) {
 		Objects.requireNonNull(name, "Component name cannot be null when getting a proxy.");
-		Objects.requireNonNull(manifest, "Component manifest cannot be null when getting a proxy.");
-		List<String> roles = manifest.getRoles();
-		if (roles == null || roles.isEmpty()) {
-			return Optional.empty();
-		}
-		Proxy proxy = this.proxiesByName.get(name);
-		if (proxy == null) {
-			return Optional.empty();
-		}
-		List<String> requiredRoles = proxy.getRequiredRoles();
-		if (requiredRoles == null || requiredRoles.isEmpty()) {
-			return Optional.ofNullable(proxy);
-		}
-		else {
-			for (String requiredRole : requiredRoles) {
-				if (roles.contains(requiredRole)) {
-					return Optional.ofNullable(proxy);
+		Objects.requireNonNull(subject, "Subject cannot be null when getting a proxy.");
+		Set<RolePrincipal> roles = subject.getPrincipals(RolePrincipal.class);
+		if (roles != null && !roles.isEmpty()) {
+			Proxy proxy = this.proxiesByName.get(name);
+			if (proxy != null) {
+				List<String> requiredRoles = proxy.getRequiredRoles();
+				if (requiredRoles != null && !requiredRoles.isEmpty()) {
+					for (RolePrincipal role : roles) {
+						if (requiredRoles.contains(role.getName())) {
+							return Optional.ofNullable(proxy);
+						}
+					}
 				}
 			}
 		}

@@ -21,7 +21,7 @@ We will implement a **Broker Pattern** enforced by the existing `Proxy.invoke(..
 
 #### A. The "DMZ" (Plugin Layer)
 * **Core Restriction:** All components defined in `${system.home}/configs/components` are **reserved for local system use only**.
-* Add method Proxy.getManifest() that returns a Manifest object. The Manifest class should implement getComponentType() that returns either "system" or "plugin".
+* Add method Proxy.getManifest() that returns a Manifest object. The Manifest class should implement getComponentType() that returns either "system" / "component" or "plugin".
 * SystemContext.getProxy(String name) will enforce this rule based on the Proxy's Manefest, explicitly blocking any external/Agent request targeting these components.
 * **Plugin Brokerage:** All Agent interactions must be brokered through "Plugin" components.
 * **Extended Manifest:** Each plugin must include an `exposed_methods` list in its manifest, defining exactly which functions are available to the AI.

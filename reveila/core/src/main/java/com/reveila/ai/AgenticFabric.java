@@ -2,6 +2,8 @@ package com.reveila.ai;
 
 import java.util.Map;
 
+import com.reveila.system.PluginPrincipal;
+
 /**
  * Phase 5: Collaboration (The Agentic Fabric).
  * Manages multi-agent workflows and verticalized skill sets.
@@ -54,12 +56,12 @@ public class AgenticFabric extends com.reveila.system.AbstractService {
      * @param taskArguments The task-specific arguments.
      * @return The result of the delegated task.
      */
-    public Object delegate(AgentPrincipal parent, String targetIntent, Map<String, Object> taskArguments) {
-        AgentPrincipal child = parent.deriveChild("worker-agent-" + java.util.UUID.randomUUID().toString().substring(0,4));
+    public Object delegate(PluginPrincipal parent, String targetIntent, Map<String, Object> taskArguments) {
+        PluginPrincipal child = parent.deriveChild("worker-agent-" + java.util.UUID.randomUUID().toString().substring(0,4));
         
         // Maintain episodic memory by passing context from the parent trace
-        Map<String, Object> parentContext = sessionManager.getContext(parent.traceId());
-        sessionManager.saveContext(child.traceId(), parentContext);
+        Map<String, Object> parentContext = sessionManager.getContext(parent.getTraceId());
+        sessionManager.saveContext(child.getTraceId(), parentContext);
 
         // Recursive call back into the bridge
         InvocationResult result = bridge.invoke(child, null, targetIntent, taskArguments);

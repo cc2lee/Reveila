@@ -2,6 +2,8 @@ package com.reveila.ai;
 
 import java.util.Map;
 
+import com.reveila.system.PluginPrincipal;
+
 /**
  * Implementation of Forensic Auditability using Amazon S3.
  * Captures reasoning traces and tool outputs for compliance and audit.
@@ -12,25 +14,25 @@ import java.util.Map;
 public class S3FlightRecorder implements FlightRecorder {
     
     @Override
-    public void recordStep(AgentPrincipal principal, String stepName, Map<String, Object> data) {
+    public void recordStep(PluginPrincipal principal, String stepName, Map<String, Object> data) {
         // Async Implementation: Stream to S3 with Object Lock for immutability
-        System.out.println("[S3-AUDIT] Trace: " + principal.traceId() + " | Step: " + stepName);
+        System.out.println("[S3-AUDIT] Trace: " + principal.getTraceId() + " | Step: " + stepName);
     }
 
     @Override
-    public void recordReasoning(AgentPrincipal principal, String reasoning) {
+    public void recordReasoning(PluginPrincipal principal, String reasoning) {
         // Persist the agent's internal 'thought' process to S3
-        System.out.println("[S3-AUDIT] Trace: " + principal.traceId() + " | Thought: " + reasoning);
+        System.out.println("[S3-AUDIT] Trace: " + principal.getTraceId() + " | Thought: " + reasoning);
     }
 
     @Override
-    public void recordToolOutput(AgentPrincipal principal, String toolName, Object output) {
-        System.out.println("[S3-AUDIT] Trace: " + principal.traceId() + " | Tool Output: " + toolName);
+    public void recordToolOutput(PluginPrincipal principal, String toolName, Object output) {
+        System.out.println("[S3-AUDIT] Trace: " + principal.getTraceId() + " | Tool Output: " + toolName);
     }
 
     @Override
-    public void recordForensicMetadata(AgentPrincipal principal, Map<String, Object> metrics) {
+    public void recordForensicMetadata(PluginPrincipal principal, Map<String, Object> metrics) {
         // Capture CPU, Memory peak, and Duration to S3
-        System.out.println("[S3-FORENSIC] Trace: " + principal.traceId() + " | Metrics: " + metrics);
+        System.out.println("[S3-FORENSIC] Trace: " + principal.getTraceId() + " | Metrics: " + metrics);
     }
 }

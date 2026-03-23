@@ -2,6 +2,8 @@ package com.reveila.ai;
 
 import java.util.Map;
 
+import com.reveila.system.PluginPrincipal;
+
 /**
  * The Universal Invocation Bridge (UIB) is the central orchestrator for all
  * agentic tool calls. This class serves as the Agentic Control Plane (ACP),
@@ -94,7 +96,7 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
      * @return An InvocationResult containing status and data.
      * @throws IllegalArgumentException If validation fails.
      */
-    public InvocationResult invoke(AgentPrincipal principal, AgencyPerimeter perimeter, String intent,
+    public InvocationResult invoke(PluginPrincipal principal, AgencyPerimeter perimeter, String intent,
             Map<String, Object> rawArguments) {
 
         // Phase 5: Recursive Invocation & Delegation Handling
@@ -107,7 +109,7 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
         // Trace Context Propagation
         String effectiveTraceId = TraceContextHolder.getTraceId();
         if (effectiveTraceId == null) {
-            effectiveTraceId = principal.traceId();
+            effectiveTraceId = principal.getTraceId();
             TraceContextHolder.setTraceId(effectiveTraceId);
         }
 
@@ -116,7 +118,7 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
 
         flightRecorder.recordStep(principal, "intent_intercepted", Map.of(
                 "intent", intent,
-                "trace_id", principal.traceId()));
+                "trace_id", principal.getTraceId()));
 
         String pluginId = intentValidator.validateIntent(intent);
 
@@ -172,7 +174,7 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
         // 2. HITL Check for High-Risk Actions
         if (isHighRiskAction(manifest, intent, validatedArgs)) {
             flightRecorder.recordStep(principal, "hitl_triggered", Map.of("intent", intent));
-            return InvocationResult.pendingApproval(intent, principal.traceId());
+            return InvocationResult.pendingApproval(intent, principal.getTraceId());
         }
 
         // 3. JIT Credential Injection
@@ -203,7 +205,7 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
             return InvocationResult.error(e.getMessage());
         } finally {
             // Only clear if we were the root of the trace context
-            if (principal.traceId().equals(TraceContextHolder.getTraceId())) {
+            if (principal.getTraceId().equals(TraceContextHolder.getTraceId())) {
                 TraceContextHolder.clear();
             }
         }

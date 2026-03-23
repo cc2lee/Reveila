@@ -26,6 +26,8 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import javax.security.auth.Subject;
+
 import com.reveila.crypto.DefaultCryptographer;
 import com.reveila.error.ConfigurationException;
 import com.reveila.error.SystemException;
@@ -39,14 +41,13 @@ public class Reveila implements AutoCloseable {
 	private Properties properties;
 	private SystemContext systemContext;
 	private boolean strictMode = true;
-	private List<Proxy> startedProxies;
+	private List<SystemProxy> startedProxies;
 
 	public SystemContext getSystemContext() {
 		return systemContext;
 	}
 
 	private Logger logger;
-	private String localAddress;
 	private URL localUrl;
 	private boolean standalone = true;
 	private boolean shutdown = false;
@@ -139,8 +140,7 @@ public class Reveila implements AutoCloseable {
 		this.startExecutor = platformAdapter.getExecutor();
 		this.properties = platformAdapter.getProperties();
 		this.logger = platformAdapter.getLogger();
-		this.localAddress = getLocalHost();
-		this.localUrl = new URI("http://" + this.localAddress + "/").toURL();
+		this.localUrl = new URI("http://" + getLocalHost() + "/").toURL();
 
 		printLogo();
 
@@ -264,9 +264,11 @@ public class Reveila implements AutoCloseable {
 			charset = StandardCharsets.UTF_8.name();
 		}
 
+		Subject subject = new Subject();
+		subject.getPrincipals().add(new RolePrincipal(Constants.SYSTEM));
 		this.systemContext = new SystemContext(
 				props, eventManager, this.logger,
-				new DefaultCryptographer(secretKey.getBytes(charset)), this.platformAdapter);
+				new DefaultCryptographer(secretKey.getBytes(charset)), this.platformAdapter, subject);
 	}
 
 	private List<MetaObject> parseMetaObjects(String dir) throws Exception {
@@ -322,7 +324,7 @@ public class Reveila implements AutoCloseable {
 		}
 	}
 
-	private void setupAutoCall(Proxy proxy, Map<String, Object> autoRunConf) throws Exception {
+	private void setupAutoCall(Proxy proxy, Map<String, Object> autoRunConf, Subject subject) throws Exception {
 		if (proxy == null) {
 			throw new IllegalArgumentException("Argument 'proxy' cannot be null.");
 		}
@@ -359,7 +361,7 @@ public class Reveila implements AutoCloseable {
 		}
 
 		platformAdapter.registerAutoCall(proxy.getName(), methodName,
-				Long.parseLong(delay), Long.parseLong(interval), proxy);
+				Long.parseLong(delay), Long.parseLong(interval), proxy, subject);
 	}
 
 	private Manifest createManifest(String tag, MetaObject mObj) {
@@ -442,11 +444,15 @@ public class Reveila implements AutoCloseable {
 
 		for (MetaObject mObj : metaObjectList) {
 			Manifest manifest = createManifest(tag, mObj);
-			Proxy proxy = new Proxy(mObj, manifest);
+			Subject subject = new Subject();
+        	SystemProxy proxy = new SystemProxy(mObj, manifest);
 			if (Constants.COMPONENT.equalsIgnoreCase(manifest.getComponentType())) {
 				proxy.setContext(systemContext);
+				subject.getPrincipals().add(new RolePrincipal(manifest.getName()));
 			} else {
+				// Use a plugin context with restricted access
 				proxy.setContext(new PluginContext(systemContext, manifest));
+				subject.getPrincipals().add(PluginPrincipal.create(manifest.getName(), manifest.getOrg()));
 			}
 			systemContext.add(proxy);
 			try {
@@ -460,7 +466,7 @@ public class Reveila implements AutoCloseable {
 				CompletableFuture<Void> startFuture = CompletableFuture.runAsync(() -> {
 					try {
 						proxy.start();
-						setupAutoCall(proxy, autoRunConf);
+						setupAutoCall(proxy, autoRunConf, subject);
 					} catch (Exception e) {
 						throw new RuntimeException(e);
 					}
@@ -510,7 +516,7 @@ public class Reveila implements AutoCloseable {
 		// Stop in reverse order of starting (LIFO)
 		boolean success = true;
 		Collections.reverse(startedProxies);
-		for (Proxy p : startedProxies) {
+		for (SystemProxy p : startedProxies) {
 			try {
 				p.stop();
 			} catch (Exception e) {
@@ -521,21 +527,6 @@ public class Reveila implements AutoCloseable {
 
 		startedProxies.clear();
 		return success;
-	}
-
-	/**
-	 * Invokes a method on a loaded component. This is the main entry point for the
-	 * React Native bridge to interact with the Reveila backend.
-	 *
-	 * @param componentName The name of the component to invoke.
-	 * @param methodName    The name of the method to invoke.
-	 * @param params        The parameters to pass to the method.
-	 * @return The result of the method invocation.
-	 * @throws Exception if the component or method is not found, or if invocation
-	 *                   fails.
-	 */
-	public Object invoke(String componentName, String methodName, Object[] params) throws Exception {
-		return invoke(componentName, methodName, params, null);
 	}
 
 	/**
@@ -563,17 +554,17 @@ public class Reveila implements AutoCloseable {
 	 * @param params        The parameters to pass to the method.
 	 * @return The CompletableFuture result of the method invocation.
 	 */
-	public CompletableFuture<Object> invokeAsync(String componentName, String methodName, Object[] params) {
+	public CompletableFuture<Object> invokeAsync(String componentName, String methodName, Object[] params, String callerIp, Subject subject) {
 		return CompletableFuture.supplyAsync(() -> {
 			try {
-				return invoke(componentName, methodName, params, null);
+				return invoke(componentName, methodName, params, callerIp, subject);
 			} catch (Exception e) {
 				throw new RuntimeException(e);
 			}
 		});
 	}
 
-	public Object invoke(String componentName, String methodName, Object[] params, String callerIp) throws Exception {
+	public Object invoke(String componentName, String methodName, Object[] params, String callerIp, Subject subject) throws Exception {
 
 		// This method actually performs the invocation logic
 
@@ -587,7 +578,7 @@ public class Reveila implements AutoCloseable {
 					+ methodName);
 		}
 
-		Proxy proxy = null;
+		SystemProxy proxy = null;
 
 		if (standalone == false) {
 			// Use the fastest node in the cluster to handle the request
@@ -596,10 +587,10 @@ public class Reveila implements AutoCloseable {
 			if (url != this.localUrl) {
 				Optional<Proxy> remoteProxy = systemContext.getProxy(Constants.REMOTE_REVEILA);
 				if (remoteProxy.isPresent()) {
-					proxy = remoteProxy.get();
+					proxy = (SystemProxy) remoteProxy.get();
 					try {
 						startTime = System.currentTimeMillis();
-						Object result = proxy.invoke(null, "invoke", new Object[] { url, componentName, methodName, params });
+						Object result = proxy.invoke("invoke", new Object[] { url, componentName, methodName, params }, subject);
 						Long timeUsed = System.currentTimeMillis() - startTime;
 						PerformanceTracker.getInstance().track(timeUsed, url); // Track remote invocation time
 						return result;
@@ -619,28 +610,24 @@ public class Reveila implements AutoCloseable {
 		// remote invocation failed
 		Optional<Proxy> localProxy = systemContext.getProxy(componentName);
 		if (localProxy.isPresent()) {
-			proxy = localProxy.get();
+			proxy = (SystemProxy) localProxy.get();
 		} else {
 			throw new ConfigurationException("Component '" + componentName + "' not found.");
 		}
 
 		startTime = System.currentTimeMillis();
-		Object result = proxy.invoke(null, methodName, params);
+		Object result = proxy.invoke(methodName, params, subject);
 		Long timeUsed = System.currentTimeMillis() - startTime;
 		PerformanceTracker.getInstance().track(timeUsed, this.localUrl); // Track local invocation time
 		return result;
 	}
 
 	private String getLocalHost() {
-		String address = null;
 		try {
 			InetAddress localHost = InetAddress.getLocalHost();
-			address = localHost.getHostAddress();
+			return localHost.getHostAddress();
 		} catch (UnknownHostException e) {
-			logger.info("Unable to retrieve local IP address. Invocation time tracking is disabled. Error: "
-					+ e.getMessage());
+			return "localhost";
 		}
-
-		return address;
 	}
 }

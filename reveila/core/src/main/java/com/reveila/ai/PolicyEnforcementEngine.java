@@ -2,6 +2,8 @@ package com.reveila.ai;
 
 import java.util.Map;
 
+import com.reveila.system.PluginPrincipal;
+
 /**
  * Phase 3: Governance & Security.
  * Responsible for intercepting tool calls, validating against Agency Perimeters,
@@ -20,7 +22,7 @@ public interface PolicyEnforcementEngine {
      * @param arguments The validated arguments.
      * @return The authorization status.
      */
-    AuthorizationStatus authorize(AgentPrincipal principal, AgencyPerimeter perimeter, String toolName, Map<String, Object> arguments);
+    AuthorizationStatus authorize(PluginPrincipal principal, AgencyPerimeter perimeter, String toolName, Map<String, Object> arguments);
 
     /**
      * Injects short-lived credentials into the execution context (JIT).
@@ -29,7 +31,7 @@ public interface PolicyEnforcementEngine {
      * @param scope The requested access scope.
      * @return A map of temporary credentials.
      */
-    Map<String, String> getJitCredentials(AgentPrincipal principal, String scope);
+    Map<String, String> getJitCredentials(PluginPrincipal principal, String scope);
 
     enum AuthorizationStatus {
         AUTHORIZED,

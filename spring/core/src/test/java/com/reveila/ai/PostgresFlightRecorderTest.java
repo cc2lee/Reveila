@@ -20,6 +20,7 @@ import com.reveila.spring.model.jpa.AuditLog;
 import com.reveila.spring.repository.jpa.JdbcAuditLogRepository;
 import com.reveila.spring.service.PostgresFlightRecorder;
 import com.reveila.system.PlatformAdapter;
+import com.reveila.system.PluginPrincipal;
 import com.reveila.system.SystemContext;
 
 @ExtendWith(MockitoExtension.class)
@@ -29,7 +30,7 @@ class PostgresFlightRecorderTest {
     @Mock private SystemContext systemContext;
     @Mock private PlatformAdapter platformAdapter;
     private PostgresFlightRecorder flightRecorder;
-    private AgentPrincipal principal;
+    private PluginPrincipal principal;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -40,7 +41,7 @@ class PostgresFlightRecorderTest {
         flightRecorder.setContext(systemContext);
         flightRecorder.start();
         
-        principal = AgentPrincipal.create("audit-agent", "tenant-1");
+        principal = PluginPrincipal.create("audit-agent", "tenant-1");
     }
 
     @Test
@@ -53,7 +54,7 @@ class PostgresFlightRecorderTest {
         verify(auditRepository).store(captor.capture());
 
         AuditLog savedLog = captor.getValue();
-        assertEquals(principal.traceId(), savedLog.getTraceId());
+        assertEquals(principal.getTraceId(), savedLog.getTraceId());
         assertEquals("REASONING_TRACE", savedLog.getAction());
         assertEquals(reasoning, savedLog.getReasoningTrace());
     }
@@ -69,7 +70,7 @@ class PostgresFlightRecorderTest {
         verify(auditRepository).store(captor.capture());
 
         AuditLog savedLog = captor.getValue();
-        assertEquals(principal.traceId(), savedLog.getTraceId());
+        assertEquals(principal.getTraceId(), savedLog.getTraceId());
         assertTrue(savedLog.getAction().contains(toolName));
         assertNotNull(savedLog.getMetadata());
     }

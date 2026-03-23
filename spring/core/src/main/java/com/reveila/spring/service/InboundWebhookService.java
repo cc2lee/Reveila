@@ -2,6 +2,9 @@ package com.reveila.spring.service;
 
 import com.reveila.ai.*;
 import com.reveila.system.AbstractService;
+import com.reveila.system.PluginPrincipal;
+import com.reveila.system.SystemProxy;
+
 import java.util.Map;
 import java.util.HashMap;
 
@@ -18,10 +21,10 @@ public class InboundWebhookService extends AbstractService {
 
     @Override
     protected void onStart() throws Exception {
-        this.bridge = (UniversalInvocationBridge) context.getProxy("UniversalInvocationBridge").orElseThrow().getInstance();
-        this.orchestrationService = (OrchestrationService) context.getProxy("OrchestrationService").orElseThrow().getInstance();
-        this.flightRecorder = (FlightRecorder) context.getProxy("FlightRecorder").orElseThrow().getInstance();
-        this.llmFactory = (LlmProviderFactory) context.getProxy("LlmProviderFactory").orElseThrow().getInstance();
+        this.bridge = (UniversalInvocationBridge) ((SystemProxy) context.getProxy("UniversalInvocationBridge").orElseThrow()).getInstance();
+        this.orchestrationService = (OrchestrationService) ((SystemProxy) context.getProxy("OrchestrationService").orElseThrow()).getInstance();
+        this.flightRecorder = (FlightRecorder) ((SystemProxy) context.getProxy("FlightRecorder").orElseThrow()).getInstance();
+        this.llmFactory = (LlmProviderFactory) ((SystemProxy) context.getProxy("LlmProviderFactory").orElseThrow()).getInstance();
     }
 
     @Override
@@ -39,8 +42,8 @@ public class InboundWebhookService extends AbstractService {
             payload.getOrDefault("context", "{}").toString()
         );
 
-        AgentPrincipal principal = AgentPrincipal.create("webhook-agent-" + source, "external-ingestion");
-        AgentSession session = orchestrationService.createSession(principal.traceId());
+        PluginPrincipal principal = PluginPrincipal.create("webhook-agent-" + source, "external-ingestion");
+        AgentSession session = orchestrationService.createSession(principal.getTraceId());
         session.put("ingestion_source", source);
         session.put("filo_task_id", payload.get("task_id"));
 
@@ -49,6 +52,7 @@ public class InboundWebhookService extends AbstractService {
             "perimeter", perimeter
         ));
 
+        @SuppressWarnings("unchecked")
         Map<String, Object> context = (Map<String, Object>) payload.getOrDefault("context", Map.of());
         String action = (String) context.getOrDefault("required_action", "generic_task");
         

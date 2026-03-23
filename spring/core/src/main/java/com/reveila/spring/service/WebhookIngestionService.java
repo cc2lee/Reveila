@@ -4,7 +4,6 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
-import com.reveila.ai.AgentPrincipal;
 import com.reveila.ai.AgentSession;
 import com.reveila.ai.FlightRecorder;
 import com.reveila.ai.InvocationResult;
@@ -13,7 +12,9 @@ import com.reveila.ai.LlmProvider;
 import com.reveila.ai.LlmProviderFactory;
 import com.reveila.ai.OrchestrationService;
 import com.reveila.ai.UniversalInvocationBridge;
+import com.reveila.system.PluginPrincipal;
 import com.reveila.system.Reveila;
+import com.reveila.system.SystemProxy;
 
 /**
  * Service for ingesting external webhook signals from AI tools like Filo.
@@ -33,7 +34,10 @@ public class WebhookIngestionService {
         return reveila.getSystemContext().getProxy(name)
                 .map(p -> {
                     try {
-                        return p.getInstance();
+                        if (p instanceof SystemProxy) {
+                            return ((SystemProxy) p).getInstance();
+                        }
+                        return p.invoke("getInstance", null);
                     } catch (Exception e) {
                         return null;
                     }
@@ -70,8 +74,8 @@ public class WebhookIngestionService {
         );
 
         // 3. Initiate AgentSession and record ingestion
-        AgentPrincipal principal = AgentPrincipal.create("webhook-agent-" + source, "external-ingestion");
-        AgentSession session = orchestrationService.createSession(principal.traceId());
+        PluginPrincipal principal = PluginPrincipal.create("webhook-agent-" + source, "external-ingestion");
+        AgentSession session = orchestrationService.createSession(principal.getTraceId());
         session.put("ingestion_source", source);
         session.put("filo_task_id", payload.get("task_id"));
         session.put("perimeter_requested", perimeter);

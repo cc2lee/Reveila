@@ -406,5 +406,5 @@ docker logs reveila-fabric-standalone 2>&1 | Select-String "CRITICAL_LOG", "ALPH
 I am standing by to see which modules are currently "frozen" in your build.
 
 
-.\gradlew.bat clean build -x test
-.\gradlew.bat clean bootJar -x test
+./gradlew.bat clean build -x test
+./gradlew.bat clean bootJar -x test

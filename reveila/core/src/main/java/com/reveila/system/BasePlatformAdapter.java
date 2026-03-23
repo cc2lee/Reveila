@@ -31,6 +31,8 @@ import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 import java.util.stream.Stream;
 
+import javax.security.auth.Subject;
+
 import com.reveila.error.ConfigurationException;
 import com.reveila.error.SystemException;
 import com.reveila.event.AutoCallEvent;
@@ -454,7 +456,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
 
     @Override
     public void registerAutoCall(String componentName, String methodName, long delaySeconds, long intervalSeconds,
-            EventConsumer eventConsumer) {
+            EventConsumer eventConsumer, Subject subject) throws Exception {
 
         // Unregister existing task for this component if any
         unregisterAutoCall(componentName);
@@ -465,7 +467,8 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
                 return;
 
             try {
-                reveila.invoke(componentName, methodName, null);
+                // String componentName, String methodName, Object[] params, String callerIp, Subject subject
+                reveila.invoke(componentName, methodName, null, "localhost", subject);
                 AutoCallEvent event = new AutoCallEvent(this, componentName, methodName, AutoCallEvent.COMPLETED,
                         System.currentTimeMillis(), null);
                 notifyAutoCallEventListener(eventConsumer, event);

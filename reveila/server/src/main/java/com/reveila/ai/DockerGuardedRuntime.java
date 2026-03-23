@@ -13,6 +13,7 @@ import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
+import com.reveila.system.PluginPrincipal;
 
 /**
  * Docker-based implementation of GuardedRuntime using gVisor (runsc).
@@ -52,10 +53,10 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
     }
 
     @Override
-    public Object execute(AgentPrincipal principal, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials) {
+    public Object execute(PluginPrincipal principal, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials) {
         validateRequest(principal, perimeter);
         long startTime = System.currentTimeMillis();
-        logger.info("Executing via DockerGuardedRuntime for " + pluginId + " [Trace: " + principal.traceId() + "] Started at: " + startTime);
+        logger.info("Executing via DockerGuardedRuntime for " + pluginId + " [Trace: " + principal.getTraceId() + "] Started at: " + startTime);
 
         // Filesystem Isolation: Mount the plugin JAR as a read-only volume
         String pluginJarPath = "/opt/reveila/plugins/" + pluginId + ".jar";
@@ -74,8 +75,8 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
         // Environment Variables & JIT Credentials
         java.util.List<String> envVars = new java.util.ArrayList<>(java.util.List.of(
             "PLUGIN_ID=" + pluginId,
-            "TRACE_ID=" + principal.traceId(),
-            "TENANT_ID=" + principal.tenantId()
+            "TRACE_ID=" + principal.getTraceId(),
+            "TENANT_ID=" + principal.getTenantId()
         ));
 
         if (jitCredentials != null) {

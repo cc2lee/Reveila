@@ -1,7 +1,13 @@
 package com.reveila.system;
 
 import java.io.IOException;
-import java.nio.file.*;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -12,10 +18,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class PluginWatcher implements Runnable {
 
     private final Path pluginPath;
-    private final Proxy proxy;
+    private final SystemProxy proxy;
     private final AtomicBoolean running = new AtomicBoolean(true);
 
-    public PluginWatcher(Path pluginPath, Proxy proxy) {
+    public PluginWatcher(Path pluginPath, SystemProxy proxy) {
         this.pluginPath = pluginPath;
         if (!Files.isDirectory(this.pluginPath)) {
             throw new IllegalArgumentException("Plugin path must be a valid directory: " + pluginPath);

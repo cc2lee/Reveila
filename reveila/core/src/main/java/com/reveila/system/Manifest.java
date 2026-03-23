@@ -10,15 +10,32 @@ public class Manifest {
     private String version;
     private String description;
     private String author;
+    private String org;
     private List<String> roles = new ArrayList<>();
     private List<String> requiredRoles = new ArrayList<>();
-    
     private String implementationClass;
-    
-    private String componentType; // "system" or "plugin"
-    
+    private String componentType; // "system" ("component") or "plugin"
     private List<ExposedMethod> exposedMethods = new ArrayList<>();
+    private boolean isolate = false;
 
+    public String getOrg() {
+        return org;
+    }
+    public void setOrg(String org) {
+        this.org = org;
+    }
+    public void setRoles(List<String> roles) {
+        this.roles = roles;
+    }
+    public void setRequiredRoles(List<String> requiredRoles) {
+        this.requiredRoles = requiredRoles;
+    }
+    public boolean isIsolate() {
+        return isolate;
+    }
+    public void setIsolate(boolean isolate) {
+        this.isolate = isolate;
+    }
     public List<String> getRoles() { return roles; }
     public List<String> getRequiredRoles() { return requiredRoles; }
 
@@ -50,9 +67,7 @@ public class Manifest {
         public String name;
         public String description;
         public List<Parameter> parameters = new ArrayList<>();
-        
         public String returnType;
-        
         public List<String> requiredRoles = new ArrayList<>();
     }
     

@@ -8,6 +8,8 @@ import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.logging.Logger;
 
+import javax.security.auth.Subject;
+
 import com.reveila.data.Entity;
 import com.reveila.data.Repository;
 import com.reveila.event.EventConsumer;
@@ -24,7 +26,7 @@ public interface PlatformAdapter {
     public OutputStream getFileOutputStream(String relativePath, boolean append) throws IOException;
     public String[] listRelativePaths(String relativeDirectory, String ext) throws IOException;
     public Logger getLogger();
-    public void registerAutoCall(String componentName, String methodName, long delaySeconds, long intervalSeconds, EventConsumer eventConsumer) throws Exception;
+    public void registerAutoCall(String componentName, String methodName, long delaySeconds, long intervalSeconds, EventConsumer eventConsumer, Subject subject) throws Exception;
     public void unregisterAutoCall(String componentName);
     public void plug(Reveila reveila);
     public void unplug();

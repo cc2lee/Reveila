@@ -7,6 +7,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -31,36 +32,29 @@ public class Configuration {
 
     @SuppressWarnings("unchecked")
     private synchronized List<MetaObject> parse(String jsonContent) throws JsonException {
-        List<Map<String, Object>> rawList = null;
+        List<Map<String, Object>> list = null;
         try {
-            rawList = JsonUtil.parseJsonStringToList(jsonContent);
+            list = JsonUtil.parseJsonStringToList(jsonContent);
         } catch (Exception e) {
             try {
-                Map<String, Object> singleObj = JsonUtil.parseJsonStringToMap(jsonContent);
-                rawList = new ArrayList<>();
-                rawList.add(singleObj);
+                Map<String, Object> single = JsonUtil.parseJsonStringToMap(jsonContent);
+                list = new ArrayList<>();
+                list.add(single);
             } catch (Exception e2) {
                 throw new JsonException("Failed to parse configuration.", e2);
             }
         }
 
-        if (rawList == null || rawList.isEmpty()) {
+        if (list == null || list.isEmpty()) {
             throw new JsonException("Mulformed configuration.");
         }
 
         List<MetaObject> mObjList = new ArrayList<>();
 
-        for (Map<String, Object> wrapper : rawList) {
-            if (wrapper.containsKey(Constants.COMPONENT)) {
-                Map<String, Object> map = (Map<String, Object>) wrapper.get(Constants.COMPONENT);
-                if (map != null) {
-                    mObjList.add(new MetaObject(map));
-                }
-            } else if (wrapper.containsKey(Constants.PLUGIN)) {
-                Map<String, Object> map = (Map<String, Object>) wrapper.get(Constants.PLUGIN);
-                if (map != null) {
-                    mObjList.add(new MetaObject(map));
-                }
+        for (Map<String, Object> wrapper : list) {
+            Collection<Object> values = wrapper.values();
+            for (Object value : values) {
+                mObjList.add(new MetaObject((Map<String, Object>)value));
             }
         }
 

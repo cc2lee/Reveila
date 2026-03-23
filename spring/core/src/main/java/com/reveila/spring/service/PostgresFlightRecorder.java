@@ -5,10 +5,10 @@ import java.util.Map;
 import org.springframework.lang.NonNull;
 import org.springframework.scheduling.annotation.Async;
 
-import com.reveila.ai.AgentPrincipal;
 import com.reveila.ai.FlightRecorder;
 import com.reveila.data.Repository;
 import com.reveila.spring.model.jpa.AuditLog;
+import com.reveila.system.PluginPrincipal;
 
 /**
  * Implementation of Forensic Auditability using PostgreSQL.
@@ -38,7 +38,7 @@ public class PostgresFlightRecorder extends com.reveila.system.AbstractService i
 
     @Override
     @Async
-    public void recordStep(AgentPrincipal principal, String stepName, Map<String, Object> data) {
+    public void recordStep(PluginPrincipal principal, String stepName, Map<String, Object> data) {
         AuditLog log = createBaseLog(principal, stepName);
         if (data != null) {
             log.setMetadata(data.toString());
@@ -48,7 +48,7 @@ public class PostgresFlightRecorder extends com.reveila.system.AbstractService i
 
     @Override
     @Async
-    public void recordReasoning(AgentPrincipal principal, String reasoning) {
+    public void recordReasoning(PluginPrincipal principal, String reasoning) {
         AuditLog log = createBaseLog(principal, "REASONING_TRACE");
         log.setReasoningTrace(reasoning);
         if (auditRepository != null) auditRepository.store(log);
@@ -56,7 +56,7 @@ public class PostgresFlightRecorder extends com.reveila.system.AbstractService i
 
     @Override
     @Async
-    public void recordToolOutput(AgentPrincipal principal, String toolName, Object output) {
+    public void recordToolOutput(PluginPrincipal principal, String toolName, Object output) {
         AuditLog log = createBaseLog(principal, "TOOL_OUTPUT: " + toolName);
         if (output != null) {
             log.setMetadata(output.toString());
@@ -66,7 +66,7 @@ public class PostgresFlightRecorder extends com.reveila.system.AbstractService i
 
     @Override
     @Async
-    public void recordForensicMetadata(AgentPrincipal principal, Map<String, Object> metadata) {
+    public void recordForensicMetadata(PluginPrincipal principal, Map<String, Object> metadata) {
         AuditLog log = createBaseLog(principal, "FORENSIC_METRICS");
         
         // ADR: Track "Who watches the watchers"
@@ -89,9 +89,9 @@ public class PostgresFlightRecorder extends com.reveila.system.AbstractService i
         if (auditRepository != null) auditRepository.store(log);
     }
 
-    private @NonNull AuditLog createBaseLog(AgentPrincipal principal, String action) {
+    private @NonNull AuditLog createBaseLog(PluginPrincipal principal, String action) {
         AuditLog log = new AuditLog();
-        log.setTraceId(principal.traceId());
+        log.setTraceId(principal.getTraceId());
         log.setAction(action);
         return log;
     }

@@ -2,6 +2,8 @@ package com.reveila.ai;
 
 import java.util.Map;
 
+import com.reveila.system.PluginPrincipal;
+
 /**
  * Asynchronous logging of the agent's reasoning chain and tool outputs.
  * Provides forensic auditability for autonomous decisions.
@@ -16,7 +18,7 @@ public interface FlightRecorder {
      * @param stepName The name of the reasoning step.
      * @param data Metadata or data associated with the step.
      */
-    void recordStep(AgentPrincipal principal, String stepName, Map<String, Object> data);
+    void recordStep(PluginPrincipal principal, String stepName, Map<String, Object> data);
 
     /**
      * Records the reasoning trace (the 'thought' process) of the agent.
@@ -24,7 +26,7 @@ public interface FlightRecorder {
      * @param principal The agent principal.
      * @param reasoning The natural language reasoning for the action.
      */
-    void recordReasoning(AgentPrincipal principal, String reasoning);
+    void recordReasoning(PluginPrincipal principal, String reasoning);
 
     /**
      * Records the output of a tool/plugin execution.
@@ -33,7 +35,7 @@ public interface FlightRecorder {
      * @param toolName The name of the tool called.
      * @param output The raw or processed output.
      */
-    void recordToolOutput(AgentPrincipal principal, String toolName, Object output);
+    void recordToolOutput(PluginPrincipal principal, String toolName, Object output);
 
     /**
      * Captures forensic metadata for execution audit.
@@ -41,5 +43,5 @@ public interface FlightRecorder {
      * @param principal The agent principal.
      * @param metadata Map containing exit code, duration, memory peak, etc.
      */
-    void recordForensicMetadata(AgentPrincipal principal, Map<String, Object> metadata);
+    void recordForensicMetadata(PluginPrincipal principal, Map<String, Object> metadata);
 }

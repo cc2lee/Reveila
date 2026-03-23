@@ -1,6 +1,8 @@
 package com.reveila.spring.service;
 
 import com.reveila.ai.*;
+import com.reveila.system.SystemProxy;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,7 +37,7 @@ class WebhookIngestionServiceTest {
         when(reveila.getSystemContext()).thenReturn(systemContext);
         when(systemContext.getProxy(anyString())).thenReturn(java.util.Optional.of(proxy));
         
-        when(proxy.getInstance()).thenAnswer(invocation -> {
+        when(((SystemProxy) proxy).getInstance()).thenAnswer(invocation -> {
             String name = (String) Mockito.mockingDetails(systemContext).getInvocations().stream()
                 .filter(i -> i.getMethod().getName().equals("getProxy"))
                 .reduce((first, second) -> second)

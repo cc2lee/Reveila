@@ -5,21 +5,25 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.logging.Logger;
 
+import javax.security.auth.Subject;
+
 public final class PluginContext implements Context {
 
     private SystemContext systemContext;
     private Manifest manifest;
     private Properties properties = new Properties();
+    private Subject subject;
 
     public PluginContext(SystemContext context, Manifest manifest) {
         this.systemContext = context;
         this.manifest = manifest;
-
-        // TODO: load plugin properties
+        this.subject = new Subject();
+        this.subject.getPrincipals().add(PluginPrincipal.create(manifest.getName(), manifest.getOrg()));
+        // TODO: What properties should be added?
     }
 
     public Optional<Proxy> getProxy(String name) {
-        return this.systemContext.getProxy(name, manifest);
+        return systemContext.getProxy(name, this.subject);
     }
 
     @Override

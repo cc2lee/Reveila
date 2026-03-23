@@ -2,6 +2,8 @@ package com.reveila.ai;
 
 import java.util.Map;
 
+import com.reveila.system.PluginPrincipal;
+
 /**
  * A local or dummy GuardedRuntime implementation primarily for Android and non-Docker environments.
  * It executes plugins directly without physical isolation but can enforce Java-based
@@ -12,7 +14,7 @@ import java.util.Map;
 public class LocalGuardedRuntime implements GuardedRuntime {
 
     @Override
-    public Object execute(AgentPrincipal principal, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials) {
+    public Object execute(PluginPrincipal principal, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials) {
         // Since we cannot spawn isolated Docker containers on Android,
         // we could potentially use a custom classloader or simply log the execution here.
         // For a true local execution without overhead, this could act as a pass-through

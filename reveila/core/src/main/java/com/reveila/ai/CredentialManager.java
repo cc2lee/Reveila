@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.reveila.data.Entity;
 import com.reveila.data.Repository;
 import com.reveila.system.AbstractService;
+import com.reveila.system.PluginPrincipal;
 
 /**
  * Phase 3: JIT Token Management.
@@ -86,9 +87,9 @@ public class CredentialManager extends AbstractService {
      * @param scope     The requested access scope.
      * @return A map containing the temporary token.
      */
-    public Map<String, String> generateJitToken(AgentPrincipal principal, String scope) {
+    public Map<String, String> generateJitToken(PluginPrincipal principal, String scope) {
         String token = "jit_" + UUID.randomUUID().toString().substring(0, 8);
-        jitTokens.put(token, principal.traceId() + ":" + scope);
+        jitTokens.put(token, principal.getTraceId() + ":" + scope);
         return Map.of("REVEILA_JIT_TOKEN", token);
     }
 
