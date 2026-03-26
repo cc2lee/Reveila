@@ -22,9 +22,9 @@ public class FabricSafetyListener implements SafetyCommandListener {
     private static volatile boolean globalHalt = false;
 
     /**
-     * Java 21 ScopedValue (Preview) to propagate safety state within specific task hierarchies.
+     * Java ThreadLocal to propagate safety state within specific task hierarchies.
      */
-    public static final ScopedValue<Boolean> IS_KILLED = ScopedValue.newInstance();
+    public static final ThreadLocal<Boolean> IS_KILLED = ThreadLocal.withInitial(() -> false);
 
     @Override
     public void onSafetyCommand(AgentSafetyCommand command) {
@@ -44,13 +44,18 @@ public class FabricSafetyListener implements SafetyCommandListener {
      */
     public static void runInSafetyScope(String agentId, Runnable task) {
         boolean killed = globalHalt || KILLED_AGENTS.getOrDefault(agentId, false);
-        ScopedValue.where(IS_KILLED, killed).run(task);
+        IS_KILLED.set(killed);
+        try {
+            task.run();
+        } finally {
+            IS_KILLED.remove();
+        }
     }
 
     /**
      * Checks if current execution is safe to proceed.
      */
     public static boolean checkSafety(String agentId) {
-        return globalHalt || KILLED_AGENTS.getOrDefault(agentId, false) || (IS_KILLED.isBound() && IS_KILLED.get());
+        return globalHalt || KILLED_AGENTS.getOrDefault(agentId, false) || IS_KILLED.get();
     }
 }

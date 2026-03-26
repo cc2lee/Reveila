@@ -1,0 +1,25 @@
+{
+    "plugin": {
+        "name": "OllamaProvider",
+        "displayName": "Ollama LLM Provider",
+        "version": "1.0.0",
+        "description": "LLM Provider for local Ollama models.",
+        "author": "Reveila-Suite",
+        "class": "com.reveila.ai.OllamaProvider",
+        "thread-safe": true,
+        "arguments": [
+            {
+                "name": "model",
+                "type": "java.lang.String",
+                "value": "llama3"
+            }
+        ],
+        "dependencies": [
+            "HttpClientService"
+        ],
+        "methods": [],
+        "required-roles": [
+            "*"
+        ]
+    }
+}

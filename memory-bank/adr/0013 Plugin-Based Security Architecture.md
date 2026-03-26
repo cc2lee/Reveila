@@ -51,6 +51,7 @@ We will implement a **Broker Pattern** enforced by the existing `Proxy.invoke(..
                 "value": "ValueToSet"
             }
         ],
+        "required-roles": ["role-name", "*"],
         "methods": [
             {
                 "name": "methodName",
@@ -64,15 +65,17 @@ We will implement a **Broker Pattern** enforced by the existing `Proxy.invoke(..
                         "isSecret": true
                     }
                 ],
-                "return": "boolean",
-                "required-roles": [
-                    "admin"
-                ]
+                "return": "java.type",
+                "required-roles": ["role-name", "*"]
             }
         ]
     }
 }
 ```
+Notes:
+
+If no "required-roles" defined, or "required-roles" contains "*", access control is not required.
+If no "methods" defined, all methods are exposed.
 
 #### **Proxy Guard Logic (Pseudo-code)**
 1.  **Intercept** call: `invoke(component, method, params, token)`

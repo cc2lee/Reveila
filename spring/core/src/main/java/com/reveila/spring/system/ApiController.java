@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reveila.system.Reveila;
 import com.reveila.system.RolePrincipal;
 
@@ -23,7 +22,6 @@ import jakarta.servlet.http.HttpServletRequest;
 public class ApiController {
 
     private final Reveila reveila;
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public ApiController(Reveila reveila) {
         this.reveila = reveila;

@@ -30,7 +30,7 @@ public class ReveilaAdapterFacade {
             throw new Exception("Invalid payload: componentName and methodName are required.");
         }
 
-        Object result = reveila.invoke(componentName, methodName, methodArguments);
+        Object result = reveila.invoke(componentName, methodName, methodArguments, null, null);
         return gson.toJson(result);
     }
 }

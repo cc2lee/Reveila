@@ -1,0 +1,15 @@
+{
+    "plugin": {
+        "name": "healthcare-audit-worker",
+        "displayName": "Healthcare Claims Auditor",
+        "version": "1.0.0",
+        "description": "Healthcare claims auditor plugin.",
+        "author": "Reveila-Suite",
+        "class": "com.reveila.healthcare.ClaimsAuditor",
+        "hot-deploy": true,
+        "methods": [],
+        "required-roles": [
+            "*"
+        ]
+    }
+}

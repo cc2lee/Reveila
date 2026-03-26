@@ -7,9 +7,13 @@ buildscript {
         // Force the version of commons-compress at the buildscript level
         // to prevent classpath leakage during BootJar packaging.
         classpath("org.apache.commons:commons-compress:1.27.1")
-        classpath("com.android.tools.build:gradle:8.7.2")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.20")
     }
+}
+
+plugins {
+    // This looks up 'android-library' in the [plugins] section of the TOML
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.kotlin.android) apply false
 }
 
 allprojects {
@@ -20,11 +24,6 @@ allprojects {
     }
 }
 
-plugins {
-    // This looks up 'android-library' in the [plugins] section of the TOML
-    alias(libs.plugins.android.library) apply false
-    alias(libs.plugins.kotlin.android) apply false
-}
 
 tasks.register<Copy>("release") {
     group = "reveila"
@@ -42,11 +41,11 @@ tasks.register<Copy>("release") {
  * Synchronizes a clean version of the Android System Home into the module resources.
  * Excludes transient development artifacts like logs, local data, and temp files.
  */
-val prepareAndroidHome = tasks.register<Copy>("prepareAndroidHome") {
+val prepareAndroidHome = tasks.register<Sync>("prepareAndroidHome") {
     group = "reveila"
-    description = "Syncs clean Android system-home files to module resources."
+    description = "Syncs clean standard system-home files to Android module assets."
 
-    from("system-home/android") {
+    from("system-home/standard") {
         // MUST-HAVE: Include configs, plugins, and resources
         include("configs/**")
         include("plugins/**")
@@ -59,13 +58,13 @@ val prepareAndroidHome = tasks.register<Copy>("prepareAndroidHome") {
         exclude("temp/**")
         exclude("**/.gitignore")
         exclude("**/running.lock")
+        
+        // EXCLUDE: Server-only scripts
+        exclude("bin/**")
     }
     
-    // Target the resources folder that gets bundled into the APK
-    into("android/src/main/resources/reveila/system")
-    
-    // Ensure we overwrite existing files with the latest clean versions
-    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    // Target the assets folder that gets bundled into the Android package
+    into("android/src/main/assets/reveila/system")
 }
 
 /**
@@ -94,9 +93,12 @@ val prepareStandardHome = tasks.register<Copy>("prepareStandardHome") {
 // Hook into the build lifecycle for the android project
 project(":android") {
     afterEvaluate {
-        // Android Library projects don't have a 'processResources' task. 
-        // We hook into all tasks that process resources (debug/release) to ensure our home files are synced.
-        tasks.matching { it.name.startsWith("process") && it.name.endsWith("Resources") }.configureEach {
+        // We hook into all tasks that process resources or assets to ensure our home files are synced.
+        tasks.matching { 
+            (it.name.startsWith("process") && it.name.endsWith("Resources")) ||
+            (it.name.startsWith("generate") && it.name.endsWith("Assets")) ||
+            (it.name.startsWith("package") && it.name.endsWith("Assets"))
+        }.configureEach {
             dependsOn(prepareAndroidHome)
         }
     }

@@ -33,6 +33,8 @@ import java.util.stream.Stream;
 
 import javax.security.auth.Subject;
 
+import com.reveila.data.Entity;
+import com.reveila.data.Repository;
 import com.reveila.error.ConfigurationException;
 import com.reveila.error.SystemException;
 import com.reveila.event.AutoCallEvent;
@@ -47,11 +49,12 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     private Reveila reveila;
     protected Properties properties;
     private Logger logger;
-    private int jobThreadPoolSize = 1; // Use single thread for serial execution by default
+    private int jobThreadPoolSize = 4; // Allow concurrent execution to prevent startup deadlocks
     private ScheduledExecutorService scheduler;
     private final Map<String, ScheduledFuture<?>> autoCallTasks = new ConcurrentHashMap<>();
     private SystemHome systemHome;
     private ClassLoader classLoader;
+    protected final Map<String, Repository<Entity, Map<String, Map<String, Object>>>> repositories = new ConcurrentHashMap<>();
 
     public BasePlatformAdapter(Properties commandLineArgs) throws Exception {
         super();
@@ -89,6 +92,11 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
                 .resolve(relativeDirectory)
                 .toAbsolutePath()
                 .normalize();
+
+        if (!Files.exists(dir)) {
+            logger.warning("Directory does not exist: " + dir + ". Returning empty file list.");
+            return new String[0];
+        }
 
         // 2. Find the files (assuming FileUtil returns relative paths from configDir)
         String[] files = FileUtil.listRelativePaths(dir.toString(), ext);
@@ -526,6 +534,21 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     @Override
     public ExecutorService getExecutor() {
         return scheduler;
+    }
+
+    @Override
+    public Repository<Entity, Map<String, Map<String, Object>>> getRepository(String entityType) {
+        if (entityType == null) {
+            return null;
+        }
+        return repositories.get(entityType.toLowerCase());
+    }
+
+    public void registerRepository(String entityType, Repository<Entity, Map<String, Map<String, Object>>> repository) {
+        if (entityType != null && repository != null) {
+            repositories.put(entityType.toLowerCase(), repository);
+            logger.info("Registered repository for entity: " + entityType);
+        }
     }
 
     @Override

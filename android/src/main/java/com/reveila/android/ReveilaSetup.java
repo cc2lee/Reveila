@@ -32,6 +32,7 @@ public class ReveilaSetup {
     copyAssetFolder(REVEILA_ASSET_PATH, targetDir, overwrite);
   }
 
+
   private void copyAssetFolder(String assetFolderPath, File targetDir, boolean overwrite) throws IOException {
     if (!targetDir.exists() && !targetDir.mkdirs()) {
       throw new IOException("Failed to create directory: " + targetDir.getAbsolutePath());
@@ -60,21 +61,38 @@ public class ReveilaSetup {
         // It's a directory
         copyAssetFolder(assetPath, targetFile, overwrite);
       } else {
-        // It's a file
-        if (!overwrite && targetFile.exists()) {
-          continue;
-        }
-        try (InputStream in = assetManager.open(assetPath);
-             FileOutputStream out = new FileOutputStream(targetFile)) {
-          byte[] buffer = new byte[1024];
-          int read;
-          while ((read = in.read(buffer)) != -1) {
-            out.write(buffer, 0, read);
-          }
-          Log.d(TAG, "Copied asset file to: " + targetFile.getAbsolutePath());
-        } catch (FileNotFoundException e) {
-            // It was an empty directory, not a file
-            if (!targetFile.exists()) targetFile.mkdirs();
+        // It's either a file OR an empty directory.
+        // We attempt to open it as a file. If it fails, we treat it as an empty directory.
+        try (InputStream in = assetManager.open(assetPath)) {
+            // It's a file
+            if (!overwrite && targetFile.exists()) {
+                continue;
+            }
+
+            // Special Case: Preservation Policy for User-Configurable Files
+            // We do not want to wipe out the user's customized reveila.properties 
+            // every time there is a crash, unless the file itself is missing or corrupted.
+            if (asset.equals("reveila.properties") && targetFile.exists() && targetFile.length() > 0) {
+                Log.i(TAG, "Preserving existing reveila.properties despite unclean shutdown.");
+                continue;
+            }
+
+            // Special Case: Preservation Policy for User Settings Directory
+            // (Note: If it's a file within settings, it's already handled by the directory check above)
+            if (assetFolderPath.contains("configs/settings") && targetFile.exists()) {
+                Log.i(TAG, "Preserving existing user settings file in: " + assetPath);
+                continue;
+            }
+
+            copyFile(in, targetFile, overwrite);
+            Log.d(TAG, "Copied asset file to: " + targetFile.getAbsolutePath());
+        } catch (IOException e) {
+            // It's likely a directory (even if empty)
+            if (!targetFile.exists() && !targetFile.mkdirs()) {
+                Log.w(TAG, "Failed to create directory: " + targetFile.getAbsolutePath());
+            } else {
+                Log.d(TAG, "Created empty directory from asset: " + assetPath);
+            }
         }
       }
     }

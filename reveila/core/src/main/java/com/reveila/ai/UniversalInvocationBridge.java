@@ -40,8 +40,6 @@ import com.reveila.system.PluginPrincipal;
  */
 public class UniversalInvocationBridge extends com.reveila.system.AbstractService {
     private IntentValidator intentValidator;
-    private LlmProviderFactory llmFactory;
-    private LlmGovernanceConfig govConfig;
     private SchemaEnforcer schemaEnforcer;
     private GuardedRuntime guardedRuntime;
     private FlightRecorder flightRecorder;
@@ -62,10 +60,6 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
         this.metadataRegistry = getComponent("MetadataRegistry", MetadataRegistry.class);
         this.credentialManager = getComponent("CredentialManager", CredentialManager.class);
         this.orchestrationService = getComponent("OrchestrationService", OrchestrationService.class);
-        this.llmFactory = getComponent("LlmProviderFactory", LlmProviderFactory.class);
-        
-        // Governance config could be an argument or a separate component
-        this.govConfig = new LlmGovernanceConfig("openai", "gemini");
     }
 
     @Override
@@ -76,7 +70,7 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
         return context.getProxy(name)
                 .map(p -> {
                     try {
-                        return (T) p.invoke("getInstance", null);
+                        return p.invoke("getInstance", null);
                     } catch (Exception e) {
                         return null;
                     }
@@ -101,9 +95,8 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
 
         // Phase 5: Recursive Invocation & Delegation Handling
         String sessionId = (String) rawArguments.get("_session_id");
-        AgentSession session = null;
         if (sessionId != null) {
-            session = orchestrationService.getSession(sessionId);
+            orchestrationService.getSession(sessionId);
         }
 
         // Trace Context Propagation
@@ -188,7 +181,8 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
 
             // Log output, but mask parameters marked as MASKED in the manifest
             Object loggedOutput = result;
-            if (manifest.maskedParameters() != null && result instanceof Map) {
+            if (manifest.maskedParameters() != null && result instanceof Map<?, ?>) {
+                @SuppressWarnings("unchecked")
                 Map<String, Object> outputMap = new java.util.HashMap<>((Map<String, Object>) result);
                 for (String maskedKey : manifest.maskedParameters()) {
                     if (outputMap.containsKey(maskedKey)) {

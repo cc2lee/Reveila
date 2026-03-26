@@ -15,7 +15,7 @@ public abstract class AbstractService implements EventConsumer, Startable, Stopp
 
     protected Context context;
     protected Logger logger;
-    private ServiceState state = ServiceState.INITIALIZED;
+    private ServiceState state = ServiceState.STOPPED;
     private Instant startTime;
     private Duration startupLatency;
 

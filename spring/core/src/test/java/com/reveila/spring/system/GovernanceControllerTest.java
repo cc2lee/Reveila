@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -26,7 +26,7 @@ public class GovernanceControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private NotificationService notificationService;
 
     @Test
@@ -42,7 +42,7 @@ public class GovernanceControllerTest {
 
         mockMvc.perform(post("/api/governance/audit")
                 .content(json)
-                .contentType(MediaType.APPLICATION_JSON))
+                .contentType(MediaType.APPLICATION_JSON_VALUE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"))
                 .andExpect(jsonPath("$.riskScore").value(0.10));
@@ -64,7 +64,7 @@ public class GovernanceControllerTest {
 
         mockMvc.perform(post("/api/governance/audit")
                 .content(json)
-                .contentType(MediaType.APPLICATION_JSON))
+                .contentType(MediaType.APPLICATION_JSON_VALUE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("INTERCEPTED"))
                 .andExpect(jsonPath("$.policyTriggered").value("SOVEREIGN_ACCESS_CONTROL_v1"))

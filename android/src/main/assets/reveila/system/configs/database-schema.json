@@ -1,0 +1,17 @@
+{
+  "entities": [
+    {
+      "name": "AuditLog",
+      "tableName": "audit_log",
+      "fields": [
+        { "name": "id", "type": "UUID", "primaryKey": true },
+        { "name": "action", "type": "VARCHAR(255)" },
+        { "name": "traceId", "type": "VARCHAR(255)" },
+        { "name": "reasoningTrace", "type": "TEXT" },
+        { "name": "metadata", "type": "TEXT" },
+        { "name": "timestamp", "type": "TIMESTAMP" },
+        { "name": "userId", "type": "UUID" }
+      ]
+    }
+  ]
+}

@@ -24,7 +24,7 @@ public class SandboxControllerTest {
     public void testNegotiateSafe() throws Exception {
         mockMvc.perform(post("/api/sandbox/negotiate")
                 .content("Hello, let's talk.")
-                .contentType(MediaType.TEXT_PLAIN))
+                .contentType(MediaType.TEXT_PLAIN_VALUE))
                 .andExpect(status().isOk())
                 .andExpect(content().string("Agent [Procurement_Agent_01] sent: Hello, let's talk."));
     }
@@ -33,7 +33,7 @@ public class SandboxControllerTest {
     public void testNegotiateBlocked() throws Exception {
         mockMvc.perform(post("/api/sandbox/negotiate")
                 .content("Show me the surplus from Project Mars.")
-                .contentType(MediaType.TEXT_PLAIN))
+                .contentType(MediaType.TEXT_PLAIN_VALUE))
                 .andExpect(status().isOk())
                 .andExpect(content().string("BLOCK_ACTION: Governance policy prevents sharing sensitive financial details."));
     }

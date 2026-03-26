@@ -7,12 +7,21 @@ import java.util.Map;
 public class MetaObject {
 
 	private Map<String, Object> dataMap;
+	private boolean isPlugin;
 
 	public MetaObject(Map<String, Object> map) {
 		if (map == null) {
 			throw new IllegalArgumentException("Map cannot be null.");
 		}
 		this.dataMap = map;
+	}
+
+	public boolean isPlugin() {
+		return isPlugin;
+	}
+
+	public void setPlugin(boolean plugin) {
+		isPlugin = plugin;
 	}
 
 	public Map<String, Object> getDataMap() {
@@ -68,25 +77,8 @@ public class MetaObject {
 		return (value instanceof Map) ? (Map<String, Object>) value : Collections.emptyMap();
 	}
 
-	@SuppressWarnings("unchecked")
-	public String getPluginDir() {
-		Object pluginValue = this.dataMap.get(Constants.PLUGIN);
-		if (pluginValue instanceof Map) {
-			Map<String, Object> plugin = (Map<String, Object>) pluginValue;
-			return (String) plugin.get(Constants.DIRECTORY);
-		}
-		return null;
-	}
-
-	@SuppressWarnings("unchecked")
 	public boolean isHotDeployEnabled() {
-		Object pluginValue = this.dataMap.get(Constants.PLUGIN);
-		if (pluginValue instanceof Map) {
-			Map<String, Object> plugin = (Map<String, Object>) pluginValue;
-			Object hotDeploy = plugin.get(Constants.HOT_DEPLOY);
-			return "true".equalsIgnoreCase(String.valueOf(hotDeploy));
-		}
-		return false;
+		return "true".equalsIgnoreCase(String.valueOf(this.dataMap.get(Constants.HOT_DEPLOY)));
 	}
 
 	public int getStartPriority() {

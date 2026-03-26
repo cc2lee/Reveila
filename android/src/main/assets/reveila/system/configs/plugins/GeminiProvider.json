@@ -1,0 +1,36 @@
+{
+    "plugin": {
+        "name": "GeminiProvider",
+        "displayName": "Google Gemini LLM Provider",
+        "version": "1.0.0",
+        "description": "LLM Provider for Google Gemini models.",
+        "author": "Reveila-Suite",
+        "class": "com.reveila.ai.GeminiProvider",
+        "thread-safe": true,
+        "arguments": [
+            {
+                "name": "apiKey",
+                "type": "java.lang.String",
+                "value": "REF:GEMINI_PROD_KEY"
+            },
+            {
+                "name": "model",
+                "type": "java.lang.String",
+                "value": "gemini-1.5-pro"
+            },
+            {
+                "name": "temperature",
+                "type": "double",
+                "value": 0.1
+            }
+        ],
+        "dependencies": [
+            "HttpClientService"
+        ],
+        "hot-deploy": false,
+        "methods": [],
+        "required-roles": [
+            "*"
+        ]
+    }
+}

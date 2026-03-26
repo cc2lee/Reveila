@@ -1,11 +1,14 @@
 import { StyleSheet, TouchableOpacity, ScrollView, View, TextInput } from 'react-native';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import ReveilaModule from '@/modules/reveila';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function HomeScreen() {
+  const router = useRouter();
   const [isRunning, setIsRunning] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [autoRestart, setAutoRestart] = useState(false);
@@ -13,6 +16,16 @@ export default function HomeScreen() {
   const [isSetupComplete, setIsSetupComplete] = useState(true);
   const [promptText, setPromptText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [startingTimestamp, setStartingTimestamp] = useState<number | null>(null);
+  const [selectedModel, setSelectedModel] = useState('Local: Gemma-3-1b');
+  const [useLocalModel, setUseLocalModel] = useState<boolean | null>(null);
+  const [agentResponse, setAgentResponse] = useState<string | null>(null);
+
+  const availableModels = [
+    'Local: Gemma-3-1b',
+    'Remote: Gemini 1.5 Flash',
+    'Remote: OpenAI GPT-4o-mini'
+  ];
 
   useEffect(() => {
     const checkSetupAndStatus = async () => {
@@ -29,6 +42,12 @@ export default function HomeScreen() {
         
         if (running) {
           setIsStarting(false);
+          setStartingTimestamp(null);
+        } else if (isStarting && startingTimestamp && Date.now() - startingTimestamp > 300000) {
+          // If starting for more than 5 minutes, assume failure and reset
+          console.log('Starting timeout reached. Resetting starting state.');
+          setIsStarting(false);
+          setStartingTimestamp(null);
         }
 
         // WATCHDOG LOGIC: Only restart if not already starting and watchdog is on
@@ -44,11 +63,12 @@ export default function HomeScreen() {
     checkSetupAndStatus();
     const interval = setInterval(checkSetupAndStatus, 5000); // Slower interval
     return () => clearInterval(interval);
-  }, [autoRestart, isStarting, isSetupComplete]);
+  }, [autoRestart, isStarting, isSetupComplete, startingTimestamp]);
 
   const handleStart = async () => {
     if (isStarting) return;
     setIsStarting(true);
+    setStartingTimestamp(Date.now());
     try {
       // Allow overriding system home for development if needed.
       await ReveilaModule.startService(undefined);
@@ -56,6 +76,7 @@ export default function HomeScreen() {
     } catch (e) {
       console.error(e);
       setIsStarting(false);
+      setStartingTimestamp(null);
     }
   };
 
@@ -83,10 +104,20 @@ export default function HomeScreen() {
   const handleSendPrompt = async () => {
     if (!promptText.trim() || !isRunning) return;
     setIsProcessing(true);
+    setAgentResponse(null); // Clear previous response
     
     // Simulating prompt processing via Reveila Agentic Fabric
     setTimeout(() => {
+      const mockResponses: { [key: string]: string } = {
+        'Local: Gemma-3-1b': "I have analyzed your request locally. Based on the documents in your Sovereign Memory, the identified risk factor is within acceptable parameters.",
+        'Remote: Gemini 1.5 Flash': "Gemini Flash response: I've processed your command. The requested data has been synthesized and the summary is ready for review.",
+        'Remote: OpenAI GPT-4o-mini': "OpenAI GPT-4o-mini response: Your prompt has been executed. I've successfully connected the requested entities and updated the flight recorder."
+      };
+      
+      const response = mockResponses[selectedModel] || "Command executed successfully.";
+      
       setLogs(prev => [{ attributes: { action: 'PROMPT', details: promptText } }, ...prev]);
+      setAgentResponse(response);
       setPromptText('');
       setIsProcessing(false);
     }, 1500);
@@ -96,48 +127,132 @@ export default function HomeScreen() {
     return (
       <ThemedView style={styles.container}>
         <ThemedView style={styles.header}>
-          <ThemedText type="title">
-            <ThemedText style={{ color: '#00E5FF' }}>REVEILA</ThemedText> Personal
-          </ThemedText>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <ThemedText type="title">
+              <ThemedText style={{ color: '#00E5FF' }}>REVEILA</ThemedText> Personal
+            </ThemedText>
+            <TouchableOpacity onPress={() => router.push('/settings')}>
+              <IconSymbol name="gearshape.fill" color="#fff" size={24} />
+            </TouchableOpacity>
+          </View>
         </ThemedView>
         <ScrollView contentContainerStyle={styles.content}>
           <ThemedView style={styles.card}>
-            <ThemedText type="subtitle" style={{marginBottom: 12}}>Welcome to your Sovereign AI</ThemedText>
-            <ThemedText style={styles.description}>
-              {"Reveila Personal Edition runs entirely on your local hardware. Your agent's memory and data never leave this device."}
-            </ThemedText>
+            <ThemedText type="subtitle" style={{marginBottom: 12}}>Provision Sovereign AI</ThemedText>
             
-            <ThemedView style={{ marginTop: 20, marginBottom: 20 }}>
-              <ThemedText type="defaultSemiBold" style={{marginBottom: 8}}>Setup Instructions:</ThemedText>
-              <ThemedText style={styles.description}>{"1. Click the 'Initialize Sovereign Core' button below."}</ThemedText>
-              <ThemedText style={styles.description}>{"2. Grant necessary permissions for local storage."}</ThemedText>
-              <ThemedText style={styles.description}>{"3. Wait for the local AI models to be fully provisioned."}</ThemedText>
-            </ThemedView>
+            {useLocalModel === null ? (
+              <View>
+                <ThemedText style={styles.description}>
+                  Would you like to download and run a local AI model? This ensures total privacy and offline capability, but requires significant device resources.
+                </ThemedText>
+                
+                <View style={{ gap: 12, marginTop: 24 }}>
+                  <TouchableOpacity 
+                    style={[styles.button, {backgroundColor: '#00E5FF'}]} 
+                    onPress={() => setUseLocalModel(true)}
+                  >
+                    <ThemedText style={[styles.buttonText, {color: '#0f172a'}]}>Yes, Provision Local Model</ThemedText>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[styles.button, {backgroundColor: '#1e293b'}]} 
+                    onPress={() => setUseLocalModel(false)}
+                  >
+                    <ThemedText style={styles.buttonText}>No, Use Remote Providers Only</ThemedText>
+                  </TouchableOpacity>
+                </View>
 
-            <ThemedView style={{ padding: 12, backgroundColor: '#fffbeb', borderRadius: 8, borderWidth: 1, borderColor: '#fef3c7', marginBottom: 24 }}>
-              <ThemedText style={{ color: '#b45309', fontWeight: 'bold', marginBottom: 4 }}>Legal Disclaimer</ThemedText>
+                <ThemedText style={[styles.helperText, {marginTop: 16}]}>
+                  * Recommended for devices with 12GB+ RAM and NPU support.
+                </ThemedText>
+              </View>
+            ) : useLocalModel ? (
+              <View>
+                <ThemedText type="defaultSemiBold" style={{marginBottom: 8}}>Local AI Provisioning:</ThemedText>
+                <ThemedText style={styles.description}>{"1. Click the button below to start the secure indexing and model download."}</ThemedText>
+                <ThemedText style={styles.description}>{"2. Grant necessary permissions for local storage."}</ThemedText>
+                <ThemedText style={styles.description}>{"3. Wait for the local AI models to be fully provisioned (approx. 1.2GB)."}</ThemedText>
+                
+                <TouchableOpacity 
+                  style={[styles.button, {backgroundColor: '#00E5FF', marginTop: 24}]} 
+                  onPress={() => ReveilaModule.startSovereignSetup()}
+                >
+                  <ThemedText style={[styles.buttonText, {color: '#0f172a'}]}>Start Local Provisioning</ThemedText>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={{ marginTop: 12, alignItems: 'center' }} 
+                  onPress={() => setUseLocalModel(null)}
+                >
+                  <ThemedText type="link">Change Selection</ThemedText>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View>
+                <ThemedText type="defaultSemiBold" style={{marginBottom: 8}}>Remote Provider Setup:</ThemedText>
+                <ThemedText style={styles.description}>{"To use Reveila without a local model, you must configure at least one remote AI provider. Your data will be sent to the selected provider's API."}</ThemedText>
+                
+                <View style={{ gap: 12, marginTop: 20 }}>
+                  <ThemedView style={styles.providerCard}>
+                    <View style={styles.row}>
+                      <ThemedText type="defaultSemiBold">Google Gemini</ThemedText>
+                      <TouchableOpacity onPress={() => router.push('/settings')}>
+                        <ThemedText type="link">Configure</ThemedText>
+                      </TouchableOpacity>
+                    </View>
+                  </ThemedView>
+                  
+                  <ThemedView style={styles.providerCard}>
+                    <View style={styles.row}>
+                      <ThemedText type="defaultSemiBold">OpenAI (GPT-4)</ThemedText>
+                      <TouchableOpacity onPress={() => router.push('/settings')}>
+                        <ThemedText type="link">Configure</ThemedText>
+                      </TouchableOpacity>
+                    </View>
+                  </ThemedView>
+                </View>
+
+                <TouchableOpacity 
+                  style={[styles.button, {backgroundColor: '#0f172a', marginTop: 24}]} 
+                  onPress={() => setIsSetupComplete(true)}
+                >
+                  <ThemedText style={styles.buttonText}>Finish Setup</ThemedText>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={{ marginTop: 12, alignItems: 'center' }} 
+                  onPress={() => setUseLocalModel(null)}
+                >
+                  <ThemedText type="link">Back to Model Selection</ThemedText>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <ThemedView style={{ padding: 12, backgroundColor: '#fffbeb', borderRadius: 8, borderWidth: 1, borderColor: '#fef3c7', marginTop: 24 }}>
+              <ThemedText style={{ color: '#b45309', fontWeight: 'bold', marginBottom: 4 }}>Security Notice</ThemedText>
               <ThemedText style={{ color: '#92400e', fontSize: 13 }}>
-                {"AI can make mistakes. Please verify important information and ensure that any critical actions or workflows are configured to require human approval before execution."}
+                {"Sovereign AI is designed for maximum privacy. Remote providers may store and use your data for training. Check provider terms before configuring."}
               </ThemedText>
             </ThemedView>
-
-            <TouchableOpacity style={[styles.button, {backgroundColor: '#00E5FF'}]} onPress={() => ReveilaModule.startSovereignSetup()}>
-              <ThemedText style={[styles.buttonText, {color: '#0f172a'}]}>Initialize Sovereign Core</ThemedText>
-            </TouchableOpacity>
           </ThemedView>
         </ScrollView>
       </ThemedView>
     );
   }
-
+ 
   return (
     <ThemedView style={styles.container}>
       <ThemedView style={styles.header}>
-        <ThemedText type="title">
-          <ThemedText style={{ color: '#ff6600' }}>REVEILA</ThemedText> Dashboard
-        </ThemedText>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <ThemedText type="title">
+            <ThemedText style={{ color: '#ff6600' }}>REVEILA</ThemedText> Dashboard
+          </ThemedText>
+          <TouchableOpacity onPress={() => router.push('/settings')}>
+            <IconSymbol name="gearshape.fill" color="#fff" size={24} />
+          </TouchableOpacity>
+        </View>
       </ThemedView>
-
+ 
       <ScrollView contentContainerStyle={styles.content}>
         
         {/* Compact Status Area */}
@@ -161,15 +276,41 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
         </ThemedView>
-
-        {/* Direct Agent Command Input */}
+ 
+        {/* Direct Agent Command Input with Model Picker */}
         <ThemedView style={styles.card}>
-          <ThemedText type="subtitle" style={{marginBottom: 8}}>Direct Agent Command</ThemedText>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <ThemedText type="subtitle">Sovereign Agent Command</ThemedText>
+            <View style={{ backgroundColor: '#f1f5f9', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }}>
+              <ThemedText style={{ fontSize: 11, color: '#64748b', fontWeight: 'bold' }}>MODEL:</ThemedText>
+            </View>
+          </View>
+          
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+            {availableModels.map(model => (
+              <TouchableOpacity 
+                key={model} 
+                style={[
+                  styles.modelChip, 
+                  selectedModel === model && styles.modelChipActive
+                ]}
+                onPress={() => setSelectedModel(model)}
+              >
+                <ThemedText style={[
+                  styles.modelChipText,
+                  selectedModel === model && styles.modelChipTextActive
+                ]}>
+                  {model.split(': ')[1]}
+                </ThemedText>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
           <TextInput
             style={styles.textInput}
             multiline
             numberOfLines={4}
-            placeholder="Type a prompt for the Sovereign AI..."
+            placeholder={`Type a prompt for ${selectedModel.split(': ')[1]}...`}
             placeholderTextColor="#94a3b8"
             value={promptText}
             onChangeText={setPromptText}
@@ -181,10 +322,24 @@ export default function HomeScreen() {
             disabled={!isRunning || isProcessing || !promptText.trim()}
             onPress={handleSendPrompt}
           >
-            <ThemedText style={styles.buttonText}>{isProcessing ? 'Processing...' : 'Execute Command'}</ThemedText>
+            <ThemedText style={styles.buttonText}>{isProcessing ? 'Processing...' : `Execute via ${selectedModel.split(': ')[1]}`}</ThemedText>
           </TouchableOpacity>
         </ThemedView>
 
+        {/* Agent Response Area */}
+        {(agentResponse || isProcessing) && (
+          <ThemedView style={[styles.card, { borderColor: '#00E5FF', borderLeftWidth: 4 }]}>
+            <ThemedText type="defaultSemiBold" style={{ color: '#00E5FF', marginBottom: 4 }}>
+              Agent Response
+            </ThemedText>
+            {isProcessing ? (
+              <ThemedText style={{ fontStyle: 'italic', color: '#94a3b8' }}>Reasoning in progress...</ThemedText>
+            ) : (
+              <ThemedText style={styles.responseText}>{agentResponse}</ThemedText>
+            )}
+          </ThemedView>
+        )}
+ 
         {/* Flight Recorder */}
         <ThemedView style={styles.section}>
           <ThemedView style={styles.sectionHeader}>
@@ -195,7 +350,7 @@ export default function HomeScreen() {
               <ThemedText style={{ color: isRunning ? '#3b82f6' : '#94a3b8' }}>Refresh</ThemedText>
             </TouchableOpacity>
           </ThemedView>
-
+ 
           <ThemedView style={styles.tableCard}>
             {logs.length === 0 ? (
               <ThemedText style={styles.emptyText}>No logs available. Start engine and refresh.</ThemedText>
@@ -213,7 +368,7 @@ export default function HomeScreen() {
     </ThemedView>
   );
 }
-
+ 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -253,6 +408,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+  },
+  providerCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   compactStatusCard: {
     backgroundColor: '#fff',
@@ -298,6 +465,32 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontWeight: 'bold',
+  },
+  modelChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#f1f5f9',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  modelChipActive: {
+    backgroundColor: '#0f172a',
+    borderColor: '#0f172a',
+  },
+  modelChipText: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  modelChipTextActive: {
+    color: '#fff',
+  },
+  responseText: {
+    fontSize: 15,
+    color: '#1e293b',
+    lineHeight: 22,
   },
   textInput: {
     backgroundColor: '#f8fafc',

@@ -31,8 +31,7 @@ public final class SystemContext implements Context {
 	private Cryptographer cryptographer;
 	private Map<String, Proxy> proxiesByName = new ConcurrentHashMap<>();
 	private PlatformAdapter platformAdapter;
-	private Subject subject;
-
+	
 	public PlatformAdapter getPlatformAdapter() {
 		return platformAdapter;
 	}
@@ -59,15 +58,8 @@ public final class SystemContext implements Context {
 			EventManager eventManager,
 			Logger logger,
 			Cryptographer cryptographer,
-			PlatformAdapter platformAdapter,
-			Subject subject) {
+			PlatformAdapter platformAdapter) {
 
-		if (subject != null) {
-			this.subject = subject;
-		} else {
-			this.subject = new Subject();
-			this.subject.getPrincipals().add(new RolePrincipal(Constants.SYSTEM));
-		}
 		this.properties = new Properties(Objects.requireNonNull(properties, "Argument 'properties' must not be null"));
 		this.eventManager = Objects.requireNonNull(eventManager, "Argument 'eventManager' must not be null");
 		this.logger = Objects.requireNonNull(logger, "Argument 'logger' must not be null");
@@ -126,7 +118,11 @@ public final class SystemContext implements Context {
 			Proxy proxy = this.proxiesByName.get(name);
 			if (proxy != null) {
 				List<String> requiredRoles = proxy.getRequiredRoles();
-				if (requiredRoles != null && !requiredRoles.isEmpty()) {
+				if (requiredRoles == null || requiredRoles.isEmpty() || requiredRoles.contains("*")) {
+					// No role check required
+					return Optional.ofNullable(proxy);
+				}
+				else {
 					for (RolePrincipal role : roles) {
 						if (requiredRoles.contains(role.getName())) {
 							return Optional.ofNullable(proxy);

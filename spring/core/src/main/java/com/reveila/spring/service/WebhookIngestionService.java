@@ -72,6 +72,8 @@ public class WebhookIngestionService {
             "You are a Specialized Worker. Map the following context to a Reveila plugin intent.",
             payload.getOrDefault("context", "{}").toString()
         );
+        // Log the output or capture it in the trace (currently a simulated draft step)
+        System.out.println("Mapped Intent Output: " + workerOutput);
 
         // 3. Initiate AgentSession and record ingestion
         PluginPrincipal principal = PluginPrincipal.create("webhook-agent-" + source, "external-ingestion");
@@ -86,6 +88,7 @@ public class WebhookIngestionService {
         ));
 
         // 4. Trigger Dual-Model Governance Audit via the Bridge
+        @SuppressWarnings("unchecked")
         Map<String, Object> context = (Map<String, Object>) payload.getOrDefault("context", Map.of());
         String action = (String) context.getOrDefault("required_action", "generic_task");
         

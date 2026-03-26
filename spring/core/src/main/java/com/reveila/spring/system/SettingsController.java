@@ -33,12 +33,12 @@ public class SettingsController {
 
     private Path getSettingsDir() {
         String home = reveila.getSystemContext().getProperties().getProperty("system.home");
-        return Path.of(home).resolve("configs/settings");
+        return Path.of(String.valueOf(home != null ? home : ".")).resolve("configs/settings");
     }
 
     private Path getMainConfigFile() {
         String home = reveila.getSystemContext().getProperties().getProperty("system.home");
-        return Path.of(home).resolve("configs/reveila.properties");
+        return Path.of(String.valueOf(home != null ? home : ".")).resolve("configs/reveila.properties");
     }
 
     @GetMapping
@@ -125,10 +125,10 @@ public class SettingsController {
         // 2. Export manifest to Centralized Repository (Filesystem)
         String repoPath = reveila.getSystemContext().getProperties().getProperty("plugin.repository.path");
         if (repoPath != null) {
-            Path dir = Path.of(repoPath);
+            Path dir = Path.of(String.valueOf(repoPath));
             if (!Files.exists(dir)) Files.createDirectories(dir);
             
-            Path manifestPath = dir.resolve(plugin.getPluginId() + "-manifest.json");
+            Path manifestPath = dir.resolve(String.valueOf(plugin.getPluginId()) + "-manifest.json");
             mapper.writeValue(manifestPath.toFile(), saved);
             System.out.println("Sovereign Registry: Exported manifest to " + manifestPath);
         }
@@ -138,17 +138,20 @@ public class SettingsController {
 
     @DeleteMapping("/plugins/{pluginId}")
     public ResponseEntity<Void> deletePlugin(@PathVariable String pluginId) {
-        pluginRepository.deleteById(pluginId);
+        if (pluginId != null) pluginRepository.deleteById(pluginId);
         return ResponseEntity.ok().build();
     }
 
     @GetMapping("/ui/text")
     public ResponseEntity<Map<String, String>> getUiText(@RequestParam(defaultValue = "en") String lang) throws IOException {
         String home = reveila.getSystemContext().getProperties().getProperty("system.home");
-        Path file = Path.of(home).resolve("resources/ui/" + lang + "/text." + lang + ".properties");
+        if (home == null) {
+            home = ".";
+        }
+        Path file = Path.of(String.valueOf(home)).resolve("resources/ui/" + lang + "/text." + lang + ".properties");
         
         if (!Files.exists(file)) {
-            file = Path.of(home).resolve("resources/ui/en/text.en.properties");
+            file = Path.of(String.valueOf(home)).resolve("resources/ui/en/text.en.properties");
         }
 
         if (!Files.exists(file)) return ResponseEntity.notFound().build();

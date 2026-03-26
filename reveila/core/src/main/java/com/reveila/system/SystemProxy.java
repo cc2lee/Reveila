@@ -3,8 +3,6 @@ package com.reveila.system;
 import java.io.Closeable;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.EventObject;
@@ -19,7 +17,6 @@ import java.util.stream.Collectors;
 
 import javax.security.auth.Subject;
 
-import com.reveila.ai.GuardedRuntime;
 import com.reveila.error.ConfigurationException;
 import com.reveila.error.SecurityException;
 import com.reveila.event.EventConsumer;
@@ -32,19 +29,19 @@ public final class SystemProxy extends AbstractService implements Proxy {
 
 	private final AtomicReference<ClassLoader> loaderRef = new AtomicReference<>();
 	private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
-	private PluginWatcher activeWatcher;
-	private Thread watcherThread;
 	private MetaObject metaObject;
 	private volatile Class<?> implementationClass;
-	@Override
-    public void setContext(Context context) {
-        if (context == null || !context.getClass().getName().equals(SystemContext.class.getName())) {
-            throw new IllegalArgumentException(this.getClass().getName() + " requires an instance of " + SystemContext.class.getName() + ".");
-        }
-        super.setContext(context);
-    }
 
-    private volatile Object singletonInstance;
+	@Override
+	public void setContext(Context context) {
+		if (context == null || !context.getClass().getName().equals(SystemContext.class.getName())) {
+			throw new IllegalArgumentException(
+					this.getClass().getName() + " requires an instance of " + SystemContext.class.getName() + ".");
+		}
+		super.setContext(context);
+	}
+
+	private volatile Object singletonInstance;
 	private String name;
 	private final Manifest manifest;
 	private List<String> requiredRoles;
@@ -94,10 +91,6 @@ public final class SystemProxy extends AbstractService implements Proxy {
 		}
 	}
 
-	public void loadPlugin(String pluginDir) throws Exception {
-		setClassLoader(RuntimeUtil.createPluginClassLoader(pluginDir, Reveila.class.getClassLoader()));
-	}
-
 	/**
 	 * Invokes a method asynchronously on the object instance using reflection.
 	 * This version finds the method based on its name and the number of arguments.
@@ -139,13 +132,18 @@ public final class SystemProxy extends AbstractService implements Proxy {
 	}
 
 	/**
-	 * Invokes a method on a newly created object instance using reflection.
-	 * This version finds the method based on its name and the number of arguments.
-	 *
+	 * Invokes a method on this object using reflection.
+	 * The method is matched using the method name and the number of arguments.
+	 * The invocation will only be successful if the subject has the required roles.
+	 * 
 	 * @param methodName the name of the method to invoke
 	 * @param args       the arguments to pass to the method
+	 * @param subject    the security context to use for the operation
 	 * @return the result of the invoked method
-	 * @throws Exception if object creation, method lookup, or invocation fails
+	 * @throws Exception                if the method invocation fails
+	 * @throws SecurityException        if the subject does not have the required
+	 *                                  roles to invoke the method
+	 * @throws IllegalArgumentException if the method name is null
 	 */
 	public Object invoke(final String methodName, final Object[] args, final Subject subject) throws Exception {
 		if (subject == null) {
@@ -155,7 +153,7 @@ public final class SystemProxy extends AbstractService implements Proxy {
 		if (methodName == null)
 			throw new IllegalArgumentException("Method name must not be null");
 
-		PluginPrincipal agent = (PluginPrincipal) subject.getPrincipals(PluginPrincipal.class).iterator().next();
+		PluginPrincipal plugin = (PluginPrincipal) subject.getPrincipals(PluginPrincipal.class).iterator().next();
 		Set<RolePrincipal> roles = subject.getPrincipals(RolePrincipal.class);
 
 		boolean systemCall = false;
@@ -168,40 +166,40 @@ public final class SystemProxy extends AbstractService implements Proxy {
 			}
 		}
 
-		// ADR 0013 SystemProxy Guard
+		// We assume if no methods explicitly exposed, all methods are exposed.
+		// If the subject has the "system" role, we bypass the check.
 		if (!systemCall) {
 			List<Manifest.ExposedMethod> methods = manifest.getExposedMethods();
-			if (methods == null || methods.isEmpty()) {
-				throw new SecurityException("Method with name [" + methodName + "] is not exposed.");
-			}
+			if (methods != null && !methods.isEmpty()) { // Check if the method is exposed
+				Manifest.ExposedMethod method = methods.stream()
+						.filter(m -> m.name.equals(methodName))
+						.findFirst()
+						.orElseThrow(
+								() -> new SecurityException("Method with name [" + methodName + "] is not exposed."));
+				boolean hasRequiredRoles = false;
+				List<String> requiredRoles = method.requiredRoles;
+				if (requiredRoles != null && !requiredRoles.isEmpty()) {
+					for (RolePrincipal role : roles) {
+						if (requiredRoles.contains(role.getName())) {
+							hasRequiredRoles = true;
+							break;
+						}
+					}
+				}
 
-			Manifest.ExposedMethod method = methods.stream()
-					.filter(m -> m.name.equals(methodName))
-					.findFirst()
-					.orElseThrow(() -> new SecurityException("Method with name [" + methodName + "] is not exposed."));
-
-			List<String> requiredRoles = method.requiredRoles;
-			if (requiredRoles == null || requiredRoles.isEmpty()) {
-				throw new SecurityException("Method with name [" + methodName + "] is not exposed.");
-			}
-
-			if (!requiredRoles.containsAll(roles)) {
-				throw new SecurityException("Method with name [" + methodName + "] is not exposed.");
-			}
-
-			for (RolePrincipal role : roles) {
-				if (requiredRoles.contains(role.getName())) {
-					break;
+				if (!hasRequiredRoles) {
+					throw new SecurityException("Subject does not have the required roles to invoke the method");
 				}
 			}
 		}
 
-		// ADR 0006: SystemProxy-Based Invocations with Physical Isolation
-		if (this.manifest.isIsolate()) {
-			List<Object> list = List.of(agent, null, metaObject.getName(), Map.of("method", methodName, "args", args != null ? args : new Object[0]), null);
-            Proxy proxy = ((SystemContext) context).getProxy("GuardedRuntime")
-                    .orElseThrow(() -> new IllegalStateException("GuardedRuntime not found or invalid"));
-            return proxy.invoke("execute", list.toArray());
+		// ADR 0006: We enforce execution isolation for plugins that are not promoted to "system" role.
+		if (plugin != null && !systemCall) {
+			List<Object> list = List.of(plugin, null, metaObject.getName(),
+					Map.of("method", methodName, "args", args != null ? args : new Object[0]), null);
+			Proxy proxy = ((SystemContext) context).getProxy("GuardedRuntime")
+					.orElseThrow(() -> new IllegalStateException("GuardedRuntime not found or invalid"));
+			return proxy.invoke("execute", list.toArray());
 		}
 
 		return invoke(methodName, args);
@@ -225,7 +223,8 @@ public final class SystemProxy extends AbstractService implements Proxy {
 	}
 
 	/**
-	 * Gets the target object for method invocation. For a standard SystemProxy, this
+	 * Gets the target object for method invocation. For a standard SystemProxy,
+	 * this
 	 * creates a new instance on every call, making it stateless.
 	 *
 	 * @return A new object instance.
@@ -251,69 +250,10 @@ public final class SystemProxy extends AbstractService implements Proxy {
 	}
 
 	public void onStart() throws Exception {
-		if (Constants.PLUGIN.equalsIgnoreCase(manifest.getComponentType())) {
-			// load plugin
-			String pluginDir = "plugins/" + getName();
-			Path pluginPath = Path.of(pluginDir);
-
-			// ADR: Resolve relative plugin paths against SYSTEM_HOME
-			if (!pluginPath.isAbsolute()) {
-				String systemHome = context.getProperties().getProperty(Constants.SYSTEM_HOME);
-				if (systemHome != null && !systemHome.isBlank()) {
-					pluginPath = Path.of(systemHome).resolve(pluginPath);
-				}
-			}
-
-			// Download/Copy plugin JAR from repository to local directory named as plugin name
-			String repoPathStr = context.getProperties().getProperty("plugin.repository.path");
-			if (repoPathStr != null && !repoPathStr.isBlank()) {
-				Path repoPath = Path.of(repoPathStr);
-				if (!repoPath.isAbsolute()) {
-					String systemHome = context.getProperties().getProperty(Constants.SYSTEM_HOME);
-					if (systemHome != null && !systemHome.isBlank()) {
-						repoPath = Path.of(systemHome).resolve(repoPath);
-					}
-				}
-
-				// The JAR in the repository should be named after the plugin, e.g., "PluginName.jar"
-				// Or we just copy all contents of repoPath/PluginName to local pluginPath
-				Path sourceJar = repoPath.resolve(getName() + ".jar");
-				if (Files.exists(sourceJar)) {
-					if (!Files.exists(pluginPath)) {
-						Files.createDirectories(pluginPath);
-					}
-					Path destJar = pluginPath.resolve(getName() + ".jar");
-					// Simple copy (or overwrite if hot-deploy)
-					Files.copy(sourceJar, destJar, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-					logger.info("Downloaded/Copied plugin JAR from repository for " + getName());
-				}
-			}
-
-			loadPlugin(pluginPath.toString());
-
-			if (metaObject.isHotDeployEnabled()) {
-				// Launch watcher in background
-				activeWatcher = new PluginWatcher(pluginPath, this);
-				watcherThread = new Thread(activeWatcher);
-				watcherThread.setDaemon(true); // Ensures it doesn't block app shutdown
-				watcherThread.start();
-			}
-		} // end loading plugin
 	}
 
 	public void onStop() throws Exception {
 		ExceptionCollection exceptions = new ExceptionCollection();
-
-		// Gracefully stop the Plugin Watcher first
-		if (activeWatcher != null) {
-			activeWatcher.stop();
-			if (watcherThread != null) {
-				watcherThread.interrupt(); // Wake it up from any polling/sleep
-			}
-			activeWatcher = null;
-			watcherThread = null;
-			System.out.println("🛑 Plugin Watcher stopped for: " + this.getName());
-		}
 
 		// Gracefully stop any stoppable instance.
 		if (this.singletonInstance != null && this.singletonInstance instanceof Stoppable) {
@@ -544,8 +484,19 @@ public final class SystemProxy extends AbstractService implements Proxy {
 		return requiredRoles;
 	}
 
-    public Object invoke(String methodName, Object[] args) throws Exception {
-        lock.readLock().lock();
+	/**
+	 * Invokes a method on a newly created object instance using reflection.
+	 * This version finds the method based on its name and the number of arguments.
+	 * This method should only be called from a trusted source, as it does not
+	 * perform security checks.
+	 *
+	 * @param methodName the name of the method to invoke
+	 * @param args       the arguments to pass to the method
+	 * @return the result of the invoked method
+	 * @throws Exception if object creation, method lookup, or invocation fails
+	 */
+	public Object invoke(String methodName, Object[] args) throws Exception {
+		lock.readLock().lock();
 		final ClassLoader pluginLoader = loaderRef.get();
 		final ClassLoader originalLoader = Thread.currentThread().getContextClassLoader();
 		boolean isDifferentLoader = pluginLoader != null && originalLoader != pluginLoader;
@@ -569,13 +520,13 @@ public final class SystemProxy extends AbstractService implements Proxy {
 			} else {
 				return methodToInvoke.invoke(target, coercedArgs);
 			}
-		}
-		catch (Throwable t) {
+		} catch (Throwable t) {
 			throw new InvocationTargetException(t);
-		} 
-		finally {
-			if (isDifferentLoader) { Thread.currentThread().setContextClassLoader(originalLoader); }
+		} finally {
+			if (isDifferentLoader) {
+				Thread.currentThread().setContextClassLoader(originalLoader);
+			}
 			lock.readLock().unlock();
 		}
-    }
+	}
 }

@@ -10,7 +10,7 @@ import com.reveila.core.safety.SafetyStatus;
 public class FabricKillSwitch implements ReveilaKillSwitch {
     
     // Uses Java 21 Virtual Threads for high-frequency safety polling
-    private final java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+    // private final java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
 
     @Override
     public boolean isAuthorized(String agentId) {

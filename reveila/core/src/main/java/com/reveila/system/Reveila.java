@@ -140,7 +140,7 @@ public class Reveila implements AutoCloseable {
 		this.startExecutor = platformAdapter.getExecutor();
 		this.properties = platformAdapter.getProperties();
 		this.logger = platformAdapter.getLogger();
-		this.localUrl = new URI("http://" + getLocalHost() + "/").toURL();
+		this.localUrl = new URI("http://localhost/").toURL();
 
 		printLogo();
 
@@ -161,21 +161,45 @@ public class Reveila implements AutoCloseable {
 				this.properties.getProperty(Constants.COMPONENT_START_TIMEOUT, "60"));
 
 		String platform = properties.getProperty("platform");
-        if (platform == null) {
-            throw new ConfigurationException("Platform not specified in " + Constants.SYSTEM_PROPERTIES + ".");
-        }
+		if (platform == null) {
+			throw new ConfigurationException("Platform not specified in " + Constants.SYSTEM_PROPERTIES + ".");
+		}
 
-        platform = platform.trim().toLowerCase();
-        if (platform.isEmpty()) {
-            throw new ConfigurationException("Platform not specified in " + Constants.SYSTEM_PROPERTIES + ".");
-        }
-        
-        List<MetaObject> metaObjectList = parseMetaObjects(Constants.CONFIGS_DIR_NAME + File.separator + platform);
-		metaObjectList.sort(Comparator.comparingInt(m -> m.getStartPriority()));
-		startComponents(Constants.COMPONENT, metaObjectList, timeoutSeconds);
+		platform = platform.trim().toLowerCase();
+		if (platform.isEmpty()) {
+			throw new ConfigurationException("Platform not specified in " + Constants.SYSTEM_PROPERTIES + ".");
+		}
 
-		metaObjectList = parseMetaObjects(Constants.CONFIGS_DIR_NAME + File.separator + "plugins");
-		startComponents(Constants.PLUGIN, metaObjectList, timeoutSeconds);
+		List<MetaObject> allMetaObjects = new ArrayList<>();
+
+		// 1. Discover Platform Components
+		List<MetaObject> platformMetaObjects = parseMetaObjects(Constants.CONFIGS_DIR_NAME + File.separator + platform);
+		for (MetaObject mObj : platformMetaObjects) {
+			mObj.setPlugin(false);
+		}
+		allMetaObjects.addAll(platformMetaObjects);
+
+		// 2. Discover Plugins
+		List<MetaObject> pluginMetaObjects = parseMetaObjects(Constants.CONFIGS_DIR_NAME + File.separator + "plugins");
+		for (MetaObject mObj : pluginMetaObjects) {
+			mObj.setPlugin(true);
+		}
+		allMetaObjects.addAll(pluginMetaObjects);
+
+		// PHASE 2: VALIDATION (Linting & Cycle Detection for ALL components together)
+		try {
+			new ConfigurationLinter().lint(allMetaObjects, this.properties);
+			logger.info("✅ Full Configuration validation complete. No issues found.");
+		} catch (Exception e) {
+			handleStartError("Configuration validation failed.", e);
+		}
+
+		// PHASE 3: EXECUTION (Starting components in order)
+		platformMetaObjects.sort(Comparator.comparingInt(m -> m.getStartPriority()));
+		startComponents(Constants.COMPONENT, platformMetaObjects, timeoutSeconds);
+
+		pluginMetaObjects.sort(Comparator.comparingInt(m -> m.getStartPriority()));
+		startComponents(Constants.PLUGIN, pluginMetaObjects, timeoutSeconds);
 
 		logStartupCompletion(beginTime);
 
@@ -264,11 +288,9 @@ public class Reveila implements AutoCloseable {
 			charset = StandardCharsets.UTF_8.name();
 		}
 
-		Subject subject = new Subject();
-		subject.getPrincipals().add(new RolePrincipal(Constants.SYSTEM));
 		this.systemContext = new SystemContext(
 				props, eventManager, this.logger,
-				new DefaultCryptographer(secretKey.getBytes(charset)), this.platformAdapter, subject);
+				new DefaultCryptographer(secretKey.getBytes(charset)), this.platformAdapter);
 	}
 
 	private List<MetaObject> parseMetaObjects(String dir) throws Exception {
@@ -294,14 +316,6 @@ public class Reveila implements AutoCloseable {
 			} catch (Exception e) {
 				handleStartError("Failed to parse configuration file: " + file, e);
 			}
-		}
-
-		// PHASE 2: VALIDATION (Linting & Cycle Detection)
-		try {
-			new ConfigurationLinter().lint(list, this.properties);
-			logger.info("✅ Configuration validation complete. No issues found.");
-		} catch (Exception e) {
-			handleStartError("Configuration validation failed.", e);
 		}
 
 		return list;
@@ -388,7 +402,7 @@ public class Reveila implements AutoCloseable {
 		
 		Object methodsObj = map.get(Constants.METHODS);
 		if (methodsObj != null && methodsObj instanceof List) {
-			List<Manifest.ExposedMethod> parsedMethods = new java.util.ArrayList<>();
+			List<Manifest.ExposedMethod> parsedMethods = new ArrayList<>();
 			List<?> methodsList = (List<?>) methodsObj;
 			for (Object mDescription : methodsList) {
 				if (mDescription instanceof Map) {
@@ -427,7 +441,7 @@ public class Reveila implements AutoCloseable {
 					parsedMethods.add(method);
 				}
 			}
-			manifest.setExposedMethods(parsedMethods);
+			manifest.getExposedMethods().addAll(parsedMethods);
 		}
 		return manifest;
 	}
@@ -448,10 +462,10 @@ public class Reveila implements AutoCloseable {
         	SystemProxy proxy = new SystemProxy(mObj, manifest);
 			if (Constants.COMPONENT.equalsIgnoreCase(manifest.getComponentType())) {
 				proxy.setContext(systemContext);
-				subject.getPrincipals().add(new RolePrincipal(manifest.getName()));
-			} else {
-				// Use a plugin context with restricted access
-				proxy.setContext(new PluginContext(systemContext, manifest));
+				subject.getPrincipals().add(new RolePrincipal(Constants.COMPONENT));
+			}
+			else { // treated as a plugin	regardless and create a plugin context with restricted access
+				proxy.setContext(new PluginContext(systemContext, manifest, new Properties()));
 				subject.getPrincipals().add(PluginPrincipal.create(manifest.getName(), manifest.getOrg()));
 			}
 			systemContext.add(proxy);

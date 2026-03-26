@@ -24,6 +24,7 @@ public class PostgresFlightRecorder extends com.reveila.system.AbstractService i
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     protected void onStart() throws Exception {
         // ADR 0006: Platform-agnostic repository retrieval.
         Object repo = context.getPlatformAdapter().getRepository("AuditLog");
@@ -75,11 +76,15 @@ public class PostgresFlightRecorder extends com.reveila.system.AbstractService i
         
         try {
             // Check for oversight token in current request context if available
-            jakarta.servlet.http.HttpServletRequest request = ((org.springframework.web.context.request.ServletRequestAttributes)
-                org.springframework.web.context.request.RequestContextHolder.getRequestAttributes()).getRequest();
-            Object tokenId = request.getAttribute("OVERSIGHT_TOKEN_ID");
-            if (tokenId != null) {
-                forensicData.put("oversight_token_id", tokenId);
+            org.springframework.web.context.request.RequestAttributes requestAttributes = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (requestAttributes instanceof org.springframework.web.context.request.ServletRequestAttributes) {
+                jakarta.servlet.http.HttpServletRequest request = ((org.springframework.web.context.request.ServletRequestAttributes) requestAttributes).getRequest();
+                if (request != null) {
+                    Object tokenId = request.getAttribute("OVERSIGHT_TOKEN_ID");
+                    if (tokenId != null) {
+                        forensicData.put("oversight_token_id", tokenId);
+                    }
+                }
             }
         } catch (Exception e) {
             // Not in a request context, skip token enrichment

@@ -1,9 +1,9 @@
 package com.reveila.android;
 
 import com.reveila.ai.AgencyPerimeter;
-import com.reveila.ai.AgentPrincipal;
+import com.reveila.system.PluginPrincipal;
 import com.reveila.ai.AbstractGuardedRuntime;
-import com.reveila.system.Proxy;
+import com.reveila.system.SystemProxy;
 import java.util.Map;
 import android.content.Context;
 import java.io.File;
@@ -30,11 +30,11 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
     }
 
     @Override
-    public Object execute(AgentPrincipal principal, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials) {
+    public Object execute(PluginPrincipal principal, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials) {
         validateRequest(principal, perimeter);
         
         long startTime = System.currentTimeMillis();
-        logger.info("Executing via AndroidGuardedRuntime for " + pluginId + " [Trace: " + principal.traceId() + "] Started at: " + startTime);
+        logger.info("Executing via AndroidGuardedRuntime for " + pluginId + " [Trace: " + principal.getTraceId() + "] Started at: " + startTime);
 
         // Filesystem Isolation: Plugins are stored in app-private storage
         String pluginFileName = pluginId + ".jar"; // Or .dex
@@ -42,7 +42,7 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
         // Use SafePluginLoader to create a proxy and execute
         // Note: In a real implementation, we'd map perimeter constraints to Android specific restrictions
         try {
-            Proxy proxy = SafePluginLoader.loadPlugin(context, pluginFileName, "com.reveila.plugin.EntryPoint");
+            SystemProxy proxy = SafePluginLoader.loadPlugin(context, pluginFileName, "com.reveila.plugin.EntryPoint");
             if (proxy == null) {
                 throw new RuntimeException("Failed to load plugin: " + pluginId);
             }

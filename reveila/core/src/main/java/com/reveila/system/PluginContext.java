@@ -14,12 +14,14 @@ public final class PluginContext implements Context {
     private Properties properties = new Properties();
     private Subject subject;
 
-    public PluginContext(SystemContext context, Manifest manifest) {
+    public PluginContext(SystemContext context, Manifest manifest, Properties properties) {
         this.systemContext = context;
         this.manifest = manifest;
         this.subject = new Subject();
         this.subject.getPrincipals().add(PluginPrincipal.create(manifest.getName(), manifest.getOrg()));
-        // TODO: What properties should be added?
+        if (properties != null) {
+            this.properties.putAll(properties);
+        }
     }
 
     public Optional<Proxy> getProxy(String name) {

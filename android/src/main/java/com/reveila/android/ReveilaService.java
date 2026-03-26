@@ -60,6 +60,7 @@ public class ReveilaService extends Service {
     private static Reveila reveila;
     private ServiceManager serviceManager;
     private static volatile boolean isReveilaRunning = false;
+    private static volatile boolean isReveilaStarting = false;
     private static final String LOCK_FILE_NAME = "running.lock";
     // Use a single-threaded executor to serialize all service startup and shutdown
     // operations.
@@ -91,7 +92,8 @@ public class ReveilaService extends Service {
         serviceManager.startForeground(this, "Reveila is running.");
 
         // Prevent starting the engine logic multiple times
-        if (!ReveilaService.isReveilaRunning) {
+        if (!ReveilaService.isReveilaRunning && !ReveilaService.isReveilaStarting) {
+            ReveilaService.isReveilaStarting = true;
             final String customSystemHome = intent != null ? intent.getStringExtra("systemHome") : null;
             
             // Offload all initialization, including file I/O, to a background thread
@@ -137,6 +139,7 @@ public class ReveilaService extends Service {
                     fetchRemoteProperties(systemHome);
 
                     Properties props = new Properties();
+                    props.setProperty("platform", "android");
                     if (customSystemHome != null) {
                         props.setProperty(com.reveila.system.Constants.SYSTEM_HOME, customSystemHome);
                     }
@@ -148,6 +151,8 @@ public class ReveilaService extends Service {
                     Log.i("ReveilaService", "Reveila service started successfully.");
                 } catch (Throwable e) {
                     Log.e("ReveilaService", "CRITICAL: Failed to start Reveila engine", e);
+                } finally {
+                    ReveilaService.isReveilaStarting = false;
                 }
             });
         }

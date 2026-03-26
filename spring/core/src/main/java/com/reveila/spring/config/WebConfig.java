@@ -52,10 +52,10 @@ public class WebConfig implements WebMvcConfigurer {
         java.nio.file.Path webDistPath;
         if (systemHome != null) {
             // Priority 1: Check for 'web' folder in Reveila Home
-            webDistPath = java.nio.file.Path.of(systemHome).resolve("web").toAbsolutePath().normalize();
+            webDistPath = java.nio.file.Path.of(String.valueOf(systemHome)).resolve("web").toAbsolutePath().normalize();
             if (!java.nio.file.Files.exists(webDistPath)) {
                 // Priority 2: Fallback to development source tree
-                webDistPath = java.nio.file.Path.of(systemHome).resolve("../../web/vue-project/dist/").toAbsolutePath().normalize();
+                webDistPath = java.nio.file.Path.of(String.valueOf(systemHome)).resolve("../../web/vue-project/dist/").toAbsolutePath().normalize();
             }
         } else {
             // Ultimate Fallback

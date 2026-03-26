@@ -11,30 +11,17 @@ public class Manifest {
     private String description;
     private String author;
     private String org;
-    private List<String> roles = new ArrayList<>();
-    private List<String> requiredRoles = new ArrayList<>();
     private String implementationClass;
     private String componentType; // "component" or "plugin"
-    private List<ExposedMethod> exposedMethods;
-    private boolean isolate = false;
-
+    private List<String> roles = new ArrayList<>();
+    private List<String> requiredRoles = new ArrayList<>();
+    private List<ExposedMethod> exposedMethods = new ArrayList<>();
+    
     public String getOrg() {
         return org;
     }
     public void setOrg(String org) {
         this.org = org;
-    }
-    public void setRoles(List<String> roles) {
-        this.roles = roles;
-    }
-    public void setRequiredRoles(List<String> requiredRoles) {
-        this.requiredRoles = requiredRoles;
-    }
-    public boolean isIsolate() {
-        return isolate;
-    }
-    public void setIsolate(boolean isolate) {
-        this.isolate = isolate;
     }
     public List<String> getRoles() { return roles; }
     public List<String> getRequiredRoles() { return requiredRoles; }
@@ -61,7 +48,6 @@ public class Manifest {
     public void setComponentType(String componentType) { this.componentType = componentType; }
 
     public List<ExposedMethod> getExposedMethods() { return exposedMethods; }
-    public void setExposedMethods(List<ExposedMethod> exposedMethods) { this.exposedMethods = exposedMethods; }
     
     public static class ExposedMethod {
         public String name;

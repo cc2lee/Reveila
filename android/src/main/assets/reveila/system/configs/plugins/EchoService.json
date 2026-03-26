@@ -1,0 +1,45 @@
+{
+    "plugin": {
+        "name": "EchoService",
+        "displayName": "Echo Service",
+        "version": "1.0.0",
+        "description": "A simple service that echoes back input messages after an optional delay.",
+        "author": "Charles",
+        "class": "com.reveila.service.EchoService",
+        "hot-deploy": true,
+        "required-roles": [
+            "user"
+        ],
+        "arguments": [
+            {
+                "name": "reverse",
+                "type": "boolean",
+                "value": false
+            },
+            {
+                "name": "repeat",
+                "type": "int",
+                "value": 2
+            }
+        ],
+        "methods": [
+            {
+                "name": "echo",
+                "description": "Returns the input string, optionally reversed and repeated",
+                "parameters": [
+                    {
+                        "name": "InputString",
+                        "description": "Your input string",
+                        "type": "java.lang.String",
+                        "isRequired": true,
+                        "isSecret": false
+                    }
+                ],
+                "return": "java.lang.String",
+                "required-roles": [
+                    "user"
+                ]
+            }
+        ]
+    }
+}

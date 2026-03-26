@@ -30,8 +30,6 @@ import com.reveila.system.Constants;
 public class AndroidPlatformAdapter extends BasePlatformAdapter {
 
     private final Context context;
-    private final Map<String, Repository<Entity, Map<String, Map<String, Object>>>> repositories = new HashMap<>();
-
     public AndroidPlatformAdapter(Context context) throws Exception {
         this(context, new Properties());
     }
@@ -58,35 +56,14 @@ public class AndroidPlatformAdapter extends BasePlatformAdapter {
         return "Android " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")";
     }
 
-    @Override
-    public String[] getConfigFilePaths() throws IOException {
-        String platform = properties.getProperty("platform");
-        String targetFile = (platform != null && !platform.trim().isEmpty()) ? platform.trim() + ".json" : "default.json";
-        
-        File componentsDir = new File(getSystemHome().toFile(), Constants.CONFIGS_DIR_NAME + File.separator + "components");
-        
-        List<String> paths = new ArrayList<>();
-        
-        if (componentsDir.exists()) {
-            File f = new File(componentsDir, targetFile);
-            if (f.exists()) {
-                paths.add(Constants.CONFIGS_DIR_NAME + File.separator + "components" + File.separator + f.getName());
-            } else {
-                File fallback = new File(componentsDir, "default.json");
-                if (fallback.exists()) {
-                    paths.add(Constants.CONFIGS_DIR_NAME + File.separator + "components" + File.separator + fallback.getName());
-                }
-            }
-        }
-        
-        return paths.toArray(new String[0]);
-    }
+
 
     @Override
     @SuppressWarnings({ "unchecked", "rawtypes" })
     public synchronized Repository<Entity, Map<String, Map<String, Object>>> getRepository(String entityType) {
-        if (repositories.containsKey(entityType)) {
-            return repositories.get(entityType);
+        Repository<Entity, Map<String, Map<String, Object>>> existingRepo = super.getRepository(entityType);
+        if (existingRepo != null) {
+            return existingRepo;
         }
 
         File dataDir = new File(getSystemHome().toFile(), "data");
@@ -95,10 +72,11 @@ public class AndroidPlatformAdapter extends BasePlatformAdapter {
         }
 
         JsonFileRepository<Map, String> jsonRepo = new JsonFileRepository<>(
-            Paths.get(dataDir.getAbsolutePath()), 
+            dataDir.getAbsolutePath(), 
             entityType, 
             Map.class, 
-            String.class
+            String.class,
+            this
         );
         
         Repository<Entity, Map<String, Map<String, Object>>> repo = new Repository<Entity, Map<String, Map<String, Object>>>() {
@@ -185,7 +163,7 @@ public class AndroidPlatformAdapter extends BasePlatformAdapter {
             }
         };
 
-        repositories.put(entityType, repo);
+        registerRepository(entityType, repo);
         return repo;
     }
 

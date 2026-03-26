@@ -118,6 +118,10 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void isRunning(Promise promise) {
         // This method allows the UI to check if the backend service is fully initialized.
+        WritableMap status = Arguments.createMap();
+        status.putBoolean("running", ReveilaService.isRunning());
+        // Since we can't easily add isStarting to ReveilaService without changing it more,
+        // let's just keep it simple for now or check if we should add it.
         promise.resolve(ReveilaService.isRunning());
     }
 
@@ -153,7 +157,7 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
                 }
 
                 Object[] javaParams = ReactNativeJsonConverter.toArray(params);
-                Object result = reveilaInstance.invoke(componentName, methodName, javaParams);
+                Object result = reveilaInstance.invoke(componentName, methodName, javaParams, null, null);
 
                 // Convert the Java result to a React Native Writable type (Map, Array, etc.)
                 Object writableResult = ReactNativeJsonConverter.convertObjectToWritable(result);

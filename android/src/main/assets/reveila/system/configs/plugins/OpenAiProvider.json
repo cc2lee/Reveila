@@ -1,0 +1,35 @@
+{
+    "plugin": {
+        "name": "OpenAiProvider",
+        "displayName": "OpenAI LLM Provider",
+        "version": "1.0.0",
+        "description": "LLM Provider for OpenAI models.",
+        "author": "Reveila-Suite",
+        "class": "com.reveila.ai.OpenAiProvider",
+        "thread-safe": true,
+        "arguments": [
+            {
+                "name": "apiKey",
+                "type": "java.lang.String",
+                "value": "REF:OPENAI_PROD_KEY"
+            },
+            {
+                "name": "model",
+                "type": "java.lang.String",
+                "value": "gpt-4o"
+            },
+            {
+                "name": "temperature",
+                "type": "double",
+                "value": 0.7
+            }
+        ],
+        "dependencies": [
+            "HttpClientService"
+        ],
+        "methods": [],
+        "required-roles": [
+            "*"
+        ]
+    }
+}

@@ -4,7 +4,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -25,7 +24,6 @@ import com.reveila.system.Constants;
 public class SpringPlatformAdapter extends BasePlatformAdapter {
 
     private final ApplicationContext springContext;
-    private final Map<String, GenericRepository<?, ?>> repoRegistry = new HashMap<>();
     private boolean databaseAvailable = false;
 
     public SpringPlatformAdapter(ApplicationContext context, Properties commandLineArgs) throws Exception {
@@ -63,7 +61,9 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
         for (JavaObjectRepository<?, ?> repo : beans.values()) {
             String type = repo.getType().toLowerCase();
             if (databaseAvailable) {
-                repoRegistry.put(type, createGenericRepo(repo));
+                @SuppressWarnings("unchecked")
+                Repository<Entity, Map<String, Map<String, Object>>> repository = (Repository<Entity, Map<String, Map<String, Object>>>)(Object) createGenericRepo(repo);
+                registerRepository(type, repository);
             }
         }
 
@@ -100,7 +100,9 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
             com.reveila.data.JsonFileRepository<?, ?> auditRepo = new com.reveila.data.JsonFileRepository<>(
                     "system-home/standard/data", "AuditLog", auditLogClass, java.util.UUID.class, this);
 
-            repoRegistry.put("auditlog", createGenericRepoFromGeneric(auditRepo));
+            @SuppressWarnings("unchecked")
+            Repository<Entity, Map<String, Map<String, Object>>> repository = (Repository<Entity, Map<String, Map<String, Object>>>)(Object) createGenericRepoFromGeneric(auditRepo);
+            registerRepository("auditlog", repository);
             System.out.println("Reveila Fallback: AuditLog repository registered (JSON).");
         } catch (Exception e) {
             System.err.println("Failed to setup AuditLog JSON fallback: " + e.getMessage());
@@ -154,10 +156,4 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
         }
     }
 
-    @Override
-    public Repository<Entity, Map<String, Map<String, Object>>> getRepository(String entityType) {
-        if (entityType == null)
-            return null;
-        return repoRegistry.get(entityType.toLowerCase());
-    }
 }

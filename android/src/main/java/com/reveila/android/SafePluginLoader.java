@@ -2,31 +2,38 @@
 package com.reveila.android;
 
 import android.content.Context;
-import dalvik.system.DexClassLoader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.nio.file.Path;
-import com.reveila.system.Proxy;
-import com.reveila.system.MetaObject;
+import java.lang.reflect.Method;
 import java.util.Map;
+
+import com.reveila.system.SystemProxy;
+import com.reveila.system.MetaObject;
+import com.reveila.system.Manifest;
+import com.reveila.system.RuntimeUtil;
 
 public class SafePluginLoader {
 
-    public static Proxy createProxy(Context context, String pluginId, String className) {
+    public static SystemProxy createProxy(Context context, String pluginId, String className) {
         Map<String, Object> config = Map.of(
                 "name", pluginId,
                 "class", className,
                 "plugin",
                 Map.of("directory", new File(context.getFilesDir(), "plugins/" + pluginId).getAbsolutePath()));
-        return new Proxy(new MetaObject(config));
+        
+        Manifest manifest = new Manifest();
+        manifest.setComponentType("plugin");
+        manifest.setName(pluginId);
+        manifest.setImplementationClass(className);
+
+        return new SystemProxy(new MetaObject(config), manifest);
     }
 
     /**
-     * Loads a plugin and returns its Proxy.
-     * IReveilaPlugin interface has been deprecated and removed.
+     * Loads a plugin and returns its SystemProxy.
      */
-    public static Proxy loadPlugin(Context context, String pluginFileName, String className) {
+    public static SystemProxy loadPlugin(Context context, String pluginFileName, String className) {
         try {
             String pluginId = pluginFileName.replace(".jar", "").replace(".dex", "");
             File pluginDir = new File(context.getFilesDir(), "plugins/" + pluginId);
@@ -37,8 +44,12 @@ public class SafePluginLoader {
             copyAssetToFile(context, pluginFileName, pluginFile);
             pluginFile.setReadOnly();
 
-            Proxy proxy = createProxy(context, pluginId, className);
-            proxy.loadPlugin(pluginDir.toPath());
+            SystemProxy proxy = createProxy(context, pluginId, className);
+            ClassLoader loader = RuntimeUtil.createPluginClassLoader(pluginDir.getAbsolutePath(), SafePluginLoader.class.getClassLoader());
+            
+            Method setClassLoaderMethod = SystemProxy.class.getDeclaredMethod("setClassLoader", ClassLoader.class);
+            setClassLoaderMethod.setAccessible(true);
+            setClassLoaderMethod.invoke(proxy, loader);
 
             return proxy;
 
