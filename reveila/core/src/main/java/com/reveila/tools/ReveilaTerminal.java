@@ -12,8 +12,12 @@ public class ReveilaTerminal {
         try {
             List<String> command = new ArrayList<>();
             // Detect OS to choose the right shell
+            // Updated Java logic for Reveila-Suite
             if (System.getProperty("os.name").toLowerCase().contains("win")) {
-                command.addAll(List.of("powershell.exe", "-ExecutionPolicy", "Bypass", "-File", scriptPath));
+                // Check if pwsh is available first (Modern PS 7)
+                // then fall back to powershell (Legacy PS 5.1)
+                String shell = isCommandAvailable("pwsh") ? "pwsh.exe" : "powershell.exe";
+                command.addAll(List.of(shell, "-ExecutionPolicy", "Bypass", "-File", scriptPath));
             } else {
                 command.addAll(List.of("bash", scriptPath));
             }
@@ -21,9 +25,9 @@ public class ReveilaTerminal {
 
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.redirectErrorStream(true); // Merge error and output
-            
+
             Process process = pb.start();
-            
+
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
                 String output = reader.lines().collect(Collectors.joining("\n"));
                 process.waitFor();
