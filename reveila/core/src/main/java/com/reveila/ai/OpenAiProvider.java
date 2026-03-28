@@ -1,12 +1,16 @@
 package com.reveila.ai;
 
+import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import com.reveila.service.HttpClientService;
-import com.reveila.util.json.JsonUtil;
 
 /**
  * ChatGPT Worker Implementation: Handles task-specific tool generation.
+ * Now using LangChain4j for consistent model interaction.
  * 
  * @author CL
  */
@@ -14,6 +18,7 @@ public class OpenAiProvider extends com.reveila.system.AbstractService implement
     private String apiKey;
     private String model = "gpt-4";
     private double temperature = 0.7;
+    private ChatLanguageModel chatModel;
 
     /**
      * Required by LlmProviderFactory to retrieve the instance via Proxy.
@@ -39,6 +44,22 @@ public class OpenAiProvider extends com.reveila.system.AbstractService implement
 
     @Override
     protected void onStart() throws Exception {
+        String resolvedApiKey = apiKey;
+        if (apiKey != null && apiKey.startsWith("REF:")) {
+            resolvedApiKey = (String) this.context.getProxy("CredentialManager")
+                    .orElseThrow(() -> new IllegalStateException("CredentialManager not found"))
+                    .invoke("getSecret", new Object[] { apiKey.substring(4) });
+        }
+
+        if (resolvedApiKey == null || resolvedApiKey.isBlank()) {
+            throw new IllegalStateException("OpenAI API Key could not be resolved.");
+        }
+
+        this.chatModel = OpenAiChatModel.builder()
+                .apiKey(resolvedApiKey)
+                .modelName(model)
+                .temperature(temperature)
+                .build();
     }
 
     @Override
@@ -48,49 +69,19 @@ public class OpenAiProvider extends com.reveila.system.AbstractService implement
     @Override
     public String generateResponse(String prompt, String systemContext) {
         try {
-            String resolvedApiKey = apiKey;
-            if (apiKey != null && apiKey.startsWith("REF:")) {
-                resolvedApiKey = (String) this.context.getProxy("CredentialManager")
-                        .orElseThrow(() -> new IllegalStateException("CredentialManager not found"))
-                        .invoke("getSecret", new Object[] { apiKey.substring(4) });
+            if (chatModel == null) {
+                onStart();
             }
 
-            if (resolvedApiKey == null || resolvedApiKey.isBlank()) {
-                throw new IllegalStateException("OpenAI API Key could not be resolved.");
+            List<ChatMessage> messages = new ArrayList<>();
+            if (systemContext != null && !systemContext.isBlank()) {
+                messages.add(SystemMessage.from(systemContext));
             }
+            messages.add(UserMessage.from(prompt));
 
-            String url = "https://api.openai.com/v1/chat/completions";
-
-            Map<String, Object> requestMap = Map.of(
-                    "model", model,
-                    "temperature", temperature,
-                    "messages", List.of(
-                            Map.of("role", "system", "content", systemContext != null ? systemContext : ""),
-                            Map.of("role", "user", "content", prompt)));
-
-            String payload = JsonUtil.toJsonString(requestMap);
-            Map<String, String> headers = Map.of("Authorization", "Bearer " + resolvedApiKey);
-
-            String responseJson = (String) this.context.getProxy("HttpClientService")
-                    .orElseThrow(() -> new IllegalStateException("HttpClientService not found"))
-                    .invoke("invokeRest", new Object[] { url, "POST", payload, HttpClientService.JSON, headers });
-
-            // Parse response
-            Map<String, Object> responseMap = JsonUtil.parseJsonStringToMap(responseJson);
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> choices = (List<Map<String, Object>>) responseMap.get("choices");
-            if (choices != null && !choices.isEmpty()) {
-                Map<String, Object> choice = choices.get(0);
-                @SuppressWarnings("unchecked")
-                Map<String, Object> message = (Map<String, Object>) choice.get("message");
-                if (message != null) {
-                    return (String) message.get("content");
-                }
-            }
-
-            return "ERROR: No valid response choice from OpenAI. Raw response: " + responseJson;
+            return chatModel.generate(messages).content().text();
         } catch (Exception e) {
-            return "ERROR invoking OpenAI API: " + e.getMessage();
+            return "ERROR invoking OpenAI via LangChain4j: " + e.getMessage();
         }
     }
 

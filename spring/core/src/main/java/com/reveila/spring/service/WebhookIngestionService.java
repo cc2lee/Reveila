@@ -98,7 +98,7 @@ public class WebhookIngestionService {
         }
 
         Map<String, Object> args = new java.util.HashMap<>();
-        args.put("_session_id", session.sessionId());
+        args.put("_session_id", session.getSessionId());
         args.put("_thought", "Worker processing Filo task: " + payload.get("task_id"));
         args.put("context", context);
 

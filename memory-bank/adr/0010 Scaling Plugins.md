@@ -18,7 +18,7 @@ Plugins are now self-describing. Every agent (JAR or folder) must contain a `rev
 
 #### 2. The Sovereign Ledger (PostgreSQL)
 Instead of local files, authorized plugins and global settings are stored in the database.
-- **Tables:** `plugin_registry` and `global_settings` (Defined in [`schema.sql`](../../system-home/standard/resources/db/scripts/schema.sql)).
+- **Tables:** `plugin_registry` and `global_settings` (Defined in [`schema.sql`](../../system-home/standard/bin/sql/schema.sql)).
 - **Benefit:** Ensures all nodes in the cluster have a unified view of what agents are allowed to run and what the current governance policies are.
 
 #### 3. Reactive Cluster Synchronization (The "Pulse")

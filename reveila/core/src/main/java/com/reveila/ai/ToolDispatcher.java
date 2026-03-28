@@ -1,5 +1,9 @@
 package com.reveila.ai;
 
+import com.reveila.tools.SystemTool;
+import com.reveila.tools.VSCtool;
+import com.reveila.util.json.JsonUtil;
+
 // Simplified logic for a Reveila Tool Executor
 public class ToolDispatcher {
     public String handleAiRequest(String jsonResponseFromLlm) {
@@ -12,5 +16,15 @@ public class ToolDispatcher {
             case "clear_cache" -> VSCtool.clearWorkspaceStorage();
             default -> "Error: Unknown tool";
         };
+    }
+
+    private ToolCall parseJson(String json) {
+        try {
+            return JsonUtil.toObject(json, ToolCall.class);
+        } catch (Exception e) {
+            ToolCall errorCall = new ToolCall();
+            errorCall.setFunctionName("error");
+            return errorCall;
+        }
     }
 }

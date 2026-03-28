@@ -33,5 +33,6 @@ public interface PlatformAdapter {
     public void reloadProperties() throws Exception;
     public Repository<Entity, Map<String, Map<String, Object>>> getRepository(String entityType);
     public ExecutorService getExecutor();
+    public com.reveila.crypto.Cryptographer getCryptographer();
 
 }

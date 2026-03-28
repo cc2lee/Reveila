@@ -1,12 +1,16 @@
 package com.reveila.ai;
 
+import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
+import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-
-import com.reveila.util.json.JsonUtil;
 
 /**
  * Gemini RailGuard Implementation: Specifically for IntentValidator safety audits.
+ * Now using LangChain4j for consistent model interaction.
  * 
  * @author CL
  */
@@ -14,6 +18,7 @@ public class GeminiProvider extends com.reveila.system.AbstractService implement
     private String apiKey;
     private String model = "gemini-1.5-pro";
     private double temperature = 0.1;
+    private ChatLanguageModel chatModel;
 
     /**
      * Required by LlmProviderFactory to retrieve the instance via Proxy.
@@ -39,6 +44,22 @@ public class GeminiProvider extends com.reveila.system.AbstractService implement
 
     @Override
     protected void onStart() throws Exception {
+        String resolvedApiKey = apiKey;
+        if (apiKey != null && apiKey.startsWith("REF:")) {
+            resolvedApiKey = (String) this.context.getProxy("CredentialManager")
+                    .orElseThrow(() -> new IllegalStateException("CredentialManager not found"))
+                    .invoke("getSecret", new Object[] { apiKey.substring(4) });
+        }
+
+        if (resolvedApiKey == null || resolvedApiKey.isBlank()) {
+            throw new IllegalStateException("Gemini API Key could not be resolved.");
+        }
+
+        this.chatModel = GoogleAiGeminiChatModel.builder()
+                .apiKey(resolvedApiKey)
+                .modelName(model)
+                .temperature(temperature)
+                .build();
     }
 
     @Override
@@ -48,59 +69,19 @@ public class GeminiProvider extends com.reveila.system.AbstractService implement
     @Override
     public String generateResponse(String prompt, String systemContext) {
         try {
-            String resolvedApiKey = apiKey;
-            if (apiKey != null && apiKey.startsWith("REF:")) {
-                resolvedApiKey = (String) this.context.getProxy("CredentialManager")
-                        .orElseThrow(() -> new IllegalStateException("CredentialManager not found"))
-                        .invoke("getSecret", new Object[] { apiKey.substring(4) });
+            if (chatModel == null) {
+                onStart(); // Lazy init if needed, though onStart should handle it
             }
 
-            if (resolvedApiKey == null || resolvedApiKey.isBlank()) {
-                throw new IllegalStateException("Gemini API Key could not be resolved.");
-            }
-
-            String url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + resolvedApiKey;
-
-            // Build Gemini request JSON
-            Map<String, Object> requestMap;
-            Map<String, Object> generationConfig = Map.of("temperature", temperature);
-
+            List<ChatMessage> messages = new ArrayList<>();
             if (systemContext != null && !systemContext.isBlank()) {
-                requestMap = Map.of(
-                        "system_instruction", Map.of("parts", List.of(Map.of("text", systemContext))),
-                        "contents", List.of(
-                                Map.of("parts", List.of(Map.of("text", prompt)))),
-                        "generationConfig", generationConfig);
-            } else {
-                requestMap = Map.of(
-                        "contents", List.of(
-                                Map.of("parts", List.of(Map.of("text", prompt)))),
-                        "generationConfig", generationConfig);
+                messages.add(SystemMessage.from(systemContext));
             }
+            messages.add(UserMessage.from(prompt));
 
-            String payload = JsonUtil.toJsonString(requestMap);
-            String responseJson = (String) this.context.getProxy("HttpClientService")
-                    .orElseThrow(() -> new IllegalStateException("HttpClientService not found"))
-                    .invoke("invokeRest", new Object[] { url, "POST", payload });
-
-            // Parse response
-            Map<String, Object> responseMap = JsonUtil.parseJsonStringToMap(responseJson);
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> candidates = (List<Map<String, Object>>) responseMap.get("candidates");
-            if (candidates != null && !candidates.isEmpty()) {
-                Map<String, Object> candidate = candidates.get(0);
-                @SuppressWarnings("unchecked")
-                Map<String, Object> content = (Map<String, Object>) candidate.get("content");
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> parts = (List<Map<String, Object>>) content.get("parts");
-                if (parts != null && !parts.isEmpty()) {
-                    return (String) parts.get(0).get("text");
-                }
-            }
-
-            return "ERROR: No valid response candidate from Gemini. Raw response: " + responseJson;
+            return chatModel.generate(messages).content().text();
         } catch (Exception e) {
-            return "ERROR invoking Gemini API: " + e.getMessage();
+            return "ERROR invoking Gemini via LangChain4j: " + e.getMessage();
         }
     }
 

@@ -14,6 +14,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import com.reveila.system.Reveila;
 import com.reveila.system.RolePrincipal;
+import com.reveila.system.SystemProxy;
+import com.reveila.ai.UniversalInvocationBridge;
+import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -69,5 +72,27 @@ public class ApiController {
             @RequestBody MethodDTO request,
             HttpServletRequest httpRequest) throws Exception {
         return invokeComponent(componentName, request, httpRequest);
+    }
+
+    /**
+     * Secure callback endpoint for containerized plugins.
+     * ADR 0006: Routes calls from isolated workers back to the host system.
+     */
+    @PostMapping("/system/callback")
+    public ResponseEntity<?> handleCallback(@RequestBody Map<String, Object> payload) throws Exception {
+        String jitToken = (String) payload.get("jit_token");
+        String component = (String) payload.get("component");
+        String method = (String) payload.get("method");
+        
+        @SuppressWarnings("unchecked")
+        Map<String, Object> arguments = (Map<String, Object>) payload.get("arguments");
+
+        UniversalInvocationBridge bridge = (UniversalInvocationBridge) ((SystemProxy) reveila.getSystemContext()
+                .getProxy("UniversalInvocationBridge")
+                .orElseThrow(() -> new IllegalStateException("UniversalInvocationBridge not found")))
+                .getInstance();
+
+        Object result = bridge.handleCallback(jitToken, component, method, arguments);
+        return ResponseEntity.ok(Map.of("data", result != null ? result : "SUCCESS"));
     }
 }

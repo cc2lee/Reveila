@@ -6,6 +6,7 @@
         "description": "LLM Provider for local Ollama models.",
         "author": "Reveila-Suite",
         "class": "com.reveila.ai.OllamaProvider",
+        "start-priority": 21,
         "thread-safe": true,
         "arguments": [
             {

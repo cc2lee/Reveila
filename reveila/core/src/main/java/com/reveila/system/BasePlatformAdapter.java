@@ -272,6 +272,14 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
             String placeholder = value.substring(start + 2, end);
             String defaultValue = null;
             int separator = placeholder.indexOf(":");
+
+            // Unified Placeholder Support: Do not resolve 'secret:' placeholders during initial property loading.
+            if (placeholder.startsWith("secret:")) {
+                result.append("${").append(placeholder).append("}");
+                cursor = end + 1;
+                continue;
+            }
+
             if (separator != -1) {
                 defaultValue = placeholder.substring(separator + 1);
                 placeholder = placeholder.substring(0, separator);
@@ -542,6 +550,11 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
             return null;
         }
         return repositories.get(entityType.toLowerCase());
+    }
+
+    @Override
+    public com.reveila.crypto.Cryptographer getCryptographer() {
+        return null; // Subclasses can provide platform-specific implementations
     }
 
     public void registerRepository(String entityType, Repository<Entity, Map<String, Map<String, Object>>> repository) {

@@ -50,7 +50,7 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
         // 1. Read and apply database schema if DB is available
         if (databaseAvailable) {
             if ("true".equalsIgnoreCase(getProperties().getProperty(Constants.DB_CREATE_SCHEMA))) {
-                executeSqlScript("resources/db/scripts/schema.sql");
+                executeSqlScript("bin/sql/schema.sql");
             }
         }
 

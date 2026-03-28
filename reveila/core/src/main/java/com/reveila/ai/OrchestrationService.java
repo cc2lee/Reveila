@@ -6,21 +6,38 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * OrchestrationService manages AgentSessions and coordinates multi-agent workflows.
+ * Optimized to handle context windows based on system configuration.
  * 
  * @author CL
  */
-public class OrchestrationService {
+public class OrchestrationService extends com.reveila.system.AbstractService {
     private final Map<String, AgentSession> sessions = new ConcurrentHashMap<>();
+    private String optimizationPriority = "cost";
+
+    public OrchestrationService() {
+    }
+
+    @Override
+    public void onStart() throws Exception {
+        this.optimizationPriority = context.getProperties().getProperty("ai.optimization.priority", "cost");
+    }
+
+    @Override
+    protected void onStop() throws Exception {
+    }
 
     /**
-     * Creates a new AgentSession.
+     * Creates a new AgentSession with settings derived from system properties.
      * 
      * @param parentTraceId The trace_id of the parent task.
      * @return The newly created AgentSession.
      */
     public AgentSession createSession(String parentTraceId) {
         String sessionId = UUID.randomUUID().toString();
-        AgentSession session = new AgentSession(sessionId, parentTraceId);
+        // Window size depends on optimization priority: cost (10) vs quality (50)
+        int windowSize = "cost".equalsIgnoreCase(optimizationPriority) ? 10 : 50;
+        
+        AgentSession session = new AgentSession(sessionId, parentTraceId, windowSize);
         sessions.put(sessionId, session);
         return session;
     }
@@ -42,5 +59,9 @@ public class OrchestrationService {
      */
     public void closeSession(String sessionId) {
         sessions.remove(sessionId);
+    }
+    
+    public String getOptimizationPriority() {
+        return optimizationPriority;
     }
 }

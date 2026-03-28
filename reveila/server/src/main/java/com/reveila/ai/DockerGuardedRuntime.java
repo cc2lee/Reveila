@@ -73,10 +73,12 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
                 .withAutoRemove(true);
 
         // Environment Variables & JIT Credentials
+        String callbackUrl = context.getProperties().getProperty("system.callback.url", "http://host.docker.internal:8080");
         java.util.List<String> envVars = new java.util.ArrayList<>(java.util.List.of(
             "PLUGIN_ID=" + pluginId,
             "TRACE_ID=" + principal.getTraceId(),
-            "TENANT_ID=" + principal.getTenantId()
+            "TENANT_ID=" + principal.getTenantId(),
+            "REVEILA_CALLBACK_URL=" + callbackUrl
         ));
 
         if (jitCredentials != null) {

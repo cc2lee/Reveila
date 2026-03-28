@@ -132,8 +132,15 @@ public class ReveilaService extends Service {
                     // Create the lock file to indicate the service is now running.
                     lockFile.createNewFile();
 
-                    // Copy assets, overwriting only if the last shutdown was unclean.
-                    new ReveilaSetup(this, homePath, wasUncleanShutdown);
+                    // ADR 0003: In Debug mode, we always overwrite assets to ensure 
+                    // IDE changes (like priority fixes) are applied immediately.
+                    boolean shouldOverwrite = wasUncleanShutdown || BuildConfig.DEBUG;
+                    if (BuildConfig.DEBUG) {
+                        Log.i("ReveilaService", "Debug mode detected. Forcing asset overwrite.");
+                    }
+
+                    // Copy assets, overwriting only if the last shutdown was unclean or in debug mode.
+                    new ReveilaSetup(this, homePath, shouldOverwrite);
 
                     // Attempt to fetch remote properties if configured
                     fetchRemoteProperties(systemHome);

@@ -29,8 +29,11 @@ okhttp = "4.12.0"
 slf4j = "2.0.13"
 junit = "5.12.2"
 commons-compress = "1.27.1"
+commonmark = "0.24.0"
+jsoup = "1.18.1"
 docker-java = "3.4.0"
 json-schema-validator = "1.4.0"
+langchain4j = "0.35.0"
 
 # https://github.com/GradleUp/shadow
 shadow = "8.3.5"
@@ -121,6 +124,14 @@ android-gradle-plugin = { module = "com.android.tools.build:gradle", version.ref
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidxCore" }
 
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commons-compress" }
+commonmark = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
+jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
+
+langchain4j = { module = "dev.langchain4j:langchain4j", version.ref = "langchain4j" }
+langchain4j-core = { module = "dev.langchain4j:langchain4j-core", version.ref = "langchain4j" }
+langchain4j-open-ai = { module = "dev.langchain4j:langchain4j-open-ai", version.ref = "langchain4j" }
+langchain4j-google-ai-gemini = { module = "dev.langchain4j:langchain4j-google-ai-gemini", version.ref = "langchain4j" }
+langchain4j-ollama = { module = "dev.langchain4j:langchain4j-ollama", version.ref = "langchain4j" }
 
 # The API (Interfaces)
 jakarta-persistence-api = { module = "jakarta.persistence:jakarta.persistence-api", version.ref = "jakarta-persistence" }
@@ -136,5 +147,6 @@ hibernate-validator = { module = "org.hibernate.validator:hibernate-validator", 
 # Create groups so you only need one line in your build files
 slf4j = ["slf4j-api", "slf4j-simple"]
 jackson = ["jackson-xml", "jackson-databind", "jackson-annotations", "jackson-jsr310"]
+langchain4j = ["langchain4j", "langchain4j-core", "langchain4j-open-ai", "langchain4j-google-ai-gemini", "langchain4j-ollama"]
 # junit = ["junit-jupiter-api", "junit-jupiter-engine", "junit-platform-launcher"]
 aws = ["aws-sdk-s3", "aws-sdk-lambda"]

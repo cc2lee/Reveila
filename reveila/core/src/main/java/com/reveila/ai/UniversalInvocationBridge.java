@@ -3,6 +3,7 @@ package com.reveila.ai;
 import java.util.Map;
 
 import com.reveila.system.PluginPrincipal;
+import com.reveila.system.SystemProxy;
 
 /**
  * The Universal Invocation Bridge (UIB) is the central orchestrator for all
@@ -70,7 +71,10 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
         return context.getProxy(name)
                 .map(p -> {
                     try {
-                        return p.invoke("getInstance", null);
+                        if (p instanceof SystemProxy sp) {
+                            return sp.getInstance();
+                        }
+                        return null;
                     } catch (Exception e) {
                         return null;
                     }
@@ -203,6 +207,29 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
                 TraceContextHolder.clear();
             }
         }
+    }
+
+    /**
+     * Secure callback handler for containerized agents.
+     * ADR 0006: Implements the 'Ref-in-the-Middle' pattern for isolated code.
+     * 
+     * @param jitToken  The temporary execution token.
+     * @param component The target system component.
+     * @param method    The method to invoke.
+     * @param arguments The arguments map.
+     * @return The execution result.
+     * @throws Exception if security validation or execution fails.
+     */
+    public Object handleCallback(String jitToken, String component, String method, Map<String, Object> arguments)
+            throws Exception {
+        if (!credentialManager.validateToken(jitToken)) {
+            throw new com.reveila.error.SecurityException("Invalid or expired JIT token: " + jitToken);
+        }
+
+        // Logic to execute tool on behalf of the isolated agent
+        return context.getProxy(component)
+                .orElseThrow(() -> new IllegalArgumentException("Component not found: " + component))
+                .invoke(method, arguments != null ? arguments.values().toArray() : new Object[0]);
     }
 
     private boolean isHighRiskAction(MetadataRegistry.PluginManifest manifest, String intent,

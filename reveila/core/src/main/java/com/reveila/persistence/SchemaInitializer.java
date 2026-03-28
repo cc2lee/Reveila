@@ -19,20 +19,29 @@ public class SchemaInitializer {
         try {
             String sql = "";
             // 1. Try resolving from the physical workspace/runtime directory first
-            File file = new File("system-home/standard/resources/db/scripts/schema.sql");
+            File file = new File("system-home/standard/bin/sql/schema.sql");
             if (file.exists()) {
                 try (InputStream is = new FileInputStream(file)) {
                     sql = new String(is.readAllBytes(), StandardCharsets.UTF_8);
                 }
             } else {
                 // 2. Fallback to classpath if packaged in a JAR
-                try (InputStream is = SchemaInitializer.class.getResourceAsStream("/db/scripts/schema.sql")) {
-                    if (is != null) {
+                InputStream is = SchemaInitializer.class.getResourceAsStream("/bin/sql/schema.sql");
+                if (is == null) {
+                    is = SchemaInitializer.class.getResourceAsStream("/db/scripts/schema.sql"); // legacy fallback
+                }
+
+                if (is != null) {
+                    try {
                         sql = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                    } else {
-                        System.err.println("SchemaInitializer: Could not locate schema.sql");
+                        is.close();
+                    } catch (Exception e) {
+                        System.err.println("SchemaInitializer: Failed to read schema.sql from classpath");
                         return;
                     }
+                } else {
+                    System.err.println("SchemaInitializer: Could not locate schema.sql");
+                    return;
                 }
             }
 

@@ -170,20 +170,31 @@ public class Reveila implements AutoCloseable {
 			throw new ConfigurationException("Platform not specified in " + Constants.SYSTEM_PROPERTIES + ".");
 		}
 
-		List<MetaObject> allMetaObjects = new ArrayList<>();
+		Map<String, MetaObject> componentMap = new java.util.LinkedHashMap<>();
 
-		// 1. Discover Platform Components
+		// 1. Discover Shared Components (Tier 1)
+		List<MetaObject> sharedMetaObjects = parseMetaObjects(Constants.CONFIGS_DIR_NAME + File.separator + "shared");
+		for (MetaObject mObj : sharedMetaObjects) {
+			mObj.setPlugin(false);
+			componentMap.put(mObj.getName(), mObj);
+		}
+
+		// 2. Discover Platform-Specific Components (Tier 2 - Overwrites Shared)
 		List<MetaObject> platformMetaObjects = parseMetaObjects(Constants.CONFIGS_DIR_NAME + File.separator + platform);
 		for (MetaObject mObj : platformMetaObjects) {
 			mObj.setPlugin(false);
+			componentMap.put(mObj.getName(), mObj);
 		}
-		allMetaObjects.addAll(platformMetaObjects);
 
-		// 2. Discover Plugins
+		List<MetaObject> finalComponentList = new ArrayList<>(componentMap.values());
+
+		// 3. Discover Plugins
 		List<MetaObject> pluginMetaObjects = parseMetaObjects(Constants.CONFIGS_DIR_NAME + File.separator + "plugins");
 		for (MetaObject mObj : pluginMetaObjects) {
 			mObj.setPlugin(true);
 		}
+
+		List<MetaObject> allMetaObjects = new ArrayList<>(finalComponentList);
 		allMetaObjects.addAll(pluginMetaObjects);
 
 		// PHASE 2: VALIDATION (Linting & Cycle Detection for ALL components together)
@@ -195,8 +206,8 @@ public class Reveila implements AutoCloseable {
 		}
 
 		// PHASE 3: EXECUTION (Starting components in order)
-		platformMetaObjects.sort(Comparator.comparingInt(m -> m.getStartPriority()));
-		startComponents(Constants.COMPONENT, platformMetaObjects, timeoutSeconds);
+		finalComponentList.sort(Comparator.comparingInt(m -> m.getStartPriority()));
+		startComponents(Constants.COMPONENT, finalComponentList, timeoutSeconds);
 
 		pluginMetaObjects.sort(Comparator.comparingInt(m -> m.getStartPriority()));
 		startComponents(Constants.PLUGIN, pluginMetaObjects, timeoutSeconds);
@@ -288,9 +299,14 @@ public class Reveila implements AutoCloseable {
 			charset = StandardCharsets.UTF_8.name();
 		}
 
+		com.reveila.crypto.Cryptographer crypto = this.platformAdapter.getCryptographer();
+		if (crypto == null) {
+			crypto = new DefaultCryptographer(secretKey.getBytes(charset));
+		}
+
 		this.systemContext = new SystemContext(
 				props, eventManager, this.logger,
-				new DefaultCryptographer(secretKey.getBytes(charset)), this.platformAdapter);
+				crypto, this.platformAdapter);
 	}
 
 	private List<MetaObject> parseMetaObjects(String dir) throws Exception {

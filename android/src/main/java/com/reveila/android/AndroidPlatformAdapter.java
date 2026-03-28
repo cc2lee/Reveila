@@ -167,6 +167,16 @@ public class AndroidPlatformAdapter extends BasePlatformAdapter {
         return repo;
     }
 
+    @Override
+    public com.reveila.crypto.Cryptographer getCryptographer() {
+        try {
+            return new AndroidCryptographer();
+        } catch (Exception e) {
+            getLogger().log(Level.SEVERE, "Failed to initialize AndroidCryptographer", e);
+            return null;
+        }
+    }
+
     private void configureAndroidLogging() {
         Logger rootLogger = Logger.getLogger("");
         Handler logcatHandler = new Handler() {

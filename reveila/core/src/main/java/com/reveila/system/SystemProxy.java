@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.EventObject;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
@@ -365,6 +366,7 @@ public final class SystemProxy extends AbstractService implements Proxy {
 					argClass = getClassForType(typeName);
 					method = targetClass.getMethod(setterName, argClass);
 				}
+				value = resolveSecretIfNeeded(value);
 				value = coerceValue(value, argClass);
 				method.invoke(target, value);
 
@@ -373,12 +375,65 @@ public final class SystemProxy extends AbstractService implements Proxy {
 				}
 			} catch (Exception e) {
 				throw new ConfigurationException(
-						"Failed to set '" + name + "' using method '" + setterName + "(" + argClass == null ? "null"
-								: argClass.getName() + ")'"
+						"Failed to set '" + name + "' using method '" + setterName + "(" + (argClass == null ? "null"
+								: argClass.getName()) + ")'"
 										+ " in class '" + targetClass.getName() + "'. Error: " + e.getMessage(),
 						e);
 			}
 		}
+	}
+
+	/**
+	 * Resolves secrets if the value contains a ${secret:KEY} placeholder.
+	 */
+	private Object resolveSecretIfNeeded(Object value) {
+		if (!(value instanceof String)) {
+			return value;
+		}
+
+		String strValue = (String) value;
+		if (!strValue.contains("${secret:")) {
+			return value;
+		}
+
+		// Use a pattern-based resolution for simplicity
+		StringBuilder result = new StringBuilder();
+		int cursor = 0;
+		while (cursor < strValue.length()) {
+			int start = strValue.indexOf("${secret:", cursor);
+			if (start == -1) {
+				result.append(strValue.substring(cursor));
+				break;
+			}
+			result.append(strValue.substring(cursor, start));
+			int end = strValue.indexOf("}", start);
+			if (end == -1) {
+				result.append(strValue.substring(start));
+				break;
+			}
+
+			String key = strValue.substring(start + 9, end);
+			try {
+				Optional<Proxy> credentialManager = context.getProxy("CredentialManager");
+				if (credentialManager.isPresent()) {
+					String secret = (String) credentialManager.get().invoke("getSecret", new Object[] { key });
+					if (secret != null) {
+						result.append(secret);
+					} else {
+						result.append("${secret:").append(key).append("}");
+						logger.warning("Secret key '" + key + "' not found in CredentialManager.");
+					}
+				} else {
+					result.append("${secret:").append(key).append("}");
+					logger.warning("CredentialManager not found while trying to resolve secret: " + key);
+				}
+			} catch (Exception e) {
+				result.append("${secret:").append(key).append("}");
+				logger.log(Level.SEVERE, "Error resolving secret key '" + key + "'.", e);
+			}
+			cursor = end + 1;
+		}
+		return result.toString();
 	}
 
 	/**

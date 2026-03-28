@@ -1,17 +1,23 @@
 package com.reveila.ai;
 
-import java.util.Map;
-
-import com.reveila.util.json.JsonUtil;
+import dev.langchain4j.model.ollama.OllamaChatModel;
+import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Ollama Provider Implementation: Local AI model support for the Sovereign Node.
+ * Now using LangChain4j for consistent model interaction.
  * 
  * @author CL
  */
 public class OllamaProvider extends com.reveila.system.AbstractService implements LlmProvider {
     private String apiUrl;
     private String model = "llama3";
+    private ChatLanguageModel chatModel;
 
     public OllamaProvider() {
         System.err.println("[CRITICAL_LOG] OllamaProvider Constructor Called");
@@ -42,8 +48,13 @@ public class OllamaProvider extends com.reveila.system.AbstractService implement
             apiUrl = "http://ollama-service:11434";
         }
 
+        this.chatModel = OllamaChatModel.builder()
+                .baseUrl(apiUrl)
+                .modelName(model)
+                .build();
+
         // Log the connection status to fulfill Demo verification requirements
-        String msg = "Ollama connection established: " + apiUrl;
+        String msg = "Ollama connection established via LangChain4j: " + apiUrl;
         System.err.println("[CRITICAL_LOG] " + msg);
         if (this.logger != null) {
             this.logger.severe(msg);
@@ -57,28 +68,19 @@ public class OllamaProvider extends com.reveila.system.AbstractService implement
     @Override
     public String generateResponse(String prompt, String systemContext) {
         try {
-            String url = apiUrl + "/api/generate";
+            if (chatModel == null) {
+                onStart();
+            }
 
-            // Build Ollama request JSON
-            Map<String, Object> requestMap = Map.of(
-                "model", model,
-                "prompt", prompt,
-                "system", systemContext != null ? systemContext : "",
-                "stream", false
-            );
+            List<ChatMessage> messages = new ArrayList<>();
+            if (systemContext != null && !systemContext.isBlank()) {
+                messages.add(SystemMessage.from(systemContext));
+            }
+            messages.add(UserMessage.from(prompt));
 
-            String payload = JsonUtil.toJsonString(requestMap);
-            String responseJson = (String) this.context.getProxy("HttpClientService")
-                    .orElseThrow(() -> new IllegalStateException("HttpClientService not found"))
-                    .invoke("invokeRest", new Object[] { url, "POST", payload });
-
-            // Parse response
-            Map<String, Object> responseMap = JsonUtil.parseJsonStringToMap(responseJson);
-            String response = (String) responseMap.get("response");
-            
-            return response != null ? response : "ERROR: Empty response from Ollama. Raw: " + responseJson;
+            return chatModel.generate(messages).content().text();
         } catch (Exception e) {
-            return "ERROR invoking Ollama API: " + e.getMessage();
+            return "ERROR invoking Ollama via LangChain4j: " + e.getMessage();
         }
     }
 
