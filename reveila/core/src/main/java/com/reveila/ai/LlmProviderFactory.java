@@ -1,17 +1,29 @@
 package com.reveila.ai;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
+
+import com.reveila.system.AbstractService;
 
 /**
  * Factory to resolve LLM providers by name.
  * 
  * @author CL
  */
-public class LlmProviderFactory extends com.reveila.system.AbstractService {
-    private final Map<String, LlmProvider> providers = new HashMap<>();
+public class LlmProviderFactory extends AbstractService {
 
+    private final Map<String, LlmProvider> providers = new LinkedHashMap<>(); // Use LinkedHashMap to preserve order
+    private int currentProviderIndex = 0;
+    
     public LlmProviderFactory() {
+    }
+
+    public LlmProvider nextProvider() {
+        currentProviderIndex = currentProviderIndex + 1;
+        if (currentProviderIndex >= providers.size()) {
+            currentProviderIndex = 0;
+        }
+        return getProvider(providers.keySet().toArray(new String[0])[currentProviderIndex]);
     }
 
     @Override

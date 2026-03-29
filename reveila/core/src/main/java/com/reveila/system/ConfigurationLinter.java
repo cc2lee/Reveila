@@ -35,14 +35,6 @@ public class ConfigurationLinter {
                         "❌ Missing Dependency: [%s] requires '%s', but it's not defined.",
                         name, depName));
                 }
-
-                // Check for Priority Mismatches
-                MetaObject depMeta = registry.get(depName);
-                if (meta.getStartPriority() <= depMeta.getStartPriority()) {
-                    throw new ConfigurationException(String.format(
-                        "❌ Dependency Priority Mismatch: %s (P:%d) starts before dependency %s (P:%d)\n",
-                        name, meta.getStartPriority(), depName, depMeta.getStartPriority()));
-                }
             }
         }
 

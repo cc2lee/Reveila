@@ -28,10 +28,20 @@ public record InvocationResult(
     }
 
     public static InvocationResult pendingApproval(String intent, String traceId) {
+        return pendingApproval(intent, traceId, null);
+    }
+
+    public static InvocationResult pendingApproval(String intent, String traceId, Object approvalData) {
         String callbackUrl = "https://reveila.io/approve/" + traceId;
+        Map<String, Object> data = new java.util.HashMap<>();
+        data.put("intent", intent);
+        data.put("trace_id", traceId);
+        if (approvalData != null) {
+            data.put("approval_data", approvalData);
+        }
         return new InvocationResult(
             Status.PENDING_APPROVAL, 
-            Map.of("intent", intent, "trace_id", traceId), 
+            data, 
             "Action '" + intent + "' requires human approval.", 
             callbackUrl
         );

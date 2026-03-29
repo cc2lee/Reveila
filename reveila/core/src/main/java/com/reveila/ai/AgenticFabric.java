@@ -98,6 +98,28 @@ public class AgenticFabric extends com.reveila.system.AbstractService {
     }
 
     /**
+     * Exposes a simple entry point for UI clients to talk to the agent.
+     * 
+     * @param userIntent The user's prompt.
+     * @param sessionId Optional session ID to continue a conversation.
+     * @return The final answer from the LLM.
+     */
+    public String askAgent(String userIntent, String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            sessionId = java.util.UUID.randomUUID().toString();
+        }
+        
+        PluginPrincipal principal = PluginPrincipal.create("ui-client", "system");
+        
+        AgentSession session = orchestrationService.getSession(sessionId);
+        if (session == null) {
+            session = orchestrationService.createSession(principal.getTraceId());
+        }
+
+        return processLoop(session, principal, userIntent);
+    }
+
+    /**
      * Executes the "Reveila AI Loop" for a specific session.
      * Implements the 5-step loop defined in the task requirements.
      * 
@@ -148,6 +170,14 @@ public class AgenticFabric extends com.reveila.system.AbstractService {
         // The bridge performs parsing, security audit, and execution (Step 3)
         InvocationResult result = bridge.invoke(principal, null, userIntent, bridgeArgs);
 
+        if (result.status() == InvocationResult.Status.PENDING_APPROVAL) {
+            // Step 4 (HITL): Capture the pending approval in the message chain
+            session.getChatMemory().add(AiMessage.from("Reasoning: Task requires a dynamic script. Awaiting user approval for: " + userIntent));
+            
+            // Return structured info about the pending approval
+            return "APPROVAL_REQUIRED|" + result.message() + "|" + result.data().toString();
+        }
+
         if (result.status() == InvocationResult.Status.SUCCESS) {
             // Step 2 (Simplified/Simulated): Capture the AI's intent to use a tool
             session.getChatMemory().add(AiMessage.from("Reasoning: Task requires tool execution. Initiating tool-call for " + userIntent));
@@ -156,10 +186,15 @@ public class AgenticFabric extends com.reveila.system.AbstractService {
             String toolResult = result.data() != null ? result.data().toString() : "Action completed successfully.";
             session.getChatMemory().add(ToolExecutionResultMessage.from("tool-id", userIntent, toolResult));
             
-            // Closing the loop: In a full implementation, we would call the LLM again here 
-            // passing session.getChatMemory().messages() to get the final answer.
-            // For now, we return the summary of the message chain.
-            return "Loop Closed. Chain size: " + session.getChatMemory().messages().size();
+            // Closing the loop: Call the LLM with the full message chain to get the final answer
+            LlmProvider worker = llmFactory.getProvider("openai");
+            String finalAnswer = worker.generateResponse(
+                "The tool has returned the following result: " + toolResult + ". Please provide a final answer to the user based on the full conversation history.",
+                "You are the Reveila AI Agent closing the loop."
+            );
+            
+            session.getChatMemory().add(AiMessage.from(finalAnswer));
+            return finalAnswer;
         }
 
         return "Loop terminated with status: " + result.status() + " - " + result.message();

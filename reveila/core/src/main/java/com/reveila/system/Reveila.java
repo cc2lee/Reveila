@@ -13,11 +13,12 @@ import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -25,6 +26,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 import javax.security.auth.Subject;
 
@@ -205,12 +207,14 @@ public class Reveila implements AutoCloseable {
 			handleStartError("Configuration validation failed.", e);
 		}
 
-		// PHASE 3: EXECUTION (Starting components in order)
-		finalComponentList.sort(Comparator.comparingInt(m -> m.getStartPriority()));
-		startComponents(Constants.COMPONENT, finalComponentList, timeoutSeconds);
+		// PHASE 3: EXECUTION (Starting components in dependency-aware order)
+		// We no longer rely purely on manual start-priority. 
+		// Instead, we use a topological sort to ensure dependencies start first.
+		List<MetaObject> sortedComponents = sortMetaObjects(finalComponentList);
+		startComponents(Constants.COMPONENT, sortedComponents, timeoutSeconds);
 
-		pluginMetaObjects.sort(Comparator.comparingInt(m -> m.getStartPriority()));
-		startComponents(Constants.PLUGIN, pluginMetaObjects, timeoutSeconds);
+		List<MetaObject> sortedPlugins = sortMetaObjects(pluginMetaObjects);
+		startComponents(Constants.PLUGIN, sortedPlugins, timeoutSeconds);
 
 		logStartupCompletion(beginTime);
 
@@ -598,6 +602,11 @@ public class Reveila implements AutoCloseable {
 
 		// This method actually performs the invocation logic
 
+		if (subject == null) {
+			subject = new Subject();
+			subject.getPrincipals().add(new RolePrincipal(Constants.SYSTEM));
+		}
+
 		long startTime = System.currentTimeMillis();
 		if (systemContext == null) {
 			throw new IllegalStateException("SystemContext is not initialized. Cannot invoke component.");
@@ -659,5 +668,51 @@ public class Reveila implements AutoCloseable {
 		} catch (UnknownHostException e) {
 			return "localhost";
 		}
+	}
+
+	/**
+	 * Performs a topological sort of MetaObjects based on their declared
+	 * dependencies.
+	 * 
+	 * @param list The original list of MetaObjects.
+	 * @return A sorted list where dependencies come before dependents.
+	 */
+	private List<MetaObject> sortMetaObjects(List<MetaObject> list) {
+		Map<String, MetaObject> map = list.stream().collect(Collectors.toMap(MetaObject::getName, m -> m));
+		List<MetaObject> sorted = new ArrayList<>();
+		Set<String> visited = new HashSet<>();
+		Set<String> stack = new HashSet<>();
+
+		for (MetaObject m : list) {
+			try {
+				visit(m, map, sorted, visited, stack);
+			} catch (Exception e) {
+				// Log or handle sort error (cycles are handled in Linter, but just in case)
+				System.err.println("Sort error: " + e.getMessage());
+			}
+		}
+		return sorted;
+	}
+
+	private void visit(MetaObject m, Map<String, MetaObject> map, List<MetaObject> sorted, Set<String> visited,
+			Set<String> stack) throws Exception {
+		if (visited.contains(m.getName()))
+			return;
+		if (stack.contains(m.getName()))
+			throw new Exception("Circular dependency detected at: " + m.getName());
+
+		stack.add(m.getName());
+		List<String> deps = m.getDependencies();
+		if (deps != null) {
+			for (String dName : deps) {
+				MetaObject dm = map.get(dName);
+				if (dm != null) {
+					visit(dm, map, sorted, visited, stack);
+				}
+			}
+		}
+		stack.remove(m.getName());
+		visited.add(m.getName());
+		sorted.add(m);
 	}
 }

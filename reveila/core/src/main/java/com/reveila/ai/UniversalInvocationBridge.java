@@ -169,6 +169,11 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
         }
 
         // 2. HITL Check for High-Risk Actions
+        if ("system.execute_dynamic_script".equals(intent)) {
+            flightRecorder.recordStep(principal, "hitl_triggered_dynamic_script", Map.of("intent", intent));
+            return InvocationResult.pendingApproval(intent, principal.getTraceId(), validatedArgs.get("script"));
+        }
+
         if (isHighRiskAction(manifest, intent, validatedArgs)) {
             flightRecorder.recordStep(principal, "hitl_triggered", Map.of("intent", intent));
             return InvocationResult.pendingApproval(intent, principal.getTraceId());

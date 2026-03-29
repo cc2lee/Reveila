@@ -33,15 +33,6 @@ public final class SystemProxy extends AbstractService implements Proxy {
 	private MetaObject metaObject;
 	private volatile Class<?> implementationClass;
 
-	@Override
-	public void setContext(Context context) {
-		if (context == null || !context.getClass().getName().equals(SystemContext.class.getName())) {
-			throw new IllegalArgumentException(
-					this.getClass().getName() + " requires an instance of " + SystemContext.class.getName() + ".");
-		}
-		super.setContext(context);
-	}
-
 	private volatile Object singletonInstance;
 	private String name;
 	private final Manifest manifest;
@@ -154,7 +145,12 @@ public final class SystemProxy extends AbstractService implements Proxy {
 		if (methodName == null)
 			throw new IllegalArgumentException("Method name must not be null");
 
-		PluginPrincipal plugin = (PluginPrincipal) subject.getPrincipals(PluginPrincipal.class).iterator().next();
+		PluginPrincipal plugin = null;
+		java.util.Iterator<PluginPrincipal> pluginIter = subject.getPrincipals(PluginPrincipal.class).iterator();
+		if (pluginIter.hasNext()) {
+			plugin = pluginIter.next();
+		}
+		
 		Set<RolePrincipal> roles = subject.getPrincipals(RolePrincipal.class);
 
 		boolean systemCall = false;
@@ -231,7 +227,7 @@ public final class SystemProxy extends AbstractService implements Proxy {
 	 * @return A new object instance.
 	 * @throws Exception if object creation fails.
 	 */
-	private Object getTargetObject() throws Exception {
+	private Object getInstance() throws Exception {
 		if (this.metaObject.isThreadSafe()) {
 			if (this.singletonInstance == null) {
 				synchronized (this) {
@@ -244,10 +240,6 @@ public final class SystemProxy extends AbstractService implements Proxy {
 		} else {
 			return newInstance();
 		}
-	}
-
-	public Object getInstance() throws Exception {
-		return getTargetObject();
 	}
 
 	public void onStart() throws Exception {
@@ -277,7 +269,7 @@ public final class SystemProxy extends AbstractService implements Proxy {
 
 	@Override
 	public void notifyEvent(EventObject evtObj) throws Exception {
-		Object target = getTargetObject();
+		Object target = getInstance();
 		if (target instanceof EventConsumer) {
 			((EventConsumer) target).notifyEvent(evtObj);
 		}
@@ -560,7 +552,7 @@ public final class SystemProxy extends AbstractService implements Proxy {
 		}
 
 		try {
-			Object target = getTargetObject();
+			Object target = getInstance();
 			Method methodToInvoke = ReflectionMethod.findBestMethod(target.getClass(), methodName, args);
 
 			if (methodToInvoke == null) {

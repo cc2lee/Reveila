@@ -22,6 +22,8 @@ public class PluginRunner {
             // In a real implementation, this would use reflection to load the plugin class
             // from the mounted /app/plugin.jar and execute the requested method.
             
+            // TODO: Replace with actual plugin execution
+            
             System.out.println("Executing " + methodName + " on " + pluginId + "...");
             
             // Simulating execution
