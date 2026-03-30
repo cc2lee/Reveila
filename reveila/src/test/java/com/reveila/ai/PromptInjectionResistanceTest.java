@@ -32,7 +32,7 @@ class PromptInjectionResistanceTest {
     @Mock private GeminiProvider geminiProvider;
     @Mock private OrchestrationService orchestrationService;
 
-    private UniversalInvocationBridge bridge;
+    private InvocationBridge bridge;
     private GeminiIntentValidator intentValidator;
     private AgentPrincipal agent;
     private AgencyPerimeter perimeter;
@@ -68,7 +68,7 @@ class PromptInjectionResistanceTest {
         intentValidator.setSystemContext(systemContext);
         intentValidator.start();
 
-        bridge = new UniversalInvocationBridge();
+        bridge = new InvocationBridge();
         bridge.setSystemContext(systemContext);
         bridge.start();
         agent = AgentPrincipal.create("test-agent", "test-dept");

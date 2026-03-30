@@ -34,7 +34,7 @@ class HealthcareSecurityBreachTest {
     @Mock private GeminiProvider geminiProvider;
     @Mock private OrchestrationService orchestrationService;
 
-    private UniversalInvocationBridge bridge;
+    private InvocationBridge bridge;
     private AgentPrincipal healthcareWorker;
     private AgencyPerimeter healthcarePerimeter;
     private LlmGovernanceConfig govConfig = LlmGovernanceConfig.defaultGov();
@@ -44,7 +44,7 @@ class HealthcareSecurityBreachTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        bridge = new UniversalInvocationBridge();
+        bridge = new InvocationBridge();
         bridge.setSystemContext(systemContext);
         
         when(systemContext.getProxy(anyString())).thenReturn(Optional.of(proxy));

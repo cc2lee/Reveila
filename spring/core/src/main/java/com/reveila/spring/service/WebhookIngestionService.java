@@ -6,12 +6,12 @@ import org.springframework.stereotype.Service;
 
 import com.reveila.ai.AgentSession;
 import com.reveila.ai.FlightRecorder;
+import com.reveila.ai.InvocationBridge;
 import com.reveila.ai.InvocationResult;
 import com.reveila.ai.LlmGovernanceConfig;
 import com.reveila.ai.LlmProvider;
 import com.reveila.ai.LlmProviderFactory;
 import com.reveila.ai.OrchestrationService;
-import com.reveila.ai.UniversalInvocationBridge;
 import com.reveila.system.PluginPrincipal;
 import com.reveila.system.Reveila;
 import com.reveila.system.SystemProxy;
@@ -55,7 +55,7 @@ public class WebhookIngestionService {
      * @return The result of the intent invocation.
      */
     public InvocationResult ingest(Map<String, Object> payload) {
-        UniversalInvocationBridge bridge = getComponent("UniversalInvocationBridge", UniversalInvocationBridge.class);
+        InvocationBridge bridge = getComponent("InvocationBridge", InvocationBridge.class);
         OrchestrationService orchestrationService = getComponent("OrchestrationService", OrchestrationService.class);
         FlightRecorder flightRecorder = getComponent("FlightRecorder", FlightRecorder.class);
         LlmProviderFactory llmFactory = getComponent("LlmProviderFactory", LlmProviderFactory.class);

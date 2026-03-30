@@ -6,7 +6,7 @@ import com.reveila.system.PluginPrincipal;
 import com.reveila.system.SystemProxy;
 
 /**
- * The Universal Invocation Bridge (UIB) is the central orchestrator for all
+ * The Invocation Bridge is the central orchestrator for all
  * agentic tool calls. This class serves as the Agentic Control Plane (ACP),
  * orchestrating the entire lifecycle of an AI tool call.
  * 
@@ -39,7 +39,7 @@ import com.reveila.system.SystemProxy;
  * 
  * @author CL
  */
-public class UniversalInvocationBridge extends com.reveila.system.AbstractService {
+public class InvocationBridge extends com.reveila.system.AbstractService {
     private IntentValidator intentValidator;
     private SchemaEnforcer schemaEnforcer;
     private GuardedRuntime guardedRuntime;
@@ -48,7 +48,7 @@ public class UniversalInvocationBridge extends com.reveila.system.AbstractServic
     private CredentialManager credentialManager;
     private OrchestrationService orchestrationService;
 
-    public UniversalInvocationBridge() {
+    public InvocationBridge() {
         // Dependencies will be wired via the SystemContext in onStart
     }
 

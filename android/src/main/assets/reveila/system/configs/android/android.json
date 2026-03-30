@@ -104,8 +104,8 @@
   },
   {
     "component": {
-      "name": "UniversalInvocationBridge",
-      "class": "com.reveila.ai.UniversalInvocationBridge",
+      "name": "InvocationBridge",
+      "class": "com.reveila.ai.InvocationBridge",
       "description": "The sovereign entry point for all tool calls.",
       "start-priority": 30,
       "thread-safe": true,
@@ -129,7 +129,7 @@
       "start-priority": 40,
       "thread-safe": true,
       "dependencies": [
-        "UniversalInvocationBridge",
+        "InvocationBridge",
         "AgentSessionManager"
       ]
     }
@@ -182,24 +182,6 @@
           "name": "readTimeout",
           "type": "long",
           "value": 30
-        }
-      ]
-    }
-  },
-  {
-    "component": {
-      "name": "remote.reveila",
-      "class": "com.reveila.service.RemoteService",
-      "version": "1",
-      "//comment1": "To set up a cluster of Reveila instances, add the instance's base URL to the value array of the RemoteURLs argument.",
-      "//comment2": "The URL is followed by a comma and priority as an integer (lower value means higher priority).",
-      "arguments": [
-        {
-          "name": "RemoteURLs",
-          "type": "java.lang.String",
-          "value": [
-            "http://10.0.2.2:8080, 1"
-          ]
         }
       ]
     }

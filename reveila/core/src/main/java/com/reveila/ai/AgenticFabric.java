@@ -19,7 +19,7 @@ import dev.langchain4j.data.message.UserMessage;
  */
 public class AgenticFabric extends com.reveila.system.AbstractService {
     
-    private UniversalInvocationBridge bridge;
+    private InvocationBridge bridge;
     private AgentSessionManager sessionManager;
     private OrchestrationService orchestrationService;
     private MetadataRegistry metadataRegistry;
@@ -31,18 +31,18 @@ public class AgenticFabric extends com.reveila.system.AbstractService {
 
     @Override
     public void onStart() throws Exception {
-        this.bridge = context.getProxy("UniversalInvocationBridge")
+        this.bridge = context.getProxy("InvocationBridge")
                 .map(p -> {
                     try {
                         if (p instanceof SystemProxy sp) {
-                            return (UniversalInvocationBridge) sp.getInstance();
+                            return (InvocationBridge) sp.getInstance();
                         }
                         return null;
                     } catch (Exception e) {
                         return null;
                     }
                 })
-                .orElseThrow(() -> new IllegalStateException("UniversalInvocationBridge not found."));
+                .orElseThrow(() -> new IllegalStateException("InvocationBridge not found."));
 
         this.sessionManager = context.getProxy("AgentSessionManager")
                 .map(p -> {

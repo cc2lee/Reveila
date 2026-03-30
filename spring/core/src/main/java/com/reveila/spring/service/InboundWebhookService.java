@@ -14,14 +14,14 @@ import java.util.HashMap;
  */
 public class InboundWebhookService extends AbstractService {
 
-    private UniversalInvocationBridge bridge;
+    private InvocationBridge bridge;
     private OrchestrationService orchestrationService;
     private FlightRecorder flightRecorder;
     private LlmProviderFactory llmFactory;
 
     @Override
     protected void onStart() throws Exception {
-        this.bridge = (UniversalInvocationBridge) ((SystemProxy) context.getProxy("UniversalInvocationBridge").orElseThrow()).getInstance();
+        this.bridge = (InvocationBridge) ((SystemProxy) context.getProxy("InvocationBridge").orElseThrow()).getInstance();
         this.orchestrationService = (OrchestrationService) ((SystemProxy) context.getProxy("OrchestrationService").orElseThrow()).getInstance();
         this.flightRecorder = (FlightRecorder) ((SystemProxy) context.getProxy("FlightRecorder").orElseThrow()).getInstance();
         this.llmFactory = (LlmProviderFactory) ((SystemProxy) context.getProxy("LlmProviderFactory").orElseThrow()).getInstance();

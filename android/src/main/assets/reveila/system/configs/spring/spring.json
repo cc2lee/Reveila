@@ -105,8 +105,8 @@
   },
   {
     "component": {
-      "name": "UniversalInvocationBridge",
-      "class": "com.reveila.ai.UniversalInvocationBridge",
+      "name": "InvocationBridge",
+      "class": "com.reveila.ai.InvocationBridge",
       "description": "The sovereign entry point for all tool calls.",
       "start-priority": 30,
       "thread-safe": true,
@@ -130,7 +130,7 @@
       "start-priority": 40,
       "thread-safe": true,
       "dependencies": [
-        "UniversalInvocationBridge",
+        "InvocationBridge",
         "AgentSessionManager"
       ]
     }
@@ -150,7 +150,7 @@
       "start-priority": 42,
       "thread-safe": true,
       "dependencies": [
-        "UniversalInvocationBridge",
+        "InvocationBridge",
         "AgenticFabric",
         "FlightRecorder"
       ]
@@ -163,7 +163,7 @@
       "start-priority": 43,
       "thread-safe": true,
       "dependencies": [
-        "UniversalInvocationBridge",
+        "InvocationBridge",
         "OrchestrationService",
         "FlightRecorder",
         "LlmProviderFactory"

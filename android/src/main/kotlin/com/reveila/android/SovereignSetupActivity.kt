@@ -13,11 +13,17 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.room.Room
+import com.reveila.android.db.AppDatabase
+import com.reveila.android.db.UserPreferences
+import com.reveila.android.ui.components.FirstRunDialog
 import com.reveila.android.ui.components.SovereignOnboardingScreen
 import com.reveila.android.ui.models.NodeType
 import com.reveila.android.ui.viewmodels.SovereignMemoryViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Orchestrates the "First Run" zero-ops onboarding flow, dynamically profiling hardware 
@@ -26,6 +32,13 @@ import kotlinx.coroutines.launch
 class SovereignSetupActivity : AppCompatActivity() {
 
     private val TAG = "FirstRunFlow"
+
+    private val db by lazy {
+        Room.databaseBuilder(
+            applicationContext,
+            AppDatabase::class.java, "reveila-database"
+        ).build()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,6 +52,38 @@ class SovereignSetupActivity : AppCompatActivity() {
             
             var vaultUri by remember { mutableStateOf<Uri?>(null) }
             
+            // Requirement 2: Enforcement - display dialog if not accepted
+            var showAgreementDialog by remember { mutableStateOf(false) }
+            
+            LaunchedEffect(Unit) {
+                val prefs = withContext(Dispatchers.IO) {
+                    db.userPreferencesDao().getUserPreferences()
+                }
+                if (prefs == null || !prefs.user_agreement_accepted) {
+                    showAgreementDialog = true
+                }
+            }
+
+            if (showAgreementDialog) {
+                FirstRunDialog(
+                    onAgreementAccepted = { timestamp, machineId ->
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            // Requirement 1 & 3: Save to database
+                            db.userPreferencesDao().saveUserPreferences(
+                                UserPreferences(
+                                    user_agreement_accepted = true,
+                                    acceptance_timestamp = timestamp,
+                                    acceptance_ip_or_machine_id = machineId
+                                )
+                            )
+                            withContext(Dispatchers.Main) {
+                                showAgreementDialog = false
+                            }
+                        }
+                    }
+                )
+            }
+
             val vaultPicker = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.OpenDocumentTree()
             ) { uri: Uri? ->

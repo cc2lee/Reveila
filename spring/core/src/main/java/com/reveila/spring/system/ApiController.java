@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.reveila.system.Reveila;
 import com.reveila.system.RolePrincipal;
 import com.reveila.system.SystemProxy;
-import com.reveila.ai.UniversalInvocationBridge;
+import com.reveila.ai.InvocationBridge;
 import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -87,9 +87,9 @@ public class ApiController {
         @SuppressWarnings("unchecked")
         Map<String, Object> arguments = (Map<String, Object>) payload.get("arguments");
 
-        UniversalInvocationBridge bridge = (UniversalInvocationBridge) ((SystemProxy) reveila.getSystemContext()
-                .getProxy("UniversalInvocationBridge")
-                .orElseThrow(() -> new IllegalStateException("UniversalInvocationBridge not found")))
+        InvocationBridge bridge = (InvocationBridge) ((SystemProxy) reveila.getSystemContext()
+                .getProxy("InvocationBridge")
+                .orElseThrow(() -> new IllegalStateException("InvocationBridge not found")))
                 .getInstance();
 
         Object result = bridge.handleCallback(jitToken, component, method, arguments);

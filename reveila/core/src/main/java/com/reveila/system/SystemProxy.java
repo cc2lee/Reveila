@@ -227,7 +227,7 @@ public final class SystemProxy extends AbstractService implements Proxy {
 	 * @return A new object instance.
 	 * @throws Exception if object creation fails.
 	 */
-	private Object getInstance() throws Exception {
+	public Object getInstance() throws Exception {
 		if (this.metaObject.isThreadSafe()) {
 			if (this.singletonInstance == null) {
 				synchronized (this) {

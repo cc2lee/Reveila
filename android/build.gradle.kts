@@ -69,6 +69,12 @@ dependencies {
     
     // File system tree parsing
     implementation("androidx.documentfile:documentfile:1.0.1")
+
+    // Room
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    // Needs ksp for Room compiler
+    // ksp(libs.room.compiler)
 }
 
 // Ensure the resources are ready before the library starts bundling

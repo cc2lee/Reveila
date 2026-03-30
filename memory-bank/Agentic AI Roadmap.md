@@ -93,7 +93,7 @@ Instead of stateless calls, Phase 5 introduces the **AgentSession**. This allows
 | **Trace Propagation** | Passing `trace_id` through nested calls. | Maintains a tree-structured audit log. |
 
 #### 2. Orchestration Logic: The "Manager" Pattern
-Implementation of a delegation mechanism within the `UniversalInvocationBridge`. When a task requires multiple specialized skills, the high-level agent delegates to worker plugins.
+Implementation of a delegation mechanism within the `InvocationBridge`. When a task requires multiple specialized skills, the high-level agent delegates to worker plugins.
 
 **Example Workflow:**
 1.  **Manager Agent:** Receives high-level request (e.g., "Audit Q4 claims").

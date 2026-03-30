@@ -101,8 +101,8 @@
   },
   {
     "component": {
-      "name": "UniversalInvocationBridge",
-      "class": "com.reveila.ai.UniversalInvocationBridge",
+      "name": "InvocationBridge",
+      "class": "com.reveila.ai.InvocationBridge",
       "description": "The sovereign entry point for all tool calls.",
       "start-priority": 30,
       "thread-safe": true,

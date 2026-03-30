@@ -7,9 +7,9 @@ import java.util.Set;
 import com.reveila.ai.AgencyPerimeter;
 import com.reveila.ai.AgenticFabric;
 import com.reveila.ai.FlightRecorder;
+import com.reveila.ai.InvocationBridge;
 import com.reveila.ai.InvocationResult;
 import com.reveila.ai.PerformanceReport;
-import com.reveila.ai.UniversalInvocationBridge;
 import com.reveila.system.AbstractService;
 import com.reveila.system.PluginPrincipal;
 import com.reveila.system.SystemProxy;
@@ -20,13 +20,13 @@ import com.reveila.system.SystemProxy;
  */
 public class MaWorkflowService extends AbstractService {
 
-    private UniversalInvocationBridge bridge;
+    private InvocationBridge bridge;
     private AgenticFabric fabric;
     private FlightRecorder flightRecorder;
 
     @Override
     protected void onStart() throws Exception {
-        this.bridge = (UniversalInvocationBridge) ((SystemProxy) context.getProxy("UniversalInvocationBridge").orElseThrow()).getInstance();
+        this.bridge = (InvocationBridge) ((SystemProxy) context.getProxy("InvocationBridge").orElseThrow()).getInstance();
         this.fabric = (AgenticFabric) ((SystemProxy) context.getProxy("AgenticFabric").orElseThrow()).getInstance();
         this.flightRecorder = (FlightRecorder) ((SystemProxy) context.getProxy("FlightRecorder").orElseThrow()).getInstance();
     }
@@ -98,7 +98,7 @@ public class MaWorkflowService extends AbstractService {
         } catch (Exception e) {}
 
         Map<String, Long> details = new HashMap<>();
-        if (bridgeService != null) details.put("UniversalInvocationBridge", bridgeService.getStartupLatencyMs());
+        if (bridgeService != null) details.put("InvocationBridge", bridgeService.getStartupLatencyMs());
         if (gemini != null) details.put("GeminiProvider", gemini.getStartupLatencyMs());
         if (auditor != null) details.put("ClaimsAuditor", auditor.getStartupLatencyMs());
 

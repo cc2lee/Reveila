@@ -46,6 +46,7 @@ androidJvmTarget = "17"
 androidGradlePlugin = "8.7.2" # Android Gradle Plugin version
 androidxCore = "1.17.0"
 androidxBiometric = "1.2.0-alpha05"
+room = "2.6.1"
 
 # AWS SDK:
 awsSdk = "2.40.13"
@@ -58,6 +59,9 @@ jakarta-persistence = "3.1.0"
 hibernate = "6.6.1.Final"
 
 [plugins]
+
+# Room:
+room = { id = "androidx.room", version.ref = "room" }
 
 # Shadow Gradle Plugin:
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
@@ -137,6 +141,11 @@ langchain4j-ollama = { module = "dev.langchain4j:langchain4j-ollama", version.re
 jakarta-persistence-api = { module = "jakarta.persistence:jakarta.persistence-api", version.ref = "jakarta-persistence" }
 react-android = { module = "com.facebook.react:react-android", version = "0.81.5" }
 androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "androidxBiometric" }
+
+# Room
+room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
+room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 
 # The Implementation (Hibernate)
 hibernate-core = { module = "org.hibernate.orm:hibernate-core", version.ref = "hibernate" }

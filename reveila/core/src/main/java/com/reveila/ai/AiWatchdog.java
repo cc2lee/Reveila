@@ -4,10 +4,17 @@ import java.util.concurrent.*;
 
 public class AiWatchdog {
     private static final int REMOTE_TIMEOUT_SECONDS = 10;
+    private final LlmProvider remoteLlmProvider;
+    private final LlmProvider localOllama;
+
+    public AiWatchdog(LlmProvider remoteLlmProvider, LlmProvider localOllama) {
+        this.remoteLlmProvider = remoteLlmProvider;
+        this.localOllama = localOllama;
+    }
 
     public String getResponse(String userPrompt) {
         CompletableFuture<String> remoteCall = CompletableFuture.supplyAsync(() -> {
-            return remoteLlmProvider.call(userPrompt); // Your slow Roo/OpenAI call
+            return remoteLlmProvider.generateResponse(userPrompt, "You are a helpful assistant."); // Your slow Roo/OpenAI call
         });
 
         try {
@@ -25,6 +32,6 @@ public class AiWatchdog {
     private String fallbackToLocal(String prompt) {
         // Switch to a local Ollama instance (Llama 3 / Mistral)
         // Fast, 0ms latency, works offline.
-        return "NOTICE: Remote AI is slow. Using Local Model: " + localOllama.call(prompt);
+        return "NOTICE: Remote AI is slow. Using Local Model: " + localOllama.generateResponse(prompt, "You are a helpful assistant.");
     }
 }

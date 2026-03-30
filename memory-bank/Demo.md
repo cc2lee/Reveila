@@ -14,12 +14,12 @@ Run from Reveila-Suite, build the new Jar:
 * ./gradlew.bat clean bootJar
 
 For Docker commands, run from `infrastructure` directory:
+* Start Docker Desktop
 * Build: docker compose -f docker-compose.standalone.yml build --no-cache
 * Launch: docker compose -f docker-compose.standalone.yml up -d
 * Build & Launch: docker compose -f docker-compose.standalone.yml up -d --build
 * Force Recreate: docker compose -f docker-compose.standalone.yml up -d --build --force-recreate
 * Verify: docker logs reveila-fabric-standalone 2>&1 | Select-String "Ollama"
-* Verify: docker logs reveila-fabric-standalone 2>&1 | Select-String "BOOT_SEQUENCE", "Ollama", "CRITICAL_LOG"
 * Watch Logs: docker logs -f --tail 0 reveila-fabric-standalone
 * View Full Logs: docker logs -f reveila-fabric-standalone
 * View Running Docker Containers: docker ps
