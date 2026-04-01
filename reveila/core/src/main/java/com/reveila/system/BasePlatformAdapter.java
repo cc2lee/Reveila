@@ -1,10 +1,10 @@
 package com.reveila.system;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.MalformedURLException;
-import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
@@ -46,18 +46,24 @@ import com.reveila.util.FileUtil;
  */
 public abstract class BasePlatformAdapter implements PlatformAdapter {
 
+    public Map<String, Repository<Entity, Map<String, Map<String, Object>>>> getRepositories() {
+        return repositories;
+    }
+
+    private String platformName;
     private Reveila reveila;
-    protected Properties properties;
+    private Properties properties = new Properties();
     private Logger logger;
     private int jobThreadPoolSize = 4; // Allow concurrent execution to prevent startup deadlocks
     private ScheduledExecutorService scheduler;
     private final Map<String, ScheduledFuture<?>> autoCallTasks = new ConcurrentHashMap<>();
     private SystemHome systemHome;
     private ClassLoader classLoader;
-    protected final Map<String, Repository<Entity, Map<String, Map<String, Object>>>> repositories = new ConcurrentHashMap<>();
+    private final Map<String, Repository<Entity, Map<String, Map<String, Object>>>> repositories = new ConcurrentHashMap<>();
 
     public BasePlatformAdapter(Properties commandLineArgs) throws Exception {
         super();
+        setupSystemHome(commandLineArgs);
         loadProperties(commandLineArgs);
         configureLogging();
         setupClassLoader();
@@ -135,59 +141,6 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         }
     }
 
-    private URL toUrl(String location) throws Exception {
-        if (location == null || location.isBlank()) {
-            throw new IllegalArgumentException("Location string is null or empty");
-        }
-
-        // 1. Check if it's already a formal URL (e.g., http://, https://, file:/)
-        if (location.matches("^[a-zA-Z][a-zA-Z0-9+.-]*://.*")) {
-            return new URI(location).toURL();
-        }
-
-        // 2. Treat as a local File Path
-        Path path = Path.of(location).toAbsolutePath().normalize();
-
-        // 3. Convert Path to URL (this automatically handles the 'file:/' prefix)
-        return path.toUri().toURL();
-    }
-
-    private InputStream openSystemProperties(Properties jvmArgs) throws IOException, ConfigurationException {
-        System.out.println("Attempting to load system properties...");
-        URL url = null;
-
-        // 1. try JVM argument first
-        try {
-            url = toUrl(jvmArgs.getProperty(Constants.SYSTEM_PROPERTIES));
-            System.out.println("Loading system properties from JVM argument: " + url);
-        } catch (Exception e) {
-            // 2. try looking in classpath
-            url = BasePlatformAdapter.class.getClassLoader().getResource(Constants.SYSTEM_PROPERTIES);
-            System.out.println("Loading system properties from classpath: " + url);
-        }
-
-        if (url == null) {
-            // 3. last place - home directory
-            try {
-                url = this.systemHome.getSystemHome().resolve(Constants.CONFIGS_DIR_NAME)
-                        .resolve(Constants.SYSTEM_PROPERTIES).toUri().toURL();
-                System.out.println("Loading system properties from home directory: " + url);
-            } catch (Exception e) {
-                String message = "SYSTEM STARTUP ERROR: " + Constants.SYSTEM_PROPERTIES
-                        + "  not found. Please ensure it is passed in as a command line argument in URL format,"
-                        + " or included in the classpath, or available in the " + Constants.CONFIGS_DIR_NAME
-                        + " directory of the Reveila System Home.";
-                System.err.println(message);
-                if (logger != null) {
-                    logger.severe(message);
-                }
-                throw new ConfigurationException(message, e, "100");
-            }
-        }
-
-        return url.openStream();
-    }
-
     @Override
     public void unregisterAutoCall(String componentName) {
         ScheduledFuture<?> task = autoCallTasks.remove(componentName);
@@ -200,32 +153,42 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     @Override
     public void reloadProperties() throws Exception {
         logger.info("Reloading system properties...");
-        loadProperties(null);
+        try {
+            loadProperties(null);
+        } catch (Exception e) {
+            throw new Exception("Failed to reload system properties!", e);
+        }
+        logger.info("System properties reloaded.");
     }
 
     private void loadProperties(Properties jvmArgs) throws IOException, ConfigurationException {
 
-        if (jvmArgs == null) {
-            jvmArgs = new Properties();
+        String filename = "reveila.properties";
+        Properties rawProps = new Properties();
+
+        // 1. Load common properties
+        String path = Constants.CONFIGS_DIR_NAME + File.separator + filename;
+        try (InputStream in = getFileInputStream(path)) {
+            rawProps.load(in);
+        } catch (Exception e) {
+            throw new IOException("Failed to load system properties from " + path, e);
         }
 
-        setupSystemHome(jvmArgs);
-
-        // Load properties file using Try-with-Resources
-        Properties rawProps = new Properties();
-        try (InputStream stream = openSystemProperties(jvmArgs)) {
-            rawProps.load(stream);
-        } catch (Exception e) {
-            System.err.println("Failed to load " + Constants.SYSTEM_PROPERTIES + ": " + e.getMessage());
-            e.printStackTrace();
-            throw new IOException("Failed to load " + Constants.SYSTEM_PROPERTIES, e);
+        // 2. Load platform-specific properties
+        path = Constants.CONFIGS_DIR_NAME + File.separator + getPlatformName() + File.separator + filename;
+        if (Files.exists(FileUtil.toSafePath(this.systemHome.getSystemHome(), path))) {
+            try (InputStream in = getFileInputStream(path)) {
+                rawProps.load(in);
+            } catch (Exception e) {
+                throw new IOException("Failed to load system properties from " + path, e);
+            }
         }
 
         // Apply command-line overwrites to raw properties before resolution
-        rawProps.putAll(jvmArgs);
+        if (jvmArgs != null) rawProps.putAll(jvmArgs);
 
         // Resolve placeholders in all properties
-        this.properties = resolveAllPlaceholders(rawProps);
+        this.properties.putAll(resolveAllPlaceholders(rawProps));
 
         // Set OS Metadata
         if (properties.getProperty(Constants.PLATFORM_OS) == null) {
@@ -238,6 +201,18 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         // Set Defaults for missing properties
         resolveProperty(Constants.CHARACTER_ENCODING, StandardCharsets.UTF_8.name());
         resolveProperty(Constants.LAUNCH_STRICT_MODE, "true");
+    }
+
+    @Override
+    public String getPlatformName() {
+        return this.platformName;
+    }
+
+    public void setPlatformName(String platformName) {
+        if (platformName == null || platformName.isBlank()) {
+            throw new IllegalArgumentException("Platform name cannot be null or blank");
+        }
+        this.platformName = platformName;
     }
 
     private Properties resolveAllPlaceholders(Properties props) {
@@ -273,7 +248,8 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
             String defaultValue = null;
             int separator = placeholder.indexOf(":");
 
-            // Unified Placeholder Support: Do not resolve 'secret:' placeholders during initial property loading.
+            // Unified Placeholder Support: Do not resolve 'secret:' placeholders during
+            // initial property loading.
             if (placeholder.startsWith("secret:")) {
                 result.append("${").append(placeholder).append("}");
                 cursor = end + 1;
@@ -399,7 +375,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     private void configureLogging() throws IOException {
         // %1=Date, %2=Source, %3=Logger Name, %4=Level, %5=Message, %6=Throwable
         System.setProperty("java.util.logging.SimpleFormatter.format", "[%1$tF %1$tT] [%3$s] %4$s: %5$s%n");
-        
+
         Logger rootLogger = Logger.getLogger("");
 
         // 1. Clean out existing handlers
@@ -483,7 +459,8 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
                 return;
 
             try {
-                // String componentName, String methodName, Object[] params, String callerIp, Subject subject
+                // String componentName, String methodName, Object[] params, String callerIp,
+                // Subject subject
                 reveila.invoke(componentName, methodName, null, "localhost", subject);
                 AutoCallEvent event = new AutoCallEvent(this, componentName, methodName, AutoCallEvent.COMPLETED,
                         System.currentTimeMillis(), null);

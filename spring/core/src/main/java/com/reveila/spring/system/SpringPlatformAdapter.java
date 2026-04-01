@@ -146,7 +146,7 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
                     String key = (String) row.get("key");
                     String value = (String) row.get("value");
                     if (key != null && value != null) {
-                        this.properties.setProperty(key, value);
+                        getProperties().setProperty(key, value);
                     }
                 }
                 System.out.println("Reveila: Sync complete. " + rows.size() + " properties updated from Database.");

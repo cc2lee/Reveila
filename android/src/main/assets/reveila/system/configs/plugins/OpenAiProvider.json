@@ -6,13 +6,12 @@
         "description": "LLM Provider for OpenAI models.",
         "author": "Reveila-Suite",
         "class": "com.reveila.ai.OpenAiProvider",
-        "start-priority": 21,
         "thread-safe": true,
         "arguments": [
             {
                 "name": "apiKey",
                 "type": "java.lang.String",
-                "value": "${secret:OPENAI_PROD_KEY}"
+                "value": "REF:OPENAI_PROD_KEY"
             },
             {
                 "name": "model",

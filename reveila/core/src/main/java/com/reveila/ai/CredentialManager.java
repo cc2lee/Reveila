@@ -2,7 +2,6 @@ package com.reveila.ai;
 
 import java.util.Base64;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -11,7 +10,6 @@ import com.reveila.data.Entity;
 import com.reveila.data.Repository;
 import com.reveila.system.AbstractService;
 import com.reveila.system.PluginPrincipal;
-import com.reveila.system.Proxy;
 import com.reveila.system.SystemContext;
 
 /**

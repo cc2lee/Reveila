@@ -74,20 +74,45 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
 
         // Environment Variables & JIT Credentials
         String callbackUrl = context.getProperties().getProperty("system.callback.url", "http://host.docker.internal:8080");
+        String jitToken = "JIT-" + java.util.UUID.randomUUID().toString(); // Temporary token generation
+        
         java.util.List<String> envVars = new java.util.ArrayList<>(java.util.List.of(
             "PLUGIN_ID=" + pluginId,
             "TRACE_ID=" + principal.getTraceId(),
             "TENANT_ID=" + principal.getTenantId(),
-            "REVEILA_CALLBACK_URL=" + callbackUrl
+            "REVEILA_CALLBACK_URL=" + callbackUrl,
+            "REVEILA_JIT_TOKEN=" + jitToken
         ));
+
+        // ADR 0006: Get the actual implementation class from the system registry if available
+        String pluginClass = pluginId; // Fallback
+        try {
+            com.reveila.system.Proxy proxy = context.getProxy(pluginId).orElse(null);
+            if (proxy instanceof com.reveila.system.SystemProxy sp) {
+                pluginClass = sp.getInstance().getClass().getName();
+            }
+        } catch (Exception e) {
+            logger.warning("Could not resolve implementation class for plugin: " + pluginId);
+        }
+        envVars.add("PLUGIN_CLASS=" + pluginClass);
 
         if (jitCredentials != null) {
             jitCredentials.forEach((k, v) -> envVars.add(k + "=" + v));
         }
 
         // ADR 0006: Pass method name and network policy to the worker agent
-        String methodName = arguments != null ? String.valueOf(arguments.get("method")) : "execute";
+        String methodName = arguments != null ? String.valueOf(arguments.getOrDefault("method", "execute")) : "execute";
         envVars.add("METHOD_NAME=" + methodName);
+
+        // Serialize Arguments to JSON
+        if (arguments != null) {
+            try {
+                String argsJson = com.reveila.util.json.JsonUtil.toJsonString(arguments);
+                envVars.add("PLUGIN_ARGS_JSON=" + argsJson);
+            } catch (Exception e) {
+                logger.warning("Failed to serialize plugin arguments for " + pluginId);
+            }
+        }
 
         // Network Policy from Perimeter
         if (perimeter != null) {

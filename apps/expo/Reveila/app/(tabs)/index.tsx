@@ -133,8 +133,7 @@ export default function HomeScreen() {
           <ThemedText type="title"><ThemedText style={{ color: '#ff6600' }}>REVEILA</ThemedText></ThemedText>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <TouchableOpacity onPress={() => setIsCloudMode(!isCloudMode)}>
-              <View style={[styles.miniBadge, { backgroundColor: isCloudMode ? '#22c55e' : '#3b82f6', flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-                <View style={[styles.statusDot, { backgroundColor: isRunning ? '#fff' : '#000', opacity: isRunning ? 1 : 0.3 }]} />
+              <View style={[styles.miniBadge, { backgroundColor: isCloudMode ? '#3b82f6' : '#22c55e', flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
                 <ThemedText style={styles.miniBadgeText}>{isCloudMode ? 'CLOUD' : 'PRIVATE'}</ThemedText>
               </View>
             </TouchableOpacity>
@@ -147,8 +146,8 @@ export default function HomeScreen() {
       <View style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.content} style={{ flex: 1 }}>
           {(agentResponse || isProcessing) && (
-            <ThemedView style={[styles.responseCard, { borderColor: isCloudMode ? '#22c55e' : '#00E5FF', borderLeftWidth: 4 }]}>
-              <ThemedText type="defaultSemiBold" style={{ color: isCloudMode ? '#22c55e' : '#00E5FF', marginBottom: 8, fontSize: 11 }}>
+            <ThemedView style={[styles.responseCard, { borderColor: isCloudMode ? '#3b82f6' : '#22c55e', borderLeftWidth: 4 }]}>
+              <ThemedText type="defaultSemiBold" style={{ color: isCloudMode ? '#3b82f6' : '#22c55e', marginBottom: 8, fontSize: 11 }}>
                 {isCloudMode ? 'CLOUD RESPONSE' : 'LOCAL REASONING'}
               </ThemedText>
               {isProcessing ? (

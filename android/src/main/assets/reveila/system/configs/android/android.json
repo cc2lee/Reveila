@@ -1,189 +1,26 @@
 [
   {
     "component": {
-      "name": "DataService",
-      "class": "com.reveila.android.service.AndroidDataService",
-      "description": "Bridges the Reveila API to local Android storage.",
-      "start-priority": 1,
-      "thread-safe": true
-    }
-  },
-  {
-    "component": {
-      "name": "MetadataRegistry",
-      "class": "com.reveila.ai.MetadataRegistry",
-      "description": "Registry for all plugin manifests and capabilities.",
-      "start-priority": 2,
-      "thread-safe": true
-    }
-  },
-  {
-    "component": {
-      "name": "CredentialManager",
-      "class": "com.reveila.ai.CredentialManager",
-      "description": "Manages JIT credentials for plugins.",
-      "start-priority": 3,
-      "thread-safe": true,
-      "dependencies": [
-        "DataService"
-      ]
-    }
-  },
-  {
-    "component": {
-      "name": "AgentSessionManager",
-      "class": "com.reveila.ai.AgentSessionManager",
-      "description": "Manages agentic sessions and context persistence.",
-      "start-priority": 4,
-      "thread-safe": true
-    }
-  },
-  {
-    "component": {
-      "name": "OrchestrationService",
-      "class": "com.reveila.ai.OrchestrationService",
-      "description": "Orchestrates multi-agent workflows.",
-      "start-priority": 5,
-      "thread-safe": true
-    }
-  },
-  {
-    "component": {
       "name": "FlightRecorder",
-      "class": "com.reveila.ai.S3FlightRecorder",
+      "class": "com.reveila.android.service.AndroidFlightRecorder",
       "description": "Records reasoning traces and tool outputs.",
-      "start-priority": 6,
       "thread-safe": true
     }
   },
   {
     "component": {
       "name": "GuardedRuntime",
-      "class": "com.reveila.android.AndroidGuardedRuntime",
+      "class": "com.reveila.android.service.AndroidGuardedRuntime",
       "description": "Secure execution layer for plugins.",
-      "start-priority": 7,
       "thread-safe": true
     }
   },
   {
     "component": {
-      "name": "LlmProviderFactory",
-      "class": "com.reveila.ai.LlmProviderFactory",
-      "description": "Factory for LLM providers.",
-      "start-priority": 22,
-      "thread-safe": true,
-      "dependencies": [
-        "OpenAiProvider",
-        "GeminiProvider"
-      ]
-    }
-  },
-  {
-    "component": {
-      "name": "IntentValidator",
-      "class": "com.reveila.ai.GeminiIntentValidator",
-      "description": "Validates agent intents using Gemini.",
-      "start-priority": 23,
-      "thread-safe": true,
-      "dependencies": [
-        "GeminiProvider"
-      ]
-    }
-  },
-  {
-    "component": {
-      "name": "SchemaEnforcer",
-      "class": "com.reveila.ai.JsonSchemaEnforcer",
-      "description": "Enforces JSON schemas for tool calls.",
-      "start-priority": 24,
-      "thread-safe": true,
-      "dependencies": [
-        "MetadataRegistry"
-      ]
-    }
-  },
-  {
-    "component": {
-      "name": "InvocationBridge",
-      "class": "com.reveila.ai.InvocationBridge",
-      "description": "The sovereign entry point for all tool calls.",
-      "start-priority": 30,
-      "thread-safe": true,
-      "dependencies": [
-        "IntentValidator",
-        "SchemaEnforcer",
-        "GuardedRuntime",
-        "FlightRecorder",
-        "MetadataRegistry",
-        "CredentialManager",
-        "OrchestrationService",
-        "LlmProviderFactory"
-      ]
-    }
-  },
-  {
-    "component": {
-      "name": "AgenticFabric",
-      "class": "com.reveila.ai.AgenticFabric",
-      "description": "Orchestrates complex multi-agent workflows.",
-      "start-priority": 40,
-      "thread-safe": true,
-      "dependencies": [
-        "InvocationBridge",
-        "AgentSessionManager"
-      ]
-    }
-  },
-  {
-    "component": {
-      "name": "Performance Rating Service",
-      "class": "com.reveila.service.RatedService",
-      "description": "A service that manages multiple service providers and selects the best one based on ratings.",
-      "provider": "Reveila LLC",
-      "author": "Charles Lee",
-      "license-token": "",
-      "thread-safe": true,
-      "arguments": [
-        {
-          "name": "InitialPoints",
-          "type": "java.lang.String",
-          "value": [
-            "EchoService, 10000"
-          ]
-        }
-      ],
-      "start-priority": 101,
-      "dependencies": [
-        "EchoService"
-      ]
-    }
-  },
-  {
-    "component": {
-      "start-priority": 10,
-      "name": "HttpClientService",
-      "version": "1",
-      "displayName": "Http Client Service",
-      "description": "Provides HTTP client capabilities for making web requests.",
-      "author": "Charles Lee",
-      "class": "com.reveila.service.HttpClientService",
-      "arguments": [
-        {
-          "name": "connectTimeout",
-          "type": "long",
-          "value": 10
-        },
-        {
-          "name": "writeTimeout",
-          "type": "long",
-          "value": 10
-        },
-        {
-          "name": "readTimeout",
-          "type": "long",
-          "value": 30
-        }
-      ]
+      "name": "DataService",
+      "class": "com.reveila.android.service.AndroidDataService",
+      "description": "Bridges the Reveila API to local Android storage.",
+      "thread-safe": true
     }
   }
 ]

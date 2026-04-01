@@ -6,10 +6,8 @@ package com.reveila.system;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.InetAddress;
 import java.net.URI;
 import java.net.URL;
-import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -659,15 +657,6 @@ public class Reveila implements AutoCloseable {
 		Long timeUsed = System.currentTimeMillis() - startTime;
 		PerformanceTracker.getInstance().track(timeUsed, this.localUrl); // Track local invocation time
 		return result;
-	}
-
-	private String getLocalHost() {
-		try {
-			InetAddress localHost = InetAddress.getLocalHost();
-			return localHost.getHostAddress();
-		} catch (UnknownHostException e) {
-			return "localhost";
-		}
 	}
 
 	/**

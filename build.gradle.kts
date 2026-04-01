@@ -14,6 +14,7 @@ plugins {
     // This looks up 'android-library' in the [plugins] section of the TOML
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.ksp) apply false
 }
 
 allprojects {
@@ -37,39 +38,7 @@ tasks.register<Copy>("release") {
     into("./system-home/standard/bin")
 }
 
-/**
- * Synchronizes a clean version of the Android System Home into the module resources.
- * Excludes transient development artifacts like logs, local data, and temp files.
- */
-val prepareAndroidHome = tasks.register<Sync>("prepareAndroidHome") {
-    group = "reveila"
-    description = "Syncs clean standard system-home files to Android module assets."
-
-    from("system-home/standard") {
-        // MUST-HAVE: Include configs, plugins, and resources
-        include("configs/**")
-        include("plugins/**")
-        include("resources/**")
-        include("libs/**")
-
-        // EXCLUDE: Development artifacts
-        exclude("logs/**")
-        exclude("data/**")
-        exclude("temp/**")
-        exclude("**/.gitignore")
-        exclude("**/running.lock")
-        
-        // EXCLUDE: Server-only scripts
-        exclude("bin/**")
-    }
-    
-    // Target the assets folder that gets bundled into the Android package
-    into("android/src/main/assets/reveila/system")
-}
-
-/**
- * Synchronizes a clean version of the Standard System Home for server deployment.
- */
+// Synchronizing clean Standard System Home for server deployment.
 val prepareStandardHome = tasks.register<Copy>("prepareStandardHome") {
     group = "reveila"
     description = "Syncs clean Standard system-home files to build directory."
@@ -88,18 +57,4 @@ val prepareStandardHome = tasks.register<Copy>("prepareStandardHome") {
     }
     
     into("build/distributions/reveila-system-home")
-}
-
-// Hook into the build lifecycle for the android project
-project(":android") {
-    afterEvaluate {
-        // We hook into all tasks that process resources or assets to ensure our home files are synced.
-        tasks.matching { 
-            (it.name.startsWith("process") && it.name.endsWith("Resources")) ||
-            (it.name.startsWith("generate") && it.name.endsWith("Assets")) ||
-            (it.name.startsWith("package") && it.name.endsWith("Assets"))
-        }.configureEach {
-            dependsOn(prepareAndroidHome)
-        }
-    }
 }

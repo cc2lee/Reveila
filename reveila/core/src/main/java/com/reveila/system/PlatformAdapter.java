@@ -20,6 +20,7 @@ import com.reveila.event.EventConsumer;
  */
 public interface PlatformAdapter {
 
+    public String getPlatformName();
     public String getPlatformDescription();
     public Properties getProperties();
     public InputStream getFileInputStream(String relativePath) throws IOException;

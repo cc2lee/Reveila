@@ -1,0 +1,48 @@
+[
+    {
+        "component": {
+            "name": "RatingService",
+            "class": "com.reveila.service.RatedService",
+            "description": "A service that manages multiple service providers and selects the best one based on ratings.",
+            "provider": "Reveila LLC",
+            "author": "Charles Lee",
+            "license-token": "",
+            "thread-safe": true,
+            "arguments": [
+                {
+                    "name": "InitialPoints",
+                    "type": "java.lang.String",
+                    "value": [
+                        "EchoService, 10000"
+                    ]
+                }
+            ],
+            "dependencies": [
+                "EchoService"
+            ]
+        }
+    },
+    {
+        "component": {
+            "name": "PerformanceRatingService",
+            "class": "com.reveila.service.RatedService",
+            "description": "A service that manages multiple service providers and selects the best one based on ratings.",
+            "provider": "Reveila LLC",
+            "author": "Charles Lee",
+            "license-token": "",
+            "thread-safe": true,
+            "arguments": [
+                {
+                    "name": "InitialPoints",
+                    "type": "java.lang.String",
+                    "value": [
+                        "EchoService, 10000"
+                    ]
+                }
+            ],
+            "dependencies": [
+                "EchoService"
+            ]
+        }
+    }
+]

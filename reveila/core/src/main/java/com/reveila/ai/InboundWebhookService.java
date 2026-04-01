@@ -1,6 +1,5 @@
-package com.reveila.spring.service;
+package com.reveila.ai;
 
-import com.reveila.ai.*;
 import com.reveila.system.AbstractService;
 import com.reveila.system.PluginPrincipal;
 import com.reveila.system.SystemProxy;

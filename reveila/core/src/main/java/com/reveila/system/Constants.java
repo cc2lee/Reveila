@@ -68,7 +68,6 @@ public final class Constants {
 	public static final String DIRECTORY = "directory";
 	public static final String CAPABILITIES = "capabilities";
 	public static final String HOT_DEPLOY = "hot-deploy";
-	public static final String START_PRIORITY = "start-priority";
 	public static final String DEPENDENCIES = "dependencies";
 	public static final String COMPONENT_START_TIMEOUT = "component.start.timeout";
 	public static final String LOG_CONSOLE_ENABLED = "log.console.enabled";

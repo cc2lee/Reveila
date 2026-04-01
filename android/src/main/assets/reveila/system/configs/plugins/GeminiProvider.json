@@ -6,13 +6,12 @@
         "description": "LLM Provider for Google Gemini models.",
         "author": "Reveila-Suite",
         "class": "com.reveila.ai.GeminiProvider",
-        "start-priority": 21,
         "thread-safe": true,
         "arguments": [
             {
                 "name": "apiKey",
                 "type": "java.lang.String",
-                "value": "${secret:GEMINI_PROD_KEY}"
+                "value": "REF:GEMINI_PROD_KEY"
             },
             {
                 "name": "model",

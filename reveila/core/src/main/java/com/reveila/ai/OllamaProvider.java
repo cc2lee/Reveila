@@ -8,19 +8,21 @@ import dev.langchain4j.data.message.ChatMessage;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.reveila.system.AbstractService;
+
 /**
  * Ollama Provider Implementation: Local AI model support for the Sovereign Node.
  * Now using LangChain4j for consistent model interaction.
  * 
  * @author CL
  */
-public class OllamaProvider extends com.reveila.system.AbstractService implements LlmProvider {
+public class OllamaProvider extends AbstractService implements LlmProvider {
     private String apiUrl;
     private String model = "llama3";
     private ChatLanguageModel chatModel;
 
     public OllamaProvider() {
-        System.err.println("[CRITICAL_LOG] OllamaProvider Constructor Called");
+        super();
     }
 
     @Override

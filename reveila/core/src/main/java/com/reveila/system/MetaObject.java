@@ -81,26 +81,6 @@ public class MetaObject {
 		return "true".equalsIgnoreCase(String.valueOf(this.dataMap.get(Constants.HOT_DEPLOY)));
 	}
 
-	public int getStartPriority() {
-		Object value = this.dataMap.get(Constants.START_PRIORITY);
-
-		if (value == null) {
-			return Integer.MAX_VALUE;
-		}
-
-		if (value instanceof Number) {
-			return ((Number) value).intValue();
-		}
-
-		try {
-			// Handle cases where the value might be a String representation of a number
-			return Integer.parseInt(value.toString().trim());
-		} catch (NumberFormatException e) {
-			// Log a warning here if necessary: "Invalid priority format"
-			return Integer.MAX_VALUE;
-		}
-	}
-
 	@SuppressWarnings("unchecked")
 	public List<String> getDependencies() {
 		Object value = this.dataMap.get(Constants.DEPENDENCIES);

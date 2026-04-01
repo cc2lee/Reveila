@@ -1,4 +1,4 @@
-package com.reveila.android;
+package com.reveila.android.service;
 
 import com.reveila.ai.AgencyPerimeter;
 import com.reveila.system.PluginPrincipal;
@@ -7,6 +7,8 @@ import com.reveila.system.SystemProxy;
 import java.util.Map;
 import android.content.Context;
 import java.io.File;
+
+import com.reveila.android.SafePluginLoader;
 
 /**
  * Android-specific implementation of GuardedRuntime.

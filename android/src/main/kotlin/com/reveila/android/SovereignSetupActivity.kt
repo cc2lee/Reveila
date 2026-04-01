@@ -13,8 +13,7 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.room.Room
-import com.reveila.android.db.AppDatabase
+import com.reveila.android.db.PreferenceManager
 import com.reveila.android.db.UserPreferences
 import com.reveila.android.ui.components.FirstRunDialog
 import com.reveila.android.ui.components.SovereignOnboardingScreen
@@ -33,12 +32,7 @@ class SovereignSetupActivity : AppCompatActivity() {
 
     private val TAG = "FirstRunFlow"
 
-    private val db by lazy {
-        Room.databaseBuilder(
-            applicationContext,
-            AppDatabase::class.java, "reveila-database"
-        ).build()
-    }
+    private val prefs by lazy { PreferenceManager(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,10 +50,10 @@ class SovereignSetupActivity : AppCompatActivity() {
             var showAgreementDialog by remember { mutableStateOf(false) }
             
             LaunchedEffect(Unit) {
-                val prefs = withContext(Dispatchers.IO) {
-                    db.userPreferencesDao().getUserPreferences()
+                val currentPrefs = withContext(Dispatchers.IO) {
+                    prefs.getUserPreferences()
                 }
-                if (prefs == null || !prefs.user_agreement_accepted) {
+                if (!currentPrefs.user_agreement_accepted) {
                     showAgreementDialog = true
                 }
             }
@@ -69,7 +63,7 @@ class SovereignSetupActivity : AppCompatActivity() {
                     onAgreementAccepted = { timestamp, machineId ->
                         lifecycleScope.launch(Dispatchers.IO) {
                             // Requirement 1 & 3: Save to database
-                            db.userPreferencesDao().saveUserPreferences(
+                            prefs.saveUserPreferences(
                                 UserPreferences(
                                     user_agreement_accepted = true,
                                     acceptance_timestamp = timestamp,

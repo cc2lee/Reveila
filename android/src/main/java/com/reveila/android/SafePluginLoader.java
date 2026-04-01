@@ -1,4 +1,3 @@
-// Located in: Reveila-Suite/Android-App/src/main/java/com/reveila/app/util/SafePluginLoader.java
 package com.reveila.android;
 
 import android.content.Context;

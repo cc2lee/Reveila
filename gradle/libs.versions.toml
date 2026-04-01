@@ -47,6 +47,7 @@ androidGradlePlugin = "8.7.2" # Android Gradle Plugin version
 androidxCore = "1.17.0"
 androidxBiometric = "1.2.0-alpha05"
 room = "2.6.1"
+ksp = "2.1.20-2.0.1"
 
 # AWS SDK:
 awsSdk = "2.40.13"
@@ -62,6 +63,7 @@ hibernate = "6.6.1.Final"
 
 # Room:
 room = { id = "androidx.room", version.ref = "room" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 
 # Shadow Gradle Plugin:
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }

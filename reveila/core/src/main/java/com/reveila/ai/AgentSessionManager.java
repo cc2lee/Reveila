@@ -100,8 +100,9 @@ public class AgentSessionManager extends com.reveila.system.AbstractService {
         // 1. Messages size
         if (session.getChatMemory() != null) {
             for (ChatMessage msg : session.getChatMemory().messages()) {
-                if (msg.text() != null) {
-                    size += msg.text().length() * 2L;
+                String text = getMessageText(msg);
+                if (text != null) {
+                    size += text.length() * 2L;
                 }
             }
         }
@@ -115,6 +116,19 @@ public class AgentSessionManager extends com.reveila.system.AbstractService {
             }
         }
         return size;
+    }
+
+    private String getMessageText(ChatMessage msg) {
+        if (msg instanceof dev.langchain4j.data.message.UserMessage user) {
+            return user.contents().stream()
+                    .filter(c -> c instanceof dev.langchain4j.data.message.TextContent)
+                    .map(c -> ((dev.langchain4j.data.message.TextContent) c).text())
+                    .collect(java.util.stream.Collectors.joining("\n"));
+        }
+        if (msg instanceof dev.langchain4j.data.message.AiMessage ai) return ai.text();
+        if (msg instanceof dev.langchain4j.data.message.SystemMessage sys) return sys.text();
+        if (msg instanceof dev.langchain4j.data.message.ToolExecutionResultMessage tool) return tool.text();
+        return null;
     }
 
     /**

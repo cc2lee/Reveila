@@ -11,6 +11,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import androidx.compose.ui.viewinterop.AndroidView
+import android.widget.TextView
+import androidx.core.text.HtmlCompat
+import org.commonmark.parser.Parser
+import org.commonmark.renderer.html.HtmlRenderer
 import java.io.InputStreamReader
 
 @Composable
@@ -20,37 +25,76 @@ fun FirstRunDialog(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
     val coroutineScope = rememberCoroutineScope()
+
+    val path = "reveila/system/configs/agreement.md";
     
-    // Requirement 2: Display text from system-home\standard\configs\end-user-agreement.md
-    // Note: Since this is an Android app, the file must be bundled in assets.
-    // Based on the file list, it seems system-home configs are being mirrored to assets.
-    val agreementText = remember {
+    var loadError by remember { mutableStateOf(false) }
+    val agreementHtml = remember(loadError) {
         try {
-            context.assets.open("reveila/system/configs/agreement.md").use { inputStream ->
-                InputStreamReader(inputStream).readText()
+            android.util.Log.d("Reveila", "Attempting to load agreement from: $path")
+            context.assets.open(path).use { inputStream ->
+                val mdText = InputStreamReader(inputStream).readText()
+                android.util.Log.d("Reveila", "Successfully loaded MD agreement (${mdText.length} chars)")
+                
+                // Convert Markdown to HTML using CommonMark
+                val parser = Parser.builder().build()
+                val document = parser.parse(mdText)
+                val renderer = HtmlRenderer.builder().build()
+                val html = renderer.render(document)
+                
+                loadError = false
+                html
             }
         } catch (e: Exception) {
-            "Error loading agreement. Please ensure assets/reveila/system/configs/agreement.md exists.\n\n${e.message}"
+            android.util.Log.e("Reveila", "CRITICAL: Failed to load agreement file", e)
+            loadError = true
+            "Error loading End User License Agreement.<br/><br/>${e.message}<br/><br/>Please ensure the system-home directory was bundled correctly."
         }
     }
 
     // Requirement 2: "Scroll to Bottom" requirement
     val isAtBottom by remember {
         derivedStateOf {
-            scrollState.value >= scrollState.maxValue && scrollState.maxValue > 0
+            // Logic: We are at the bottom if we've scrolled to the max, 
+            // OR if there is nothing to scroll (maxValue == 0).
+            val atBottom = scrollState.maxValue == 0 || scrollState.value >= scrollState.maxValue
+            android.util.Log.v("Reveila", "EULA Scroll Position: ${scrollState.value}/${scrollState.maxValue} (atBottom: $atBottom)")
+            atBottom
         }
     }
 
     AlertDialog(
         onDismissRequest = { /* Blocking dialog, cannot dismiss without action */ },
-        title = { Text("End User License Agreement") },
+        title = { 
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("End User License Agreement")
+                if (loadError) {
+                    Spacer(Modifier.width(8.dp))
+                    Text("⚠️", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
         text = {
+            // Using a Column with weight(1f) to ensure the dialog fits on screen and scrolls correctly
             Column(
                 modifier = Modifier
-                    .heightIn(max = 400.dp)
+                    .fillMaxWidth()
+                    .heightIn(max = 500.dp)
                     .verticalScroll(scrollState)
+                    .padding(vertical = 8.dp)
             ) {
-                Text(agreementText)
+                // Rendering HTML in a TextView via AndroidView for robust MD support
+                AndroidView(
+                    factory = { ctx ->
+                        TextView(ctx).apply {
+                            setTextColor(if (loadError) android.graphics.Color.RED else android.graphics.Color.BLACK)
+                            textSize = 14f
+                        }
+                    },
+                    update = { textView ->
+                        textView.text = HtmlCompat.fromHtml(agreementHtml, HtmlCompat.FROM_HTML_MODE_COMPACT)
+                    }
+                )
             }
         },
         confirmButton = {
@@ -64,13 +108,17 @@ fun FirstRunDialog(
                     ) ?: "unknown_android_device"
                     onAgreementAccepted(timestamp, machineId)
                 },
-                enabled = isAtBottom // Requirement 2: Enforcement
+                enabled = isAtBottom || loadError // Allow proceeding if there was a load error to prevent lock-out
             ) {
                 Text("I AGREE")
             }
         },
         dismissButton = {
-            if (!isAtBottom) {
+            if (loadError) {
+                TextButton(onClick = { loadError = !loadError }) {
+                    Text("Retry")
+                }
+            } else if (!isAtBottom) {
                 TextButton(
                     onClick = {
                         coroutineScope.launch {

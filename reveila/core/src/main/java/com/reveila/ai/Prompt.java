@@ -38,6 +38,11 @@ public class Prompt {
             ## 🧠 Reasoning
             ## 🚀 Execution_Plan
             ## 📊 Confidence_Report
+
+            # TERMINATION_RULES
+            If the task is finished, output: [STATUS: SUCCESS]
+            If you are missing data, output: [STATUS: INSUFFICIENT_CONTEXT]
+            If you are stuck in a logic loop, output: [STATUS: ESCALATE]
             """
             .replace("${role}", role)
             .replace("${task}", task)

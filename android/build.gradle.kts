@@ -36,6 +36,7 @@ android {
     sourceSets {
         getByName("main") {
             resources.srcDirs("src/main/resources")
+            assets.srcDirs("src/main/assets")
         }
     }
 }
@@ -53,6 +54,8 @@ dependencies {
     
     implementation("androidx.core:core-ktx:1.13.0")
     implementation("com.google.code.gson:gson:2.10.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation(libs.commonmark)
     
     // Lifecycle components to help the engine survive Android backgrounding
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
@@ -69,18 +72,50 @@ dependencies {
     
     // File system tree parsing
     implementation("androidx.documentfile:documentfile:1.0.1")
+}
 
-    // Room
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx)
-    // Needs ksp for Room compiler
-    // ksp(libs.room.compiler)
+/**
+ * Synchronizes a clean version of the Android System Home into the module resources.
+ * Excludes transient development artifacts like logs, local data, and temp files.
+ */
+val prepareAndroidHome = tasks.register<Sync>("prepareAndroidHome") {
+    group = "reveila"
+    description = "Syncs clean standard system-home files to Android module assets."
+
+    // Locate system-home/standard relative to this project directory
+    // Works for mono-repo (../system-home) and Expo (../../../../system-home)
+    var homeDir = file("${project.projectDir}/../system-home/standard")
+    if (!homeDir.exists()) {
+        homeDir = file("${project.projectDir}/../../../../system-home/standard")
+    }
+
+    if (homeDir.exists()) {
+        from(homeDir) {
+            // MUST-HAVE: Include configs, plugins, and resources
+            include("configs/**")
+            include("plugins/**")
+            include("resources/**")
+            include("libs/**")
+
+            // EXCLUDE: Development artifacts
+            exclude("logs/**")
+            exclude("data/**")
+            exclude("temp/**")
+            exclude("**/.gitignore")
+            exclude("**/running.lock")
+            
+            // EXCLUDE: Server-only scripts
+            exclude("bin/**")
+        }
+    } else {
+        println("[Reveila] Warning: system-home/standard not found at $homeDir")
+    }
+    
+    // Target the assets folder that gets bundled into the Android package
+    into("src/main/assets/reveila/system")
 }
 
 // Ensure the resources are ready before the library starts bundling
 tasks.named("preBuild") {
-    // Only depend on :prepareAndroidHome if it exists in the current build context
-    if (rootProject.tasks.findByName("prepareAndroidHome") != null) {
-        dependsOn(":prepareAndroidHome")
-    }
+    dependsOn(prepareAndroidHome)
 }
