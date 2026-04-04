@@ -4,16 +4,24 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.reveila.android.ui.models.MemoryEdge
@@ -32,8 +40,11 @@ fun SovereignOnboardingScreen(
     discoveryLogs: List<String>,
     scanProgress: Float, // Ranges from 0.0f to 1.0f
     onSelectVaultClicked: () -> Unit,
-    onFinalizeClicked: () -> Unit
+    onFinalizeClicked: (String) -> Unit
 ) {
+    var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+
     if (!hasVaultSelected) {
         // Vault Selection UI
         Column(
@@ -123,47 +134,109 @@ fun SovereignOnboardingScreen(
         }
 
         // ==========================================
-        // 3. Discovery Logs & Biometric Anchor
+        // 3. Discovery Logs, Password Setup & Biometric Anchor
         // ==========================================
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(280.dp)
+                .height(400.dp)
                 .background(Color(0xFF1E1E1E)) // Distinct container for the log output
                 .padding(16.dp)
         ) {
-            Text(
-                text = "Live Discovery Logs",
-                color = Color.White,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            
-            // Displays real-time relationships found during initialization
-            LazyColumn(
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                // Displaying from top down, though we reverse it to act like a tailing log
-                reverseLayout = true
-            ) {
-                // Reverse the items so the newest log appears right under the header
-                items(discoveryLogs.reversed()) { log ->
+            if (scanProgress < 1.0f) {
+                Text(
+                    text = "Live Discovery Logs",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                // Displays real-time relationships found during initialization
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    // Displaying from top down, though we reverse it to act like a tailing log
+                    reverseLayout = true
+                ) {
+                    // Reverse the items so the newest log appears right under the header
+                    items(discoveryLogs.reversed()) { log ->
+                        Text(
+                            text = ">> $log",
+                            color = Color(0xFFAED581), // Terminal Green style
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    }
+                }
+            } else {
+                // Password Setup UI
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = ">> $log",
-                        color = Color(0xFFAED581), // Terminal Green style
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.padding(vertical = 4.dp)
+                        text = "Initialize Sovereign Identity",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Serious Warning
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF420000), shape = RoundedCornerShape(4.dp))
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = "⚠️ SERIOUS WARNING: If you lose this password, you will lose access to the app and all data PERMANENTLY. We have no recovery service.",
+                            color = Color(0xFFFFCDD2),
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Master Password (16-32 chars)", fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        visualTransformation = PasswordVisualTransformation(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.LightGray,
+                            focusedBorderColor = Color(0xFF4FC3F7),
+                            unfocusedBorderColor = Color.Gray
+                        )
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = { confirmPassword = it },
+                        label = { Text("Confirm Master Password", fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        visualTransformation = PasswordVisualTransformation(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.LightGray,
+                            focusedBorderColor = Color(0xFF4FC3F7),
+                            unfocusedBorderColor = Color.Gray
+                        )
                     )
                 }
             }
             
             Spacer(modifier = Modifier.height(16.dp))
 
+            val isPasswordValid = password.length in 16..32 && password == confirmPassword
+
             // The Final "Biometric Anchor" Hook
             Button(
-                onClick = onFinalizeClicked,
-                enabled = scanProgress >= 1.0f,
+                onClick = { onFinalizeClicked(password) },
+                enabled = scanProgress >= 1.0f && isPasswordValid,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFF4FC3F7),
                     disabledContainerColor = Color.DarkGray
@@ -174,7 +247,7 @@ fun SovereignOnboardingScreen(
             ) {
                 Text(
                     text = "Finalize Sovereign Core",
-                    color = if (scanProgress >= 1.0f) Color.Black else Color.Gray,
+                    color = if (scanProgress >= 1.0f && isPasswordValid) Color.Black else Color.Gray,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )

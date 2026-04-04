@@ -16,6 +16,7 @@ public final class Constants {
 	public static final String SYSTEM_VERSION = "system.version";
 	public static final String SYSTEM_HOME = "system.home";
 	public static final String RESET_HOME = "reset.home";
+	public static final String PLATFORM = "platform";
 	public static final String PLATFORM_OS = "platform.os";
 	public static final String LOG_FILE_SIZE = "logging.file.size";
 	public static final String LOG_FILE_COUNT = "logging.file.count";
@@ -81,5 +82,30 @@ public final class Constants {
 	public static final String PROVIDER = "provider";
     public static final String MANEFEST = "manifest";
 	public static final String REQUIRED_ROLES = "required-roles";
-    
+	public static final String REQUIRED_PERMISSIONS = "required-permissions";
+	public static final String REQUIRED_CAPABILITIES = "required-capabilities";
+	public static final String REQUIRED_COMPONENTS = "required-components";
+	public static final String REQUIRED_LIBRARIES = "required-libraries";
+    public static final String REQUIRED_PLUGINS = "required-plugins";
+	public static final String REQUIRED_PLUGINS_RESTART = "required-plugins-restart";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_STOP = "required-plugins-restart-on-stop";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_START = "required-plugins-restart-on-start";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_HOT_DEPLOY = "required-plugins-restart-on-hot-deploy";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_RELOAD = "required-plugins-restart-on-reload";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_RESTART = "required-plugins-restart-on-restart";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_UNLOAD = "required-plugins-restart-on-unload";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_UNINSTALL = "required-plugins-restart-on-uninstall";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_INSTALL = "required-plugins-restart-on-install";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_UPDATE = "required-plugins-restart-on-update";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_RESTART_ALL = "required-plugins-restart-on-restart-all";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_RELOAD_ALL = "required-plugins-restart-on-reload-all";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_UNLOAD_ALL = "required-plugins-restart-on-unload-all";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_UNINSTALL_ALL = "required-plugins-restart-on-uninstall-all";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_INSTALL_ALL = "required-plugins-restart-on-install-all";
+	public static final String REQUIRED_PLUGINS_RESTART_ON_UPDATE_ALL = "required-plugins-restart-on-update-all";
+
+	public static final String AI_STATUS_COMPLETED = "[STATUS: COMPLETED]";
+	public static final String AI_STATUS_INSUFFICIENT_CONTEXT = "[STATUS: INSUFFICIENT_CONTEXT]";
+	public static final String AI_STATUS_ESCALATE = "[STATUS: ESCALATE]";
+	public static final String AI_STATUS_FAILED = "[STATUS: FAILED]";
 }

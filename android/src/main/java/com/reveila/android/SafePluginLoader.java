@@ -1,6 +1,7 @@
 package com.reveila.android;
 
 import android.content.Context;
+import android.util.Log;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -32,7 +33,7 @@ public class SafePluginLoader {
     /**
      * Loads a plugin and returns its SystemProxy.
      */
-    public static SystemProxy loadPlugin(Context context, String pluginFileName, String className) {
+    public static SystemProxy loadPlugin(Context context, com.reveila.system.Context systemContext, String pluginFileName, String className) {
         try {
             String pluginId = pluginFileName.replace(".jar", "").replace(".dex", "");
             File pluginDir = new File(context.getFilesDir(), "plugins/" + pluginId);
@@ -44,6 +45,7 @@ public class SafePluginLoader {
             pluginFile.setReadOnly();
 
             SystemProxy proxy = createProxy(context, pluginId, className);
+            proxy.setContext(systemContext);
             ClassLoader loader = RuntimeUtil.createPluginClassLoader(pluginDir.getAbsolutePath(), SafePluginLoader.class.getClassLoader());
             
             Method setClassLoaderMethod = SystemProxy.class.getDeclaredMethod("setClassLoader", ClassLoader.class);

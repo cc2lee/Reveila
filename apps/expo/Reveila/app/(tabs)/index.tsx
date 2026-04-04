@@ -1,4 +1,4 @@
-import { StyleSheet, TouchableOpacity, ScrollView, View, TextInput } from 'react-native';
+import { StyleSheet, TouchableOpacity, ScrollView, View, TextInput, ActivityIndicator, Alert, Modal } from 'react-native';
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'expo-router';
 
@@ -6,6 +6,9 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import ReveilaModule from '@/modules/reveila';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { MasterPasswordSetup } from '@/components/MasterPasswordSetup';
+import { LockScreen } from '@/components/LockScreen';
+import { ChangePasswordModal } from '@/components/ChangePasswordModal';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -22,12 +25,30 @@ export default function HomeScreen() {
   const [isCloudMode, setIsCloudMode] = useState(false);
   const setupCompleteRef = useRef(false);
 
+  // Auth & Session State
+  const [isLocked, setIsLocked] = useState(false);
+  const [needsIdentitySetup, setNeedsIdentitySetup] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+
   const availableModels = isCloudMode ? [
     'Remote: Gemini 1.5 Flash',
     'Remote: OpenAI GPT-4o-mini'
   ] : [
     'Local: Gemma-3-1b'
   ];
+
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        if (isRunning && !isStarting) {
+          const valid = await ReveilaModule.isSessionValid();
+          setIsLocked(!valid);
+        }
+      } catch (e) {}
+    };
+    const interval = setInterval(checkSession, 10000);
+    return () => clearInterval(interval);
+  }, [isRunning, isStarting]);
 
   useEffect(() => {
     if (isCloudMode) {
@@ -60,7 +81,7 @@ export default function HomeScreen() {
         if (autoRestart && !running && !isStarting && isSetupComplete) {
           handleStart();
         }
-      } catch (e) {}
+      } catch (e) { }
     };
     checkSetupAndStatus();
     const interval = setInterval(checkSetupAndStatus, 5000);
@@ -84,14 +105,14 @@ export default function HomeScreen() {
     try {
       const result = await ReveilaModule.invoke('DataService', 'search', [{ entityType: 'AuditLog', page: 0, size: 5 }]);
       if (result && result.content) setLogs(result.content);
-    } catch (e) {}
+    } catch (e) { }
   };
 
   const handleSendPrompt = async () => {
     if (!promptText.trim() || !isRunning) return;
     setIsProcessing(true);
     setAgentResponse(null);
-    
+
     try {
       // Call the real AgenticFabric
       const result = await ReveilaModule.invoke('AgenticFabric', 'askAgent', [promptText, null]);
@@ -99,7 +120,14 @@ export default function HomeScreen() {
       setAgentResponse(typeof result === 'string' ? result : JSON.stringify(result));
       setPromptText('');
     } catch (e: any) {
-      setAgentResponse("Error communicating with AI: " + e.message);
+      const errorMsg = `Error communicating with AI: ${e.message}`;
+      const stack = e.stack || "No JS stack available";
+
+      // Log to terminal (via expo-cli)
+      console.error(errorMsg, stack);
+
+      // Display in the UI response card
+      setAgentResponse(`${errorMsg}\n\n[JS STACK]:\n${stack}`);
     } finally {
       setIsProcessing(false);
     }
@@ -115,15 +143,23 @@ export default function HomeScreen() {
         </ThemedView>
         <ScrollView contentContainerStyle={styles.content}>
           <ThemedView style={styles.card}>
-            <ThemedText type="subtitle" style={{marginBottom: 12}}>Setup Private AI</ThemedText>
+            <ThemedText type="subtitle" style={{ marginBottom: 12 }}>Setup Private AI</ThemedText>
             <ThemedText style={styles.description}>Start the secure setup and download to enable private, local AI features.</ThemedText>
-            <TouchableOpacity style={[styles.button, {backgroundColor: '#00E5FF', marginTop: 24}]} onPress={() => ReveilaModule.startSovereignSetup()}>
-              <ThemedText style={[styles.buttonText, {color: '#0f172a'}]}>Start Private Setup</ThemedText>
+            <TouchableOpacity style={[styles.button, { backgroundColor: '#00E5FF', marginTop: 24 }]} onPress={() => ReveilaModule.startSovereignSetup()}>
+              <ThemedText style={[styles.buttonText, { color: '#0f172a' }]}>Start Private Setup</ThemedText>
             </TouchableOpacity>
           </ThemedView>
         </ScrollView>
       </ThemedView>
     );
+  }
+
+  if (needsIdentitySetup) {
+    return <MasterPasswordSetup onComplete={() => setNeedsIdentitySetup(false)} />;
+  }
+
+  if (isLocked) {
+    return <LockScreen onUnlock={() => setIsLocked(false)} />;
   }
 
   return (
@@ -172,6 +208,19 @@ export default function HomeScreen() {
               ))}
             </ScrollView>
           </View>
+          
+          {!isRunning && !isStarting && (
+            <TouchableOpacity style={{ marginTop: 10, padding: 10 }} onPress={() => setShowChangePassword(true)}>
+              <ThemedText style={{ color: '#ff6600', fontSize: 13, fontWeight: '700', textAlign: 'center' }}>Change Master Password</ThemedText>
+            </TouchableOpacity>
+          )}
+
+          <Modal visible={showChangePassword} animationType="slide" transparent>
+            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center' }}>
+              <ChangePasswordModal onCancel={() => setShowChangePassword(false)} onSuccess={() => setShowChangePassword(false)} />
+            </View>
+          </Modal>
+
           <ThemedView style={styles.inputCard}>
             <TextInput
               style={styles.textInput}
@@ -183,7 +232,7 @@ export default function HomeScreen() {
               editable={isRunning && !isProcessing}
               textAlignVertical="top"
             />
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.sendButton, { opacity: (isRunning && promptText.trim()) ? 1 : 0.5 }]}
               disabled={!isRunning || isProcessing || !promptText.trim()}
               onPress={handleSendPrompt}
@@ -204,7 +253,7 @@ export default function HomeScreen() {
                   <ThemedText numberOfLines={1} style={styles.miniLogText}>{log.attributes?.action || log.attributes?.details}</ThemedText>
                 </View>
               )) : (
-                <ThemedText style={[styles.miniLogText, {padding: 8, fontStyle: 'italic'}]}>No recent activity found.</ThemedText>
+                <ThemedText style={[styles.miniLogText, { padding: 8, fontStyle: 'italic' }]}>No recent activity found.</ThemedText>
               )}
             </ThemedView>
           </View>

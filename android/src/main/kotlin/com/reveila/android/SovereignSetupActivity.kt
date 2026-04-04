@@ -15,7 +15,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.reveila.android.db.PreferenceManager
 import com.reveila.android.db.UserPreferences
-import com.reveila.android.ui.components.FirstRunDialog
+import com.reveila.android.ui.components.firstRunDialog
 import com.reveila.android.ui.components.SovereignOnboardingScreen
 import com.reveila.android.ui.models.NodeType
 import com.reveila.android.ui.viewmodels.SovereignMemoryViewModel
@@ -59,7 +59,7 @@ class SovereignSetupActivity : AppCompatActivity() {
             }
 
             if (showAgreementDialog) {
-                FirstRunDialog(
+                firstRunDialog(
                     onAgreementAccepted = { timestamp, machineId ->
                         lifecycleScope.launch(Dispatchers.IO) {
                             // Requirement 1 & 3: Save to database
@@ -106,7 +106,7 @@ class SovereignSetupActivity : AppCompatActivity() {
                 onSelectVaultClicked = { 
                     vaultPicker.launch(null) 
                 },
-                onFinalizeClicked = {
+                onFinalizeClicked = { masterPassword ->
                     val profiler = HardwareProfiler()
                     val profile = profiler.profileDevice(this@SovereignSetupActivity)
                     val settings = ModelSettings(this@SovereignSetupActivity)
@@ -116,15 +116,44 @@ class SovereignSetupActivity : AppCompatActivity() {
                     memoryManager.secureWriteOperation(this@SovereignSetupActivity, "Finalize Core") {
                         Log.i(TAG, "Biometric signature validated. Flagging setup as complete.")
                         
-                        // Save to properties and local JSON file
-                        settings.saveConfigurationToFile(profile)
+                        // Derivation and Verification Logic
+                        val adapter = (ReveilaService.getReveilaInstance()?.systemContext?.platformAdapter as? AndroidPlatformAdapter)
+                        val crypto = adapter?.getCryptographer() as? AndroidCryptographer
                         
-                        Toast.makeText(this@SovereignSetupActivity, "Sovereign Mode Activated!", Toast.LENGTH_LONG).show()
-                        finish() // Return to the React Native App
+                        try {
+                             // Cryptographic setup of hashes for future validation
+                             settings.setupMasterPassword(masterPassword)
+                             
+                             // Unlock using the newly derived and wrapped DEK
+                             val masterSaltHex = settings.masterSalt ?: "00000000000000000000000000000000"
+                             val wrappedDek = settings.wrappedDekFull ?: ""
+                             val dek = com.reveila.crypto.DefaultCryptographer.unwrapKeyFromBase64(wrappedDek, masterPassword, masterSaltHex)
+                             crypto?.unlock(dek)
+                             
+                             // Save to properties and local JSON file
+                             settings.saveConfigurationToFile(profile)
+                             
+                             Toast.makeText(this@SovereignSetupActivity, "Sovereign Mode Activated!", Toast.LENGTH_LONG).show()
+                             finish() // Return to the React Native App
+                        } catch (e: Exception) {
+                             Log.e(TAG, "Failed to initialize cryptographer: ${e.message}")
+                             Toast.makeText(this@SovereignSetupActivity, "Setup Failed: Check logs", Toast.LENGTH_LONG).show()
+                        }
                     }
                 }
             )
         }
+    }
+
+    private fun hexToBytes(s: String): ByteArray {
+        val len = s.length
+        val data = ByteArray(len / 2)
+        var i = 0
+        while (i < len) {
+            data[i / 2] = ((Character.digit(s[i], 16) shl 4) + Character.digit(s[i + 1], 16)).toByte()
+            i += 2
+        }
+        return data
     }
 
     /**

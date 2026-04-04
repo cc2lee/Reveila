@@ -20,7 +20,7 @@ import org.mockito.Mockito;
 @ExtendWith(MockitoExtension.class)
 class WebhookIngestionServiceTest {
 
-    @Mock private InvocationBridge bridge;
+    @Mock private SafeInvocation bridge;
     @Mock private OrchestrationService orchestrationService;
     @Mock private FlightRecorder flightRecorder;
     @Mock private AgentSession session;
@@ -35,7 +35,7 @@ class WebhookIngestionServiceTest {
     @BeforeEach
     void setUp() throws Exception {
         when(reveila.getSystemContext()).thenReturn(systemContext);
-        when(systemContext.getProxy(anyString())).thenReturn(java.util.Optional.of(proxy));
+        when(systemContext.getProxy(anyString())).thenReturn(proxy);
         
         when(((SystemProxy) proxy).getInstance()).thenAnswer(invocation -> {
             String name = (String) Mockito.mockingDetails(systemContext).getInvocations().stream()
@@ -44,7 +44,7 @@ class WebhookIngestionServiceTest {
                 .get().getArgument(0);
             
             return switch (name) {
-                case "InvocationBridge" -> bridge;
+                case "SafeInvocation" -> bridge;
                 case "OrchestrationService" -> orchestrationService;
                 case "FlightRecorder" -> flightRecorder;
                 case "LlmProviderFactory" -> llmFactory;

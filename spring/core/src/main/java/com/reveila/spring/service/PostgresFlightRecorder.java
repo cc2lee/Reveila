@@ -9,6 +9,7 @@ import com.reveila.ai.FlightRecorder;
 import com.reveila.data.Repository;
 import com.reveila.spring.model.jpa.AuditLog;
 import com.reveila.system.PluginPrincipal;
+import com.reveila.system.SystemComponent;
 
 /**
  * Implementation of Forensic Auditability using PostgreSQL.
@@ -16,7 +17,7 @@ import com.reveila.system.PluginPrincipal;
  * 
  * @author CL
  */
-public class PostgresFlightRecorder extends com.reveila.system.AbstractService implements FlightRecorder {
+public class PostgresFlightRecorder extends SystemComponent implements FlightRecorder {
 
     private Repository<AuditLog, java.util.UUID> auditRepository;
 

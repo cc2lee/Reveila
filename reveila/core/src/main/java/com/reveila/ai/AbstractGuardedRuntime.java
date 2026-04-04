@@ -2,8 +2,8 @@ package com.reveila.ai;
 
 import java.util.Map;
 
-import com.reveila.system.AbstractService;
 import com.reveila.system.PluginPrincipal;
+import com.reveila.system.SystemComponent;
 
 /**
  * Abstract base class for all guarded runtimes.
@@ -11,7 +11,7 @@ import com.reveila.system.PluginPrincipal;
  * 
  * @author CL
  */
-public abstract class AbstractGuardedRuntime extends AbstractService implements GuardedRuntime {
+public abstract class AbstractGuardedRuntime extends SystemComponent implements GuardedRuntime {
     
     /**
      * Common validation logic for perimeters and principals.

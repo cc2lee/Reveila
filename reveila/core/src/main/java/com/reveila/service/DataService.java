@@ -7,8 +7,8 @@ import com.reveila.data.EntityMapper;
 import com.reveila.data.Page;
 import com.reveila.data.Repository;
 import com.reveila.data.SearchRequest;
-import com.reveila.system.AbstractService;
 import com.reveila.system.PlatformAdapter;
+import com.reveila.system.SystemComponent;
 
 /**
  * The DataService bridges the Reveila API and the JPA Repositories.
@@ -26,7 +26,7 @@ import com.reveila.system.PlatformAdapter;
  * ]
  * }
  */
-public class DataService extends AbstractService {
+public class DataService extends SystemComponent {
 
     private PlatformAdapter platform;
 

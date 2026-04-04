@@ -32,8 +32,8 @@ class PromptInjectionResistanceTest {
     @Mock private GeminiProvider geminiProvider;
     @Mock private OrchestrationService orchestrationService;
 
-    private InvocationBridge bridge;
-    private GeminiIntentValidator intentValidator;
+    private SafeInvocation bridge;
+    private DefaultIntentValidator intentValidator;
     private AgentPrincipal agent;
     private AgencyPerimeter perimeter;
     private LlmGovernanceConfig govConfig = LlmGovernanceConfig.defaultGov();
@@ -43,7 +43,7 @@ class PromptInjectionResistanceTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        when(systemContext.getProxy(anyString())).thenReturn(Optional.of(proxy));
+        when(systemContext.getProxy(anyString())).thenReturn(proxy);
         when(proxy.invoke(eq("getInstance"), any())).thenAnswer(invocation -> {
             String name = (String) Mockito.mockingDetails(systemContext).getInvocations().stream()
                 .filter(i -> i.getMethod().getName().equals("getProxy"))
@@ -64,11 +64,11 @@ class PromptInjectionResistanceTest {
             };
         });
 
-        intentValidator = new GeminiIntentValidator();
+        intentValidator = new DefaultIntentValidator();
         intentValidator.setSystemContext(systemContext);
         intentValidator.start();
 
-        bridge = new InvocationBridge();
+        bridge = new SafeInvocation();
         bridge.setSystemContext(systemContext);
         bridge.start();
         agent = AgentPrincipal.create("test-agent", "test-dept");

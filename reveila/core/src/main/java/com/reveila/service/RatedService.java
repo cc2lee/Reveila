@@ -4,11 +4,11 @@ import java.util.List;
 import java.util.Optional;
 
 import com.reveila.error.ConfigurationException;
-import com.reveila.system.AbstractService;
 import com.reveila.system.Proxy;
+import com.reveila.system.SystemComponent;
 import com.reveila.util.SortedPointsTracker;
 
-public class RatedService extends AbstractService {
+public class RatedService extends SystemComponent {
 
     private SortedPointsTracker pointsTracker;
     
@@ -41,13 +41,13 @@ public class RatedService extends AbstractService {
 
     public synchronized Object invoke(final String methodName, final Object[] args) throws Exception {
 		String providerName = getBestProvider();
-		Optional<Proxy> localProxy = context.getProxy(providerName);
-		if (!localProxy.isPresent()) {
-			throw new ConfigurationException("Component '" + providerName + "' not found.");
-		}
-        Proxy proxy = localProxy.get();
-		Object result = proxy.invoke(methodName, args);
-		return result;
+		try {
+            Proxy proxy = context.getProxy(providerName);
+		    Object result = proxy.invoke(methodName, args);
+		    return result;
+        } catch (IllegalArgumentException e) {
+            throw new ConfigurationException("Component '" + providerName + "' not found.", e);
+        }
 	}
 
     public void rateProvider(String provider, Long points) {

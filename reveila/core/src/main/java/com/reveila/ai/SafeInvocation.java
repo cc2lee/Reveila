@@ -3,6 +3,8 @@ package com.reveila.ai;
 import java.util.Map;
 
 import com.reveila.system.PluginPrincipal;
+import com.reveila.system.Proxy;
+import com.reveila.system.SystemComponent;
 import com.reveila.system.SystemProxy;
 
 /**
@@ -31,7 +33,7 @@ import com.reveila.system.SystemProxy;
  * Mask: Parameters marked as SECRET in the MetadataRegistry are redacted to
  * prevent PII/PHI leakage to the safety model.
  * 
- * Audit: The GeminiIntentValidator performs the performSafetyAudit.
+ * Audit: The IntentValidator performs the performSafetyAudit.
  * 
  * Enforce: If Gemini detects a violation (e.g., an unauthorized domain or a
  * prompt injection attempt), the bridge returns a SECURITY_BREACH status and
@@ -39,7 +41,8 @@ import com.reveila.system.SystemProxy;
  * 
  * @author CL
  */
-public class InvocationBridge extends com.reveila.system.AbstractService {
+public class SafeInvocation extends SystemComponent {
+    
     private IntentValidator intentValidator;
     private SchemaEnforcer schemaEnforcer;
     private GuardedRuntime guardedRuntime;
@@ -48,7 +51,7 @@ public class InvocationBridge extends com.reveila.system.AbstractService {
     private CredentialManager credentialManager;
     private OrchestrationService orchestrationService;
 
-    public InvocationBridge() {
+    public SafeInvocation() {
         // Dependencies will be wired via the SystemContext in onStart
     }
 
@@ -68,20 +71,20 @@ public class InvocationBridge extends com.reveila.system.AbstractService {
     }
 
     private <T> T getComponent(String name, Class<T> type) {
-        return context.getProxy(name)
-                .map(p -> {
-                    try {
-                        if (p instanceof SystemProxy sp) {
-                            return sp.getInstance();
-                        }
-                        return null;
-                    } catch (Exception e) {
-                        return null;
-                    }
-                })
-                .filter(type::isInstance)
-                .map(type::cast)
-                .orElseThrow(() -> new IllegalStateException("Component '" + name + "' not found or invalid type."));
+        try {
+            Proxy p = context.getProxy(name);
+            if (p instanceof SystemProxy sp) {
+                Object instance = sp.getInstance();
+                if (type.isInstance(instance)) {
+                    return type.cast(instance);
+                }
+            }
+            throw new IllegalStateException("Component '" + name + "' invalid type.");
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("Component '" + name + "' not found.", e);
+        } catch (Exception e) {
+            throw new IllegalStateException("Component '" + name + "' failed to initialize.", e);
+        }
     }
 
     /**
@@ -97,7 +100,7 @@ public class InvocationBridge extends com.reveila.system.AbstractService {
     public InvocationResult invoke(PluginPrincipal principal, AgencyPerimeter perimeter, String intent,
             Map<String, Object> rawArguments) {
 
-        // Phase 5: Recursive Invocation & Delegation Handling
+        // Session Management: Recursive Invocation & Delegation
         String sessionId = (String) rawArguments.get("_session_id");
         if (sessionId != null) {
             orchestrationService.getSession(sessionId);
@@ -110,6 +113,7 @@ public class InvocationBridge extends com.reveila.system.AbstractService {
             TraceContextHolder.setTraceId(effectiveTraceId);
         }
 
+        // Step 1: Intercept Intent
         String reasoning = (String) rawArguments.getOrDefault("_thought", "No reasoning provided");
         flightRecorder.recordReasoning(principal, reasoning);
 
@@ -117,7 +121,17 @@ public class InvocationBridge extends com.reveila.system.AbstractService {
                 "intent", intent,
                 "trace_id", principal.getTraceId()));
 
-        String pluginId = intentValidator.validateIntent(intent);
+        String pluginId = principal.getAgentId();
+
+        // Step 2: Validate Intent
+        try {
+            intentValidator.validateIntent(intent);
+        } catch (SecurityException e) {
+            flightRecorder.recordStep(principal, "intent_blocked", Map.of(
+                    "intent", intent,
+                    "trace_id", principal.getTraceId()));
+            return InvocationResult.securityBreach("INTENT BLOCKED: " + e.getMessage());
+        }
 
         // Phase 2: Metadata Check
         MetadataRegistry.PluginManifest manifest = metadataRegistry.getManifest(pluginId);
@@ -144,8 +158,8 @@ public class InvocationBridge extends com.reveila.system.AbstractService {
             flightRecorder.recordStep(principal, "safety_audit_failed", Map.of("pluginId", pluginId));
 
             // Use structured audit to check for security breach
-            if (intentValidator instanceof GeminiIntentValidator geminiValidator) {
-                GuardrailResponse audit = geminiValidator.getGuardrailResponse(pluginId, maskedArgs.toString(), "Safety Guardrail Context");
+            if (intentValidator instanceof DefaultIntentValidator validator) {
+                GuardrailResponse audit = validator.getGuardrailResponse(pluginId, maskedArgs.toString(), "Safety Guardrail Context");
                 if ("REJECTED".equals(audit.status()) && audit.reasoning().contains("SECURITY_BREACH")) {
                     return InvocationResult.securityBreach("Governance Pipeline: SECURITY_BREACH detected by Gemini RailGuard: " + audit.reasoning());
                 }
@@ -233,7 +247,6 @@ public class InvocationBridge extends com.reveila.system.AbstractService {
 
         // Logic to execute tool on behalf of the isolated agent
         return context.getProxy(component)
-                .orElseThrow(() -> new IllegalArgumentException("Component not found: " + component))
                 .invoke(method, arguments != null ? arguments.values().toArray() : new Object[0]);
     }
 

@@ -20,4 +20,9 @@ public class ServerPlatformAdapter extends BasePlatformAdapter {
     public ExecutorService getExecutor() {
         return executor;
     }
+
+    @Override
+    public com.reveila.crypto.Cryptographer getCryptographer() {
+        return super.getCryptographer();
+    }
 }

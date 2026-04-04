@@ -12,8 +12,8 @@ import java.util.concurrent.TimeUnit;
 
 import com.reveila.error.ConfigurationException;
 import com.reveila.error.SystemException;
-import com.reveila.system.AbstractService;
 import com.reveila.system.PerformanceTracker;
+import com.reveila.system.SystemComponent;
 import com.reveila.util.json.JsonException;
 import com.reveila.util.json.JsonUtil;
 
@@ -29,7 +29,7 @@ import okhttp3.ResponseBody;
  * This acts as a proxy, allowing any Reveila client (mobile or backend) to interact
  * with another Reveila instance, enabling clustered or distributed setups.
  */
-public class RemoteService extends AbstractService {
+public class RemoteService extends SystemComponent {
     
     public static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 

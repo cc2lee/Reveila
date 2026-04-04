@@ -13,6 +13,7 @@ import javax.sql.DataSource;
 import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import com.reveila.crypto.Cryptographer;
 import com.reveila.data.Entity;
 import com.reveila.data.EntityMapper;
 import com.reveila.data.GenericRepository;
@@ -155,5 +156,4 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
             }
         }
     }
-
 }

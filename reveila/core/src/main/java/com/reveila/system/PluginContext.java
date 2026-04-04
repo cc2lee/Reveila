@@ -1,7 +1,6 @@
 package com.reveila.system;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.Properties;
 import java.util.logging.Logger;
 
@@ -24,12 +23,12 @@ public final class PluginContext implements Context {
         }
     }
 
-    public Optional<Proxy> getProxy(String name) {
-        SystemProxy systemProxy = (SystemProxy) systemContext.getProxy(name, subject).orElse(null);
-        if (systemProxy == null) {
-            return Optional.empty();
+    public Proxy getProxy(String name) throws com.reveila.error.SecurityException, IllegalArgumentException {
+        Proxy proxy = systemContext.getProxy(name, subject);
+        if (proxy instanceof SystemProxy) {
+            proxy = new PluginProxy((SystemProxy)proxy, subject);
         }
-        return Optional.of(new PluginProxy(systemProxy, subject));
+        return proxy;
     }
 
     @Override

@@ -1,12 +1,15 @@
 package com.reveila.ai;
 
-import dev.langchain4j.model.openai.OpenAiChatModel;
-import dev.langchain4j.model.chat.ChatLanguageModel;
-import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.data.message.ChatMessage;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.reveila.system.PluginComponent;
+
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.openai.OpenAiChatModel;
 
 /**
  * ChatGPT Worker Implementation: Handles task-specific tool generation.
@@ -14,7 +17,7 @@ import java.util.List;
  * 
  * @author CL
  */
-public class OpenAiProvider extends com.reveila.system.AbstractService implements LlmProvider {
+public class OpenAiProvider extends PluginComponent implements LlmProvider {
     private String apiKey;
     private String model = "gpt-4";
     private double temperature = 0.7;
@@ -47,7 +50,6 @@ public class OpenAiProvider extends com.reveila.system.AbstractService implement
         String resolvedApiKey = apiKey;
         if (apiKey != null && apiKey.startsWith("REF:")) {
             resolvedApiKey = (String) this.context.getProxy("CredentialManager")
-                    .orElseThrow(() -> new IllegalStateException("CredentialManager not found"))
                     .invoke("getSecret", new Object[] { apiKey.substring(4) });
         }
 

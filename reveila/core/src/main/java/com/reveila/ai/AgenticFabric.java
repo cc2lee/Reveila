@@ -4,6 +4,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 import com.reveila.system.PluginPrincipal;
+import com.reveila.system.Proxy;
+import com.reveila.system.SystemComponent;
 import com.reveila.system.SystemProxy;
 
 import dev.langchain4j.data.message.AiMessage;
@@ -18,9 +20,9 @@ import dev.langchain4j.data.message.UserMessage;
  * 
  * @author CL
  */
-public class AgenticFabric extends com.reveila.system.AbstractService {
+public class AgenticFabric extends SystemComponent {
 
-    private InvocationBridge bridge;
+    private SafeInvocation bridge;
     private AgentSessionManager sessionManager;
     private OrchestrationService orchestrationService;
     private MetadataRegistry metadataRegistry;
@@ -41,70 +43,50 @@ public class AgenticFabric extends com.reveila.system.AbstractService {
 
     @Override
     public void onStart() throws Exception {
-        this.bridge = context.getProxy("InvocationBridge")
-                .map(p -> {
-                    try {
-                        if (p instanceof SystemProxy sp) {
-                            return (InvocationBridge) sp.getInstance();
-                        }
-                        return null;
-                    } catch (Exception e) {
-                        return null;
-                    }
-                })
-                .orElseThrow(() -> new IllegalStateException("InvocationBridge not found."));
+        try {
+            Proxy p = context.getProxy("SafeInvocation");
+            if (p instanceof SystemProxy sp) {
+                this.bridge = (SafeInvocation) sp.getInstance();
+            }
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("SafeInvocation not found.", e);
+        }
 
-        this.sessionManager = context.getProxy("AgentSessionManager")
-                .map(p -> {
-                    try {
-                        if (p instanceof SystemProxy sp) {
-                            return (AgentSessionManager) sp.getInstance();
-                        }
-                        return null;
-                    } catch (Exception e) {
-                        return null;
-                    }
-                })
-                .orElseThrow(() -> new IllegalStateException("AgentSessionManager not found."));
+        try {
+            Proxy p = context.getProxy("AgentSessionManager");
+            if (p instanceof SystemProxy sp) {
+                this.sessionManager = (AgentSessionManager) sp.getInstance();
+            }
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("AgentSessionManager not found.", e);
+        }
 
-        this.orchestrationService = context.getProxy("OrchestrationService")
-                .map(p -> {
-                    try {
-                        if (p instanceof SystemProxy sp) {
-                            return (OrchestrationService) sp.getInstance();
-                        }
-                        return null;
-                    } catch (Exception e) {
-                        return null;
-                    }
-                })
-                .orElseThrow(() -> new IllegalStateException("OrchestrationService not found."));
+        try {
+            Proxy p = context.getProxy("OrchestrationService");
+            if (p instanceof SystemProxy sp) {
+                this.orchestrationService = (OrchestrationService) sp.getInstance();
+            }
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("OrchestrationService not found.", e);
+        }
 
-        this.metadataRegistry = context.getProxy("MetadataRegistry")
-                .map(p -> {
-                    try {
-                        if (p instanceof SystemProxy sp) {
-                            return (MetadataRegistry) sp.getInstance();
-                        }
-                        return null;
-                    } catch (Exception e) {
-                        return null;
-                    }
-                })
-                .orElseThrow(() -> new IllegalStateException("MetadataRegistry not found."));
+        try {
+            Proxy p = context.getProxy("MetadataRegistry");
+            if (p instanceof SystemProxy sp) {
+                this.metadataRegistry = (MetadataRegistry) sp.getInstance();
+            }
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("MetadataRegistry not found.", e);
+        }
 
-        this.llmFactory = context.getProxy("LlmProviderFactory")
-                .map(p -> {
-                    try {
-                        if (p instanceof SystemProxy sp) {
-                            return (LlmProviderFactory) sp.getInstance();
-                        }
-                        return null;
-                    } catch (Exception e) {
-                        return null;
-                    }
-                })
-                .orElseThrow(() -> new IllegalStateException("LlmProviderFactory not found."));
+        try {
+            Proxy p = context.getProxy("LlmProviderFactory");
+            if (p instanceof SystemProxy sp) {
+                this.llmFactory = (LlmProviderFactory) sp.getInstance();
+            }
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("LlmProviderFactory not found.", e);
+        }
     }
 
     /**
@@ -126,10 +108,10 @@ public class AgenticFabric extends com.reveila.system.AbstractService {
             session = orchestrationService.createSession(principal.getTraceId());
         }
 
-        return processLoop(session, principal, userIntent);
+        return processIntent(session, principal, userIntent);
     }
 
-    public String processLoop(AgentSession session, PluginPrincipal principal, String initialIntent) {
+    public String processIntent(AgentSession session, PluginPrincipal principal, String initialIntent) {
         String currentIntent = initialIntent;
 
         // Step 1: Execute initial LLM reasoning
@@ -140,7 +122,7 @@ public class AgenticFabric extends com.reveila.system.AbstractService {
             loopCount++;
             try {
                 // Step 2: Handle terminal statuses defined in Prompt.getBasePrompt()
-                if (response.contains("[STATUS: SUCCESS]") || response.contains("## Status: COMPLETED")) {
+                if (response.contains("[STATUS: COMPLETED]") || response.contains("## Status: COMPLETED")) {
                     return response; // AI said "Done"
                 } else if (response.contains("[STATUS: INSUFFICIENT_CONTEXT]")
                         || response.contains("## Status: INSUFFICIENT_CONTEXT")) {
@@ -206,7 +188,7 @@ public class AgenticFabric extends com.reveila.system.AbstractService {
         Map<String, Object> toolDefinitions = metadataRegistry.exportToMCP();
 
         // Generate the dynamic system instruction
-        String systemInstructions = Prompt.getBasePrompt(
+        String systemInstructions = Prompt.getPrompt(
                 "Reveila AI Agent",
                 userIntent,
                 "Available Tool Definitions (MCP): " + toolDefinitions,

@@ -1,22 +1,24 @@
 package com.reveila.ai;
 
-import com.reveila.util.json.JsonUtil;
 import java.util.Map;
+
+import com.reveila.system.SystemComponent;
+import com.reveila.util.json.JsonUtil;
 
 /**
  * Implementation of IntentValidator using Gemini for safety audits.
  * 
  * @author CL
  */
-public class GeminiIntentValidator extends com.reveila.system.AbstractService implements IntentValidator {
+public class DefaultIntentValidator extends SystemComponent implements IntentValidator {
     private GeminiProvider gemini;
 
-    public GeminiIntentValidator() {
+    public DefaultIntentValidator() {
     }
 
     @Override
     public void onStart() throws Exception {
-        this.gemini = (GeminiProvider) context.getProxy("GeminiProvider").orElseThrow().invoke("getInstance", null);
+        this.gemini = (GeminiProvider) context.getProxy("GeminiProvider").invoke("getInstance", null);
     }
 
     @Override
@@ -24,12 +26,8 @@ public class GeminiIntentValidator extends com.reveila.system.AbstractService im
     }
 
     @Override
-    public String validateIntent(String intent) {
-        // Simplified mapping for simulation
-        if (intent.contains("doc_extraction")) return "doc_extraction";
-        if (intent.contains("ma_summary")) return "ma_summary";
-        if (intent.contains("healthcare")) return "healthcare";
-        return "generic_plugin";
+    public void validateIntent(String intent) throws com.reveila.error.SecurityException {
+        // TODO implement validation logic
     }
 
     @Override

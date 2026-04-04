@@ -26,7 +26,7 @@ import com.reveila.util.ExceptionCollection;
 /**
  * @author Charles Lee
  */
-public final class SystemProxy extends AbstractService implements Proxy {
+public final class SystemProxy extends SystemComponent implements Proxy {
 
 	private final AtomicReference<ClassLoader> loaderRef = new AtomicReference<>();
 	private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -194,8 +194,12 @@ public final class SystemProxy extends AbstractService implements Proxy {
 		if (plugin != null && !systemCall) {
 			List<Object> list = List.of(plugin, null, metaObject.getName(),
 					Map.of("method", methodName, "args", args != null ? args : new Object[0]), null);
-			Proxy proxy = ((SystemContext) context).getProxy("GuardedRuntime")
-					.orElseThrow(() -> new IllegalStateException("GuardedRuntime not found or invalid"));
+			Proxy proxy;
+			try {
+				proxy = ((SystemContext) context).getProxy("GuardedRuntime");
+			} catch (IllegalArgumentException e) {
+				throw new IllegalStateException("GuardedRuntime not found or invalid", e);
+			}
 			return proxy.invoke("execute", list.toArray());
 		}
 
@@ -208,8 +212,8 @@ public final class SystemProxy extends AbstractService implements Proxy {
 		List<Map<String, Object>> arguments = this.metaObject.getArguments();
 		setArguments(object, clazz, arguments);
 
-		if (object instanceof AbstractService) {
-			((AbstractService) object).setContext(context);
+		if (object instanceof SystemComponent) {
+			((SystemComponent) object).setContext(context);
 		}
 
 		if (object instanceof Startable) {
@@ -406,19 +410,17 @@ public final class SystemProxy extends AbstractService implements Proxy {
 
 			String key = strValue.substring(start + 9, end);
 			try {
-				Optional<Proxy> credentialManager = context.getProxy("CredentialManager");
-				if (credentialManager.isPresent()) {
-					String secret = (String) credentialManager.get().invoke("getSecret", new Object[] { key });
-					if (secret != null) {
-						result.append(secret);
-					} else {
-						result.append("${secret:").append(key).append("}");
-						logger.warning("Secret key '" + key + "' not found in CredentialManager.");
-					}
+				Proxy credentialManager = context.getProxy("CredentialManager");
+				String secret = (String) credentialManager.invoke("getSecret", new Object[] { key });
+				if (secret != null) {
+					result.append(secret);
 				} else {
 					result.append("${secret:").append(key).append("}");
-					logger.warning("CredentialManager not found while trying to resolve secret: " + key);
+					logger.warning("Secret key '" + key + "' not found in CredentialManager.");
 				}
+			} catch (IllegalArgumentException e) {
+				result.append("${secret:").append(key).append("}");
+				logger.warning("CredentialManager not found while trying to resolve secret: " + key);
 			} catch (Exception e) {
 				result.append("${secret:").append(key).append("}");
 				logger.log(Level.SEVERE, "Error resolving secret key '" + key + "'.", e);

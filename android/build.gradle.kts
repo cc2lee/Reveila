@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.reveila.android.lib"
     compileSdk = libs.versions.androidCompileSdk.get().toInt()
+    buildToolsVersion = "35.0.0"
 
     defaultConfig {
         minSdk = libs.versions.androidMinSdk.get().toInt()
@@ -75,10 +76,62 @@ dependencies {
 }
 
 /**
+ * Converts shared library JARs to Android DEX format using the d8 tool.
+ */
+val dexSharedLibs = tasks.register("dexSharedLibs") {
+    group = "reveila"
+    description = "Converts system-home/standard/libs JARs to Android DEX format."
+
+    val homeDir = file("${project.projectDir}/../system-home/standard")
+    val libsDir = file("${homeDir}/libs")
+    val outputDir = layout.buildDirectory.dir("reveila/dex-libs")
+
+    inputs.dir(libsDir)
+    outputs.dir(outputDir)
+
+    doLast {
+        if (!libsDir.exists()) return@doLast
+        outputDir.get().asFile.mkdirs()
+
+        val buildToolsVersion = android.buildToolsVersion
+        val sdkDir = android.sdkDirectory
+        val d8Executable = File(sdkDir, "build-tools/$buildToolsVersion/d8" + (if (org.apache.tools.ant.taskdefs.condition.Os.isFamily(org.apache.tools.ant.taskdefs.condition.Os.FAMILY_WINDOWS)) ".bat" else ""))
+
+        if (!d8Executable.exists()) {
+            throw GradleException("d8 executable not found at: ${d8Executable.absolutePath}")
+        }
+
+        val androidJar = File(sdkDir, "platforms/android-${android.compileSdk}/android.jar")
+        if (!androidJar.exists()) {
+            println("[Reveila] Warning: android.jar not found at ${androidJar.absolutePath}. Dexing may fail.")
+        }
+
+        libsDir.listFiles { f -> f.extension == "jar" }?.forEach { jarFile ->
+            val outputFile = File(outputDir.get().asFile, jarFile.name)
+            println("[Reveila] Dexing ${jarFile.name} -> ${outputFile.absolutePath}")
+            
+            exec {
+                val args = mutableListOf<String>()
+                args.add(d8Executable.absolutePath)
+                args.add("--output")
+                args.add(outputFile.absolutePath)
+                if (androidJar.exists()) {
+                    args.add("--lib")
+                    args.add(androidJar.absolutePath)
+                }
+                args.add(jarFile.absolutePath)
+                commandLine(args)
+            }
+        }
+    }
+}
+
+/**
  * Synchronizes a clean version of the Android System Home into the module resources.
  * Excludes transient development artifacts like logs, local data, and temp files.
  */
 val prepareAndroidHome = tasks.register<Sync>("prepareAndroidHome") {
+    dependsOn(dexSharedLibs)
     group = "reveila"
     description = "Syncs clean standard system-home files to Android module assets."
 
@@ -95,7 +148,8 @@ val prepareAndroidHome = tasks.register<Sync>("prepareAndroidHome") {
             include("configs/**")
             include("plugins/**")
             include("resources/**")
-            include("libs/**")
+            // Exclude original libs, we will include the dexed ones
+            exclude("libs/**")
 
             // EXCLUDE: Development artifacts
             exclude("logs/**")
@@ -106,6 +160,11 @@ val prepareAndroidHome = tasks.register<Sync>("prepareAndroidHome") {
             
             // EXCLUDE: Server-only scripts
             exclude("bin/**")
+        }
+
+        // Include the dexed libraries
+        from(dexSharedLibs) {
+            into("libs")
         }
     } else {
         println("[Reveila] Warning: system-home/standard not found at $homeDir")

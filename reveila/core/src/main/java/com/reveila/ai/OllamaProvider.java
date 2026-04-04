@@ -1,14 +1,15 @@
 package com.reveila.ai;
 
-import dev.langchain4j.model.ollama.OllamaChatModel;
-import dev.langchain4j.model.chat.ChatLanguageModel;
-import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.data.message.ChatMessage;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.reveila.system.AbstractService;
+import com.reveila.system.PluginComponent;
+
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.ollama.OllamaChatModel;
 
 /**
  * Ollama Provider Implementation: Local AI model support for the Sovereign Node.
@@ -16,7 +17,7 @@ import com.reveila.system.AbstractService;
  * 
  * @author CL
  */
-public class OllamaProvider extends AbstractService implements LlmProvider {
+public class OllamaProvider extends PluginComponent implements LlmProvider {
     private String apiUrl;
     private String model = "llama3";
     private ChatLanguageModel chatModel;

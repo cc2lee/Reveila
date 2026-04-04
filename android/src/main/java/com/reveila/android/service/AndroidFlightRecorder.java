@@ -7,7 +7,7 @@ import java.time.Instant;
 
 import com.reveila.data.Entity;
 import com.reveila.data.Repository;
-import com.reveila.system.AbstractService;
+import com.reveila.system.SystemComponent;
 import com.reveila.system.PluginPrincipal;
 import com.reveila.ai.FlightRecorder;
 
@@ -20,7 +20,7 @@ import com.reveila.ai.FlightRecorder;
  * 
  * @author CL
  */
-public class AndroidFlightRecorder extends AbstractService implements FlightRecorder {
+public class AndroidFlightRecorder extends SystemComponent implements FlightRecorder {
 
     private Repository<Entity, Map<String, Map<String, Object>>> auditRepository;
 

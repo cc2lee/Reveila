@@ -1,12 +1,15 @@
 package com.reveila.ai;
 
-import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
-import dev.langchain4j.model.chat.ChatLanguageModel;
-import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.data.message.UserMessage;
-import dev.langchain4j.data.message.ChatMessage;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.reveila.system.PluginComponent;
+
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 
 /**
  * Gemini RailGuard Implementation: Specifically for IntentValidator safety audits.
@@ -14,7 +17,7 @@ import java.util.List;
  * 
  * @author CL
  */
-public class GeminiProvider extends com.reveila.system.AbstractService implements LlmProvider {
+public class GeminiProvider extends PluginComponent implements LlmProvider {
     private String apiKey;
     private String model = "gemini-1.5-pro";
     private double temperature = 0.1;
@@ -47,7 +50,6 @@ public class GeminiProvider extends com.reveila.system.AbstractService implement
         String resolvedApiKey = apiKey;
         if (apiKey != null && apiKey.startsWith("REF:")) {
             resolvedApiKey = (String) this.context.getProxy("CredentialManager")
-                    .orElseThrow(() -> new IllegalStateException("CredentialManager not found"))
                     .invoke("getSecret", new Object[] { apiKey.substring(4) });
         }
 

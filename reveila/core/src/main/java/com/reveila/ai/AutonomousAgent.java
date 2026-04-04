@@ -1,12 +1,13 @@
 package com.reveila.ai;
 
-import com.reveila.system.AbstractService;
-import com.reveila.system.PluginPrincipal;
-import com.reveila.system.SystemProxy;
-import com.reveila.util.json.JsonUtil;
 import java.io.File;
 import java.nio.file.Files;
 import java.util.Map;
+
+import com.reveila.system.PluginPrincipal;
+import com.reveila.system.SystemComponent;
+import com.reveila.system.SystemProxy;
+import com.reveila.util.json.JsonUtil;
 
 /**
  * Autonomous System Agent that performs recurring tasks defined in JSON.
@@ -14,7 +15,7 @@ import java.util.Map;
  * 
  * @author Charles Lee
  */
-public class AutonomousAgent extends AbstractService {
+public class AutonomousAgent extends SystemComponent {
 
     private AgenticFabric agenticFabric;
     private OrchestrationService orchestrationService;
@@ -22,13 +23,8 @@ public class AutonomousAgent extends AbstractService {
     @Override
     protected void onStart() throws Exception {
         // Wiring dependencies via the Proxy system
-        this.agenticFabric = (AgenticFabric) ((SystemProxy) context.getProxy("AgenticFabric")
-                .orElseThrow(() -> new IllegalStateException("AgenticFabric not found")))
-                .getInstance();
-                
-        this.orchestrationService = (OrchestrationService) ((SystemProxy) context.getProxy("OrchestrationService")
-                .orElseThrow(() -> new IllegalStateException("OrchestrationService not found")))
-                .getInstance();
+        this.agenticFabric = (AgenticFabric) ((SystemProxy) context.getProxy("AgenticFabric")).getInstance();
+        this.orchestrationService = (OrchestrationService) ((SystemProxy) context.getProxy("OrchestrationService")).getInstance();
                 
         logger.info("AutonomousAgent started. Ready to process recurring tasks.");
     }
@@ -85,7 +81,7 @@ public class AutonomousAgent extends AbstractService {
         logger.info("[AUTONOMOUS] Starting task loop: " + taskId);
         
         // Execute the AI Session Loop
-        String finalResult = agenticFabric.processLoop(session, principal, prompt);
+        String finalResult = agenticFabric.processIntent(session, principal, prompt);
         
         logger.info("[AUTONOMOUS] Task " + taskId + " completed. Result summary: " + finalResult);
     }

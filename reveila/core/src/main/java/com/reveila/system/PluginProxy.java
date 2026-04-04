@@ -1,6 +1,5 @@
 package com.reveila.system;
 
-import java.util.EventObject;
 import java.util.List;
 
 import javax.security.auth.Subject;
@@ -19,11 +18,6 @@ public class PluginProxy implements Proxy {
         }
         this.systemProxy = systemProxy;
         this.subject = subject;
-    }
-
-    @Override
-    public void notifyEvent(EventObject evtObj) throws Exception {
-        systemProxy.notifyEvent(evtObj);
     }
 
     @Override

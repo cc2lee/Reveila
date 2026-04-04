@@ -8,8 +8,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.reveila.crypto.Cryptographer;
 import com.reveila.data.Entity;
 import com.reveila.data.Repository;
-import com.reveila.system.AbstractService;
 import com.reveila.system.PluginPrincipal;
+import com.reveila.system.SystemComponent;
 import com.reveila.system.SystemContext;
 
 /**
@@ -19,7 +19,7 @@ import com.reveila.system.SystemContext;
  * 
  * @author CL
  */
-public class CredentialManager extends AbstractService {
+public class CredentialManager extends SystemComponent {
     private final Map<String, String> jitTokens = new ConcurrentHashMap<>();
     private static final String ENC_PREFIX = "ENC:";
 
@@ -32,7 +32,6 @@ public class CredentialManager extends AbstractService {
     private void ensureSecretStoreExists() {
         try {
             this.context.getProxy("DataService")
-                    .orElseThrow(() -> new IllegalStateException("DataService not found"))
                     .invoke("getRepository", new Object[] { "reveila_secrets" });
 
             logger.info("Verified Sovereign Secret Store: reveila_secrets");
@@ -73,7 +72,6 @@ public class CredentialManager extends AbstractService {
 
             Repository<Entity, Map<String, Map<String, Object>>> repo = (Repository<Entity, Map<String, Map<String, Object>>>) this.context
                     .getProxy("DataService")
-                    .orElseThrow(() -> new IllegalStateException("DataService not found"))
                     .invoke("getRepository", new Object[] { "reveila_secrets" });
 
             return repo.fetchById(id)
@@ -105,7 +103,6 @@ public class CredentialManager extends AbstractService {
 
             Repository<Entity, Map<String, Map<String, Object>>> repo = (Repository<Entity, Map<String, Map<String, Object>>>) this.context
                     .getProxy("DataService")
-                    .orElseThrow(() -> new IllegalStateException("DataService not found"))
                     .invoke("getRepository", new Object[] { "reveila_secrets" });
 
             repo.store(entity);

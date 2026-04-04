@@ -5,7 +5,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 
-import com.reveila.system.AbstractService;
+import com.reveila.system.SystemComponent;
 
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -15,7 +15,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 
-public class HttpClientService extends AbstractService {
+public class HttpClientService extends SystemComponent {
 
     public static final String JSON = "application/json; charset=utf-8";
     public static final String SOAP = "text/xml; charset=utf-8";

@@ -34,7 +34,7 @@ class HealthcareSecurityBreachTest {
     @Mock private GeminiProvider geminiProvider;
     @Mock private OrchestrationService orchestrationService;
 
-    private InvocationBridge bridge;
+    private SafeInvocation bridge;
     private AgentPrincipal healthcareWorker;
     private AgencyPerimeter healthcarePerimeter;
     private LlmGovernanceConfig govConfig = LlmGovernanceConfig.defaultGov();
@@ -44,10 +44,10 @@ class HealthcareSecurityBreachTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        bridge = new InvocationBridge();
+        bridge = new SafeInvocation();
         bridge.setSystemContext(systemContext);
         
-        when(systemContext.getProxy(anyString())).thenReturn(Optional.of(proxy));
+        when(systemContext.getProxy(anyString())).thenReturn(proxy);
         when(proxy.invoke(eq("getInstance"), any())).thenAnswer(invocation -> {
             String name = (String) Mockito.mockingDetails(systemContext).getInvocations().stream()
                 .filter(i -> i.getMethod().getName().equals("getProxy"))

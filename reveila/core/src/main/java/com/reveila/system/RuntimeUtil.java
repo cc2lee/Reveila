@@ -88,7 +88,15 @@ public final class RuntimeUtil {
 	private static ClassLoader createAndroidClassLoader(String dir, ClassLoader parent) {
 		try {
 			// Reflection used here to avoid hard dependency on Android SDK in the core Java project
-			Class<?> dexClass = Class.forName("dalvik.system.DexClassLoader");
+			Class<?> dexClass;
+			try {
+				// Try to use our Child-First implementation if available on the classpath
+				dexClass = Class.forName("com.reveila.android.ChildFirstDexClassLoader");
+			} catch (ClassNotFoundException e) {
+				// Fallback to standard DexClassLoader (Parent-First)
+				dexClass = Class.forName("dalvik.system.DexClassLoader");
+			}
+
 			java.io.File fileDir = new java.io.File(dir);
 			java.io.File[] files = fileDir.listFiles((d, name) -> name.endsWith(".jar") || name.endsWith(".dex"));
 			if (files == null || files.length == 0) return parent;

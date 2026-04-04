@@ -1,15 +1,16 @@
 package com.reveila.ai;
 
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.networknt.schema.JsonSchema;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SpecVersion;
 import com.networknt.schema.ValidationMessage;
-
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
+import com.reveila.system.SystemComponent;
 
 /**
  * Validates model-generated arguments against JSON schemas defined in the MetadataRegistry.
@@ -17,7 +18,7 @@ import java.util.stream.Collectors;
  *
  * @author CL
  */
-public class JsonSchemaEnforcer extends com.reveila.system.AbstractService implements SchemaEnforcer {
+public class JsonSchemaEnforcer extends SystemComponent implements SchemaEnforcer {
     private MetadataRegistry registry;
     private final ObjectMapper mapper = new ObjectMapper();
     private final JsonSchemaFactory factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7);
@@ -27,7 +28,7 @@ public class JsonSchemaEnforcer extends com.reveila.system.AbstractService imple
 
     @Override
     public void onStart() throws Exception {
-        this.registry = (MetadataRegistry) context.getProxy("MetadataRegistry").orElseThrow().invoke("getInstance", null);
+        this.registry = (MetadataRegistry) context.getProxy("MetadataRegistry").invoke("getInstance", null);
     }
 
     @Override

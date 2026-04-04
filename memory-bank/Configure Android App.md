@@ -35,6 +35,15 @@ You can inject a remote properties URL during the build process.
     *   *Example*: `buildConfigField("String", "REVEILA_PROPERTIES_URL", "\"https://api.yourdomain.com/configs/mobile.properties\"")`
 *   **Behavior**: On startup, `ReveilaService.java` will attempt to fetch this remote properties file. If successful, it will overwrite any local properties (like `system.name` or custom component settings) with the values from the remote server.
 
+### 3. Google OAuth Setup (For Execution Tracking)
+The Android app requires Google authentication to provide a `Subject` for component invocations.
+*   **Registration**: You must register the app in the [Google Cloud Console](https://console.cloud.google.com/).
+*   **Credentials**:
+    *   Create an **Android Client ID** using package name `com.reveila.android` and your certificate SHA-1.
+    *   Create a **Web Client ID** and copy it into `apps/expo/Reveila/app/(tabs)/index.tsx`.
+*   **File**: Download `google-services.json` and place it in `apps/expo/Reveila/`.
+*   **Native Bridge**: The `ReveilaModule.java` uses the **Android Credential Manager API** to handle the sign-in and synchronize the identity with the core engine.
+
 ### Note on Connectivity
 When using a local development server with the Android Simulator, remember to use:
 *   `http://10.0.2.2:8080` (Standard Android alias for the host machine's localhost).

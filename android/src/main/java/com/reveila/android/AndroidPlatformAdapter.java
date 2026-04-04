@@ -30,6 +30,8 @@ import com.reveila.system.Constants;
 public class AndroidPlatformAdapter extends BasePlatformAdapter {
 
     private final Context context;
+    private AndroidCryptographer cryptographer;
+
     public AndroidPlatformAdapter(Context context) throws Exception {
         this(context, new Properties());
     }
@@ -169,12 +171,14 @@ public class AndroidPlatformAdapter extends BasePlatformAdapter {
 
     @Override
     public com.reveila.crypto.Cryptographer getCryptographer() {
-        try {
-            return new AndroidCryptographer();
-        } catch (Exception e) {
-            getLogger().log(Level.SEVERE, "Failed to initialize AndroidCryptographer", e);
-            return null;
+        if (this.cryptographer == null) {
+            try {
+                this.cryptographer = new AndroidCryptographer();
+            } catch (Exception e) {
+                getLogger().log(Level.SEVERE, "Failed to initialize AndroidCryptographer", e);
+            }
         }
+        return this.cryptographer;
     }
 
     private void configureAndroidLogging() {

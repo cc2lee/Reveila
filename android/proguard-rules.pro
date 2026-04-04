@@ -7,6 +7,19 @@
     public protected *;
 }
 
+# Preserve all Reveila core, AI, and service classes for reflection
+-keep class com.reveila.** {
+    <fields>;
+    <methods>;
+    public <init>(...);
+}
+
+# Also preserve the dynamic proxy and component interfaces
+-keep interface com.reveila.system.** { *; }
+
+# Prevent renaming of method parameters (critical for dynamic invocation)
+-keepparameternames
+
 # 2. Scramble Internal Logic
 # By NOT adding keep rules for your 'internal' or 'impl' packages, R8 will 
 # automatically obfuscate them (e.g., InternalScanner -> a.b.c).

@@ -19,6 +19,11 @@ public class ModelSettings {
 
     private static final String PREF_NAME = "ReveilaModelPrefs";
     private static final String KEY_QUANTIZATION = "quantization_preference";
+    private static final String KEY_MASTER_SALT = "master_salt";
+    private static final String KEY_CONV_SALT = "convenience_salt";
+    private static final String KEY_WRAPPED_DEK_FULL = "wrapped_dek_full";
+    private static final String KEY_WRAPPED_DEK_CONV = "wrapped_dek_conv";
+    private static final String KEY_LAST_FULL_LOGIN = "last_full_login_timestamp";
 
     public static final String QUANT_F16 = "F16";
     public static final String QUANT_Q4_K_M = "Q4_K_M";
@@ -77,6 +82,67 @@ public class ModelSettings {
 
     public void setQuantizationLevel(String level) {
         prefs.edit().putString(KEY_QUANTIZATION, level).apply();
+    }
+
+    /**
+     * Generates a new DEK and encrypts it with the master and convenience keys.
+     */
+    public void setupMasterPassword(String password) {
+        try {
+            // Generate Data Encryption Key (DEK)
+            byte[] dek = com.reveila.crypto.DefaultCryptographer.generateRandomKey();
+            
+            // Generate Salts
+            String saltFull = com.reveila.crypto.DefaultCryptographer.generateSaltHex();
+            String saltConv = com.reveila.crypto.DefaultCryptographer.generateSaltHex();
+
+            // Wrap DEK
+            String wrappedDekFull = com.reveila.crypto.DefaultCryptographer.wrapKeyToBase64(dek, password, saltFull);
+            String wrappedDekConv = com.reveila.crypto.DefaultCryptographer.wrapKeyToBase64(dek, password.substring(0, 4), saltConv);
+            
+            prefs.edit()
+                .putString(KEY_MASTER_SALT, saltFull)
+                .putString(KEY_CONV_SALT, saltConv)
+                .putString(KEY_WRAPPED_DEK_FULL, wrappedDekFull)
+                .putString(KEY_WRAPPED_DEK_CONV, wrappedDekConv)
+                .putLong(KEY_LAST_FULL_LOGIN, System.currentTimeMillis())
+                .apply();
+        } catch (Exception e) {
+            Log.e("ModelSettings", "Failed to setup master password hashes", e);
+        }
+    }
+
+    public String getMasterSalt() {
+        return prefs.getString(KEY_MASTER_SALT, null);
+    }
+
+    public String getConvSalt() {
+        return prefs.getString(KEY_CONV_SALT, null);
+    }
+
+    public String getWrappedDekFull() {
+        return prefs.getString(KEY_WRAPPED_DEK_FULL, null);
+    }
+
+    public String getWrappedDekConv() {
+        return prefs.getString(KEY_WRAPPED_DEK_CONV, null);
+    }
+
+    public long getLastFullLoginTimestamp() {
+        return prefs.getLong(KEY_LAST_FULL_LOGIN, 0);
+    }
+
+    public void updateLastFullLogin() {
+        prefs.edit().putLong(KEY_LAST_FULL_LOGIN, System.currentTimeMillis()).apply();
+    }
+
+    public void updateMasterPasswordHashes(String masterSalt, String convSalt, String wrappedDekFull, String wrappedDekConv) {
+        prefs.edit()
+            .putString(KEY_MASTER_SALT, masterSalt)
+            .putString(KEY_CONV_SALT, convSalt)
+            .putString(KEY_WRAPPED_DEK_FULL, wrappedDekFull)
+            .putString(KEY_WRAPPED_DEK_CONV, wrappedDekConv)
+            .apply();
     }
 
     /**

@@ -16,7 +16,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class InvocationBridgeTest {
+class SafeInvocationTest {
 
     @Mock private IntentValidator intentValidator;
     @Mock private SchemaEnforcer schemaEnforcer;
@@ -27,7 +27,7 @@ class InvocationBridgeTest {
     @Mock private LlmProviderFactory llmFactory;
     private LlmGovernanceConfig govConfig = LlmGovernanceConfig.defaultGov();
 
-    private InvocationBridge bridge;
+    private SafeInvocation bridge;
     private OrchestrationService orchestrationService;
     private AgentPrincipal principal;
     private AgencyPerimeter perimeter;
@@ -37,10 +37,10 @@ class InvocationBridgeTest {
     @BeforeEach
     void setUp() throws Exception {
         orchestrationService = new OrchestrationService();
-        bridge = new InvocationBridge();
+        bridge = new SafeInvocation();
         bridge.setSystemContext(systemContext);
         
-        when(systemContext.getProxy(anyString())).thenReturn(Optional.of(proxy));
+        when(systemContext.getProxy(anyString())).thenReturn(proxy);
         when(proxy.invoke(eq("getInstance"), any())).thenAnswer(invocation -> {
             String name = (String) Mockito.mockingDetails(systemContext).getInvocations().stream()
                 .filter(i -> i.getMethod().getName().equals("getProxy"))

@@ -18,10 +18,10 @@ import com.reveila.android.SafePluginLoader;
  */
 public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
     
-    private final Context context;
+    private final Context androidContext;
 
     public AndroidGuardedRuntime(Context context) {
-        this.context = context;
+        this.androidContext = context;
     }
 
     /**
@@ -44,7 +44,7 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
         // Use SafePluginLoader to create a proxy and execute
         // Note: In a real implementation, we'd map perimeter constraints to Android specific restrictions
         try {
-            SystemProxy proxy = SafePluginLoader.loadPlugin(context, pluginFileName, "com.reveila.plugin.EntryPoint");
+            SystemProxy proxy = SafePluginLoader.loadPlugin(androidContext, this.context, pluginFileName, "com.reveila.plugin.EntryPoint");
             if (proxy == null) {
                 throw new RuntimeException("Failed to load plugin: " + pluginId);
             }

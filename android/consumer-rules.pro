@@ -5,6 +5,13 @@
 -keep interface com.reveila.system.** { *; }
 -keep class com.reveila.event.** { *; }
 -keep class com.reveila.android.ReveilaPlatformAdapter { *; }
+-keep class com.reveila.** {
+    <fields>;
+    <methods>;
+    public <init>(...);
+}
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+
 
 # 2. Protect DTOs and Serialized Classes
 # If you use Jackson/Gson to parse JSON into these objects, their field names must remain intact.

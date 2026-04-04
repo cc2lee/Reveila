@@ -348,6 +348,16 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         // 4. Load the Shared API ClassLoader
         // We use the System ClassLoader as the parent for this Common Loader
         URL[] urls = scanJars(libsDir);
+        logger.info("Initializing Shared ClassLoader with " + urls.length + " JARs from " + libsDir);
+        for (URL url : urls) {
+            logger.info("  -> " + url);
+        }
+
+        // 5. Create the Common ClassLoader
+        if ("android".equalsIgnoreCase(this.properties.getProperty(Constants.PLATFORM))) {
+            logger.info("Android platform detected. Creating DexClassLoader for shared libraries.");
+            return RuntimeUtil.createPluginClassLoader(libsDir.toString(), this.getClass().getClassLoader());
+        }
         return new URLClassLoader(urls, this.getClass().getClassLoader());
     }
 
@@ -427,7 +437,11 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         try {
             return Integer.parseInt(value.trim());
         } catch (NumberFormatException e) {
-            System.err.println("Warning: Invalid " + label + " value. Using default: " + defaultValue);
+            if (logger != null) {
+                logger.warning("Invalid " + label + " value '" + value + "'. Using default: " + defaultValue);
+            } else {
+                System.err.println("Warning: Invalid " + label + " value '" + value + "'. Using default: " + defaultValue);
+            }
             return defaultValue;
         }
     }

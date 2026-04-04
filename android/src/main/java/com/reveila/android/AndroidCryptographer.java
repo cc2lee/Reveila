@@ -1,76 +1,53 @@
 package com.reveila.android;
 
-import android.security.keystore.KeyGenParameterSpec;
-import android.security.keystore.KeyProperties;
 import com.reveila.crypto.Cryptographer;
-import java.security.KeyStore;
-import javax.crypto.Cipher;
-import javax.crypto.KeyGenerator;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.GCMParameterSpec;
+import com.reveila.crypto.DefaultCryptographer;
 import java.util.Arrays;
 
 /**
- * Android implementation of Cryptographer using the hardware-backed Keystore System.
+ * Android implementation of Cryptographer.
+ * Wraps the universal DefaultCryptographer with Android-specific session handling.
  * 
  * @author CL
  */
 public class AndroidCryptographer implements Cryptographer {
 
-    private static final String ANDROID_KEYSTORE = "AndroidKeyStore";
-    private static final String KEY_ALIAS = "ReveilaMasterKey";
-    private static final String AES_MODE = "AES/GCM/NoPadding";
-    private static final int IV_LENGTH = 12; // Standard for GCM
-    private static final int TAG_LENGTH = 128;
+    private DefaultCryptographer delegate;
 
-    public AndroidCryptographer() throws Exception {
-        ensureKeyExists();
+    public AndroidCryptographer() {
+        // Initialized without a key. Must call unlock() before use.
     }
 
-    private void ensureKeyExists() throws Exception {
-        KeyStore keyStore = KeyStore.getInstance(ANDROID_KEYSTORE);
-        keyStore.load(null);
+    /**
+     * Unlocks the cryptographer using the unwrapped DEK.
+     */
+    public void unlock(byte[] dek) throws Exception {
+        this.delegate = new DefaultCryptographer(dek);
+    }
 
-        if (!keyStore.containsAlias(KEY_ALIAS)) {
-            KeyGenerator keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE);
-            keyGenerator.init(new KeyGenParameterSpec.Builder(KEY_ALIAS,
-                    KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .build());
-            keyGenerator.generateKey();
+    /**
+     * Locks the cryptographer by wiping the derived key.
+     */
+    public void lock() {
+        this.delegate = null;
+    }
+
+    private void ensureUnlocked() {
+        if (delegate == null) {
+            throw new IllegalStateException("Cryptographer is locked. Provide master password.");
         }
-    }
-
-    private SecretKey getSecretKey() throws Exception {
-        KeyStore keyStore = KeyStore.getInstance(ANDROID_KEYSTORE);
-        keyStore.load(null);
-        return ((KeyStore.SecretKeyEntry) keyStore.getEntry(KEY_ALIAS, null)).getSecretKey();
     }
 
     @Override
     public byte[] encrypt(byte[] data) throws Exception {
-        Cipher cipher = Cipher.getInstance(AES_MODE);
-        cipher.init(Cipher.ENCRYPT_MODE, getSecretKey());
-        byte[] iv = cipher.getIV();
-        byte[] encrypted = cipher.doFinal(data);
-
-        // Concatenate IV and ciphertext for storage
-        byte[] combined = new byte[iv.length + encrypted.length];
-        System.arraycopy(iv, 0, combined, 0, iv.length);
-        System.arraycopy(encrypted, 0, combined, iv.length, encrypted.length);
-        return combined;
+        ensureUnlocked();
+        return delegate.encrypt(data);
     }
 
     @Override
     public byte[] decrypt(byte[] encryptedData) throws Exception {
-        // Extract IV from the beginning
-        byte[] iv = Arrays.copyOfRange(encryptedData, 0, IV_LENGTH);
-        byte[] ciphertext = Arrays.copyOfRange(encryptedData, IV_LENGTH, encryptedData.length);
-
-        Cipher cipher = Cipher.getInstance(AES_MODE);
-        cipher.init(Cipher.DECRYPT_MODE, getSecretKey(), new GCMParameterSpec(TAG_LENGTH, iv));
-        return cipher.doFinal(ciphertext);
+        ensureUnlocked();
+        return delegate.decrypt(encryptedData);
     }
 
     @Override

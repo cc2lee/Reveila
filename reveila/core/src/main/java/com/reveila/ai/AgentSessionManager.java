@@ -1,9 +1,12 @@
 package com.reveila.ai;
 
-import java.util.Map;
-import java.util.LinkedHashMap;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+
+import com.reveila.system.SystemComponent;
+
 import dev.langchain4j.data.message.ChatMessage;
 
 /**
@@ -14,7 +17,7 @@ import dev.langchain4j.data.message.ChatMessage;
  * 
  * @author CL
  */
-public class AgentSessionManager extends com.reveila.system.AbstractService {
+public class AgentSessionManager extends SystemComponent {
     
     // Using synchronized LinkedHashMap for basic LRU eviction support
     private final Map<String, AgentSession> sessionStore = Collections.synchronizedMap(

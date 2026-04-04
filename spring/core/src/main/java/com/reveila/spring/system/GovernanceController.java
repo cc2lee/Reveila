@@ -30,9 +30,9 @@ public class GovernanceController {
     @Value("${notification.alert.threshold:0.80}")
     private BigDecimal alertThreshold;
 
-    public GovernanceController(JdbcAuditLogRepository auditRepository, 
-                               NotificationService notificationService,
-                               Reveila reveila) {
+    public GovernanceController(JdbcAuditLogRepository auditRepository,
+            NotificationService notificationService,
+            Reveila reveila) {
         this.auditRepository = auditRepository;
         this.notificationService = notificationService;
         this.reveila = reveila;
@@ -53,7 +53,7 @@ public class GovernanceController {
 
         // Apply Sovereignty Enforcement Logic based on external policy
         enforceSovereignty(log);
-        
+
         // Human-In-The-Loop: Trigger notification if risk threshold is exceeded
         if (log.getRiskScore() != null && log.getRiskScore().compareTo(alertThreshold) >= 0) {
             notificationService.sendSovereigntyAlert(log);
@@ -65,7 +65,8 @@ public class GovernanceController {
     }
 
     /**
-     * Enforces sovereignty policies on the audit record using externalized risk patterns.
+     * Enforces sovereignty policies on the audit record using externalized risk
+     * patterns.
      * 
      * @param record The audit record to evaluate and update.
      */
@@ -73,11 +74,13 @@ public class GovernanceController {
         try {
             // Load Policy from system home
             String systemHome = reveila.getSystemContext().getProperties().getProperty("system.home");
-            if (systemHome == null) systemHome = System.getenv("REVEILA_HOME");
-            if (systemHome == null) systemHome = "../../system-home/standard";
-            
+            if (systemHome == null)
+                systemHome = System.getenv("REVEILA_HOME");
+            if (systemHome == null)
+                systemHome = "../../system-home/standard";
+
             File policyFile = new File(systemHome, "configs/governance-policy.json");
-            
+
             if (!policyFile.exists()) {
                 System.err.println("Governance Policy File missing: " + policyFile.getAbsolutePath());
                 if (record.getRiskScore() == null) {
@@ -102,16 +105,16 @@ public class GovernanceController {
 
             // Score the intent
             long matchCount = restrictedKeywords.stream()
-                .filter(keyword -> action.toUpperCase().contains(keyword.toUpperCase()))
-                .count();
+                    .filter(keyword -> action.toUpperCase().contains(keyword.toUpperCase()))
+                    .count();
 
             if (matchCount > 0) {
                 record.setStatus("INTERCEPTED");
                 record.setPolicyTriggered(policy.get("policyName").asText());
-                
+
                 double baseRisk = policy.get("baseRiskScore").asDouble();
                 double penalty = policy.get("keywordPenalty").asDouble();
-                
+
                 BigDecimal calculatedScore = BigDecimal.valueOf(baseRisk + (matchCount * penalty));
                 // Only override if calculated is higher or current is null
                 if (record.getRiskScore() == null || calculatedScore.compareTo(record.getRiskScore()) > 0) {

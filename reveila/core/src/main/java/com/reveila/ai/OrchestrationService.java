@@ -4,13 +4,16 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.reveila.system.SystemComponent;
+
 /**
  * OrchestrationService manages AgentSessions and coordinates multi-agent workflows.
  * Optimized to handle context windows based on system configuration.
  * 
  * @author CL
  */
-public class OrchestrationService extends com.reveila.system.AbstractService {
+public class OrchestrationService extends SystemComponent {
+    
     private final Map<String, AgentSession> sessions = new ConcurrentHashMap<>();
     private String optimizationPriority = "cost";
 

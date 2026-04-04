@@ -87,7 +87,7 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
         // ADR 0006: Get the actual implementation class from the system registry if available
         String pluginClass = pluginId; // Fallback
         try {
-            com.reveila.system.Proxy proxy = context.getProxy(pluginId).orElse(null);
+            com.reveila.system.Proxy proxy = context.getProxy(pluginId);
             if (proxy instanceof com.reveila.system.SystemProxy sp) {
                 pluginClass = sp.getInstance().getClass().getName();
             }

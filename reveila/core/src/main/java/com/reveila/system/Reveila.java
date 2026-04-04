@@ -11,10 +11,11 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EventObject;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -31,17 +32,23 @@ import javax.security.auth.Subject;
 import com.reveila.crypto.DefaultCryptographer;
 import com.reveila.error.ConfigurationException;
 import com.reveila.error.SystemException;
+import com.reveila.event.EventConsumer;
 import com.reveila.event.EventManager;
 import com.reveila.util.TimeFormat;
 
-public class Reveila implements AutoCloseable {
+public class Reveila implements AutoCloseable, EventConsumer {
 
 	private ExecutorService startExecutor;
 	private PlatformAdapter platformAdapter;
-	private Properties properties;
+	private final Properties properties = new Properties();
 	private SystemContext systemContext;
 	private boolean strictMode = true;
 	private List<SystemProxy> startedProxies;
+	private String cryptoKey;
+
+	public void setCryptoKey(String cryptoKey) {
+		this.cryptoKey = cryptoKey;
+	}
 
 	public SystemContext getSystemContext() {
 		return systemContext;
@@ -138,7 +145,7 @@ public class Reveila implements AutoCloseable {
 
 		this.platformAdapter = platformAdapter;
 		this.startExecutor = platformAdapter.getExecutor();
-		this.properties = platformAdapter.getProperties();
+		this.properties.putAll(platformAdapter.getProperties());
 		this.logger = platformAdapter.getLogger();
 		this.localUrl = new URI("http://localhost/").toURL();
 
@@ -157,8 +164,12 @@ public class Reveila implements AutoCloseable {
 		this.platformAdapter.plug(this);
 
 		strictMode = !"false".equalsIgnoreCase(this.properties.getProperty(Constants.LAUNCH_STRICT_MODE));
-		long timeoutSeconds = Long.parseLong(
-				this.properties.getProperty(Constants.COMPONENT_START_TIMEOUT, "60"));
+		long timeoutSeconds = 60;
+		try {
+			timeoutSeconds = Long.parseLong(this.properties.getProperty(Constants.COMPONENT_START_TIMEOUT, "60"));
+		} catch (NumberFormatException e) {
+			logger.warning("Invalid value for " + Constants.COMPONENT_START_TIMEOUT + ". Using default: 60");
+		}
 
 		String platform = properties.getProperty("platform");
 		if (platform == null) {
@@ -303,12 +314,29 @@ public class Reveila implements AutoCloseable {
 
 		com.reveila.crypto.Cryptographer crypto = this.platformAdapter.getCryptographer();
 		if (crypto == null) {
-			crypto = new DefaultCryptographer(secretKey.getBytes(charset));
+			if (this.cryptoKey != null && !this.cryptoKey.isBlank()) {
+				// Use the provided master password and a salt from properties
+				String saltHex = props.getProperty("auth.master.salt", "00000000000000000000000000000000");
+				crypto = new com.reveila.crypto.DefaultCryptographer(this.cryptoKey, hexToBytes(saltHex));
+			} else {
+				// Legacy fallback to raw byte key
+				crypto = new com.reveila.crypto.DefaultCryptographer(secretKey.getBytes(charset));
+			}
 		}
 
 		this.systemContext = new SystemContext(
 				props, eventManager, this.logger,
 				crypto, this.platformAdapter);
+	}
+
+	private byte[] hexToBytes(String s) {
+		int len = s.length();
+		byte[] data = new byte[len / 2];
+		for (int i = 0; i < len; i += 2) {
+			data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4)
+					+ Character.digit(s.charAt(i + 1), 16));
+		}
+		return data;
 	}
 
 	private List<MetaObject> parseMetaObjects(String dir) throws Exception {
@@ -372,28 +400,37 @@ public class Reveila implements AutoCloseable {
 							+ Constants.RUNNABLE_METHOD + "' is not set.");
 		}
 
-		String delay = String.valueOf(autoRunConf.get(Constants.RUNNABLE_DELAY));
-		if (delay == null || delay.isBlank()) {
+		String delayStr = String.valueOf(autoRunConf.get(Constants.RUNNABLE_DELAY));
+		if (delayStr == null || delayStr.isBlank() || "null".equals(delayStr)) {
 			throw new ConfigurationException(
 					"Component auto-run configuration property '"
 							+ Constants.RUNNABLE_DELAY + "' is not set.");
 		}
 
-		String interval = String.valueOf(autoRunConf.get(Constants.RUNNABLE_INTERVAL));
-		if (interval == null || interval.isBlank()) {
+		String intervalStr = String.valueOf(autoRunConf.get(Constants.RUNNABLE_INTERVAL));
+		if (intervalStr == null || intervalStr.isBlank() || "null".equals(intervalStr)) {
 			throw new ConfigurationException(
 					"Component auto-run configuration property '"
 							+ Constants.RUNNABLE_INTERVAL + "' is not set.");
 		}
 
-		if (Long.parseLong(interval) < 0) {
+		long delay;
+		long interval;
+		try {
+			delay = Long.parseLong(delayStr);
+			interval = Long.parseLong(intervalStr);
+		} catch (NumberFormatException e) {
+			throw new ConfigurationException("Invalid numeric value for auto-run configuration: " + e.getMessage());
+		}
+
+		if (interval < 0) {
 			throw new ConfigurationException(
 					"Component auto-call configuration property '"
 							+ Constants.RUNNABLE_INTERVAL + "' cannot be negative.");
 		}
 
 		platformAdapter.registerAutoCall(proxy.getName(), methodName,
-				Long.parseLong(delay), Long.parseLong(interval), proxy, subject);
+				delay, interval, this, subject);
 	}
 
 	private Manifest createManifest(String tag, MetaObject mObj) {
@@ -480,9 +517,9 @@ public class Reveila implements AutoCloseable {
         	SystemProxy proxy = new SystemProxy(mObj, manifest);
 			if (Constants.COMPONENT.equalsIgnoreCase(manifest.getComponentType())) {
 				proxy.setContext(systemContext);
-				subject.getPrincipals().add(new RolePrincipal(Constants.COMPONENT));
+				subject.getPrincipals().add(new RolePrincipal(Constants.SYSTEM));
 			}
-			else { // treated as a plugin	regardless and create a plugin context with restricted access
+			else { // treated as a plugin regardless and create a plugin context with restricted access
 				proxy.setContext(new PluginContext(systemContext, manifest, new Properties()));
 				subject.getPrincipals().add(PluginPrincipal.create(manifest.getName(), manifest.getOrg()));
 			}
@@ -587,6 +624,7 @@ public class Reveila implements AutoCloseable {
 	 * @return The CompletableFuture result of the method invocation.
 	 */
 	public CompletableFuture<Object> invokeAsync(String componentName, String methodName, Object[] params, String callerIp, Subject subject) {
+		Objects.requireNonNull(subject, "Subject is mandatory for tracking execution.");
 		return CompletableFuture.supplyAsync(() -> {
 			try {
 				return invoke(componentName, methodName, params, callerIp, subject);
@@ -599,11 +637,7 @@ public class Reveila implements AutoCloseable {
 	public Object invoke(String componentName, String methodName, Object[] params, String callerIp, Subject subject) throws Exception {
 
 		// This method actually performs the invocation logic
-
-		if (subject == null) {
-			subject = new Subject();
-			subject.getPrincipals().add(new RolePrincipal(Constants.SYSTEM));
-		}
+		Objects.requireNonNull(subject, "Subject is mandatory for tracking execution.");
 
 		long startTime = System.currentTimeMillis();
 		if (systemContext == null) {
@@ -615,48 +649,48 @@ public class Reveila implements AutoCloseable {
 					+ methodName);
 		}
 
-		SystemProxy proxy = null;
-
 		if (standalone == false) {
 			// Use the fastest node in the cluster to handle the request
 			URL url = PerformanceTracker.getInstance().getBestNodeUrl();
 
-			if (url != this.localUrl) {
-				Optional<Proxy> remoteProxy = systemContext.getProxy(Constants.REMOTE_REVEILA);
-				if (remoteProxy.isPresent()) {
-					proxy = (SystemProxy) remoteProxy.get();
-					try {
-						startTime = System.currentTimeMillis();
-						Object result = proxy.invoke("invoke", new Object[] { url, componentName, methodName, params }, subject);
-						Long timeUsed = System.currentTimeMillis() - startTime;
-						PerformanceTracker.getInstance().track(timeUsed, url); // Track remote invocation time
-						return result;
-					} catch (Exception e) {
-						// Penalize the failed remote node
-						PerformanceTracker.getInstance()
-								.track(Long.valueOf(PerformanceTracker.DEFAULT_PENALTY_MS), url);
-						logger.severe(
-								"Remote invocation failed. Falling back to local invocation. Error: " + e.getMessage());
-						e.printStackTrace();
-					}
+			if (!this.localUrl.equals(url)) {
+				try {
+					// Perform remote invocation
+					Proxy proxy = systemContext.getProxy(Constants.REMOTE_REVEILA, subject);
+					startTime = System.currentTimeMillis();
+					Object result = proxy.invoke("invoke", new Object[] { url, componentName, methodName, params });
+					Long timeUsed = System.currentTimeMillis() - startTime;
+					PerformanceTracker.getInstance().track(timeUsed, url); // Track remote invocation time
+					return result;
+				} catch (IllegalArgumentException e) {
+					// Ignore, Remote Reveila not configured
+				} catch (Exception e) {
+					// Penalize the failed remote node
+					PerformanceTracker.getInstance()
+							.track(Long.valueOf(PerformanceTracker.DEFAULT_PENALTY_MS), url);
+					logger.severe(
+							"Remote invocation failed. Falling back to local invocation. Error: " + e.getMessage());
+					e.printStackTrace();
 				}
 			}
 		}
 
-		// Use local invocation if standalone mode, or no better remote option, or
-		// remote invocation failed
-		Optional<Proxy> localProxy = systemContext.getProxy(componentName);
-		if (localProxy.isPresent()) {
-			proxy = (SystemProxy) localProxy.get();
-		} else {
-			throw new ConfigurationException("Component '" + componentName + "' not found.");
+		// Use local invocation if in standalone mode.
+		// Also as backup for when there is no better remote option,
+		// or when remote invocation failed.
+
+		try {
+			Proxy proxy = systemContext.getProxy(componentName, subject);
+			startTime = System.currentTimeMillis();
+			Object result = proxy.invoke(methodName, params);
+			Long timeUsed = System.currentTimeMillis() - startTime;
+			PerformanceTracker.getInstance().track(timeUsed, this.localUrl); // Track local invocation time
+			return result;
+		} catch (IllegalArgumentException e) {
+			throw new ConfigurationException("Component '" + componentName + "' not found.", e);
 		}
 
-		startTime = System.currentTimeMillis();
-		Object result = proxy.invoke(methodName, params, subject);
-		Long timeUsed = System.currentTimeMillis() - startTime;
-		PerformanceTracker.getInstance().track(timeUsed, this.localUrl); // Track local invocation time
-		return result;
+		
 	}
 
 	/**
@@ -703,5 +737,10 @@ public class Reveila implements AutoCloseable {
 		stack.remove(m.getName());
 		visited.add(m.getName());
 		sorted.add(m);
+	}
+
+	@Override
+	public void notifyEvent(EventObject evtObj) throws Exception {
+		systemContext.notifyEvent(evtObj);
 	}
 }

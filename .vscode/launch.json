@@ -3,14 +3,7 @@
     "configurations": [
         {
             "type": "java",
-            "name": "Application",
-            "request": "launch",
-            "mainClass": "com.reveila.spring.system.Application",
-            "projectName": "spring-core"
-        },
-        {
-            "type": "java",
-            "name": "Reveila-on-Spring",
+            "name": "Reveila/Spring",
             "request": "launch",
             "mainClass": "com.reveila.spring.system.Application",
             "projectName": "spring:core",
@@ -21,17 +14,10 @@
         },
         {
             "type": "java",
-            "name": "Attach to Gradle Daemon",
+            "name": "Attach to Android (Java/Kotlin)",
             "request": "attach",
             "hostName": "localhost",
             "port": 5005
-        },
-        {
-            "name": "Debug Android Hermes",
-            "request": "attach",
-            "type": "reactnativedirect",
-            "cwd": "${workspaceFolder}/mobile/template",
-            "platform": "android"
         }
     ]
 }

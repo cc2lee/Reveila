@@ -18,8 +18,9 @@ import org.commonmark.parser.Parser
 import org.commonmark.renderer.html.HtmlRenderer
 import java.io.InputStreamReader
 
+
 @Composable
-fun FirstRunDialog(
+fun firstRunDialog(
     onAgreementAccepted: (timestamp: Long, ipOrMachineId: String) -> Unit
 ) {
     val context = LocalContext.current

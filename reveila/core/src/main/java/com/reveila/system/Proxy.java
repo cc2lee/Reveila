@@ -2,9 +2,7 @@ package com.reveila.system;
 
 import java.util.List;
 
-import com.reveila.event.EventConsumer;
-
-public interface Proxy extends EventConsumer {
+public interface Proxy {
 	
 	String getName();
 

@@ -13,7 +13,7 @@ Reveila requires a platform-agnostic, secure, and predictable execution environm
 3.  **Lifecycle Hook:** When Reveila starts, it iterates through Proxies. If the configuration includes a `plugin` section:
     *   `Proxy.onStart()` triggers `loadPlugin(Path)`.
     *   A **Child-First Class Loader** isolates those specific libraries (crucial for handling conflicting dependencies).
-4.  **Service State:** Classes must extend `AbstractService` to inherit standardized `start()`/`stop()` hooks, making the entire fabric predictable for the **CISO Kill Switch**.
+4.  **Service State:** Classes must extend `SystemComponent` or `PluginComponent` to inherit standardized `start()`/`stop()` hooks, making the entire fabric predictable for the **CISO Kill Switch**.
 
 ## 1. Bootstrapping & Infrastructure
 

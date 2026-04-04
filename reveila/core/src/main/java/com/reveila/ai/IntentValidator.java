@@ -11,9 +11,9 @@ public interface IntentValidator {
      *
      * @param intent The intent to validate.
      * @return The corresponding plugin ID.
-     * @throws IllegalArgumentException If the intent is unauthorized or unknown.
+     * @throws com.reveila.error.SecurityException If the intent is unauthorized or unknown.
      */
-    String validateIntent(String intent);
+    void validateIntent(String intent) throws com.reveila.error.SecurityException;
 
     /**
      * Performs a safety audit on the tool arguments using a secondary guardrail model.

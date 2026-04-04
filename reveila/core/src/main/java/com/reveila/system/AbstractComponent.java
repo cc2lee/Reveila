@@ -1,34 +1,16 @@
 package com.reveila.system;
 
-import java.util.EventObject;
-import java.util.logging.Logger;
 import java.time.Duration;
 import java.time.Instant;
 
-import com.reveila.event.EventConsumer;
+public abstract class AbstractComponent implements Startable, Stoppable {
 
-/**
- * The foundational class for all plugins in the Reveila-Suite.
- * Handles lifecycle state, interruption checks, and context management.
- */
-public abstract class AbstractService implements EventConsumer, Startable, Stoppable {
-
-    protected Context context;
-    protected Logger logger;
     private ServiceState state = ServiceState.STOPPED;
     private Instant startTime;
     private Duration startupLatency;
 
     public boolean isRunning() {
         return state == ServiceState.ACTIVE;
-    }
-
-    public void setContext(Context context) {
-        if (context == null) {
-            throw new IllegalArgumentException("Context cannot be null.");
-        }
-        this.context = context;
-        this.logger = context.getLogger();
     }
 
     @Override
@@ -100,9 +82,4 @@ public abstract class AbstractService implements EventConsumer, Startable, Stopp
     protected boolean isInterrupted() {
         return Thread.currentThread().isInterrupted();
     }
-    
-    @Override
-    public void notifyEvent(EventObject evtObj) throws Exception {
-    }
-
 }

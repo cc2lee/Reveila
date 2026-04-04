@@ -5,7 +5,7 @@
             "class": "com.reveila.ai.InboundWebhookService",
             "thread-safe": true,
             "dependencies": [
-                "InvocationBridge",
+                "SafeInvocation",
                 "OrchestrationService",
                 "FlightRecorder",
                 "LlmProviderFactory"
@@ -105,8 +105,8 @@
     },
     {
         "component": {
-            "name": "InvocationBridge",
-            "class": "com.reveila.ai.InvocationBridge",
+            "name": "SafeInvocation",
+            "class": "com.reveila.ai.SafeInvocation",
             "description": "The sovereign entry point for all tool calls.",
             "thread-safe": true,
             "dependencies": [
@@ -128,7 +128,7 @@
             "description": "Orchestrates complex multi-agent workflows.",
             "thread-safe": true,
             "dependencies": [
-                "InvocationBridge",
+                "SafeInvocation",
                 "AgentSessionManager"
             ],
             "arguments": [

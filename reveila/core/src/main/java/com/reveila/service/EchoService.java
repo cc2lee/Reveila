@@ -3,14 +3,14 @@ package com.reveila.service;
 import java.util.EventObject;
 import java.util.Map;
 
-import com.reveila.system.AbstractService;
+import com.reveila.system.SystemComponent;
 import com.reveila.util.GUID;
 
 /**
  * A simple echo service that can reverse, repeat, and delay responses.
  * Its main purpose is to demonstrate service functionality and for testing.
  */
-public class EchoService extends AbstractService {
+public class EchoService extends SystemComponent {
 
     private boolean reverse = false;
     private int repeat = 0;

@@ -1,29 +1,29 @@
 package com.reveila.ai;
 
-import com.reveila.system.AbstractService;
-import com.reveila.system.PluginPrincipal;
-import com.reveila.system.SystemProxy;
-
-import java.util.Map;
 import java.util.HashMap;
+import java.util.Map;
+
+import com.reveila.system.PluginPrincipal;
+import com.reveila.system.SystemComponent;
+import com.reveila.system.SystemProxy;
 
 /**
  * Sovereign Service for receiving external task management webhooks.
  * ADR 0006: Realigned to use Proxy-based invocation pattern.
  */
-public class InboundWebhookService extends AbstractService {
+public class InboundWebhookService extends SystemComponent {
 
-    private InvocationBridge bridge;
+    private SafeInvocation bridge;
     private OrchestrationService orchestrationService;
     private FlightRecorder flightRecorder;
     private LlmProviderFactory llmFactory;
 
     @Override
     protected void onStart() throws Exception {
-        this.bridge = (InvocationBridge) ((SystemProxy) context.getProxy("InvocationBridge").orElseThrow()).getInstance();
-        this.orchestrationService = (OrchestrationService) ((SystemProxy) context.getProxy("OrchestrationService").orElseThrow()).getInstance();
-        this.flightRecorder = (FlightRecorder) ((SystemProxy) context.getProxy("FlightRecorder").orElseThrow()).getInstance();
-        this.llmFactory = (LlmProviderFactory) ((SystemProxy) context.getProxy("LlmProviderFactory").orElseThrow()).getInstance();
+        this.bridge = (SafeInvocation) ((SystemProxy) context.getProxy("SafeInvocation")).getInstance();
+        this.orchestrationService = (OrchestrationService) ((SystemProxy) context.getProxy("OrchestrationService")).getInstance();
+        this.flightRecorder = (FlightRecorder) ((SystemProxy) context.getProxy("FlightRecorder")).getInstance();
+        this.llmFactory = (LlmProviderFactory) ((SystemProxy) context.getProxy("LlmProviderFactory")).getInstance();
     }
 
     @Override

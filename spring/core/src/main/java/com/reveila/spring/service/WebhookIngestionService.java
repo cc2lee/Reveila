@@ -6,7 +6,7 @@ import org.springframework.stereotype.Service;
 
 import com.reveila.ai.AgentSession;
 import com.reveila.ai.FlightRecorder;
-import com.reveila.ai.InvocationBridge;
+import com.reveila.ai.SafeInvocation;
 import com.reveila.ai.InvocationResult;
 import com.reveila.ai.LlmGovernanceConfig;
 import com.reveila.ai.LlmProvider;
@@ -31,20 +31,23 @@ public class WebhookIngestionService {
     }
 
     private <T> T getComponent(String name, Class<T> type) {
-        return reveila.getSystemContext().getProxy(name)
-                .map(p -> {
-                    try {
-                        if (p instanceof SystemProxy) {
-                            return ((SystemProxy) p).getInstance();
-                        }
-                        return p.invoke("getInstance", null);
-                    } catch (Exception e) {
-                        return null;
-                    }
-                })
-                .filter(type::isInstance)
-                .map(type::cast)
-                .orElseThrow(() -> new IllegalStateException("Component '" + name + "' not found in Reveila context."));
+        try {
+            com.reveila.system.Proxy p = reveila.getSystemContext().getProxy(name);
+            Object instance;
+            if (p instanceof SystemProxy) {
+                instance = ((SystemProxy) p).getInstance();
+            } else {
+                instance = p.invoke("getInstance", null);
+            }
+            if (type.isInstance(instance)) {
+                return type.cast(instance);
+            }
+            throw new IllegalStateException("Component '" + name + "' invalid type.");
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("Component '" + name + "' not found in Reveila context.", e);
+        } catch (Exception e) {
+            throw new IllegalStateException("Component '" + name + "' failed to initialize.", e);
+        }
     }
 
     /**
@@ -55,7 +58,7 @@ public class WebhookIngestionService {
      * @return The result of the intent invocation.
      */
     public InvocationResult ingest(Map<String, Object> payload) {
-        InvocationBridge bridge = getComponent("InvocationBridge", InvocationBridge.class);
+        SafeInvocation bridge = getComponent("SafeInvocation", SafeInvocation.class);
         OrchestrationService orchestrationService = getComponent("OrchestrationService", OrchestrationService.class);
         FlightRecorder flightRecorder = getComponent("FlightRecorder", FlightRecorder.class);
         LlmProviderFactory llmFactory = getComponent("LlmProviderFactory", LlmProviderFactory.class);
