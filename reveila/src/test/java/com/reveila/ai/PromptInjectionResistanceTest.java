@@ -27,7 +27,7 @@ class PromptInjectionResistanceTest {
     @Mock private GuardedRuntime guardedRuntime;
     @Mock private FlightRecorder flightRecorder;
     @Mock private MetadataRegistry metadataRegistry;
-    @Mock private CredentialManager credentialManager;
+    @Mock private SecretManager secretManager;
     @Mock private LlmProviderFactory llmFactory;
     @Mock private GeminiProvider geminiProvider;
     @Mock private OrchestrationService orchestrationService;
@@ -57,7 +57,7 @@ class PromptInjectionResistanceTest {
                 case "GuardedRuntime" -> guardedRuntime;
                 case "FlightRecorder" -> flightRecorder;
                 case "MetadataRegistry" -> metadataRegistry;
-                case "CredentialManager" -> credentialManager;
+                case "SecretManager" -> secretManager;
                 case "OrchestrationService" -> orchestrationService;
                 case "LlmProviderFactory" -> llmFactory;
                 default -> null;

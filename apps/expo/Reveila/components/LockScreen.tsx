@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { StyleSheet, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, TextInput, TouchableOpacity, Alert, ScrollView, View } from 'react-native';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
+import { ReveilaHeader } from './ReveilaHeader';
 import ReveilaModule from '../modules/reveila';
 
 interface Props {
@@ -26,30 +27,61 @@ export function LockScreen({ onUnlock }: Props) {
     }
   };
 
+  const handleReset = async () => {
+    Alert.alert(
+      'Reset Application',
+      'This will delete all local configuration and encryption keys. You will need to start the setup from scratch. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Reset Everything', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ReveilaModule.resetApplication();
+              Alert.alert('System Reset', 'The application has been reset. Please restart the app.');
+            } catch (e: any) {
+              Alert.alert('Reset Error', e.message);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title" style={styles.title}>System Locked</ThemedText>
-      <ThemedText style={styles.description}>Your session has timed out. Enter your master password (or first 4 characters if eligible) to continue.</ThemedText>
+      <ReveilaHeader />
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ThemedText type="title" style={styles.title}>System Locked</ThemedText>
+        <ThemedText style={styles.description}>Your session has timed out. Enter your master password (or first 4 characters if eligible) to continue.</ThemedText>
 
-      <TextInput
-        style={styles.input}
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        placeholder="Master password"
-        placeholderTextColor="#94a3b8"
-        autoFocus
-      />
+        <TextInput
+          style={styles.input}
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          placeholder="Master password"
+          placeholderTextColor="#94a3b8"
+          autoFocus
+          maxLength={32}
+        />
 
-      <TouchableOpacity style={styles.button} onPress={handleUnlock}>
-        <ThemedText style={styles.buttonText}>Unlock Fabric</ThemedText>
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={handleUnlock}>
+          <ThemedText style={styles.buttonText}>Unlock Fabric</ThemedText>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+          <ThemedText style={styles.resetButtonText}>Reset Application</ThemedText>
+        </TouchableOpacity>
+      </ScrollView>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, flex: 1, justifyContent: 'center', backgroundColor: '#f1f5f9' },
+  container: { flex: 1, backgroundColor: '#f1f5f9' },
+  scrollContent: { padding: 20, flexGrow: 1, justifyContent: 'center' },
   title: { marginBottom: 12, textAlign: 'center' },
   description: { textAlign: 'center', color: '#64748b', marginBottom: 30, fontSize: 14 },
   input: {
@@ -60,7 +92,8 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     marginBottom: 20,
-    color: '#0f172a'
+    color: '#0f172a',
+    height: 50,
   },
   button: {
     backgroundColor: '#ff6600',
@@ -68,5 +101,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center'
   },
-  buttonText: { color: '#fff', fontWeight: '800', fontSize: 15 }
+  buttonText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  resetButton: {
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 20
+  },
+  resetButtonText: { color: '#ef4444', fontWeight: '700', fontSize: 14 }
 });

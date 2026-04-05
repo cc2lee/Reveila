@@ -19,7 +19,7 @@ import com.reveila.system.SystemContext;
  * 
  * @author CL
  */
-public class CredentialManager extends SystemComponent {
+public class SecretManager extends SystemComponent {
     private final Map<String, String> jitTokens = new ConcurrentHashMap<>();
     private static final String ENC_PREFIX = "ENC:";
 

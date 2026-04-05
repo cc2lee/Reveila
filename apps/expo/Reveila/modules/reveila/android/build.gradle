@@ -49,5 +49,6 @@ repositories {
 }
 
 dependencies {
-  implementation fileTree(dir: "libs", include: ["*.jar", "*.aar"])
+  implementation fileTree(dir: "libs", include: ["*.jar"])
+  implementation project(':android')
 }

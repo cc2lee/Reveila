@@ -24,6 +24,8 @@ public class ModelSettings {
     private static final String KEY_WRAPPED_DEK_FULL = "wrapped_dek_full";
     private static final String KEY_WRAPPED_DEK_CONV = "wrapped_dek_conv";
     private static final String KEY_LAST_FULL_LOGIN = "last_full_login_timestamp";
+    private static final String KEY_VAULT_URI = "vault_uri";
+    private static final String KEY_FOCUS_KEYWORDS = "focus_keywords";
 
     public static final String QUANT_F16 = "F16";
     public static final String QUANT_Q4_K_M = "Q4_K_M";
@@ -46,7 +48,10 @@ public class ModelSettings {
      */
     public boolean isSetupComplete() {
         File configFile = new File(context.getFilesDir(), "sovereign-config.json");
-        if (!configFile.exists()) {
+        boolean configExists = configFile.exists();
+        boolean hasPassword = prefs.contains(KEY_WRAPPED_DEK_FULL);
+
+        if (!configExists || !hasPassword) {
             return false;
         }
 
@@ -136,6 +141,22 @@ public class ModelSettings {
         prefs.edit().putLong(KEY_LAST_FULL_LOGIN, System.currentTimeMillis()).apply();
     }
 
+    public void setVaultUri(String uri) {
+        prefs.edit().putString(KEY_VAULT_URI, uri).apply();
+    }
+
+    public String getVaultUri() {
+        return prefs.getString(KEY_VAULT_URI, null);
+    }
+
+    public void setFocusKeywords(String keywords) {
+        prefs.edit().putString(KEY_FOCUS_KEYWORDS, keywords).apply();
+    }
+
+    public String getFocusKeywords() {
+        return prefs.getString(KEY_FOCUS_KEYWORDS, "");
+    }
+
     public void updateMasterPasswordHashes(String masterSalt, String convSalt, String wrappedDekFull, String wrappedDekConv) {
         prefs.edit()
             .putString(KEY_MASTER_SALT, masterSalt)
@@ -143,6 +164,19 @@ public class ModelSettings {
             .putString(KEY_WRAPPED_DEK_FULL, wrappedDekFull)
             .putString(KEY_WRAPPED_DEK_CONV, wrappedDekConv)
             .apply();
+    }
+
+    /**
+     * Resets the entire application by clearing SharedPreferences and deleting 
+     * the sovereign-config.json file. This forces a complete resetup on the next launch.
+     */
+    public void resetApplication() {
+        prefs.edit().clear().apply();
+        File configFile = new File(context.getFilesDir(), "sovereign-config.json");
+        if (configFile.exists()) {
+            configFile.delete();
+        }
+        Log.i("ModelSettings", "Application reset complete.");
     }
 
     /**

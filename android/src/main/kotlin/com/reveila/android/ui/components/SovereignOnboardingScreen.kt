@@ -39,6 +39,10 @@ fun SovereignOnboardingScreen(
     edges: List<MemoryEdge>,
     discoveryLogs: List<String>,
     scanProgress: Float, // Ranges from 0.0f to 1.0f
+    focusKeywords: String,
+    onKeywordsChanged: (String) -> Unit,
+    onStartScanClicked: () -> Unit,
+    isScanning: Boolean,
     onSelectVaultClicked: () -> Unit,
     onFinalizeClicked: (String) -> Unit
 ) {
@@ -62,7 +66,7 @@ fun SovereignOnboardingScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Authorize a secure local folder for the AI to index your documents. Your AI agent will only process data in this authorized folder. No data will leave this device.",
+                text = "Authorize a secure local folder for the AI to index your documents. Supported formats: .pdf, .docx, .md, .txt. Your AI agent will only process data in this authorized folder. No data will leave this device.",
                 color = Color.LightGray,
                 modifier = Modifier.padding(horizontal = 32.dp),
                 fontSize = 14.sp
@@ -73,6 +77,65 @@ fun SovereignOnboardingScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF))
             ) {
                 Text(text = "Open Secure Directory Picker", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        }
+    } else if (!isScanning && scanProgress < 1.0f) {
+        // Keyword Configuration UI
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF121212))
+                .padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Knowledge Vault Details",
+                color = Color.White,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Your Knowledge Vault is a local folder that acts as your AI's long-term memory. By indexing these files, the AI can learn your context, projects, and relationships while keeping everything 100% private on your device.",
+                color = Color.LightGray,
+                fontSize = 14.sp,
+                lineHeight = 20.sp
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "What should the AI prioritize?",
+                color = Color(0xFF00E5FF),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.align(Alignment.Start)
+            )
+            Text(
+                text = "Enter keywords (e.g., project names, clients, risk, financial) to help the agent identify high-priority facts during the initial scan of your .pdf, .docx, .md, and .txt files.",
+                color = Color.Gray,
+                fontSize = 12.sp,
+                modifier = Modifier.align(Alignment.Start).padding(top = 4.dp)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(
+                value = focusKeywords,
+                onValueChange = onKeywordsChanged,
+                label = { Text("Priority Keywords (comma separated)", fontSize = 12.sp) },
+                modifier = Modifier.fillMaxWidth().height(100.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.LightGray,
+                    focusedBorderColor = Color(0xFF00E5FF),
+                    unfocusedBorderColor = Color.Gray
+                )
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            Button(
+                onClick = onStartScanClicked,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF))
+            ) {
+                Text(text = "Start Secure Indexing", color = Color.Black, fontWeight = FontWeight.Bold)
             }
         }
     } else {

@@ -22,7 +22,6 @@ public final class Constants {
 	public static final String LOG_FILE_COUNT = "logging.file.count";
 	public static final String LOG_LEVEL = "logging.level";
 	public static final String SYSTEM_PROPERTIES = "reveila.properties";
-	public static final String CRYPTOGRAPHER_SECRETKEY = "cryptographer.secretkey";
 	public static final String CHARACTER_ENCODING = "text.character.encoding";
 	public static final String LAUNCH_STRICT_MODE = "launch.strict.mode";
 	public static final String DB_CREATE_SCHEMA = "db.create.schema";

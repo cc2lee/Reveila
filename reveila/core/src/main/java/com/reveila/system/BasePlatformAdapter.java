@@ -543,11 +543,6 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         return repositories.get(entityType.toLowerCase());
     }
 
-    @Override
-    public com.reveila.crypto.Cryptographer getCryptographer() {
-        return null; // Subclasses can provide platform-specific implementations
-    }
-
     public void registerRepository(String entityType, Repository<Entity, Map<String, Map<String, Object>>> repository) {
         if (entityType != null && repository != null) {
             repositories.put(entityType.toLowerCase(), repository);

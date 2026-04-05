@@ -49,7 +49,7 @@ public class OpenAiProvider extends PluginComponent implements LlmProvider {
     protected void onStart() throws Exception {
         String resolvedApiKey = apiKey;
         if (apiKey != null && apiKey.startsWith("REF:")) {
-            resolvedApiKey = (String) this.context.getProxy("CredentialManager")
+            resolvedApiKey = (String) this.context.getProxy("SecretManager")
                     .invoke("getSecret", new Object[] { apiKey.substring(4) });
         }
 

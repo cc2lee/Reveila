@@ -156,4 +156,9 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
             }
         }
     }
+
+    @Override
+    public Cryptographer getCryptographer() {
+        return null;
+    }
 }

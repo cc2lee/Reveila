@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { ReveilaHeader } from '@/components/ReveilaHeader';
 import ReveilaModule from '@/modules/reveila';
 
 export default function SettingsScreen() {
@@ -41,14 +42,11 @@ export default function SettingsScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ThemedView style={styles.header}>
-        <View style={styles.headerRow}>
-          <ThemedText type="title">Settings</ThemedText>
-          <TouchableOpacity onPress={() => router.replace('/')}>
-            <IconSymbol name="xmark" color="#fff" size={24} />
-          </TouchableOpacity>
-        </View>
-      </ThemedView>
+      <ReveilaHeader subtitle="Settings">
+        <TouchableOpacity onPress={() => router.replace('/')}>
+          <IconSymbol name="xmark" color="#fff" size={24} />
+        </TouchableOpacity>
+      </ReveilaHeader>
 
       <View style={styles.tabBar}>
         {tabs.map((tab) => (
@@ -182,6 +180,33 @@ export default function SettingsScreen() {
             <ThemedView style={styles.card}>
               <ThemedText type="defaultSemiBold">System Path</ThemedText>
               <ThemedText style={styles.monoText}>/data/user/0/com.reveila.android/files</ThemedText>
+            </ThemedView>
+
+            <ThemedView style={styles.card}>
+              <ThemedText type="defaultSemiBold">Knowledge Vault Sync</ThemedText>
+              <ThemedText style={styles.description}>Manually trigger a delta-scan of your authorized Knowledge Vault to pick up new or modified files.</ThemedText>
+              <TouchableOpacity style={[styles.button, {marginTop: 16}]} onPress={async () => {
+                try {
+                  await ReveilaModule.triggerVaultScan();
+                  alert('Vault scan initiated in the background.');
+                } catch (e: any) {
+                  alert('Scan Failed: ' + e.message);
+                }
+              }}>
+                <ThemedText style={styles.buttonText}>FORCE RE-SCAN NOW</ThemedText>
+              </TouchableOpacity>
+            </ThemedView>
+
+            <ThemedView style={[styles.card, {borderColor: '#ef4444', borderWidth: 1, marginTop: 20}]}>
+              <ThemedText type="defaultSemiBold" style={{color: '#ef4444'}}>Reset Application</ThemedText>
+              <ThemedText style={styles.description}>This will delete all local configuration, encryption keys, and your master password. You will need to start the setup from scratch.</ThemedText>
+              <TouchableOpacity style={[styles.button, {backgroundColor: '#ef4444', marginTop: 16}]} onPress={() => {
+                if (confirm('Are you absolutely sure you want to reset the application? This cannot be undone.')) {
+                   ReveilaModule.resetApplication().then(() => alert('Application Reset Successfully. Please restart the app.'));
+                }
+              }}>
+                <ThemedText style={styles.buttonText}>RESET EVERYTHING</ThemedText>
+              </TouchableOpacity>
             </ThemedView>
           </View>
         )}

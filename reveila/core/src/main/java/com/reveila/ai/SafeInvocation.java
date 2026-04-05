@@ -48,7 +48,7 @@ public class SafeInvocation extends SystemComponent {
     private GuardedRuntime guardedRuntime;
     private FlightRecorder flightRecorder;
     private MetadataRegistry metadataRegistry;
-    private CredentialManager credentialManager;
+    private SecretManager secretManager;
     private OrchestrationService orchestrationService;
 
     public SafeInvocation() {
@@ -62,7 +62,7 @@ public class SafeInvocation extends SystemComponent {
         this.guardedRuntime = getComponent("GuardedRuntime", GuardedRuntime.class);
         this.flightRecorder = getComponent("FlightRecorder", FlightRecorder.class);
         this.metadataRegistry = getComponent("MetadataRegistry", MetadataRegistry.class);
-        this.credentialManager = getComponent("CredentialManager", CredentialManager.class);
+        this.secretManager = getComponent("SecretManager", SecretManager.class);
         this.orchestrationService = getComponent("OrchestrationService", OrchestrationService.class);
     }
 
@@ -196,7 +196,7 @@ public class SafeInvocation extends SystemComponent {
         // 3. JIT Credential Injection
         Map<String, String> jitCreds = null;
         if (!activePerimeter.accessScopes().isEmpty()) {
-            jitCreds = credentialManager.generateJitToken(principal, activePerimeter.accessScopes().iterator().next());
+            jitCreds = secretManager.generateJitToken(principal, activePerimeter.accessScopes().iterator().next());
         }
 
         try {
@@ -241,7 +241,7 @@ public class SafeInvocation extends SystemComponent {
      */
     public Object handleCallback(String jitToken, String component, String method, Map<String, Object> arguments)
             throws Exception {
-        if (!credentialManager.validateToken(jitToken)) {
+        if (!secretManager.validateToken(jitToken)) {
             throw new com.reveila.error.SecurityException("Invalid or expired JIT token: " + jitToken);
         }
 

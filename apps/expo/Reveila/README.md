@@ -35,20 +35,6 @@ npm run reset-project
 
 This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
 
-## Google OAuth Setup
-
-To use the Google Sign-In features with the Android Credential Manager, you must register your application in the Google Cloud Console.
-
-1.  **Create a Project**: Go to the [Google Cloud Console](https://console.cloud.google.com/) and create a new project.
-2.  **Configure OAuth Consent Screen**: Set up the consent screen and add the `email` and `profile` scopes.
-3.  **Create Credentials**:
-    - **Android Client ID**: Create an OAuth client ID for Android. You will need the package name (`com.reveila.android`) and the SHA-1 fingerprint of your signing certificate.
-    - **Web Client ID**: Create an OAuth client ID for a Web application. This ID is required by the `signInWithGoogle` method in `index.tsx` to identify the server-side audience.
-4.  **Download `google-services.json`**: Place the downloaded file in the root of the `apps/expo/Reveila` directory.
-5.  **Update `app.json`**: Ensure the `android.package` matches your registered package name and `googleServicesFile` points to your file.
-
-For more details, see the [Expo Google Authentication Guide](https://docs.expo.dev/guides/google-authentication/).
-
 ## Learn more
 
 To learn more about developing your project with Expo, look at the following resources:

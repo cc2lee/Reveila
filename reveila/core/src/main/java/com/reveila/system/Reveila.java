@@ -29,6 +29,7 @@ import java.util.stream.Collectors;
 
 import javax.security.auth.Subject;
 
+import com.reveila.crypto.Cryptographer;
 import com.reveila.crypto.DefaultCryptographer;
 import com.reveila.error.ConfigurationException;
 import com.reveila.error.SystemException;
@@ -44,20 +45,14 @@ public class Reveila implements AutoCloseable, EventConsumer {
 	private SystemContext systemContext;
 	private boolean strictMode = true;
 	private List<SystemProxy> startedProxies;
-	private String cryptoKey;
-
-	public void setCryptoKey(String cryptoKey) {
-		this.cryptoKey = cryptoKey;
-	}
-
-	public SystemContext getSystemContext() {
-		return systemContext;
-	}
-
 	private Logger logger;
 	private URL localUrl;
 	private boolean standalone = true;
 	private boolean shutdown = false;
+
+	public SystemContext getSystemContext() {
+		return systemContext;
+	}
 
 	@Override
 	public void close() {
@@ -217,7 +212,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		}
 
 		// PHASE 3: EXECUTION (Starting components in dependency-aware order)
-		// We no longer rely purely on manual start-priority. 
+		// We no longer rely purely on manual start-priority.
 		// Instead, we use a topological sort to ensure dependencies start first.
 		List<MetaObject> sortedComponents = sortMetaObjects(finalComponentList);
 		startComponents(Constants.COMPONENT, sortedComponents, timeoutSeconds);
@@ -301,32 +296,26 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		EventManager eventManager = new EventManager();
 		eventManager.setLogger(this.logger);
 
-		String secretKey = props.getProperty(Constants.CRYPTOGRAPHER_SECRETKEY);
-		if (secretKey == null || secretKey.isBlank()) {
-			throw new ConfigurationException(
-					"Reveila system property '" + Constants.CRYPTOGRAPHER_SECRETKEY + "' is not set.");
-		}
-
 		String charset = props.getProperty(Constants.CHARACTER_ENCODING);
 		if (charset == null || charset.isBlank()) {
 			charset = StandardCharsets.UTF_8.name();
 		}
 
-		com.reveila.crypto.Cryptographer crypto = this.platformAdapter.getCryptographer();
-		if (crypto == null) {
-			if (this.cryptoKey != null && !this.cryptoKey.isBlank()) {
-				// Use the provided master password and a salt from properties
+		Cryptographer encrypter = this.platformAdapter.getCryptographer();
+		if (encrypter == null) {
+			// No platform-specific Cryptographer. Fallback to DefaultCryptographer
+			String cryptoKey = System.getenv("REVEILA_CRYPTO_KEY");
+			if (cryptoKey != null && !cryptoKey.isBlank()) {
 				String saltHex = props.getProperty("auth.master.salt", "00000000000000000000000000000000");
-				crypto = new com.reveila.crypto.DefaultCryptographer(this.cryptoKey, hexToBytes(saltHex));
+				encrypter = new DefaultCryptographer(cryptoKey, hexToBytes(saltHex));
 			} else {
-				// Legacy fallback to raw byte key
-				crypto = new com.reveila.crypto.DefaultCryptographer(secretKey.getBytes(charset));
+				throw new IllegalStateException("No Cryptographer found. Please set REVEILA_CRYPTO_KEY environment variable.");
 			}
 		}
 
 		this.systemContext = new SystemContext(
 				props, eventManager, this.logger,
-				crypto, this.platformAdapter);
+				encrypter, this.platformAdapter);
 	}
 
 	private byte[] hexToBytes(String s) {
@@ -454,7 +443,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 				}
 			}
 		}
-		
+
 		Object methodsObj = map.get(Constants.METHODS);
 		if (methodsObj != null && methodsObj instanceof List) {
 			List<Manifest.ExposedMethod> parsedMethods = new ArrayList<>();
@@ -514,12 +503,12 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		for (MetaObject mObj : metaObjectList) {
 			Manifest manifest = createManifest(tag, mObj);
 			Subject subject = new Subject();
-        	SystemProxy proxy = new SystemProxy(mObj, manifest);
+			SystemProxy proxy = new SystemProxy(mObj, manifest);
 			if (Constants.COMPONENT.equalsIgnoreCase(manifest.getComponentType())) {
 				proxy.setContext(systemContext);
 				subject.getPrincipals().add(new RolePrincipal(Constants.SYSTEM));
-			}
-			else { // treated as a plugin regardless and create a plugin context with restricted access
+			} else { // treated as a plugin regardless and create a plugin context with restricted
+						// access
 				proxy.setContext(new PluginContext(systemContext, manifest, new Properties()));
 				subject.getPrincipals().add(PluginPrincipal.create(manifest.getName(), manifest.getOrg()));
 			}
@@ -623,7 +612,8 @@ public class Reveila implements AutoCloseable, EventConsumer {
 	 * @param params        The parameters to pass to the method.
 	 * @return The CompletableFuture result of the method invocation.
 	 */
-	public CompletableFuture<Object> invokeAsync(String componentName, String methodName, Object[] params, String callerIp, Subject subject) {
+	public CompletableFuture<Object> invokeAsync(String componentName, String methodName, Object[] params,
+			String callerIp, Subject subject) {
 		Objects.requireNonNull(subject, "Subject is mandatory for tracking execution.");
 		return CompletableFuture.supplyAsync(() -> {
 			try {
@@ -634,7 +624,8 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		});
 	}
 
-	public Object invoke(String componentName, String methodName, Object[] params, String callerIp, Subject subject) throws Exception {
+	public Object invoke(String componentName, String methodName, Object[] params, String callerIp, Subject subject)
+			throws Exception {
 
 		// This method actually performs the invocation logic
 		Objects.requireNonNull(subject, "Subject is mandatory for tracking execution.");
@@ -690,7 +681,6 @@ public class Reveila implements AutoCloseable, EventConsumer {
 			throw new ConfigurationException("Component '" + componentName + "' not found.", e);
 		}
 
-		
 	}
 
 	/**

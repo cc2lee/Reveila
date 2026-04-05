@@ -14,3 +14,12 @@ This acts as the bridge between the LLM's natural language intent and your stric
 
 3. Agent Principals (The "Identity")
 Every agent session gets its own "driver's license." You’ll use Non-Person Entity (NPE) identities to ensure that an agent only has the permissions required for its specific task, following the principle of Least Privilege.
+
+
+What’s next for the Reveila Fabric?
+
+🔗 Edge-to-Cloud Sync: Securely syncing your local "Memory" to your Private Enterprise Fabric.
+
+🗣️ Voice-to-Knowledge: Dictate notes directly into the Vault for instant indexing.
+
+🛠️ Tool-Use Expansion: Giving the agents the ability to edit the files in your vault based on your goals.

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { StyleSheet, TextInput, TouchableOpacity, View, Alert } from 'react-native';
+import { StyleSheet, TextInput, TouchableOpacity, View, Alert, ScrollView } from 'react-native';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
+import { ReveilaHeader } from './ReveilaHeader';
 import ReveilaModule from '../modules/reveila';
 
 interface Props {
@@ -33,46 +34,78 @@ export function MasterPasswordSetup({ onComplete }: Props) {
     }
   };
 
+  const handleReset = async () => {
+    Alert.alert(
+      'Reset Application',
+      'This will delete all local configuration and encryption keys. You will need to start the setup from scratch. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Reset Everything', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ReveilaModule.resetApplication();
+              Alert.alert('System Reset', 'The application has been reset. Please restart the app.');
+            } catch (e: any) {
+              Alert.alert('Reset Error', e.message);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title" style={styles.title}>Secure Setup</ThemedText>
-      
-      <View style={styles.warningBox}>
-        <ThemedText style={styles.warningTitle}>⚠️ SERIOUS WARNING</ThemedText>
-        <ThemedText style={styles.warningText}>
-          This password is the ONLY key to your private data. If you lose it, you will lose access to the app and all your data PERMANENTLY. We have NO way to recover your password.
-        </ThemedText>
-      </View>
+      <ReveilaHeader subtitle="Private" color="#00E5FF" />
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ThemedText type="title" style={styles.title}>Secure Setup</ThemedText>
+        
+        <View style={styles.warningBox}>
+          <ThemedText style={styles.warningTitle}>⚠️ SERIOUS WARNING</ThemedText>
+          <ThemedText style={styles.warningText}>
+            This password is the ONLY key to your private data. If you lose it, you will lose access to the app and all your data PERMANENTLY. We have NO way to recover your password.
+          </ThemedText>
+        </View>
 
-      <ThemedText style={styles.label}>Create Master Password (16-32 chars)</ThemedText>
-      <TextInput
-        style={styles.input}
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        placeholder="Enter password"
-        placeholderTextColor="#94a3b8"
-      />
+        <ThemedText style={styles.label}>Create Master Password (16-32 chars)</ThemedText>
+        <TextInput
+          style={styles.input}
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          placeholder="Enter password"
+          placeholderTextColor="#94a3b8"
+          maxLength={32}
+        />
 
-      <ThemedText style={styles.label}>Confirm Password</ThemedText>
-      <TextInput
-        style={styles.input}
-        value={confirmPassword}
-        onChangeText={setConfirmPassword}
-        secureTextEntry
-        placeholder="Confirm password"
-        placeholderTextColor="#94a3b8"
-      />
+        <ThemedText style={styles.label}>Confirm Password</ThemedText>
+        <TextInput
+          style={styles.input}
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          secureTextEntry
+          placeholder="Confirm password"
+          placeholderTextColor="#94a3b8"
+          maxLength={32}
+        />
 
-      <TouchableOpacity style={styles.button} onPress={handleSetup}>
-        <ThemedText style={styles.buttonText}>Initialize Sovereign Identity</ThemedText>
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.button} onPress={handleSetup}>
+          <ThemedText style={styles.buttonText}>Initialize Sovereign Identity</ThemedText>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+          <ThemedText style={styles.resetButtonText}>Reset Application</ThemedText>
+        </TouchableOpacity>
+      </ScrollView>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, flex: 1, justifyContent: 'center' },
+  container: { flex: 1 },
+  scrollContent: { padding: 20, flexGrow: 1, justifyContent: 'center' },
   title: { marginBottom: 30, textAlign: 'center' },
   warningBox: {
     backgroundColor: '#fee2e2',
@@ -93,7 +126,8 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     marginBottom: 20,
-    color: '#0f172a'
+    color: '#0f172a',
+    height: 50,
   },
   button: {
     backgroundColor: '#0f172a',
@@ -102,5 +136,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 10
   },
-  buttonText: { color: '#fff', fontWeight: '800', fontSize: 15 }
+  buttonText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  resetButton: {
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 20
+  },
+  resetButtonText: { color: '#ef4444', fontWeight: '700', fontSize: 14 }
 });

@@ -23,7 +23,7 @@ class SafeInvocationTest {
     @Mock private GuardedRuntime guardedRuntime;
     @Mock private FlightRecorder flightRecorder;
     @Mock private MetadataRegistry metadataRegistry;
-    @Mock private CredentialManager credentialManager;
+    @Mock private SecretManager secretManager;
     @Mock private LlmProviderFactory llmFactory;
     private LlmGovernanceConfig govConfig = LlmGovernanceConfig.defaultGov();
 
@@ -53,7 +53,7 @@ class SafeInvocationTest {
                 case "GuardedRuntime" -> guardedRuntime;
                 case "FlightRecorder" -> flightRecorder;
                 case "MetadataRegistry" -> metadataRegistry;
-                case "CredentialManager" -> credentialManager;
+                case "SecretManager" -> secretManager;
                 case "OrchestrationService" -> orchestrationService;
                 case "LlmProviderFactory" -> llmFactory;
                 default -> null;

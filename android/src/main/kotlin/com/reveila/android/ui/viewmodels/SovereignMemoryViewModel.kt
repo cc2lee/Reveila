@@ -37,6 +37,24 @@ class SovereignMemoryViewModel : ViewModel() {
     private val _scanProgress = MutableStateFlow(0f)
     val scanProgress: StateFlow<Float> = _scanProgress.asStateFlow()
 
+    private val _focusKeywords = MutableStateFlow("")
+    val focusKeywords: StateFlow<String> = _focusKeywords.asStateFlow()
+
+    private val _indexedFiles = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val indexedFiles: StateFlow<Map<String, Long>> = _indexedFiles.asStateFlow()
+
+    fun setFocusKeywords(keywords: String) {
+        _focusKeywords.value = keywords
+    }
+
+    fun getIndexedFiles(): Map<String, Long> {
+        return _indexedFiles.value
+    }
+
+    fun markFileAsIndexed(uri: String, lastModified: Long) {
+        _indexedFiles.value = _indexedFiles.value + (uri to lastModified)
+    }
+
     // Connect via PlatformAdapter
     // TODO: Retrieve the proper PlatformAdapter instance from context
     private var vectorStore: VectorStore? = null

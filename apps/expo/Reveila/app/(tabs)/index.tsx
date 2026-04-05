@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { ReveilaHeader } from '@/components/ReveilaHeader';
 import ReveilaModule from '@/modules/reveila';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { MasterPasswordSetup } from '@/components/MasterPasswordSetup';
@@ -136,11 +137,7 @@ export default function HomeScreen() {
   if (!isSetupComplete) {
     return (
       <ThemedView style={styles.container}>
-        <ThemedView style={styles.header}>
-          <View style={styles.headerRow}>
-            <ThemedText type="title"><ThemedText style={{ color: '#00E5FF' }}>REVEILA</ThemedText> Private</ThemedText>
-          </View>
-        </ThemedView>
+        <ReveilaHeader subtitle="Private" color="#00E5FF" />
         <ScrollView contentContainerStyle={styles.content}>
           <ThemedView style={styles.card}>
             <ThemedText type="subtitle" style={{ marginBottom: 12 }}>Setup Private AI</ThemedText>
@@ -164,21 +161,18 @@ export default function HomeScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ThemedView style={styles.header}>
-        <View style={styles.headerRow}>
-          <ThemedText type="title"><ThemedText style={{ color: '#ff6600' }}>REVEILA</ThemedText></ThemedText>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <TouchableOpacity onPress={() => setIsCloudMode(!isCloudMode)}>
-              <View style={[styles.miniBadge, { backgroundColor: isCloudMode ? '#3b82f6' : '#22c55e', flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-                <ThemedText style={styles.miniBadgeText}>{isCloudMode ? 'CLOUD' : 'PRIVATE'}</ThemedText>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => router.push('/settings')}>
-              <IconSymbol name="gearshape.fill" color="#fff" size={20} />
-            </TouchableOpacity>
-          </View>
+      <ReveilaHeader>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <TouchableOpacity onPress={() => setIsCloudMode(!isCloudMode)}>
+            <View style={[styles.miniBadge, { backgroundColor: isCloudMode ? '#3b82f6' : '#22c55e', flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+              <ThemedText style={styles.miniBadgeText}>{isCloudMode ? 'CLOUD' : 'PRIVATE'}</ThemedText>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/settings')}>
+            <IconSymbol name="gearshape.fill" color="#fff" size={20} />
+          </TouchableOpacity>
         </View>
-      </ThemedView>
+      </ReveilaHeader>
       <View style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.content} style={{ flex: 1 }}>
           {(agentResponse || isProcessing) && (

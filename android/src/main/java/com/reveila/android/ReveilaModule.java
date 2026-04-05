@@ -29,6 +29,17 @@ import javax.security.auth.Subject;
 import androidx.fragment.app.FragmentActivity;
 import android.util.Log;
 
+import com.reveila.android.service.VaultScannerWorker;
+import androidx.work.PeriodicWorkRequest;
+import androidx.work.OneTimeWorkRequest;
+import androidx.work.WorkManager;
+import androidx.work.Constraints;
+import androidx.work.NetworkType;
+import androidx.work.ExistingPeriodicWorkPolicy;
+import androidx.work.ExistingWorkPolicy;
+import java.util.concurrent.TimeUnit;
+import android.net.Uri;
+
 public class ReveilaModule extends ReactContextBaseJavaModule {
 
     private MobileKillSwitch killSwitch;
@@ -43,6 +54,50 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
 
     ReveilaModule(ReactApplicationContext context) {
         super(context);
+        schedulePeriodicVaultScan();
+    }
+
+    private void schedulePeriodicVaultScan() {
+        Constraints constraints = new Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.NOT_REQUIRED) // Stay Sovereign/Offline
+                .setRequiresBatteryNotLow(true)                // Don't kill the phone
+                .setRequiresDeviceIdle(true)                   // Wait for "Quiet Time"
+                .build();
+
+        PeriodicWorkRequest scanRequest =
+                new PeriodicWorkRequest.Builder(VaultScannerWorker.class, 1, TimeUnit.HOURS)
+                        .setConstraints(constraints)
+                        .setInitialDelay(15, TimeUnit.MINUTES)
+                        .addTag("VAULT_SCAN")
+                        .build();
+
+        WorkManager.getInstance(getReactApplicationContext())
+                .enqueueUniquePeriodicWork(
+                        "PeriodicVaultScan",
+                        ExistingPeriodicWorkPolicy.KEEP,
+                        scanRequest
+                );
+    }
+
+    @ReactMethod
+    public void triggerVaultScan(Promise promise) {
+        try {
+            OneTimeWorkRequest scanRequest =
+                    new OneTimeWorkRequest.Builder(VaultScannerWorker.class)
+                            .addTag("MANUAL_VAULT_SCAN")
+                            .build();
+
+            WorkManager.getInstance(getReactApplicationContext())
+                    .enqueueUniqueWork(
+                            "ManualVaultScan",
+                            ExistingWorkPolicy.REPLACE,
+                            scanRequest
+                    );
+            
+            promise.resolve(true);
+        } catch (Exception e) {
+            promise.reject("E_SCAN_FAILED", e.getMessage());
+        }
     }
 
     @ReactMethod
@@ -147,6 +202,26 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
             promise.resolve(settings.isSetupComplete());
         } catch (Exception e) {
             promise.reject("E_CHECK_SETUP_FAILED", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Resets the entire application state.
+     */
+    @ReactMethod
+    public void resetApplication(Promise promise) {
+        try {
+            ModelSettings settings = new ModelSettings(getReactApplicationContext());
+            settings.resetApplication();
+            
+            // Also stop the service if it's running
+            ReactApplicationContext context = getReactApplicationContext();
+            Intent intent = new Intent(context, ReveilaService.class);
+            context.stopService(intent);
+            
+            promise.resolve(true);
+        } catch (Exception e) {
+            promise.reject("E_RESET_FAILED", e.getMessage(), e);
         }
     }
 

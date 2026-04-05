@@ -43,8 +43,10 @@ class SovereignSetupActivity : AppCompatActivity() {
             val edges by viewModel.edges.collectAsState()
             val discoveryLogs by viewModel.discoveryLogs.collectAsState()
             val scanProgress by viewModel.scanProgress.collectAsState()
+            val focusKeywords by viewModel.focusKeywords.collectAsState()
             
             var vaultUri by remember { mutableStateOf<Uri?>(null) }
+            var isScanning by remember { mutableStateOf(false) }
             
             // Requirement 2: Enforcement - display dialog if not accepted
             var showAgreementDialog by remember { mutableStateOf(false) }
@@ -88,12 +90,9 @@ class SovereignSetupActivity : AppCompatActivity() {
                         Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     )
                     vaultUri = uri
+                    val settings = ModelSettings(this@SovereignSetupActivity)
+                    settings.vaultUri = uri.toString()
                     Log.i(TAG, "Vault securely selected: $uri")
-                    
-                    // Launch the real file scanning process
-                    lifecycleScope.launch {
-                        runRealScan(uri, viewModel)
-                    }
                 }
             }
 
@@ -103,6 +102,22 @@ class SovereignSetupActivity : AppCompatActivity() {
                 edges = edges,
                 discoveryLogs = discoveryLogs,
                 scanProgress = scanProgress,
+                focusKeywords = focusKeywords,
+                onKeywordsChanged = { 
+                    viewModel.setFocusKeywords(it)
+                    val settings = ModelSettings(this@SovereignSetupActivity)
+                    settings.focusKeywords = it
+                },
+                isScanning = isScanning,
+                onStartScanClicked = {
+                    if (vaultUri != null) {
+                        isScanning = true
+                        lifecycleScope.launch {
+                            val scanner = VaultScanner(this@SovereignSetupActivity)
+                            scanner.performScan(vaultUri!!, viewModel, focusKeywords)
+                        }
+                    }
+                },
                 onSelectVaultClicked = { 
                     vaultPicker.launch(null) 
                 },
@@ -154,54 +169,5 @@ class SovereignSetupActivity : AppCompatActivity() {
             i += 2
         }
         return data
-    }
-
-    /**
-     * The Real Scan: Crawls the user's specific Knowledge Vault, parsing
-     * files using the background ReasoningEngine and firing them into the UI.
-     */
-    private suspend fun runRealScan(uri: Uri, viewModel: SovereignMemoryViewModel) {
-        delay(1000)
-        
-        val rootDir = DocumentFile.fromTreeUri(this, uri) ?: return
-        val files = rootDir.listFiles().filter { 
-            val name = it.name?.lowercase() ?: ""
-            name.endsWith(".pdf") || name.endsWith(".md") || name.endsWith(".txt")
-        }
-        
-        if (files.isEmpty()) {
-            viewModel.insertFact("System", NodeType.CONCEPT, "SCANNED", "Empty Vault", NodeType.DOCUMENT, "No supported files found.")
-            viewModel.setScanProgress(1.0f)
-            return
-        }
-
-        // Initialize the Reasoning Engine
-        val engine = ReasoningEngine(this, "gemma-3-1b-int8.gguf") // Mock init
-        
-        files.forEachIndexed { index, file ->
-            val fileName = file.name ?: "Unknown Document"
-            Log.i(TAG, "Parsing file: $fileName")
-            
-            // 1. Safe text extraction
-            val extractedText = "Parsed content of $fileName"
-            
-            // 2. Real call to local Reasoning Engine
-            val analysis = engine.prompt("Analyze entities in: $extractedText")
-            
-            // 3. Insert real facts into SQLite-vec and UI
-            viewModel.insertFact("Knowledge Vault", NodeType.CONCEPT, "CONTAINS", fileName, NodeType.DOCUMENT, analysis)
-            
-            // The "Wow" Factor: If the file looks like a complex business contract
-            if (fileName.contains("merger", true) || fileName.contains("risk", true) || fileName.contains("financial", true)) {
-                viewModel.insertFact(fileName, NodeType.DOCUMENT, "HIGH_RISK_M&A", "Acme Corp", NodeType.COMPANY, "Detected merger clause.")
-            }
-
-            viewModel.setScanProgress((index + 1) / files.size.toFloat())
-            delay(1200) // Visual pacing to let Jetpack Compose animations breathe
-        }
-        
-        engine.shutdown()
-        viewModel.setScanProgress(1.0f)
-        Log.i(TAG, ">>> UI_STATE: Real Scan complete. Waiting for Biometric Lock.")
     }
 }

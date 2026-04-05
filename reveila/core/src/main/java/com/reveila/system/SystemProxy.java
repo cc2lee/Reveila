@@ -8,7 +8,6 @@ import java.util.Collections;
 import java.util.EventObject;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
@@ -410,17 +409,17 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 
 			String key = strValue.substring(start + 9, end);
 			try {
-				Proxy credentialManager = context.getProxy("CredentialManager");
-				String secret = (String) credentialManager.invoke("getSecret", new Object[] { key });
+				Proxy secretManager = context.getProxy("SecretManager");
+				String secret = (String) secretManager.invoke("getSecret", new Object[] { key });
 				if (secret != null) {
 					result.append(secret);
 				} else {
 					result.append("${secret:").append(key).append("}");
-					logger.warning("Secret key '" + key + "' not found in CredentialManager.");
+					logger.warning("Secret key '" + key + "' not found in SecretManager.");
 				}
 			} catch (IllegalArgumentException e) {
 				result.append("${secret:").append(key).append("}");
-				logger.warning("CredentialManager not found while trying to resolve secret: " + key);
+				logger.warning("SecretManager not found while trying to resolve secret: " + key);
 			} catch (Exception e) {
 				result.append("${secret:").append(key).append("}");
 				logger.log(Level.SEVERE, "Error resolving secret key '" + key + "'.", e);

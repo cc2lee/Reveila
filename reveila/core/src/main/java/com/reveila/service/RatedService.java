@@ -1,7 +1,6 @@
 package com.reveila.service;
 
 import java.util.List;
-import java.util.Optional;
 
 import com.reveila.error.ConfigurationException;
 import com.reveila.system.Proxy;
