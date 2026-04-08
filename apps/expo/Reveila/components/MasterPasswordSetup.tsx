@@ -25,9 +25,8 @@ export function MasterPasswordSetup({ onComplete }: Props) {
     }
 
     try {
-      // In a real implementation, we would store a salt and a validation hash
-      // For this demo, we'll just set it in the native module
-      await ReveilaModule.unlockWithMasterPassword(password);
+      // Setup the master password - this generates a new DEK and stores encrypted copies
+      await ReveilaModule.setupMasterPassword(password);
       onComplete(password);
     } catch (e: any) {
       Alert.alert('Setup Error', e.message);
@@ -60,23 +59,38 @@ export function MasterPasswordSetup({ onComplete }: Props) {
     <ThemedView style={styles.container}>
       <ReveilaHeader subtitle="Private" color="#00E5FF" />
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <ThemedText type="title" style={styles.title}>Secure Setup</ThemedText>
+        <ThemedText type="title" style={styles.title}>Master Password Setup</ThemedText>
         
         <View style={styles.warningBox}>
-          <ThemedText style={styles.warningTitle}>⚠️ SERIOUS WARNING</ThemedText>
+          <ThemedText style={styles.warningTitle}>🔐 CRITICAL SECURITY NOTICE</ThemedText>
           <ThemedText style={styles.warningText}>
-            This password is the ONLY key to your private data. If you lose it, you will lose access to the app and all your data PERMANENTLY. We have NO way to recover your password.
+            Your master password is the sole cryptographic key protecting your encrypted data. Reveila uses zero-knowledge architecture—your password is never transmitted or stored on any server.{'\n\n'}
+            <ThemedText style={[styles.warningText, {fontWeight: '700'}]}>
+              If you lose this password, data recovery is cryptographically impossible.
+            </ThemedText> There are no backdoors, reset mechanisms, or password recovery options.
           </ThemedText>
         </View>
 
-        <ThemedText style={styles.label}>Create Master Password (16-32 chars)</ThemedText>
+        <View style={styles.infoBox}>
+          <ThemedText style={styles.infoTitle}>Password Requirements</ThemedText>
+          <ThemedText style={styles.infoText}>
+            • Length: 16-32 characters{'\n'}
+            • Recommended: Use a passphrase with multiple words{'\n'}
+            • Store securely: Use a password manager or secure offline storage{'\n'}
+            • Avoid: Personal information, common words, or predictable patterns
+          </ThemedText>
+        </View>
+
+        <ThemedText style={styles.label}>Master Password</ThemedText>
         <TextInput
           style={styles.input}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
-          placeholder="Enter password"
+          placeholder="Enter your master password (16-32 characters)"
           placeholderTextColor="#94a3b8"
+          autoCapitalize="none"
+          autoCorrect={false}
           maxLength={32}
         />
 
@@ -86,14 +100,20 @@ export function MasterPasswordSetup({ onComplete }: Props) {
           value={confirmPassword}
           onChangeText={setConfirmPassword}
           secureTextEntry
-          placeholder="Confirm password"
+          placeholder="Re-enter password to confirm"
           placeholderTextColor="#94a3b8"
+          autoCapitalize="none"
+          autoCorrect={false}
           maxLength={32}
         />
 
         <TouchableOpacity style={styles.button} onPress={handleSetup}>
-          <ThemedText style={styles.buttonText}>Initialize Sovereign Identity</ThemedText>
+          <ThemedText style={styles.buttonText}>Create Master Password</ThemedText>
         </TouchableOpacity>
+
+        <ThemedText style={styles.disclaimer}>
+          By proceeding, you acknowledge that you understand the irreversible nature of password loss and accept full responsibility for secure password management.
+        </ThemedText>
 
         <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
           <ThemedText style={styles.resetButtonText}>Reset Application</ThemedText>
@@ -117,6 +137,16 @@ const styles = StyleSheet.create({
   },
   warningTitle: { color: '#b91c1c', fontWeight: '900', fontSize: 12, marginBottom: 8, letterSpacing: 1 },
   warningText: { color: '#7f1d1d', fontSize: 13, lineHeight: 20 },
+  infoBox: {
+    backgroundColor: '#dbeafe',
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#3b82f6',
+    marginBottom: 24,
+  },
+  infoTitle: { color: '#1e40af', fontWeight: '700', fontSize: 12, marginBottom: 8, letterSpacing: 0.5 },
+  infoText: { color: '#1e3a8a', fontSize: 13, lineHeight: 20 },
   label: { fontSize: 14, color: '#64748b', marginBottom: 8, fontWeight: '600' },
   input: {
     backgroundColor: '#fff',
@@ -142,5 +172,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 20
   },
-  resetButtonText: { color: '#ef4444', fontWeight: '700', fontSize: 14 }
+  resetButtonText: { color: '#ef4444', fontWeight: '700', fontSize: 14 },
+  disclaimer: {
+    fontSize: 11,
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 16,
+    lineHeight: 16,
+    fontStyle: 'italic'
+  }
 });

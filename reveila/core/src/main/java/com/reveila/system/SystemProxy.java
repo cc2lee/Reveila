@@ -568,6 +568,17 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 			} else {
 				return methodToInvoke.invoke(target, coercedArgs);
 			}
+		} catch (InvocationTargetException e) {
+			// If the underlying method threw an exception, throw its cause
+			// to avoid double-wrapping InvocationTargetException.
+			Throwable cause = e.getCause();
+			if (cause instanceof Exception) {
+				throw (Exception) cause;
+			} else if (cause instanceof Error) {
+				throw (Error) cause;
+			} else {
+				throw e;
+			}
 		} catch (Throwable t) {
 			throw new InvocationTargetException(t);
 		} finally {

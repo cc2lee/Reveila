@@ -8,7 +8,9 @@ export interface IReveilaModule {
   isRunning(): Promise<boolean>;
   isSetupComplete(): Promise<boolean>;
   startSovereignSetup(): Promise<boolean>;
+  setupMasterPassword(password: string): Promise<boolean>;
   unlockWithMasterPassword(password: string): Promise<boolean>;
+  authenticateBiometric(): Promise<{success: boolean, error?: string}>;
   changeMasterPassword(oldPassword: string, newPassword: string): Promise<boolean>;
   isSessionValid(): Promise<boolean>;
   resetApplication(): Promise<boolean>;

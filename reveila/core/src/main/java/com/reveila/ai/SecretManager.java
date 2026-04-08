@@ -131,8 +131,9 @@ public class SecretManager extends SystemComponent {
             Cryptographer crypto = ((SystemContext) context).getCryptographer();
             return new String(crypto.decrypt(encryptedData));
         } catch (Exception e) {
-            logger.severe("Failed to decrypt secret value: " + e.getMessage());
-            return "ERROR_DECRYPTION_FAILED";
+            String errorMsg = "Failed to decrypt secret value: " + e.getMessage();
+            logger.severe(errorMsg);
+            throw new RuntimeException(errorMsg, e);
         }
     }
 

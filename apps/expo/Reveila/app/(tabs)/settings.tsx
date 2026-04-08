@@ -1,6 +1,8 @@
 import { StyleSheet, TouchableOpacity, ScrollView, View, Switch, TextInput } from 'react-native';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Linking from 'expo-linking';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -13,6 +15,7 @@ export default function SettingsScreen() {
   const [activeTab, setActiveTab] = useState('General');
   const [quantization, setQuantization] = useState('Q4_K_M');
   const [isHighSecurity, setIsHighSecurity] = useState(true);
+  const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [tasks, setTasks] = useState<any[]>([]);
   const [selectedTask, setSelectedTask] = useState<any>(null);
@@ -24,6 +27,18 @@ export default function SettingsScreen() {
       fetchTasks();
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    // Load preference on startup
+    AsyncStorage.getItem('use_biometrics').then(val => {
+      setIsBiometricEnabled(val === 'true');
+    });
+  }, []);
+
+  const toggleBiometrics = async (value: boolean) => {
+    setIsBiometricEnabled(value);
+    await AsyncStorage.setItem('use_biometrics', value ? 'true' : 'false');
+  };
 
   const fetchTasks = async () => {
     try {
@@ -117,9 +132,17 @@ export default function SettingsScreen() {
             </ThemedView>
 
             <ThemedView style={styles.card}>
-              <ThemedText type="defaultSemiBold">Biometric Enforcement</ThemedText>
-              <View style={styles.cautionBox}>
-                <ThemedText style={styles.cautionText}>⚠ This setting is managed by system policy and cannot be disabled manually for this device.</ThemedText>
+              <View style={styles.row}>
+                <View style={{flex: 1}}>
+                  <ThemedText type="defaultSemiBold">Biometric Authentication</ThemedText>
+                  <ThemedText style={styles.description}>Use fingerprint or face ID to unlock the app.</ThemedText>
+                </View>
+                <Switch 
+                  value={isBiometricEnabled} 
+                  onValueChange={toggleBiometrics}
+                  trackColor={{ false: "#cbd5e1", true: "#00E5FF" }}
+                  thumbColor={isBiometricEnabled ? "#fff" : "#f4f3f4"}
+                />
               </View>
             </ThemedView>
           </View>

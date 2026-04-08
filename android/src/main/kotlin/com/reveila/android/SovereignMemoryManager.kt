@@ -30,7 +30,7 @@ class SovereignMemoryManager(private val context: Context) {
                     Log.e(TAG, "Biometric authentication error for $actionName: $errString")
                     
                     // Show a Toast so the user actually sees why the prompt failed/aborted
-                    Toast.makeText(activity, "Biometric Error: $errString\n(Did you set up a PIN/Fingerprint on this emulator?)", Toast.LENGTH_LONG).show()
+                    Toast.makeText(activity, "Biometric Error: $errString\n(Did you set up a PIN/Fingerprint on this device?)", Toast.LENGTH_LONG).show()
                 }
 
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
@@ -47,8 +47,8 @@ class SovereignMemoryManager(private val context: Context) {
             })
 
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Reveila High-Risk Action Guard")
-            .setSubtitle("Authenticate to authorize: $actionName")
+            .setTitle("Authorization")
+            .setSubtitle("You must authenticate to continue: $actionName")
             // Allow fallback to standard PIN/Pattern if fingerprint isn't enrolled (crucial for Emulators)
             .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
             .build()

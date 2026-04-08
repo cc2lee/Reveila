@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.setContent
+import com.reveila.android.ui.theme.ReveilaTheme
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.*
@@ -38,7 +39,8 @@ class SovereignSetupActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            val viewModel: SovereignMemoryViewModel = viewModel()
+            ReveilaTheme {
+                val viewModel: SovereignMemoryViewModel = viewModel()
             val nodes by viewModel.nodes.collectAsState()
             val edges by viewModel.edges.collectAsState()
             val discoveryLogs by viewModel.discoveryLogs.collectAsState()
@@ -157,6 +159,7 @@ class SovereignSetupActivity : AppCompatActivity() {
                     }
                 }
             )
+            }
         }
     }
 

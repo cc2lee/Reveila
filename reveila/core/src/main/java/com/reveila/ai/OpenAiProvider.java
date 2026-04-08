@@ -53,8 +53,8 @@ public class OpenAiProvider extends PluginComponent implements LlmProvider {
                     .invoke("getSecret", new Object[] { apiKey.substring(4) });
         }
 
-        if (resolvedApiKey == null || resolvedApiKey.isBlank()) {
-            throw new IllegalStateException("OpenAI API Key could not be resolved.");
+        if (resolvedApiKey == null || resolvedApiKey.isBlank() || "ERROR_DECRYPTION_FAILED".equals(resolvedApiKey)) {
+            throw new IllegalStateException("OpenAI API Key could not be resolved. (Check if Vault is unlocked)");
         }
 
         this.chatModel = OpenAiChatModel.builder()

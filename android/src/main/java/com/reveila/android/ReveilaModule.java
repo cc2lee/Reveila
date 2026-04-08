@@ -28,6 +28,13 @@ import javax.security.auth.Subject;
 
 import androidx.fragment.app.FragmentActivity;
 import android.util.Log;
+import android.os.Handler;
+import android.os.Looper;
+import androidx.biometric.BiometricManager;
+import static androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG;
+import androidx.biometric.BiometricPrompt;
+import androidx.core.content.ContextCompat;
+import java.util.concurrent.Executor;
 
 import com.reveila.android.service.VaultScannerWorker;
 import androidx.work.PeriodicWorkRequest;
@@ -226,6 +233,68 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
+    public void authenticateBiometric(Promise promise) {
+        FragmentActivity activity = (FragmentActivity) getCurrentActivity();
+        if (activity == null) {
+            promise.reject("ACTIVITY_NOT_FOUND", "Activity is not a FragmentActivity");
+            return;
+        }
+
+        // Run on UI Thread
+        new Handler(Looper.getMainLooper()).post(() -> {
+            BiometricManager biometricManager = BiometricManager.from(activity);
+            
+            // Step 1: Check if biometrics are available and enrolled
+            int canAuthenticate = biometricManager.canAuthenticate(BIOMETRIC_STRONG);
+            if (canAuthenticate != BiometricManager.BIOMETRIC_SUCCESS) {
+                WritableMap result = Arguments.createMap();
+                result.putBoolean("success", false);
+                result.putString("error", "BIOMETRICS_UNAVAILABLE");
+                promise.resolve(result);
+                return;
+            }
+
+            // Step 2: Setup the Prompt and Callback
+            Executor executor = ContextCompat.getMainExecutor(activity);
+            BiometricPrompt biometricPrompt = new BiometricPrompt(activity, executor, new BiometricPrompt.AuthenticationCallback() {
+                @Override
+                public void onAuthenticationError(int errorCode, @NonNull CharSequence errString) {
+                    super.onAuthenticationError(errorCode, errString);
+                    WritableMap result = Arguments.createMap();
+                    result.putBoolean("success", false);
+                    result.putString("error", errString.toString());
+                    promise.resolve(result);
+                }
+
+                @Override
+                public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult result) {
+                    super.onAuthenticationSucceeded(result);
+                    WritableMap response = Arguments.createMap();
+                    response.putBoolean("success", true);
+                    promise.resolve(response);
+                }
+
+                @Override
+                public void onAuthenticationFailed() {
+                    super.onAuthenticationFailed();
+                    // This is triggered for rejected fingerprints; the system handles retries.
+                }
+            });
+
+            // Step 3: Build the Prompt UI
+            BiometricPrompt.PromptInfo promptInfo = new BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Biometric Authentication")
+                .setSubtitle("Authenticate to access your Vault")
+                .setNegativeButtonText("Use Password Instead")
+                .setAllowedAuthenticators(BIOMETRIC_STRONG)
+                .build();
+
+            // Step 4: Launch the Prompt
+            biometricPrompt.authenticate(promptInfo);
+        });
+    }
+
+    @ReactMethod
     public void setUserIdentity(String userId, String org, String role, Promise promise) {
         try {
             this.currentSubject = new Subject();
@@ -256,6 +325,68 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
     public void setSessionTimeout(int minutes, Promise promise) {
         this.sessionTimeoutMs = (long) minutes * 60 * 1000;
         promise.resolve(true);
+    }
+
+    /**
+     * Sets up the master password for the first time.
+     * This generates a new DEK and wraps it with the provided password.
+     */
+    @ReactMethod
+    public void setupMasterPassword(String password, Promise promise) {
+        executorService.execute(() -> {
+            try {
+                if (password.length() < 16 || password.length() > 32) {
+                    promise.reject("E_INVALID_LENGTH", "Password must be between 16 and 32 characters.");
+                    return;
+                }
+
+                ModelSettings settings = new ModelSettings(getReactApplicationContext());
+                settings.setupMasterPassword(password);
+                
+                // Automatically unlock after setup
+                unlockAfterSetup(password, promise);
+                
+            } catch (Exception e) {
+                promise.reject("E_SETUP_FAILED", "Failed to setup master password: " + e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Helper method to unlock immediately after password setup
+     */
+    private void unlockAfterSetup(String password, Promise promise) {
+        try {
+            Reveila reveilaInstance = ReveilaService.getReveilaInstance();
+            if (reveilaInstance == null) {
+                promise.reject("E_NOT_READY", "Engine not initialized");
+                return;
+            }
+
+            AndroidPlatformAdapter adapter = (AndroidPlatformAdapter) reveilaInstance.getSystemContext().getPlatformAdapter();
+            AndroidCryptographer crypto = (AndroidCryptographer) adapter.getCryptographer();
+            ModelSettings settings = new ModelSettings(getReactApplicationContext());
+            
+            String saltHex = settings.getMasterSalt();
+            String wrappedDekBase64 = settings.getWrappedDekFull();
+            
+            // Unwrap DEK
+            byte[] dek = com.reveila.crypto.DefaultCryptographer.unwrapKeyFromBase64(
+                    wrappedDekBase64,
+                    password,
+                    saltHex
+            );
+
+            // Unlock the cryptographer with the raw DEK
+            crypto.unlock(dek);
+            
+            // Initialize default subject on success
+            setUserIdentity("local-user", "sovereign-local", "user", null);
+            promise.resolve(true);
+            
+        } catch (Exception e) {
+            promise.reject("E_UNLOCK_FAILED", "Setup succeeded but unlock failed: " + e.getMessage());
+        }
     }
 
     /**
@@ -304,9 +435,10 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
                 }
 
                 // Unwrap DEK (This will fail if password/salt is wrong, proving authentication)
+                // For convenience mode, password is already 4 characters
                 byte[] dek = com.reveila.crypto.DefaultCryptographer.unwrapKeyFromBase64(
                         wrappedDekBase64,
-                        isFullPassword ? password : password.substring(0, 4),
+                        password,
                         saltHex
                 );
 

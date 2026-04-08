@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -71,14 +72,15 @@ fun SovereignEntityMap(
         edge.id to animatedFlash
     }
 
-    // Colors
-    val cyberSecuritySlate = Color(0xFF1E2A38) // Deep, trusted Slate
-    val reveilaTeal = Color(0xFF00E5FF)        // High-tech striking Teal
+    // Theme colors
+    val backgroundColor = MaterialTheme.colorScheme.background
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val onBackgroundColor = MaterialTheme.colorScheme.onBackground
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(cyberSecuritySlate)
+            .background(backgroundColor)
             .pointerInput(Unit) {
                 // Implement interaction: Panning and Zooming the knowledge graph
                 detectTransformGestures { _, pan, zoom, _ ->
@@ -115,7 +117,7 @@ fun SovereignEntityMap(
                         
                         // If high risk, it flashes brightly, otherwise it settles to a muted semi-transparent line
                         val targetAlpha = if (isHighRisk) (0.4f + (0.6f * (1f - flashAlpha))) else 0.3f
-                        val edgeColor = if (isHighRisk) reveilaTeal else Color.White
+                        val edgeColor = if (isHighRisk) primaryColor else onBackgroundColor
                         val currentThickness = if (isHighRisk) (4f + (6f * (1f - flashAlpha))) else 3f
 
                         drawLine(
@@ -132,8 +134,8 @@ fun SovereignEntityMap(
             nodes.forEach { node ->
                 val currentRadius = nodeRadii[node.id] ?: 0f
                 if (currentRadius > 0f) {
-                    // Injecting Reveila Teal for Core entities (like Projects)
-                    val nodeColor = if (node.type == NodeType.PROJECT) reveilaTeal else getColorForType(node.type)
+                    // Use primary color for Core entities (like Projects)
+                    val nodeColor = if (node.type == NodeType.PROJECT) primaryColor else getColorForType(node.type)
                     
                     drawCircle(
                         color = nodeColor,

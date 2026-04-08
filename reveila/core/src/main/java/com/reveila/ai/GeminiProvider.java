@@ -53,8 +53,8 @@ public class GeminiProvider extends PluginComponent implements LlmProvider {
                     .invoke("getSecret", new Object[] { apiKey.substring(4) });
         }
 
-        if (resolvedApiKey == null || resolvedApiKey.isBlank()) {
-            throw new IllegalStateException("Gemini API Key could not be resolved.");
+        if (resolvedApiKey == null || resolvedApiKey.isBlank() || "ERROR_DECRYPTION_FAILED".equals(resolvedApiKey)) {
+            throw new IllegalStateException("Gemini API Key could not be resolved. (Check if Vault is unlocked)");
         }
 
         this.chatModel = GoogleAiGeminiChatModel.builder()

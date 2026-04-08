@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -59,14 +60,28 @@ fun SovereignOnboardingScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Select Knowledge Vault",
+                text = "Set Up Knowledge Vault",
                 color = Color.White,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Authorize a secure local folder for the AI to index your documents. Supported formats: .pdf, .docx, .md, .txt. Your AI agent will only process data in this authorized folder. No data will leave this device.",
+                text = "The Knowledge Vault is a folder on your device that you choose for Reveila to read. After you grant access, Reveila uses the files in that folder to build long-term memory and keeps its index up to date as the folder changes."
+                        + "\n\n" +
+                        "1.	Pick a folder: Select the folder you want to use as your Knowledge Vault. Reveila will only read files inside this folder (and its subfolders)."
+                        + "\n" +
+                        "2.	Grant access: When your device asks for permission, allow Reveila to access the selected Knowledge Vault folder."
+                        + "\n" +
+                        "3.	Add files: Copy or move documents into the folder (PDF, Word, TXT, or Markdown). These files become the source material Reveila can reference."
+                        + "\n" +
+                        "4.	Organize (optional): Create subfolders to keep documents grouped by topic. This helps you manage what you store, but Reveila can read across all subfolders."
+                        + "\n" +
+                        "5.	Wait for sync: Reveila updates its index automatically in the background when files are added, edited, moved, or deleted. Depending on file size and number of files, updates may take a moment."
+                        + "\n" +
+                        "6.	Remove information: Delete a file from the Knowledge Vault folder to remove its content from what Reveila can use."
+                        + "\n\n" +
+                        "Note: Reveila can run fully offline using the built-in AI model (your files stay on your device). For faster performance, turn on Cloud Mode in Settings to use a cloud provider.",
                 color = Color.LightGray,
                 modifier = Modifier.padding(horizontal = 32.dp),
                 fontSize = 14.sp
@@ -76,7 +91,7 @@ fun SovereignOnboardingScreen(
                 onClick = onSelectVaultClicked,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF))
             ) {
-                Text(text = "Open Secure Directory Picker", color = Color.Black, fontWeight = FontWeight.Bold)
+                Text(text = "Open Directory Picker", color = Color.Black, fontWeight = FontWeight.Bold)
             }
         }
     } else if (!isScanning && scanProgress < 1.0f) {
@@ -84,35 +99,35 @@ fun SovereignOnboardingScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF121212))
+                .background(MaterialTheme.colorScheme.background)
                 .padding(32.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Knowledge Vault Details",
-                color = Color.White,
+                text = "Set Priority Keywords",
+                color = MaterialTheme.colorScheme.onBackground,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Your Knowledge Vault is a local folder that acts as your AI's long-term memory. By indexing these files, the AI can learn your context, projects, and relationships while keeping everything 100% private on your device.",
-                color = Color.LightGray,
+                text = "Enter a few priority keywords to tell Reveila what to focus on. Reveila uses these terms to weigh information and respond in the context that matters most to you.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 14.sp,
                 lineHeight = 20.sp
             )
             Spacer(modifier = Modifier.height(24.dp))
             Text(
-                text = "What should the AI prioritize?",
-                color = Color(0xFF00E5FF),
+                text = "Type your terms in the input box (for example: “Q2 budget”, “Acme project”).",
+                color = MaterialTheme.colorScheme.primary,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.align(Alignment.Start)
             )
             Text(
-                text = "Enter keywords (e.g., project names, clients, risk, financial) to help the agent identify high-priority facts during the initial scan of your .pdf, .docx, .md, and .txt files.",
-                color = Color.Gray,
+                text = "Suggestions: Add keywords like budgets, project names, client names, risks, deadlines, financial details, or any terms you want Reveila to prioritize.",
+                color = MaterialTheme.colorScheme.outline,
                 fontSize = 12.sp,
                 modifier = Modifier.align(Alignment.Start).padding(top = 4.dp)
             )
@@ -121,21 +136,14 @@ fun SovereignOnboardingScreen(
                 value = focusKeywords,
                 onValueChange = onKeywordsChanged,
                 label = { Text("Priority Keywords (comma separated)", fontSize = 12.sp) },
-                modifier = Modifier.fillMaxWidth().height(100.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.LightGray,
-                    focusedBorderColor = Color(0xFF00E5FF),
-                    unfocusedBorderColor = Color.Gray
-                )
+                modifier = Modifier.fillMaxWidth().height(100.dp)
             )
             Spacer(modifier = Modifier.height(32.dp))
             Button(
                 onClick = onStartScanClicked,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF))
+                modifier = Modifier.fillMaxWidth().height(50.dp)
             ) {
-                Text(text = "Start Secure Indexing", color = Color.Black, fontWeight = FontWeight.Bold)
+                Text(text = "Start Secure Indexing", fontWeight = FontWeight.Bold)
             }
         }
     } else {
@@ -143,7 +151,7 @@ fun SovereignOnboardingScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF121212)), // Dark background theme
+                .background(MaterialTheme.colorScheme.background),
         verticalArrangement = Arrangement.SpaceBetween
     ) {
         
@@ -158,7 +166,7 @@ fun SovereignOnboardingScreen(
         ) {
             Text(
                 text = "Building Sovereign Memory...",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -169,14 +177,14 @@ fun SovereignOnboardingScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(8.dp),
-                color = Color(0xFF4FC3F7), // Reveila primary accent
-                trackColor = Color(0xFF333333)
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
             
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = if (scanProgress < 1.0f) "Scanning Local Documents..." else "Initialization Complete.",
-                color = Color.LightGray,
+                text = if (scanProgress < 1.0f) "Scanning Local Documents..." else "Scan Complete",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 14.sp
             )
         }
@@ -203,13 +211,13 @@ fun SovereignOnboardingScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(400.dp)
-                .background(Color(0xFF1E1E1E)) // Distinct container for the log output
+                .background(MaterialTheme.colorScheme.surface)
                 .padding(16.dp)
         ) {
             if (scanProgress < 1.0f) {
                 Text(
                     text = "Live Discovery Logs",
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
                     modifier = Modifier.padding(bottom = 8.dp)
@@ -225,7 +233,7 @@ fun SovereignOnboardingScreen(
                     items(discoveryLogs.reversed()) { log ->
                         Text(
                             text = ">> $log",
-                            color = Color(0xFFAED581), // Terminal Green style
+                            color = MaterialTheme.colorScheme.secondary,
                             fontSize = 12.sp,
                             fontFamily = FontFamily.Monospace,
                             modifier = Modifier.padding(vertical = 4.dp)
@@ -234,10 +242,13 @@ fun SovereignOnboardingScreen(
                 }
             } else {
                 // Password Setup UI
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     Text(
-                        text = "Initialize Sovereign Identity",
-                        color = Color.White,
+                        text = "Create Master Password",
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
                     )
@@ -247,12 +258,12 @@ fun SovereignOnboardingScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFF420000), shape = RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(4.dp))
                             .padding(8.dp)
                     ) {
                         Text(
-                            text = "⚠️ SERIOUS WARNING: If you lose this password, you will lose access to the app and all data PERMANENTLY. We have no recovery service.",
-                            color = Color(0xFFFFCDD2),
+                            text = "⚠️ WARNING: The Master Password is required to unlock the app and decrypt your data. If you lose this password, you will lose access to the app and all data PERMANENTLY. There is no way to recover it, as it is never stored.",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
                             fontSize = 11.sp,
                             lineHeight = 16.sp
                         )
@@ -265,13 +276,7 @@ fun SovereignOnboardingScreen(
                         onValueChange = { password = it },
                         label = { Text("Master Password (16-32 chars)", fontSize = 12.sp) },
                         modifier = Modifier.fillMaxWidth(),
-                        visualTransformation = PasswordVisualTransformation(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.LightGray,
-                            focusedBorderColor = Color(0xFF4FC3F7),
-                            unfocusedBorderColor = Color.Gray
-                        )
+                        visualTransformation = PasswordVisualTransformation()
                     )
                     
                     Spacer(modifier = Modifier.height(8.dp))
@@ -281,13 +286,7 @@ fun SovereignOnboardingScreen(
                         onValueChange = { confirmPassword = it },
                         label = { Text("Confirm Master Password", fontSize = 12.sp) },
                         modifier = Modifier.fillMaxWidth(),
-                        visualTransformation = PasswordVisualTransformation(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.LightGray,
-                            focusedBorderColor = Color(0xFF4FC3F7),
-                            unfocusedBorderColor = Color.Gray
-                        )
+                        visualTransformation = PasswordVisualTransformation()
                     )
                 }
             }
@@ -300,17 +299,12 @@ fun SovereignOnboardingScreen(
             Button(
                 onClick = { onFinalizeClicked(password) },
                 enabled = scanProgress >= 1.0f && isPasswordValid,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF4FC3F7),
-                    disabledContainerColor = Color.DarkGray
-                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
             ) {
                 Text(
-                    text = "Finalize Sovereign Core",
-                    color = if (scanProgress >= 1.0f && isPasswordValid) Color.Black else Color.Gray,
+                    text = "Go",
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )

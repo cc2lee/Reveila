@@ -140,10 +140,10 @@ export default function HomeScreen() {
         <ReveilaHeader subtitle="Private" color="#00E5FF" />
         <ScrollView contentContainerStyle={styles.content}>
           <ThemedView style={styles.card}>
-            <ThemedText type="subtitle" style={{ marginBottom: 12 }}>Setup Private AI</ThemedText>
-            <ThemedText style={styles.description}>Start the secure setup and download to enable private, local AI features.</ThemedText>
+            <ThemedText type="subtitle" style={{ marginBottom: 12 }}>Welcome to Reveila Personal Edition</ThemedText>
+            <ThemedText style={styles.description}>Reveila Personal Edition helps you use your private data with powerful AI reasoning while keeping it secure. It works like a personal assistant that builds shared context from your Knowledge Vault—a folder of documents you choose to share with the app. Using that context, the built-in agent can answer questions and carry out actions within the permissions you set. You stay in control: during setup, you’ll select which files Reveila can access (for example, work documents or personal notes) and define permission levels, so Reveila knows when to ask for your approval before completing higher-risk actions.</ThemedText>
             <TouchableOpacity style={[styles.button, { backgroundColor: '#00E5FF', marginTop: 24 }]} onPress={() => ReveilaModule.startSovereignSetup()}>
-              <ThemedText style={[styles.buttonText, { color: '#0f172a' }]}>Start Private Setup</ThemedText>
+              <ThemedText style={[styles.buttonText, { color: '#0f172a' }]}>Begin Setup</ThemedText>
             </TouchableOpacity>
           </ThemedView>
         </ScrollView>
