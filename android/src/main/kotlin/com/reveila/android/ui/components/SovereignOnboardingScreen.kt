@@ -161,7 +161,8 @@ fun SovereignOnboardingScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(24.dp),
+                .statusBarsPadding()
+                .padding(horizontal = 24.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
@@ -194,8 +195,9 @@ fun SovereignOnboardingScreen(
         // ==========================================
         Box(
             modifier = Modifier
-                .weight(1f) // Fills remaining dynamic space
+                .weight(0.6f) // Reduced from 1f to 0.6f to give more space to bottom section
                 .fillMaxWidth()
+                .heightIn(max = 300.dp) // Add max height constraint
                 // Wrapping the interactive Canvas built earlier
         ) {
             SovereignEntityMap(
@@ -210,9 +212,10 @@ fun SovereignOnboardingScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(400.dp)
+                .weight(0.4f) // Use weight instead of fixed height for better responsiveness
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(16.dp)
+                .navigationBarsPadding() // Add padding for navigation bar
         ) {
             if (scanProgress < 1.0f) {
                 Text(

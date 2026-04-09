@@ -16,7 +16,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class SafeInvocationTest {
+class ManagedInvocationTest {
 
     @Mock private IntentValidator intentValidator;
     @Mock private SchemaEnforcer schemaEnforcer;
@@ -27,7 +27,7 @@ class SafeInvocationTest {
     @Mock private LlmProviderFactory llmFactory;
     private LlmGovernanceConfig govConfig = LlmGovernanceConfig.defaultGov();
 
-    private SafeInvocation bridge;
+    private ManagedInvocation bridge;
     private OrchestrationService orchestrationService;
     private AgentPrincipal principal;
     private AgencyPerimeter perimeter;
@@ -37,7 +37,7 @@ class SafeInvocationTest {
     @BeforeEach
     void setUp() throws Exception {
         orchestrationService = new OrchestrationService();
-        bridge = new SafeInvocation();
+        bridge = new ManagedInvocation();
         bridge.setSystemContext(systemContext);
         
         when(systemContext.getProxy(anyString())).thenReturn(proxy);

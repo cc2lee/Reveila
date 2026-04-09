@@ -29,7 +29,7 @@ class AgenticFabricTest {
     private LlmGovernanceConfig govConfig = LlmGovernanceConfig.defaultGov();
 
     private OrchestrationService orchestrationService;
-    private SafeInvocation bridge;
+    private ManagedInvocation bridge;
     private AgentPrincipal principal;
     private AgencyPerimeter managerPerimeter;
     private AgencyPerimeter workerPerimeter;
@@ -39,7 +39,7 @@ class AgenticFabricTest {
     @BeforeEach
     void setUp() throws Exception {
         orchestrationService = new OrchestrationService();
-        bridge = new SafeInvocation();
+        bridge = new ManagedInvocation();
         bridge.setSystemContext(systemContext);
         
         when(systemContext.getProxy(anyString())).thenReturn(proxy);
@@ -112,7 +112,7 @@ class AgenticFabricTest {
         assertEquals("Worker Result", result.data());
         
         // In the test, the bridge.invoke() call finishes, and the 'finally' block
-        // in SafeInvocation should clear the trace context if it was the root.
+        // in ManagedInvocation should clear the trace context if it was the root.
         // If it's not cleared here, it might be because the principal.traceId() used
         // in the test doesn't match what the bridge thinks is the root.
         // TraceContextHolder.clear(); // Force clear for test stability if needed

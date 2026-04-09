@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.reveila.system.Reveila;
 import com.reveila.system.RolePrincipal;
 import com.reveila.system.SystemProxy;
-import com.reveila.ai.SafeInvocation;
+import com.reveila.ai.ManagedInvocation;
 import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -87,13 +87,13 @@ public class ApiController {
         @SuppressWarnings("unchecked")
         Map<String, Object> arguments = (Map<String, Object>) payload.get("arguments");
 
-        SafeInvocation bridge;
+        ManagedInvocation bridge;
         try {
-            bridge = (SafeInvocation) ((SystemProxy) reveila.getSystemContext()
-                    .getProxy("SafeInvocation"))
+            bridge = (ManagedInvocation) ((SystemProxy) reveila.getSystemContext()
+                    .getProxy("ManagedInvocation"))
                     .getInstance();
         } catch (IllegalArgumentException e) {
-            throw new IllegalStateException("SafeInvocation not found", e);
+            throw new IllegalStateException("ManagedInvocation not found", e);
         }
 
         Object result = bridge.handleCallback(jitToken, component, method, arguments);

@@ -20,7 +20,7 @@ import org.mockito.Mockito;
 @ExtendWith(MockitoExtension.class)
 class WebhookIngestionServiceTest {
 
-    @Mock private SafeInvocation bridge;
+    @Mock private ManagedInvocation bridge;
     @Mock private OrchestrationService orchestrationService;
     @Mock private FlightRecorder flightRecorder;
     @Mock private AgentSession session;
@@ -44,7 +44,7 @@ class WebhookIngestionServiceTest {
                 .get().getArgument(0);
             
             return switch (name) {
-                case "SafeInvocation" -> bridge;
+                case "ManagedInvocation" -> bridge;
                 case "OrchestrationService" -> orchestrationService;
                 case "FlightRecorder" -> flightRecorder;
                 case "LlmProviderFactory" -> llmFactory;

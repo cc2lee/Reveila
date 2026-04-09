@@ -22,7 +22,7 @@ import dev.langchain4j.data.message.UserMessage;
  */
 public class AgenticFabric extends SystemComponent {
 
-    private SafeInvocation bridge;
+    private ManagedInvocation bridge;
     private AgentSessionManager sessionManager;
     private OrchestrationService orchestrationService;
     private MetadataRegistry metadataRegistry;
@@ -44,12 +44,12 @@ public class AgenticFabric extends SystemComponent {
     @Override
     public void onStart() throws Exception {
         try {
-            Proxy p = context.getProxy("SafeInvocation");
+            Proxy p = context.getProxy("ManagedInvocation");
             if (p instanceof SystemProxy sp) {
-                this.bridge = (SafeInvocation) sp.getInstance();
+                this.bridge = (ManagedInvocation) sp.getInstance();
             }
         } catch (IllegalArgumentException e) {
-            throw new IllegalStateException("SafeInvocation not found.", e);
+            throw new IllegalStateException("ManagedInvocation not found.", e);
         }
 
         try {

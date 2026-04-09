@@ -41,7 +41,7 @@ import com.reveila.system.SystemProxy;
  * 
  * @author CL
  */
-public class SafeInvocation extends SystemComponent {
+public class ManagedInvocation extends SystemComponent {
     
     private IntentValidator intentValidator;
     private SchemaEnforcer schemaEnforcer;
@@ -51,7 +51,7 @@ public class SafeInvocation extends SystemComponent {
     private SecretManager secretManager;
     private OrchestrationService orchestrationService;
 
-    public SafeInvocation() {
+    public ManagedInvocation() {
         // Dependencies will be wired via the SystemContext in onStart
     }
 

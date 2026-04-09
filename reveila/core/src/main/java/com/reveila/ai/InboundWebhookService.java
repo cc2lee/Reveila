@@ -13,14 +13,14 @@ import com.reveila.system.SystemProxy;
  */
 public class InboundWebhookService extends SystemComponent {
 
-    private SafeInvocation bridge;
+    private ManagedInvocation bridge;
     private OrchestrationService orchestrationService;
     private FlightRecorder flightRecorder;
     private LlmProviderFactory llmFactory;
 
     @Override
     protected void onStart() throws Exception {
-        this.bridge = (SafeInvocation) ((SystemProxy) context.getProxy("SafeInvocation")).getInstance();
+        this.bridge = (ManagedInvocation) ((SystemProxy) context.getProxy("ManagedInvocation")).getInstance();
         this.orchestrationService = (OrchestrationService) ((SystemProxy) context.getProxy("OrchestrationService")).getInstance();
         this.flightRecorder = (FlightRecorder) ((SystemProxy) context.getProxy("FlightRecorder")).getInstance();
         this.llmFactory = (LlmProviderFactory) ((SystemProxy) context.getProxy("LlmProviderFactory")).getInstance();
