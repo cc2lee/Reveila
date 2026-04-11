@@ -137,6 +137,11 @@ public class ReveilaService extends Service {
                     boolean shouldOverwrite = wasUncleanShutdown || BuildConfig.DEBUG;
                     if (BuildConfig.DEBUG) {
                         Log.i("ReveilaService", "Debug mode detected. Forcing asset overwrite.");
+                        // Delete the configs directory to prevent zombie config files from lingering
+                        File configsDir = new File(systemHome, "configs");
+                        if (configsDir.exists()) {
+                            deleteRecursively(configsDir);
+                        }
                     }
 
                     // Copy assets, overwriting only if the last shutdown was unclean or in debug mode.
@@ -166,6 +171,18 @@ public class ReveilaService extends Service {
 
         // If the system kills the service, it will be automatically restarted.
         return START_STICKY;
+    }
+
+    private void deleteRecursively(File fileOrDirectory) {
+        if (fileOrDirectory.isDirectory()) {
+            File[] children = fileOrDirectory.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursively(child);
+                }
+            }
+        }
+        fileOrDirectory.delete();
     }
 
     private void fetchRemoteProperties(File systemHome) {

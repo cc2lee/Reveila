@@ -14,10 +14,11 @@
         },
         {
             "type": "java",
-            "name": "Attach to Android (Java/Kotlin)",
+            "name": "Attach to Android",
             "request": "attach",
             "hostName": "localhost",
-            "port": 5005
+            "port": 5005,
+            "timeout": 60000
         }
     ]
 }

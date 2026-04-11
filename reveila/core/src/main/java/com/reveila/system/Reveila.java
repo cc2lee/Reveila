@@ -306,7 +306,16 @@ public class Reveila implements AutoCloseable, EventConsumer {
 			// No platform-specific Cryptographer. Fallback to DefaultCryptographer
 			String cryptoKey = System.getenv("REVEILA_CRYPTO_KEY");
 			if (cryptoKey != null && !cryptoKey.isBlank()) {
-				String saltHex = props.getProperty("auth.master.salt", "00000000000000000000000000000000");
+				String saltHex = System.getenv("REVEILA_CRYPTO_SALT");
+				
+				// Optional: fallback to properties only for backward compatibility during transition
+				if (saltHex == null || saltHex.isBlank()) {
+					saltHex = props.getProperty("auth.master.salt");
+				}
+				
+				if (saltHex == null || saltHex.isBlank()) {
+					throw new IllegalStateException("No Crypto Salt found. Please set REVEILA_CRYPTO_SALT environment variable.");
+				}
 				encrypter = new DefaultCryptographer(cryptoKey, hexToBytes(saltHex));
 			} else {
 				throw new IllegalStateException("No Cryptographer found. Please set REVEILA_CRYPTO_KEY environment variable.");
@@ -502,14 +511,11 @@ public class Reveila implements AutoCloseable, EventConsumer {
 
 		for (MetaObject mObj : metaObjectList) {
 			Manifest manifest = createManifest(tag, mObj);
-			Subject subject = new Subject();
 			SystemProxy proxy = new SystemProxy(mObj, manifest);
+			Subject subject = new Subject();
 			if (Constants.COMPONENT.equalsIgnoreCase(manifest.getComponentType())) {
-				proxy.setContext(systemContext);
 				subject.getPrincipals().add(new RolePrincipal(Constants.SYSTEM));
-			} else { // treated as a plugin regardless and create a plugin context with restricted
-						// access
-				proxy.setContext(new PluginContext(systemContext, manifest, new Properties()));
+			} else {
 				subject.getPrincipals().add(PluginPrincipal.create(manifest.getName(), manifest.getOrg()));
 			}
 			systemContext.add(proxy);

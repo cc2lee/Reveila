@@ -64,6 +64,21 @@ public class OrchestrationService extends SystemComponent {
         sessions.remove(sessionId);
     }
     
+    /**
+     * Returns a list of active sessions for the dashboard.
+     */
+    public java.util.List<java.util.Map<String, Object>> getActiveSessions() {
+        return sessions.values().stream().map(session -> {
+            java.util.Map<String, Object> map = new java.util.HashMap<>();
+            map.put("id", session.getSessionId());
+            map.put("plugin", "Reveila Agent");
+            // Random mock stats for cpu/ram since we don't have real hardware metrics per session
+            map.put("cpu", (int)(Math.random() * 20));
+            map.put("ram", 100 + (int)(Math.random() * 100));
+            return map;
+        }).collect(java.util.stream.Collectors.toList());
+    }
+    
     public String getOptimizationPriority() {
         return optimizationPriority;
     }

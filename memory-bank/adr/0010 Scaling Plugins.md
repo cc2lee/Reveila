@@ -27,7 +27,13 @@ To ensure sub-second consistency across the cluster, we utilized the PostgreSQL 
 - **The Listener:** [`ClusterSyncService.java`](../../spring/core/src/main/java/com/reveila/spring/service/ClusterSyncService.java) maintains a persistent connection and listens for these pulses.
 - **The Action:** Upon receiving a pulse, every node in the cluster automatically triggers a `reloadProperties()` event, pulling the latest state from the database.
 
-#### 4. Unified Dashboard Management
+#### 4. Targeted Cluster Roles (Elastic Agent Orchestration)
+To prevent overwhelming single nodes with thousands of plugins, the system utilizes a sharding mechanism based on **Targeted Cluster Roles**.
+- **Node Configuration:** When a server node boots, it can be assigned a specific functional role in its local properties (e.g., `cluster.role=FINANCE_WORKER` or `cluster.role=HEAVY_COMPUTE`).
+- **Registry Targeting:** The `plugin_registry` table includes a `targetClusterRole` field. 
+- **Selective Installation:** When the `pg_notify` pulse alerts the cluster about a new plugin, each node evaluates the plugin's `targetClusterRole` against its own assigned role. The node will only download, install, and execute the plugin if the roles match. This enables perfect elastic sharding of plugin workloads across massive global clusters.
+
+#### 5. Unified Dashboard Management
 The CISO Dashboard has been upgraded with a dynamic Settings interface.
 - **Localization:** UI strings are externalized in [`text.en.properties`](../../system-home/standard/resources/ui/en/text.en.properties), allowing for user-friendly configuration.
 - **Real-time Control:** Saving a setting in the UI instantly propagates the change to all running instances in the fabric.

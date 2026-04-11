@@ -114,6 +114,45 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 		});
 	}
 
+	@SuppressWarnings("unchecked")
+	private com.reveila.ai.AgencyPerimeter buildAgencyPerimeter() {
+		Object perimeterObj = this.metaObject.getDataMap().get("agency_perimeter");
+		if (perimeterObj instanceof Map) {
+			Map<String, Object> pMap = (Map<String, Object>) perimeterObj;
+			
+			Set<String> accessScopes = pMap.containsKey("accessScopes") && pMap.get("accessScopes") instanceof List
+				? new java.util.HashSet<>((List<String>) pMap.get("accessScopes")) : Collections.emptySet();
+				
+			Set<String> allowedDomains = pMap.containsKey("allowedDomains") && pMap.get("allowedDomains") instanceof List
+				? new java.util.HashSet<>((List<String>) pMap.get("allowedDomains")) : Collections.emptySet();
+				
+			boolean internetAccessBlocked = pMap.containsKey("internetAccessBlocked") 
+				? Boolean.TRUE.equals(pMap.get("internetAccessBlocked")) : false;
+				
+			long maxMemoryMb = pMap.containsKey("maxMemoryMb") 
+				? ((Number) pMap.get("maxMemoryMb")).longValue() : 512L;
+				
+			int maxCpuCores = pMap.containsKey("maxCpuCores") 
+				? ((Number) pMap.get("maxCpuCores")).intValue() : 1;
+				
+			int maxExecutionSec = pMap.containsKey("maxExecutionSec") 
+				? ((Number) pMap.get("maxExecutionSec")).intValue() : 30;
+				
+			boolean delegationAllowed = pMap.containsKey("delegationAllowed") 
+				? Boolean.TRUE.equals(pMap.get("delegationAllowed")) : false;
+
+			return new com.reveila.ai.AgencyPerimeter(
+				accessScopes, allowedDomains, internetAccessBlocked, 
+				maxMemoryMb, maxCpuCores, maxExecutionSec, delegationAllowed
+			);
+		}
+		
+		// Return a highly restrictive default perimeter if none is configured
+		return new com.reveila.ai.AgencyPerimeter(
+			Collections.emptySet(), Collections.emptySet(), true, 128L, 1, 5, false
+		);
+	}
+
 	private String getMethodSignature(String methodName, Object[] args) {
 		if (args == null || args.length == 0) {
 			return methodName;
@@ -191,28 +230,83 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 
 		// ADR 0006: We enforce execution isolation for plugins that are not promoted to "system" role.
 		if (plugin != null && !systemCall) {
-			List<Object> list = List.of(plugin, null, metaObject.getName(),
-					Map.of("method", methodName, "args", args != null ? args : new Object[0]), null);
+			com.reveila.ai.AgencyPerimeter perimeter = buildAgencyPerimeter();
+			Object[] list = new Object[] { 
+					plugin, 
+					perimeter, 
+					metaObject.getName(),
+					Map.of("method", methodName, "args", args != null ? args : new Object[0]), 
+					null 
+			};
 			Proxy proxy;
 			try {
 				proxy = ((SystemContext) context).getProxy("GuardedRuntime");
 			} catch (IllegalArgumentException e) {
 				throw new IllegalStateException("GuardedRuntime not found or invalid", e);
 			}
-			return proxy.invoke("execute", list.toArray());
+			return proxy.invoke("execute", list);
 		}
 
 		return invoke(methodName, args);
 	}
 
 	private Object newInstance() throws Exception {
+		// Before loading the class, inject the plugin's ClassLoader if it's a plugin
+		if (Constants.PLUGIN.equalsIgnoreCase(manifest.getComponentType()) && this.loaderRef.get() == null) {
+			try {
+				String pluginsDir = context != null && context.getProperties() != null ? 
+					context.getProperties().getProperty("plugin.local.dir") : null;
+				if (pluginsDir != null) {
+					java.io.File pluginFolder = new java.io.File(pluginsDir, metaObject.getName());
+					if (pluginFolder.exists() && pluginFolder.isDirectory()) {
+						ClassLoader pluginLoader = RuntimeUtil.createPluginClassLoader(
+							pluginFolder.getAbsolutePath(), 
+							Thread.currentThread().getContextClassLoader()
+						);
+						setClassLoader(pluginLoader);
+					}
+				}
+			} catch (Exception e) {
+				logger.warning("Failed to initialize plugin ClassLoader for " + name + ": " + e.getMessage());
+			}
+		}
+
 		Class<?> clazz = getComponentClass();
 		Object object = clazz.getDeclaredConstructor().newInstance();
 		List<Map<String, Object>> arguments = this.metaObject.getArguments();
 		setArguments(object, clazz, arguments);
 
-		if (object instanceof SystemComponent) {
-			((SystemComponent) object).setContext(context);
+		if (Constants.COMPONENT.equalsIgnoreCase(manifest.getComponentType())) {
+			if (object instanceof SystemComponent) {
+				((SystemComponent) object).setContext(context);
+			}
+		}
+		else if (Constants.PLUGIN.equalsIgnoreCase(manifest.getComponentType())) {
+			if (object instanceof PluginComponent) {
+				java.util.Properties staticPluginProps = new java.util.Properties();
+				
+				// Initialize the frozen static copy for backward compatibility
+				if (context != null && context.getProperties() != null) {
+					String prefix = "plugin." + metaObject.getName() + ".";
+					context.getProperties().forEach((k, v) -> {
+						String keyStr = k.toString();
+						if (keyStr.startsWith(prefix)) {
+							staticPluginProps.put(keyStr.substring(prefix.length()), v);
+						} else if (keyStr.startsWith(metaObject.getName() + ".")) {
+							staticPluginProps.put(keyStr.substring(metaObject.getName().length() + 1), v);
+						}
+					});
+					
+					if (context.getProperties().containsKey("system.home")) {
+						staticPluginProps.put("system.home", context.getProperties().getProperty("system.home"));
+					}
+					if (context.getProperties().containsKey("system.mode")) {
+						staticPluginProps.put("system.mode", context.getProperties().getProperty("system.mode"));
+					}
+				}
+				
+				((PluginComponent) object).setContext(new PluginContext(context, manifest, staticPluginProps));
+			}
 		}
 
 		if (object instanceof Startable) {

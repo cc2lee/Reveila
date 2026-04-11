@@ -48,13 +48,29 @@ public class GeminiProvider extends PluginComponent implements LlmProvider {
     @Override
     protected void onStart() throws Exception {
         String resolvedApiKey = apiKey;
-        if (apiKey != null && apiKey.startsWith("REF:")) {
-            resolvedApiKey = (String) this.context.getProxy("SecretManager")
-                    .invoke("getSecret", new Object[] { apiKey.substring(4) });
+
+        // Fallback to dynamic context properties if static setter wasn't invoked
+        if ((resolvedApiKey == null || resolvedApiKey.isBlank()) && this.context != null) {
+             resolvedApiKey = this.context.getProperties().getProperty("apiKey");
+             
+             // Also check the specific plugin prefix if sandbox filtering is applied
+             if (resolvedApiKey == null || resolvedApiKey.isBlank()) {
+                 resolvedApiKey = this.context.getProperties().getProperty("plugin.GeminiProvider.apiKey");
+             }
+        }
+
+        if (resolvedApiKey != null && resolvedApiKey.startsWith("REF:")) {
+            try {
+                resolvedApiKey = (String) this.context.getProxy("SecretManager")
+                        .invoke("getSecret", new Object[] { resolvedApiKey.substring(4) });
+            } catch (Exception e) {
+                logger.warning("Failed to resolve SecretManager REF: " + e.getMessage());
+            }
         }
 
         if (resolvedApiKey == null || resolvedApiKey.isBlank() || "ERROR_DECRYPTION_FAILED".equals(resolvedApiKey)) {
-            throw new IllegalStateException("Gemini API Key could not be resolved. (Check if Vault is unlocked)");
+            logger.warning("Gemini API Key could not be resolved. LLM Provider will remain inactive until configured.");
+            return; // Gracefully degrade instead of crashing the entire engine
         }
 
         this.chatModel = GoogleAiGeminiChatModel.builder()
@@ -72,7 +88,10 @@ public class GeminiProvider extends PluginComponent implements LlmProvider {
     public String generateResponse(String prompt, String systemContext) {
         try {
             if (chatModel == null) {
-                onStart(); // Lazy init if needed, though onStart should handle it
+                onStart(); // Lazy init retry
+                if (chatModel == null) {
+                    return "ERROR: Gemini API Key is not configured. Please add it in Settings.";
+                }
             }
 
             List<ChatMessage> messages = new ArrayList<>();

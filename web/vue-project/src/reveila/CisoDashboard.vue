@@ -1,17 +1,31 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, onUnmounted } from 'vue'
+import { ReveilaClient } from '@reveila/core'
 import '@reveila/core/ciso-dashboard.js'
 
 const killSwitch = ref<any>(null)
+let intervalId: number | undefined
 
-const mockSessions = [
-  { id: 'agent-77', plugin: 'healthcare-audit-worker', cpu: 12, ram: 156 },
-  { id: 'agent-42', plugin: 'finance-analyzer', cpu: 85, ram: 412 }
-]
+const fetchSessions = async () => {
+  try {
+    const api = new ReveilaClient()
+    const response = await api.invoke('OrchestrationService', 'getActiveSessions', [])
+    if (killSwitch.value && Array.isArray(response)) {
+      killSwitch.value.agentSessions = response
+    }
+  } catch (error) {
+    console.error('Failed to fetch real-time sessions', error)
+  }
+}
 
 onMounted(() => {
-  if (killSwitch.value) {
-    killSwitch.value.agentSessions = mockSessions
+  fetchSessions()
+  intervalId = setInterval(fetchSessions, 5000)
+})
+
+onUnmounted(() => {
+  if (intervalId) {
+    clearInterval(intervalId)
   }
 })
 </script>

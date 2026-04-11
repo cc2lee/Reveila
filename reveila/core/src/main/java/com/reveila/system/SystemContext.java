@@ -46,6 +46,52 @@ public final class SystemContext implements Context {
 		return properties;
 	}
 
+	public String getProperty(String name, Subject subject) {
+		if (name == null || subject == null) {
+			return null;
+		}
+
+		// Security Check: Only allow access to properties prefixed with the plugin's name,
+		// or safe common properties, to enforce the Principle of Least Privilege.
+		java.util.Set<PluginPrincipal> plugins = subject.getPrincipals(PluginPrincipal.class);
+		if (!plugins.isEmpty()) {
+			PluginPrincipal plugin = plugins.iterator().next();
+			String pluginName = plugin.getName();
+			
+			String prefix1 = "plugin." + pluginName + ".";
+			String prefix2 = pluginName + ".";
+
+			if (name.startsWith(prefix1) || name.startsWith(prefix2)) {
+				return properties.getProperty(name);
+			}
+
+			// Handle unprefixed keys requested by the plugin
+			// by automatically checking for the prefixed version in the global properties
+			String prefixedGlobal1 = properties.getProperty(prefix1 + name);
+			if (prefixedGlobal1 != null) return prefixedGlobal1;
+
+			String prefixedGlobal2 = properties.getProperty(prefix2 + name);
+			if (prefixedGlobal2 != null) return prefixedGlobal2;
+
+			// Safe globals
+			if ("system.home".equals(name) || "system.mode".equals(name)) {
+				return properties.getProperty(name);
+			}
+			
+			// Allow common LLM keys to pass through if they are set globally without a prefix
+			if ("apiKey".equals(name) || "endpoint".equals(name) || "provider".equals(name)) {
+				return properties.getProperty(name);
+			}
+
+			// Deny access to other global properties
+			logger.warning("Security Policy Violation: Plugin '" + pluginName + "' attempted to read unauthorized global property: " + name);
+			return null;
+		}
+
+		// If it's a System role (not a plugin), allow full access
+		return properties.getProperty(name);
+	}
+
 	public EventManager getEventManager() {
 		return eventManager;
 	}
@@ -86,7 +132,11 @@ public final class SystemContext implements Context {
 		}
 
 		proxiesByName.put(name, proxy);
-		eventManager.addEventWatcher(proxy);
+		if (proxy instanceof EventConsumer) {
+			eventManager.addEventWatcher((EventConsumer)proxy);
+		}
+		
+		proxy.setContext(this);
 	}
 
 	public synchronized void remove(SystemProxy proxy) {
@@ -94,7 +144,10 @@ public final class SystemContext implements Context {
 			return;
 		}
 		proxiesByName.remove(proxy.getName());
-		eventManager.removeEventConsumer(proxy);
+		if (proxy instanceof EventConsumer) {
+			eventManager.removeEventConsumer((EventConsumer)proxy);
+		}
+		proxy.setContext(null);
 	}
 
 	public synchronized void clear() {

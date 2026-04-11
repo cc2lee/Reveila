@@ -25,7 +25,7 @@ public class SecretManager extends SystemComponent {
 
     @Override
     protected void onStart() throws Exception {
-        logger.info("CredentialManager (Sovereign Vault) starting...");
+        logger.info("SecretManager (Sovereign Vault) starting...");
         ensureSecretStoreExists();
     }
 

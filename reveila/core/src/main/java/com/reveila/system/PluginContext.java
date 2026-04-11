@@ -38,7 +38,16 @@ public final class PluginContext implements Context {
 
     @Override
     public Properties getProperties() {
-        return properties;
+        return new Properties() {
+            @Override
+            public String getProperty(String key) {
+                String dynamicValue = systemContext.getProperty(key, subject);
+                if (dynamicValue != null) {
+                    return dynamicValue;
+                }
+                return properties.getProperty(key);
+            }
+        };
     }
 
     @Override

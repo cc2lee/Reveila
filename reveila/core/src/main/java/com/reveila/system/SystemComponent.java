@@ -7,7 +7,7 @@ import com.reveila.event.EventConsumer;
 
 public abstract class SystemComponent extends AbstractComponent implements EventConsumer {
 
-    protected Context context;
+    protected SystemContext context;
     protected Logger logger;
 
     public Context getContext() {
@@ -16,10 +16,17 @@ public abstract class SystemComponent extends AbstractComponent implements Event
 
     public void setContext(Context context) {
         if (context == null) {
-            throw new IllegalArgumentException("Context cannot be null.");
+            this.context = null;
+            return;
         }
-        this.context = context;
-        this.logger = context.getLogger();
+
+        if (context instanceof SystemContext) {
+            this.context = (SystemContext) context;
+            this.logger = context.getLogger();
+            return;
+        }
+
+        throw new IllegalArgumentException("Context must be a SystemContext.");
     }
 
     @Override

@@ -3,6 +3,8 @@ package com.reveila.ai;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.reveila.system.SystemComponent;
+
 /**
  * A metadata registry where plugins register their capabilities. The registry
  * is built to support the Model Context Protocol (MCP), which is
@@ -18,7 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * 
  * @author CL
  */
-public class MetadataRegistry {
+public class MetadataRegistry extends SystemComponent {
+    
     private final Map<String, PluginManifest> plugins = new ConcurrentHashMap<>();
 
     /**
@@ -81,5 +84,15 @@ public class MetadataRegistry {
         return Map.of(
                 "capabilities", Map.of("tools", Map.of()),
                 "tools", mcpTools);
+    }
+
+    @Override
+    protected void onStop() throws Exception {
+        
+    }
+
+    @Override
+    protected void onStart() throws Exception {
+        
     }
 }

@@ -18,10 +18,9 @@ import com.reveila.android.SafePluginLoader;
  */
 public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
     
-    private final Context androidContext;
+    private Context androidContext;
 
-    public AndroidGuardedRuntime(Context context) {
-        this.androidContext = context;
+    public AndroidGuardedRuntime() {
     }
 
     /**
@@ -38,19 +37,40 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
         long startTime = System.currentTimeMillis();
         logger.info("Executing via AndroidGuardedRuntime for " + pluginId + " [Trace: " + principal.getTraceId() + "] Started at: " + startTime);
 
-        // Filesystem Isolation: Plugins are stored in app-private storage
-        String pluginFileName = pluginId + ".jar"; // Or .dex
+        if (arguments == null || !arguments.containsKey("method")) {
+            throw new IllegalArgumentException("Invocation arguments must specify the target 'method' name.");
+        }
         
-        // Use SafePluginLoader to create a proxy and execute
-        // Note: In a real implementation, we'd map perimeter constraints to Android specific restrictions
+        String methodName = String.valueOf(arguments.get("method"));
+        Object[] argsArray = arguments.containsKey("args") ? (Object[]) arguments.get("args") : new Object[0];
+        
         try {
-            SystemProxy proxy = SafePluginLoader.loadPlugin(androidContext, this.context, pluginFileName, "com.reveila.plugin.EntryPoint");
+            com.reveila.system.Proxy proxy = this.context.getProxy(pluginId);
             if (proxy == null) {
-                throw new RuntimeException("Failed to load plugin: " + pluginId);
+                throw new RuntimeException("Failed to locate proxy for plugin: " + pluginId);
+            }
+
+            // Load Plugin library if exists
+            String pluginFileName = pluginId + ".jar";
+            File pluginDir = new File(androidContext.getFilesDir(), "plugins/" + pluginId);
+            File pluginFile = new File(pluginDir, pluginFileName);
+
+            if (pluginFile.exists() && proxy instanceof SystemProxy) {
+                // Add the child first android dex class loader here
+                ClassLoader currentLoader = ((SystemProxy) proxy).getClass().getClassLoader();
+                ClassLoader pluginLoader = new com.reveila.android.ChildFirstDexClassLoader(
+                    pluginFile.getAbsolutePath(),
+                    pluginDir.getAbsolutePath(),
+                    null,
+                    currentLoader != null ? currentLoader : this.getClass().getClassLoader()
+                );
+                
+                java.lang.reflect.Method setClassLoaderMethod = SystemProxy.class.getDeclaredMethod("setClassLoader", ClassLoader.class);
+                setClassLoaderMethod.setAccessible(true);
+                setClassLoaderMethod.invoke(proxy, pluginLoader);
             }
             
-            String methodName = arguments != null ? String.valueOf(arguments.get("method")) : "execute";
-            return proxy.invoke(methodName, new Object[]{arguments});
+            return proxy.invoke(methodName, argsArray);
         } catch (Exception e) {
             logger.severe("Execution failed in AndroidGuardedRuntime: " + e.getMessage());
             throw new RuntimeException("Plugin execution failed", e);
@@ -59,6 +79,7 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
 
     @Override
     protected void onStart() throws Exception {
+        this.androidContext = ((com.reveila.android.AndroidPlatformAdapter) this.context.getPlatformAdapter()).getAndroidContext();
         logger.info("AndroidGuardedRuntime started: Native Android isolation active.");
     }
 

@@ -8,10 +8,11 @@ public abstract class PluginComponent extends AbstractComponent {
     protected Logger logger;
 
     public void setContext(Context context) {
-        if (context == null) {
-            throw new IllegalArgumentException("Context cannot be null.");
-        }
         this.context = context;
-        this.logger = context.getLogger();
+        if (context == null) {
+            if (this.logger != null) this.logger = null;
+        } else {
+            this.logger = context.getLogger();
+        }
     }
 }

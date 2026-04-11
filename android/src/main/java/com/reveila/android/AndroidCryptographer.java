@@ -31,6 +31,13 @@ public class AndroidCryptographer implements Cryptographer {
     public void lock() {
         this.delegate = null;
     }
+    
+    /**
+     * Checks if the cryptographer is unlocked.
+     */
+    public boolean isUnlocked() {
+        return delegate != null;
+    }
 
     private void ensureUnlocked() {
         if (delegate == null) {

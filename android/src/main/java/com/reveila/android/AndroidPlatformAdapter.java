@@ -43,6 +43,10 @@ public class AndroidPlatformAdapter extends BasePlatformAdapter {
         configureAndroidLogging();
     }
 
+    public Context getAndroidContext() {
+        return this.context;
+    }
+
     private static Properties prepareProperties(Context context, Properties overwrites) {
         Properties props = new Properties();
         String defaultHome = new File(context.getFilesDir(), "reveila/system").getAbsolutePath();

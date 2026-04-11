@@ -27,7 +27,7 @@ export default function HomeScreen() {
   const setupCompleteRef = useRef(false);
 
   // Auth & Session State
-  const [isLocked, setIsLocked] = useState(false);
+  const [isLocked, setIsLocked] = useState(true);
   const [needsIdentitySetup, setNeedsIdentitySetup] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
 
@@ -47,6 +47,8 @@ export default function HomeScreen() {
         }
       } catch (e) {}
     };
+    
+    checkSession();
     const interval = setInterval(checkSession, 10000);
     return () => clearInterval(interval);
   }, [isRunning, isStarting]);
@@ -71,6 +73,7 @@ export default function HomeScreen() {
           }
         }
         const running = await ReveilaModule.isRunning();
+        console.log('isRunning:', running);
         setIsRunning(running);
         if (running) {
           setIsStarting(false);
@@ -82,7 +85,9 @@ export default function HomeScreen() {
         if (autoRestart && !running && !isStarting && isSetupComplete) {
           handleStart();
         }
-      } catch (e) { }
+      } catch (e) {
+        console.error('Error checking status:', e);
+      }
     };
     checkSetupAndStatus();
     const interval = setInterval(checkSetupAndStatus, 5000);
@@ -110,13 +115,18 @@ export default function HomeScreen() {
   };
 
   const handleSendPrompt = async () => {
-    if (!promptText.trim() || !isRunning) return;
+    if (!promptText.trim()) return;
+    if (!isRunning) {
+      Alert.alert("System Offline", "The Reveila engine is currently offline or starting. Please wait or restart the service.");
+      if (!isStarting) handleStart();
+      return;
+    }
     setIsProcessing(true);
     setAgentResponse(null);
 
     try {
       // Call the real AgenticFabric
-      const result = await ReveilaModule.invoke('AgenticFabric', 'askAgent', [promptText, null]);
+      const result = await ReveilaModule.invoke('AgenticFabric', 'askAgent', [promptText, ""]);
       setLogs(prev => [{ attributes: { action: 'PROMPT', details: promptText } }, ...prev]);
       setAgentResponse(typeof result === 'string' ? result : JSON.stringify(result));
       setPromptText('');
@@ -141,7 +151,7 @@ export default function HomeScreen() {
         <ScrollView contentContainerStyle={styles.content}>
           <ThemedView style={styles.card}>
             <ThemedText type="subtitle" style={{ marginBottom: 12 }}>Welcome to Reveila Personal Edition</ThemedText>
-            <ThemedText style={styles.description}>Reveila Personal Edition helps you use your private data with powerful AI reasoning while keeping it secure. It works like a personal assistant that builds shared context from your Knowledge Vault—a folder of documents you choose to share with the app. Using that context, the built-in agent can answer questions and carry out actions within the permissions you set. You stay in control: during setup, you’ll select which files Reveila can access (for example, work documents or personal notes) and define permission levels, so Reveila knows when to ask for your approval before completing higher-risk actions.</ThemedText>
+            <ThemedText style={styles.description}>Reveila Personal Edition helps you use your private data with powerful AI reasoning while keeping it secure. It works like a personal assistant that builds shared context from your Knowledge Vault—a folder of documents you choose to share with the app. Using that context, the built-in agent can answer questions and carry out actions within the permissions you set. You stay in control: during setup, you will select which files Reveila can access (for example, work documents or personal notes) and define permission levels, so Reveila knows when to ask for your approval before completing higher-risk actions.</ThemedText>
             <TouchableOpacity style={[styles.button, { backgroundColor: '#00E5FF', marginTop: 24 }]} onPress={() => ReveilaModule.startSovereignSetup()}>
               <ThemedText style={[styles.buttonText, { color: '#0f172a' }]}>Begin Setup</ThemedText>
             </TouchableOpacity>
@@ -163,9 +173,15 @@ export default function HomeScreen() {
     <ThemedView style={styles.container}>
       <ReveilaHeader>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={[styles.miniBadge, { backgroundColor: isRunning ? '#22c55e' : (isStarting ? '#f59e0b' : '#ef4444'), flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+            <View style={[styles.statusDot, { backgroundColor: '#fff' }]} />
+            <ThemedText style={styles.miniBadgeText}>
+              {isRunning ? 'ONLINE' : (isStarting ? 'STARTING...' : 'OFFLINE')}
+            </ThemedText>
+          </View>
           <TouchableOpacity onPress={() => setIsCloudMode(!isCloudMode)}>
-            <View style={[styles.miniBadge, { backgroundColor: isCloudMode ? '#3b82f6' : '#22c55e', flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-              <ThemedText style={styles.miniBadgeText}>{isCloudMode ? 'CLOUD' : 'PRIVATE'}</ThemedText>
+            <View style={[styles.miniBadge, { backgroundColor: isCloudMode ? '#3b82f6' : '#64748b', flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+              <ThemedText style={styles.miniBadgeText}>{isCloudMode ? 'CLOUD' : 'LOCAL'}</ThemedText>
             </View>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/settings')}>
@@ -223,12 +239,12 @@ export default function HomeScreen() {
               placeholderTextColor="#94a3b8"
               value={promptText}
               onChangeText={setPromptText}
-              editable={isRunning && !isProcessing}
+              editable={!isProcessing}
               textAlignVertical="top"
             />
             <TouchableOpacity
-              style={[styles.sendButton, { opacity: (isRunning && promptText.trim()) ? 1 : 0.5 }]}
-              disabled={!isRunning || isProcessing || !promptText.trim()}
+              style={[styles.sendButton, { opacity: (promptText.trim()) ? 1 : 0.5 }]}
+              disabled={isProcessing || !promptText.trim()}
               onPress={handleSendPrompt}
             >
               <ThemedText style={styles.buttonText}>{isProcessing ? '...' : 'GO'}</ThemedText>

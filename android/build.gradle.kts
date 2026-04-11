@@ -112,7 +112,7 @@ val dexSharedLibs = tasks.register("dexSharedLibs") {
             println("[Reveila] Warning: android.jar not found at ${androidJar.absolutePath}. Dexing may fail.")
         }
 
-        libsDir.listFiles { f -> f.extension == "jar" }?.forEach { jarFile ->
+        libsDir.listFiles { f -> f.extension == "jar" && !f.name.contains("reveila-suite-fat") }?.forEach { jarFile ->
             val outputFile = File(outputDir.get().asFile, jarFile.name)
             println("[Reveila] Dexing ${jarFile.name} -> ${outputFile.absolutePath}")
             

@@ -1,36 +1,44 @@
 {
-    "plugin": {
-        "name": "GeminiProvider",
-        "displayName": "Google Gemini LLM Provider",
-        "version": "1.0.0",
-        "description": "LLM Provider for Google Gemini models.",
-        "author": "Reveila-Suite",
-        "class": "com.reveila.ai.GeminiProvider",
-        "thread-safe": true,
-        "arguments": [
-            {
-                "name": "apiKey",
-                "type": "java.lang.String",
-                "value": "REF:GEMINI_PROD_KEY"
-            },
-            {
-                "name": "model",
-                "type": "java.lang.String",
-                "value": "gemini-1.5-pro"
-            },
-            {
-                "name": "temperature",
-                "type": "double",
-                "value": 0.1
-            }
-        ],
-        "dependencies": [
-            "HttpClientService"
-        ],
-        "hot-deploy": false,
-        "methods": [],
-        "required-roles": [
-            "*"
-        ]
+  "plugin" : {
+    "name" : "GeminiProvider",
+    "displayName" : "Google Gemini LLM Provider",
+    "version" : "1.0.0",
+    "description" : "LLM Provider for Google Gemini models.",
+    "author" : "Reveila-Suite",
+    "class" : "com.reveila.ai.GeminiProvider",
+    "thread-safe" : true,
+    "arguments" : [ {
+      "name" : "apiKey",
+      "type" : "java.lang.String",
+      "value" : "REF:GEMINI_PROD_KEY"
+    }, {
+      "name" : "model",
+      "type" : "java.lang.String",
+      "value" : "gemini-1.5-pro"
+    }, {
+      "name" : "temperature",
+      "type" : "double",
+      "value" : 0.1
+    } ],
+    "dependencies" : [ "HttpClientService" ],
+    "hot-deploy" : false,
+    "methods" : [ ],
+    "required-roles" : [ "*" ],
+    "agency_perimeter" : {
+      "tier" : "Tier 2 (Sensitive)",
+      "access_scopes" : [ "db.read", "fs.read:/reports/tmp" ],
+      "network_egress" : {
+        "allowed_domains" : [ "api.internal-analytics.com" ],
+        "protocols" : [ "https" ]
+      },
+      "human_in_the_loop" : {
+        "trigger_on" : [ "db.delete", "db.drop" ],
+        "escalation_policy" : "admin_approval_required"
+      },
+      "resource_limits" : {
+        "max_memory_mb" : 512,
+        "max_execution_sec" : 30
+      }
     }
+  }
 }

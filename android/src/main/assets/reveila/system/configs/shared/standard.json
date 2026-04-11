@@ -5,7 +5,7 @@
             "class": "com.reveila.ai.InboundWebhookService",
             "thread-safe": true,
             "dependencies": [
-                "SafeInvocation",
+                "ManagedInvocation",
                 "OrchestrationService",
                 "FlightRecorder",
                 "LlmProviderFactory"
@@ -43,8 +43,8 @@
     },
     {
         "component": {
-            "name": "CredentialManager",
-            "class": "com.reveila.ai.CredentialManager",
+            "name": "SecretManager",
+            "class": "com.reveila.ai.SecretManager",
             "description": "Manages JIT credentials for plugins.",
             "thread-safe": true,
             "dependencies": [
@@ -84,7 +84,7 @@
     {
         "component": {
             "name": "IntentValidator",
-            "class": "com.reveila.ai.GeminiIntentValidator",
+            "class": "com.reveila.ai.DefaultIntentValidator",
             "description": "Validates agent intents using Gemini.",
             "thread-safe": true,
             "dependencies": [
@@ -105,8 +105,8 @@
     },
     {
         "component": {
-            "name": "SafeInvocation",
-            "class": "com.reveila.ai.SafeInvocation",
+            "name": "ManagedInvocation",
+            "class": "com.reveila.ai.ManagedInvocation",
             "description": "The sovereign entry point for all tool calls.",
             "thread-safe": true,
             "dependencies": [
@@ -115,7 +115,7 @@
                 "GuardedRuntime",
                 "FlightRecorder",
                 "MetadataRegistry",
-                "CredentialManager",
+                "SecretManager",
                 "OrchestrationService",
                 "LlmProviderFactory"
             ]
@@ -128,7 +128,7 @@
             "description": "Orchestrates complex multi-agent workflows.",
             "thread-safe": true,
             "dependencies": [
-                "SafeInvocation",
+                "ManagedInvocation",
                 "AgentSessionManager"
             ],
             "arguments": [
@@ -138,6 +138,14 @@
                     "value": 5
                 }
             ]
+        }
+    },
+    {
+        "component": {
+            "name": "ConfigurationManager",
+            "class": "com.reveila.system.ConfigurationManager",
+            "description": "Manages configuration settings dynamically.",
+            "thread-safe": true
         }
     },
     {

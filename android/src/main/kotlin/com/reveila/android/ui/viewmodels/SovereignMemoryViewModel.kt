@@ -142,10 +142,10 @@ class SovereignMemoryViewModel : ViewModel() {
      */
     private fun calculateNextOffset(index: Int): Offset {
         // Spiral algorithmic placement (Golden Ratio) for natural graph distribution
-        val radius = 150f + (index * 25f)
-        val angle = index * 2.4f 
-        val centerX = 500f
-        val centerY = 800f
+        val radius = 80f + (index * 15f) // Reduced radius for more compact layout
+        val angle = index * 2.4f
+        val centerX = 400f
+        val centerY = 300f // Positioned toward top of canvas (was 800f)
         val x = (Math.cos(angle.toDouble()) * radius).toFloat() + centerX
         val y = (Math.sin(angle.toDouble()) * radius).toFloat() + centerY
         return Offset(x, y)

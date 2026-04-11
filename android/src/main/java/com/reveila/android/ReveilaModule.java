@@ -49,6 +49,7 @@ import android.net.Uri;
 
 public class ReveilaModule extends ReactContextBaseJavaModule {
 
+    private static final String NAME = "ReveilaModule";
     private MobileKillSwitch killSwitch;
     private Subject currentSubject;
     private long lastActivityTimestamp;
@@ -312,9 +313,15 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
                 this.currentSubject.getPrincipals().add(new RolePrincipal(role));
             }
             this.lastActivityTimestamp = System.currentTimeMillis();
-            promise.resolve(true);
+            if (promise != null) {
+                promise.resolve(true);
+            }
         } catch (Exception e) {
-            promise.reject("E_SET_IDENTITY_FAILED", e.getMessage(), e);
+            if (promise != null) {
+                promise.reject("E_SET_IDENTITY_FAILED", e.getMessage(), e);
+            } else {
+                Log.e(NAME, "setUserIdentity failed", e);
+            }
         }
     }
 
@@ -396,10 +403,18 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
      */
     @ReactMethod
     public void unlockWithMasterPassword(String password, Promise promise) {
+        if (promise == null) {
+            Log.e(NAME, "unlockWithMasterPassword called with null promise");
+            return;
+        }
+        
+        Log.d(NAME, "unlockWithMasterPassword: Starting unlock process");
+        
         executorService.execute(() -> {
             try {
                 Reveila reveilaInstance = ReveilaService.getReveilaInstance();
                 if (reveilaInstance == null) {
+                    Log.e(NAME, "unlockWithMasterPassword: Engine not initialized");
                     promise.reject("E_NOT_READY", "Engine not initialized");
                     return;
                 }
@@ -412,6 +427,7 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
                 boolean isConvenience = password.length() == 4;
                 
                 if (!isFullPassword && !isConvenience) {
+                    Log.w(NAME, "unlockWithMasterPassword: Invalid password length: " + password.length());
                     promise.reject("E_INVALID_LENGTH", "Password must be 4 or 16-32 characters.");
                     return;
                 }
@@ -421,6 +437,7 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
                 boolean needsFullPassword = (now - lastFullLogin) >= THIRTY_DAYS_MS;
 
                 if (isConvenience && needsFullPassword) {
+                    Log.w(NAME, "unlockWithMasterPassword: Full password required after 30 days");
                     promise.reject("E_FULL_PWD_REQUIRED", "Full password required (30-day security cycle).");
                     return;
                 }
@@ -430,10 +447,13 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
                 String wrappedDekBase64 = isFullPassword ? settings.getWrappedDekFull() : settings.getWrappedDekConv();
                 
                 if (saltHex == null || wrappedDekBase64 == null) {
+                    Log.e(NAME, "unlockWithMasterPassword: No keys found - system not initialized");
                     promise.reject("E_UNLOCK_FAILED", "System not initialized. No keys found.");
                     return;
                 }
 
+                Log.d(NAME, "unlockWithMasterPassword: Attempting to unwrap DEK");
+                
                 // Unwrap DEK (This will fail if password/salt is wrong, proving authentication)
                 // For convenience mode, password is already 4 characters
                 byte[] dek = com.reveila.crypto.DefaultCryptographer.unwrapKeyFromBase64(
@@ -446,18 +466,30 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
                     settings.updateLastFullLogin();
                 }
 
+                Log.d(NAME, "unlockWithMasterPassword: DEK unwrapped successfully, unlocking cryptographer");
+                
                 // Unlock the cryptographer with the raw DEK
                 crypto.unlock(dek);
                 
+                Log.d(NAME, "unlockWithMasterPassword: Cryptographer unlocked, setting user identity");
+                
                 // Initialize default subject on success
                 setUserIdentity("local-user", "sovereign-local", "user", null);
+                
+                Log.i(NAME, "unlockWithMasterPassword: Unlock successful");
                 promise.resolve(true);
                 
             } catch (javax.crypto.AEADBadTagException e) {
                 // Specific exception when GCM auth tag verification fails (wrong password)
-                promise.reject("E_UNLOCK_FAILED", "Invalid password.");
+                Log.w(NAME, "unlockWithMasterPassword: Invalid password (GCM auth tag failed)");
+                if (promise != null) {
+                    promise.reject("E_UNLOCK_FAILED", "Invalid password.");
+                }
             } catch (Exception e) {
-                promise.reject("E_UNLOCK_FAILED", "System error: " + e.getMessage());
+                Log.e(NAME, "unlockWithMasterPassword: Unlock failed with exception", e);
+                if (promise != null) {
+                    promise.reject("E_UNLOCK_FAILED", "System error: " + e.getMessage(), e);
+                }
             }
         });
     }
@@ -559,19 +591,35 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
      */
     @ReactMethod
     public void invoke(String componentName, String methodName, ReadableArray params, Promise promise) {
+        Log.d(NAME, String.format("invoke: Calling %s.%s", componentName, methodName));
+        
         executorService.execute(() -> {
             try {
                 // First, check if the service is fully initialized and running.
                 Reveila reveilaInstance = ReveilaService.getReveilaInstance();
                 if (!ReveilaService.isRunning() || reveilaInstance == null) {
+                    Log.e(NAME, "invoke: Reveila service not running");
                     promise.reject("E_NOT_READY", "The Reveila service is not yet available.");
                     return;
                 }
 
                 if (currentSubject == null) {
+                    Log.w(NAME, "invoke: No user identity set");
                     promise.reject("E_NO_IDENTITY", "User identity not set. Please sign in first.");
                     return;
                 }
+                
+                // Check if cryptographer is unlocked
+                AndroidPlatformAdapter adapter = (AndroidPlatformAdapter) reveilaInstance.getSystemContext().getPlatformAdapter();
+                AndroidCryptographer crypto = (AndroidCryptographer) adapter.getCryptographer();
+                // Check if cryptographer is unlocked
+                if (!crypto.isUnlocked()) {
+                    Log.e(NAME, "invoke: Cryptographer is locked - system not unlocked");
+                    promise.reject("E_LOCKED", "System is locked. Please unlock first.");
+                    return;
+                }
+                
+                Log.d(NAME, "invoke: All checks passed, proceeding with invocation");
 
                 Object[] javaParams = ReactNativeJsonConverter.toArray(params);
                 Object result = reveilaInstance.invoke(componentName, methodName, javaParams, "127.0.0.1", currentSubject);
@@ -579,8 +627,14 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
                 // Convert the Java result to a React Native Writable type (Map, Array, etc.)
                 Object writableResult = ReactNativeJsonConverter.convertObjectToWritable(result);
                 promise.resolve(writableResult);
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                Throwable cause = e.getCause();
+                String message = cause != null ? cause.getMessage() : e.getMessage();
+                Log.e(NAME, "invoke: Target exception", cause != null ? cause : e);
+                promise.reject("E_INVOKE_FAILED", message, cause != null ? cause : e);
             } catch (Exception e) {
                 String message = e.getMessage() != null ? e.getMessage() : e.toString();
+                Log.e(NAME, "invoke: Failed", e);
                 promise.reject("E_INVOKE_FAILED", message, e);
             }
         });

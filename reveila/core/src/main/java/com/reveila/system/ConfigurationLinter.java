@@ -21,6 +21,19 @@ public class ConfigurationLinter {
 
         for (MetaObject meta : metas) {
             String name = meta.getName();
+            
+            // Validate that the specified implementation class actually exists
+            String className = meta.getImplementationClassName();
+            if (className != null && !className.isBlank()) {
+                try {
+                    Class.forName(className);
+                } catch (ClassNotFoundException e) {
+                    throw new ConfigurationException(String.format(
+                        "❌ Invalid Class: Component [%s] references class '%s', but the class was not found in the classpath.",
+                        name, className));
+                }
+            }
+
             List<String> deps = meta.getDependencies();
             if (deps == null || deps.isEmpty()) {
                 continue;
