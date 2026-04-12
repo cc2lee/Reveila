@@ -143,7 +143,7 @@ langchain4j-ollama = { module = "dev.langchain4j:langchain4j-ollama", version.re
 
 # The API (Interfaces)
 jakarta-persistence-api = { module = "jakarta.persistence:jakarta.persistence-api", version.ref = "jakarta-persistence" }
-react-android = { module = "com.facebook.react:react-android", version = "0.81.5" }
+react-android = { module = "com.facebook.react:react-android", version = "0.76.5" }
 androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "androidxBiometric" }
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "androidxWork" }
 pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfbox" }

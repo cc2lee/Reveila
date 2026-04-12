@@ -21,6 +21,7 @@ public class GeminiProvider extends PluginComponent implements LlmProvider {
     private String apiKey;
     private String model = "gemini-1.5-pro";
     private double temperature = 0.1;
+    private boolean enabled = false;
     private ChatLanguageModel chatModel;
 
     /**
@@ -45,8 +46,22 @@ public class GeminiProvider extends PluginComponent implements LlmProvider {
         this.temperature = temperature;
     }
 
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
     @Override
-    protected void onStart() throws Exception {
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    @Override
+    public boolean isConfigured() {
+        String resolvedApiKey = getResolvedApiKey();
+        return resolvedApiKey != null && !resolvedApiKey.isBlank() && !"ERROR_DECRYPTION_FAILED".equals(resolvedApiKey);
+    }
+
+    private String getResolvedApiKey() {
         String resolvedApiKey = apiKey;
 
         // Fallback to dynamic context properties if static setter wasn't invoked
@@ -67,6 +82,16 @@ public class GeminiProvider extends PluginComponent implements LlmProvider {
                 logger.warning("Failed to resolve SecretManager REF: " + e.getMessage());
             }
         }
+        return resolvedApiKey;
+    }
+
+    @Override
+    protected void onStart() throws Exception {
+        if (!isEnabled()) {
+            return;
+        }
+
+        String resolvedApiKey = getResolvedApiKey();
 
         if (resolvedApiKey == null || resolvedApiKey.isBlank() || "ERROR_DECRYPTION_FAILED".equals(resolvedApiKey)) {
             logger.warning("Gemini API Key could not be resolved. LLM Provider will remain inactive until configured.");

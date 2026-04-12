@@ -19,6 +19,9 @@ dependencyResolutionManagement {
         mavenCentral()
         google()
         gradlePluginPortal()
+        maven {
+            url = uri("apps/expo/Reveila/node_modules/react-native/android")
+        }
     }
 }
 
@@ -32,7 +35,6 @@ includeBuild("build-logic") // Convention plugins
 // Example 1: include(":my-project"); project(":my-project").projectDir = file("path/to/my-project")
 // In a flat structure, if you want the project to be named :reveila but its files are physically inside spring/reveila/,
 // Example 2: include("reveila"); project(":reveila").projectDir = file("spring/reveila")
-// include(":connectors")
 include(":reveila:core")
 include(":reveila:server")
 include(":spring:admin")

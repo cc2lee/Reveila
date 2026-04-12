@@ -1,12 +1,12 @@
 package com.reveila.system;
 
 /**
- * Defines the lifecycle states for any Reveila service.
- * Supports operational monitoring and the CISO "Kill Switch" functionality.
+ * Defines the lifecycle states for Reveila managed components.
+ * Supports operational monitoring.
  * 
  * @author CL
  */
-public enum ServiceState {
+public enum ComponentState {
     /**
      * Service has been instantiated but not yet started.
      */

@@ -21,6 +21,7 @@ public class OpenAiProvider extends PluginComponent implements LlmProvider {
     private String apiKey;
     private String model = "gpt-4";
     private double temperature = 0.7;
+    private boolean enabled = false;
     private ChatLanguageModel chatModel;
 
     /**
@@ -45,13 +46,41 @@ public class OpenAiProvider extends PluginComponent implements LlmProvider {
         this.temperature = temperature;
     }
 
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
     @Override
-    protected void onStart() throws Exception {
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    @Override
+    public boolean isConfigured() {
+        String resolvedApiKey = getResolvedApiKey();
+        return resolvedApiKey != null && !resolvedApiKey.isBlank() && !"ERROR_DECRYPTION_FAILED".equals(resolvedApiKey);
+    }
+
+    private String getResolvedApiKey() {
         String resolvedApiKey = apiKey;
         if (apiKey != null && apiKey.startsWith("REF:")) {
-            resolvedApiKey = (String) this.context.getProxy("SecretManager")
-                    .invoke("getSecret", new Object[] { apiKey.substring(4) });
+            try {
+                resolvedApiKey = (String) this.context.getProxy("SecretManager")
+                        .invoke("getSecret", new Object[] { apiKey.substring(4) });
+            } catch (Exception e) {
+                return null;
+            }
         }
+        return resolvedApiKey;
+    }
+
+    @Override
+    protected void onStart() throws Exception {
+        if (!isEnabled()) {
+            return;
+        }
+
+        String resolvedApiKey = getResolvedApiKey();
 
         if (resolvedApiKey == null || resolvedApiKey.isBlank() || "ERROR_DECRYPTION_FAILED".equals(resolvedApiKey)) {
             throw new IllegalStateException("OpenAI API Key could not be resolved. (Check if Vault is unlocked)");

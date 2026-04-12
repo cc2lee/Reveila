@@ -5,22 +5,22 @@ import java.time.Instant;
 
 public abstract class AbstractComponent implements Startable, Stoppable {
 
-    private ServiceState state = ServiceState.STOPPED;
+    private ComponentState state = ComponentState.STOPPED;
     private Instant startTime;
     private Duration startupLatency;
 
     public boolean isRunning() {
-        return state == ServiceState.ACTIVE;
+        return state == ComponentState.ACTIVE;
     }
 
     @Override
     public final synchronized void stop() throws Exception {
-        this.state = ServiceState.STOPPING;
+        this.state = ComponentState.STOPPING;
         try {
             onStop();
-            this.state = ServiceState.STOPPED;
+            this.state = ComponentState.STOPPED;
         } catch (Exception e) {
-            this.state = ServiceState.FAILED;
+            this.state = ComponentState.FAILED;
             throw e;
         }
     }
@@ -33,10 +33,10 @@ public abstract class AbstractComponent implements Startable, Stoppable {
      */
     @Override
     public final synchronized void start() throws Exception {
-        if (state == ServiceState.ACTIVE || state == ServiceState.STARTING) return;
+        if (state == ComponentState.ACTIVE || state == ComponentState.STARTING) return;
         
         this.startTime = Instant.now();
-        this.state = ServiceState.STARTING;
+        this.state = ComponentState.STARTING;
 
         try {
             onStart(); // Hook for subclass implementation
@@ -44,19 +44,19 @@ public abstract class AbstractComponent implements Startable, Stoppable {
             // Check: did we time out or get interrupted during onStart?
             if (Thread.currentThread().isInterrupted()) {
                 stop();
-                throw new InterruptedException("Service start interrupted.");
+                throw new InterruptedException("Component start interrupted.");
             }
             
             this.startupLatency = Duration.between(startTime, Instant.now());
-            this.state = ServiceState.ACTIVE;
+            this.state = ComponentState.ACTIVE;
         } catch (Exception e) {
-            this.state = ServiceState.FAILED;
+            this.state = ComponentState.FAILED;
             throw e;
         }
     }
 
     /**
-     * @return The exact time in milliseconds it took for the service to boot.
+     * @return The exact time in milliseconds it took for the component to boot.
      * Useful for Slide 8 (Operational Performance) data.
      */
     public long getStartupLatencyMs() {
@@ -64,9 +64,9 @@ public abstract class AbstractComponent implements Startable, Stoppable {
     }
 
     /**
-     * @return The current operational state of the service.
+     * @return The current operational state of the Component.
      */
-    public ServiceState getServiceState() {
+    public ComponentState getState() {
         return state;
     }
     

@@ -14,6 +14,20 @@ public interface LlmProvider {
     LlmProvider getInstance();
 
     /**
+     * Checks if the provider is enabled by the user.
+     * 
+     * @return true if enabled, false otherwise.
+     */
+    boolean isEnabled();
+
+    /**
+     * Checks if the provider is fully configured (e.g., API keys present).
+     * 
+     * @return true if configured, false otherwise.
+     */
+    boolean isConfigured();
+
+    /**
      * Generates a response based on the provided prompt and context.
      *
      * @param prompt        The user or system-generated prompt.

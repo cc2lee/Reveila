@@ -1,6 +1,7 @@
 package com.reveila.system;
 
 import java.io.Closeable;
+import java.lang.reflect.Array;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Arrays;
@@ -119,38 +120,44 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 		Object perimeterObj = this.metaObject.getDataMap().get("agency_perimeter");
 		if (perimeterObj instanceof Map) {
 			Map<String, Object> pMap = (Map<String, Object>) perimeterObj;
-			
+
 			Set<String> accessScopes = pMap.containsKey("accessScopes") && pMap.get("accessScopes") instanceof List
-				? new java.util.HashSet<>((List<String>) pMap.get("accessScopes")) : Collections.emptySet();
-				
-			Set<String> allowedDomains = pMap.containsKey("allowedDomains") && pMap.get("allowedDomains") instanceof List
-				? new java.util.HashSet<>((List<String>) pMap.get("allowedDomains")) : Collections.emptySet();
-				
-			boolean internetAccessBlocked = pMap.containsKey("internetAccessBlocked") 
-				? Boolean.TRUE.equals(pMap.get("internetAccessBlocked")) : false;
-				
-			long maxMemoryMb = pMap.containsKey("maxMemoryMb") 
-				? ((Number) pMap.get("maxMemoryMb")).longValue() : 512L;
-				
-			int maxCpuCores = pMap.containsKey("maxCpuCores") 
-				? ((Number) pMap.get("maxCpuCores")).intValue() : 1;
-				
-			int maxExecutionSec = pMap.containsKey("maxExecutionSec") 
-				? ((Number) pMap.get("maxExecutionSec")).intValue() : 30;
-				
-			boolean delegationAllowed = pMap.containsKey("delegationAllowed") 
-				? Boolean.TRUE.equals(pMap.get("delegationAllowed")) : false;
+					? new java.util.HashSet<>((List<String>) pMap.get("accessScopes"))
+					: Collections.emptySet();
+
+			Set<String> allowedDomains = pMap.containsKey("allowedDomains")
+					&& pMap.get("allowedDomains") instanceof List
+							? new java.util.HashSet<>((List<String>) pMap.get("allowedDomains"))
+							: Collections.emptySet();
+
+			boolean internetAccessBlocked = pMap.containsKey("internetAccessBlocked")
+					? Boolean.TRUE.equals(pMap.get("internetAccessBlocked"))
+					: false;
+
+			long maxMemoryMb = pMap.containsKey("maxMemoryMb")
+					? ((Number) pMap.get("maxMemoryMb")).longValue()
+					: 512L;
+
+			int maxCpuCores = pMap.containsKey("maxCpuCores")
+					? ((Number) pMap.get("maxCpuCores")).intValue()
+					: 1;
+
+			int maxExecutionSec = pMap.containsKey("maxExecutionSec")
+					? ((Number) pMap.get("maxExecutionSec")).intValue()
+					: 30;
+
+			boolean delegationAllowed = pMap.containsKey("delegationAllowed")
+					? Boolean.TRUE.equals(pMap.get("delegationAllowed"))
+					: false;
 
 			return new com.reveila.ai.AgencyPerimeter(
-				accessScopes, allowedDomains, internetAccessBlocked, 
-				maxMemoryMb, maxCpuCores, maxExecutionSec, delegationAllowed
-			);
+					accessScopes, allowedDomains, internetAccessBlocked,
+					maxMemoryMb, maxCpuCores, maxExecutionSec, delegationAllowed);
 		}
-		
+
 		// Return a highly restrictive default perimeter if none is configured
 		return new com.reveila.ai.AgencyPerimeter(
-			Collections.emptySet(), Collections.emptySet(), true, 128L, 1, 5, false
-		);
+				Collections.emptySet(), Collections.emptySet(), true, 128L, 1, 5, false);
 	}
 
 	private String getMethodSignature(String methodName, Object[] args) {
@@ -188,7 +195,7 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 		if (pluginIter.hasNext()) {
 			plugin = pluginIter.next();
 		}
-		
+
 		Set<RolePrincipal> roles = subject.getPrincipals(RolePrincipal.class);
 
 		boolean systemCall = false;
@@ -228,19 +235,20 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 			}
 		}
 
-		// ADR 0006: We enforce execution isolation for plugins that are not promoted to "system" role.
+		// ADR 0006: We enforce execution isolation for plugins that are not promoted to
+		// "system" role.
 		if (plugin != null && !systemCall) {
 			com.reveila.ai.AgencyPerimeter perimeter = buildAgencyPerimeter();
-			Object[] list = new Object[] { 
-					plugin, 
-					perimeter, 
+			Object[] list = new Object[] {
+					plugin,
+					perimeter,
 					metaObject.getName(),
-					Map.of("method", methodName, "args", args != null ? args : new Object[0]), 
-					null 
+					Map.of("method", methodName, "args", args != null ? args : new Object[0]),
+					null
 			};
 			Proxy proxy;
 			try {
-				proxy = ((SystemContext) context).getProxy("GuardedRuntime");
+				proxy = context.getProxy("GuardedRuntime");
 			} catch (IllegalArgumentException e) {
 				throw new IllegalStateException("GuardedRuntime not found or invalid", e);
 			}
@@ -254,15 +262,15 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 		// Before loading the class, inject the plugin's ClassLoader if it's a plugin
 		if (Constants.PLUGIN.equalsIgnoreCase(manifest.getComponentType()) && this.loaderRef.get() == null) {
 			try {
-				String pluginsDir = context != null && context.getProperties() != null ? 
-					context.getProperties().getProperty("plugin.local.dir") : null;
+				String pluginsDir = context != null && context.getProperties() != null
+						? context.getProperties().getProperty("plugin.local.dir")
+						: null;
 				if (pluginsDir != null) {
 					java.io.File pluginFolder = new java.io.File(pluginsDir, metaObject.getName());
 					if (pluginFolder.exists() && pluginFolder.isDirectory()) {
 						ClassLoader pluginLoader = RuntimeUtil.createPluginClassLoader(
-							pluginFolder.getAbsolutePath(), 
-							Thread.currentThread().getContextClassLoader()
-						);
+								pluginFolder.getAbsolutePath(),
+								Thread.currentThread().getContextClassLoader());
 						setClassLoader(pluginLoader);
 					}
 				}
@@ -280,11 +288,10 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 			if (object instanceof SystemComponent) {
 				((SystemComponent) object).setContext(context);
 			}
-		}
-		else if (Constants.PLUGIN.equalsIgnoreCase(manifest.getComponentType())) {
+		} else if (Constants.PLUGIN.equalsIgnoreCase(manifest.getComponentType())) {
 			if (object instanceof PluginComponent) {
 				java.util.Properties staticPluginProps = new java.util.Properties();
-				
+
 				// Initialize the frozen static copy for backward compatibility
 				if (context != null && context.getProperties() != null) {
 					String prefix = "plugin." + metaObject.getName() + ".";
@@ -296,7 +303,7 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 							staticPluginProps.put(keyStr.substring(metaObject.getName().length() + 1), v);
 						}
 					});
-					
+
 					if (context.getProperties().containsKey("system.home")) {
 						staticPluginProps.put("system.home", context.getProperties().getProperty("system.home"));
 					}
@@ -304,7 +311,7 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 						staticPluginProps.put("system.mode", context.getProperties().getProperty("system.mode"));
 					}
 				}
-				
+
 				((PluginComponent) object).setContext(new PluginContext(context, manifest, staticPluginProps));
 			}
 		}
@@ -466,7 +473,7 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 				throw new ConfigurationException(
 						"Failed to set '" + name + "' using method '" + setterName + "(" + (argClass == null ? "null"
 								: argClass.getName()) + ")'"
-										+ " in class '" + targetClass.getName() + "'. Error: " + e.getMessage(),
+								+ " in class '" + targetClass.getName() + "'. Error: " + e.getMessage(),
 						e);
 			}
 		}
@@ -626,6 +633,26 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 		return requiredRoles;
 	}
 
+	private Object[] prepareVarargsForReflection(Method method, Object[] args) {
+		int parameterCount = method.getParameterCount();
+		Object[] finalArgs = new Object[parameterCount];
+
+		// Copy fixed arguments
+		System.arraycopy(args, 0, finalArgs, 0, parameterCount - 1);
+
+		// Package the rest into the vararg array
+		Class<?> varargComponentType = method.getParameterTypes()[parameterCount - 1].getComponentType();
+		int varargLen = args.length - (parameterCount - 1);
+		Object varargArray = Array.newInstance(varargComponentType, varargLen);
+
+		for (int i = 0; i < varargLen; i++) {
+			Array.set(varargArray, i, args[parameterCount - 1 + i]);
+		}
+
+		finalArgs[parameterCount - 1] = varargArray;
+		return finalArgs;
+	}
+
 	/**
 	 * Invokes a method on a newly created object instance using reflection.
 	 * This version finds the method based on its name and the number of arguments.
@@ -657,11 +684,12 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 
 			Object[] coercedArgs = ReflectionMethod.coerceArguments(methodToInvoke, args);
 
-			if (methodToInvoke.isVarArgs()) {
-				return methodToInvoke.invoke(target, (Object) coercedArgs);
-			} else {
-				return methodToInvoke.invoke(target, coercedArgs);
-			}
+			// The "Bridge" logic
+			Object[] finalArgs = methodToInvoke.isVarArgs()
+					? prepareVarargsForReflection(methodToInvoke, coercedArgs)
+					: coercedArgs;
+
+			return methodToInvoke.invoke(target, finalArgs);
 		} catch (InvocationTargetException e) {
 			// If the underlying method threw an exception, throw its cause
 			// to avoid double-wrapping InvocationTargetException.

@@ -115,7 +115,7 @@ public class SecretManager extends SystemComponent {
     private String encrypt(String value) throws Exception {
         if (value == null)
             return null;
-        Cryptographer crypto = ((SystemContext) context).getCryptographer();
+        Cryptographer crypto = context.getCryptographer();
         byte[] encrypted = crypto.encrypt(value.getBytes());
         return ENC_PREFIX + Base64.getEncoder().encodeToString(encrypted);
     }
@@ -128,7 +128,7 @@ public class SecretManager extends SystemComponent {
         try {
             String base64Data = value.substring(ENC_PREFIX.length());
             byte[] encryptedData = Base64.getDecoder().decode(base64Data);
-            Cryptographer crypto = ((SystemContext) context).getCryptographer();
+            Cryptographer crypto = context.getCryptographer();
             return new String(crypto.decrypt(encryptedData));
         } catch (Exception e) {
             String errorMsg = "Failed to decrypt secret value: " + e.getMessage();

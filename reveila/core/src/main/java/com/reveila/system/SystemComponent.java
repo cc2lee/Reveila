@@ -10,23 +10,19 @@ public abstract class SystemComponent extends AbstractComponent implements Event
     protected SystemContext context;
     protected Logger logger;
 
-    public Context getContext() {
+    public SystemContext getContext() {
         return context;
     }
 
-    public void setContext(Context context) {
+    public void setContext(SystemContext context) {
         if (context == null) {
             this.context = null;
-            return;
+            this.logger = null;
         }
-
-        if (context instanceof SystemContext) {
-            this.context = (SystemContext) context;
+        else {
+            this.context = context;
             this.logger = context.getLogger();
-            return;
         }
-
-        throw new IllegalArgumentException("Context must be a SystemContext.");
     }
 
     @Override

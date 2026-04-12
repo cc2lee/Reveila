@@ -19,8 +19,8 @@ public class DefaultIntentValidator extends SystemComponent implements IntentVal
 
     @Override
     public void onStart() throws Exception {
-        String provider = context.getProperties().getProperty("ai.governance.llm", "GeminiProvider");
-        this.llmProvider = (LlmProvider) context.getProxy(provider).invoke("getInstance", null);
+        String provider = context.getProperties().getProperty("ai.governance.llm", "OllamaProvider");
+        this.llmProvider = (LlmProvider) context.getProxy(provider).getInstance();
     }
 
     @Override

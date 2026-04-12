@@ -28,7 +28,7 @@ class WebhookIngestionServiceTest {
     @Mock private LlmProvider llmProvider;
     @Mock private com.reveila.system.Reveila reveila;
     @Mock private com.reveila.system.SystemContext systemContext;
-    @Mock private com.reveila.system.Proxy proxy;
+    @Mock private com.reveila.system.SystemProxy proxy;
 
     private WebhookIngestionService ingestionService;
 

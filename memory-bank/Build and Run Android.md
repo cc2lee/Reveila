@@ -6,6 +6,7 @@ This guide outlines the daily Android development workflow.
 
 ```bash
 
+adb shell am set-debug-app -w --persistent com.reveila.android
 npm run android
 adb forward tcp:5005 "jdwp:$(adb shell pidof com.reveila.android)"
 

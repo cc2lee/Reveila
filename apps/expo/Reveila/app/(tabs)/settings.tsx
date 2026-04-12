@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { ReveilaHeader } from '@/components/ReveilaHeader';
+import { ChangePasswordModal } from '@/components/ChangePasswordModal';
 import ReveilaModule from '@/modules/reveila';
 
 const LLM_PROVIDERS = [
@@ -31,6 +32,7 @@ export default function SettingsScreen() {
   const [endpoint, setEndpoint] = useState(LLM_PROVIDERS[0].defaultEndpoint);
   const [isProviderModalVisible, setProviderModalVisible] = useState(false);
   const [isCustomProvider, setIsCustomProvider] = useState(false);
+  const [isChangePasswordVisible, setIsChangePasswordVisible] = useState(false);
   
   const [tasks, setTasks] = useState<any[]>([]);
   const [selectedTask, setSelectedTask] = useState<any>(null);
@@ -62,6 +64,7 @@ export default function SettingsScreen() {
             setIsCustomProvider(!LLM_PROVIDERS.find(p => p.name === config.provider));
           }
           if (config.endpoint) setEndpoint(config.endpoint);
+          if (config.quantization) setQuantization(config.quantization);
         } catch (e) {}
       }
     }).catch(() => {
@@ -125,6 +128,7 @@ export default function SettingsScreen() {
         provider,
         endpoint,
         apiKey,
+        quantization,
         onboarded_providers: updatedList
       };
 
@@ -242,6 +246,15 @@ export default function SettingsScreen() {
               </View>
             </Modal>
 
+            <Modal visible={isChangePasswordVisible} transparent={true} animationType="slide">
+              <View style={styles.modalOverlay}>
+                <ChangePasswordModal 
+                  onCancel={() => setIsChangePasswordVisible(false)} 
+                  onSuccess={() => setIsChangePasswordVisible(false)}
+                />
+              </View>
+            </Modal>
+
             <ThemedText type="subtitle" style={{ marginTop: 16 }}>Local Model: Gemma-3-1b</ThemedText>
             <ThemedView style={styles.card}>
               <ThemedText style={styles.description}>Choose your preference, performance vs accuracy, for the local private model.</ThemedText>
@@ -261,10 +274,6 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               </View>
             </ThemedView>
-
-            <TouchableOpacity style={styles.outlineButton} onPress={() => ReveilaModule.startSovereignSetup()}>
-              <ThemedText style={styles.outlineButtonText}>Re-run Setup</ThemedText>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -272,6 +281,14 @@ export default function SettingsScreen() {
           <View style={styles.section}>
             <ThemedText type="subtitle">Safety & Privacy</ThemedText>
             
+            <ThemedView style={styles.card}>
+              <ThemedText type="defaultSemiBold">Master Password</ThemedText>
+              <ThemedText style={styles.description}>Update your local master password. This is only stored on this device.</ThemedText>
+              <TouchableOpacity style={[styles.button, {marginTop: 16}]} onPress={() => setIsChangePasswordVisible(true)}>
+                <ThemedText style={styles.buttonText}>CHANGE MASTER PASSWORD</ThemedText>
+              </TouchableOpacity>
+            </ThemedView>
+
             <ThemedView style={[styles.card, {borderColor: '#ef4444', borderWidth: 1}]}>
               <ThemedText type="defaultSemiBold" style={{color: '#ef4444'}}>Emergency Kill Switch</ThemedText>
               <ThemedText style={styles.description}>Immediately revoke all JIT tokens and terminate the AI system process.</ThemedText>

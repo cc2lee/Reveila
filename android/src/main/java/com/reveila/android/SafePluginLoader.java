@@ -8,6 +8,7 @@ import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.util.Map;
 
+import com.reveila.system.SystemContext;
 import com.reveila.system.SystemProxy;
 import com.reveila.system.MetaObject;
 import com.reveila.system.Manifest;
@@ -33,7 +34,7 @@ public class SafePluginLoader {
     /**
      * Loads a plugin and returns its SystemProxy.
      */
-    public static SystemProxy loadPlugin(Context context, com.reveila.system.Context systemContext, String pluginFileName, String className) {
+    public static SystemProxy loadPlugin(Context context, SystemContext systemContext, String pluginFileName, String className) {
         try {
             String pluginId = pluginFileName.replace(".jar", "").replace(".dex", "");
             File pluginDir = new File(context.getFilesDir(), "plugins/" + pluginId);

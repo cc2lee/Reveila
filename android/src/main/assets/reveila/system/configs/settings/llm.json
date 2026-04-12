@@ -1,1 +1,24 @@
-{ "provider": "OpenAI", "endpoint": "https://api.openai.com/v1", "apiKey": "", "onboarded_providers": [ { "name": "OpenAI", "defaultEndpoint": "https://api.openai.com/v1" }, { "name": "Anthropic", "defaultEndpoint": "https://api.anthropic.com" }, { "name": "Google Gemini", "defaultEndpoint": "https://generativelanguage.googleapis.com" }, { "name": "Ollama (Local)", "defaultEndpoint": "http://localhost:11434" } ] } 
+{
+    "provider": "OpenAI",
+    "endpoint": "https://api.openai.com/v1",
+    "apiKey": "",
+    "quantization": "Q4_K_M",
+    "onboarded_providers": [
+        {
+            "name": "OpenAI",
+            "defaultEndpoint": "https://api.openai.com/v1"
+        },
+        {
+            "name": "Anthropic",
+            "defaultEndpoint": "https://api.anthropic.com"
+        },
+        {
+            "name": "Google Gemini",
+            "defaultEndpoint": "https://generativelanguage.googleapis.com"
+        },
+        {
+            "name": "Ollama (Local)",
+            "defaultEndpoint": "http://localhost:11434"
+        }
+    ]
+}

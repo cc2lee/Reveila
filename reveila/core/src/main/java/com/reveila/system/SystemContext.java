@@ -1,5 +1,6 @@
 package com.reveila.system;
 
+import java.util.Collection;
 import java.util.EventObject;
 import java.util.List;
 import java.util.Map;
@@ -24,13 +25,13 @@ import com.reveila.event.EventManager;
  *         This class serves the purpose of a system container.
  *         It controls the life cycle of all system level objects.
  */
-public final class SystemContext implements Context {
+public final class SystemContext {
 
 	private Properties properties;
 	private EventManager eventManager;
 	private Logger logger;
 	private Cryptographer cryptographer;
-	private Map<String, Proxy> proxiesByName = new ConcurrentHashMap<>();
+	private Map<String, SystemProxy> proxiesByName = new ConcurrentHashMap<>();
 	private PlatformAdapter platformAdapter;
 	private Subject subject;
 
@@ -96,7 +97,6 @@ public final class SystemContext implements Context {
 		return eventManager;
 	}
 
-	@Override
 	public Logger getLogger() {
 		return this.logger;
 	}
@@ -157,12 +157,11 @@ public final class SystemContext implements Context {
 		cryptographer = null;
 	}
 
-	@Override
-	public Proxy getProxy(String name) throws com.reveila.error.SecurityException, IllegalArgumentException {
+	public SystemProxy getProxy(String name) throws com.reveila.error.SecurityException, IllegalArgumentException {
 		return getProxy(name, this.subject);
 	}
 
-	public Proxy getProxy(String name, Subject subject) throws com.reveila.error.SecurityException, IllegalArgumentException {
+	public SystemProxy getProxy(String name, Subject subject) throws com.reveila.error.SecurityException, IllegalArgumentException {
 		Objects.requireNonNull(name, "Component name cannot be null when getting a proxy.");
 		Objects.requireNonNull(subject, "Subject cannot be null when getting a proxy.");
 		Set<RolePrincipal> roles = subject.getPrincipals(RolePrincipal.class);
@@ -170,7 +169,7 @@ public final class SystemContext implements Context {
 			throw new IllegalArgumentException("Subject must have at least one role.");
 		}
 
-		Proxy proxy = this.proxiesByName.get(name);
+		SystemProxy proxy = this.proxiesByName.get(name);
 		if (proxy == null) {
 			throw new IllegalArgumentException("Component '" + name + "' does not exist.");
 		}
@@ -189,13 +188,9 @@ public final class SystemContext implements Context {
 		}
 	}
 
-	public List<Proxy> getProxies() {
-		return List.copyOf(this.proxiesByName.values());
-	}
-
 	public void notifyEvent(EventObject evtObj) {
-		List<Proxy> proxies = getProxies();
-		for (Proxy proxy : proxies) {
+		Collection<SystemProxy> proxies = this.proxiesByName.values();
+		for (SystemProxy proxy : proxies) {
 			if (proxy instanceof EventConsumer) {
 				try {
 					((EventConsumer) proxy).notifyEvent(evtObj);

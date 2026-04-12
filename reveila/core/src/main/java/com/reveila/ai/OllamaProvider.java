@@ -20,6 +20,7 @@ import dev.langchain4j.model.ollama.OllamaChatModel;
 public class OllamaProvider extends PluginComponent implements LlmProvider {
     private String apiUrl;
     private String model = "llama3";
+    private boolean enabled = true;
     private ChatLanguageModel chatModel;
 
     public OllamaProvider() {
@@ -39,8 +40,27 @@ public class OllamaProvider extends PluginComponent implements LlmProvider {
         this.model = model;
     }
 
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    @Override
+    public boolean isConfigured() {
+        // Ollama is considered configured if we have a URL, even if it's the default one.
+        return apiUrl != null && !apiUrl.isBlank();
+    }
+
     @Override
     protected void onStart() throws Exception {
+        if (!isEnabled()) {
+            return;
+        }
+
         // Automatically resolve from environment if not set via properties
         if (apiUrl == null || apiUrl.isBlank()) {
             apiUrl = System.getenv("OLLAMA_API_URL");

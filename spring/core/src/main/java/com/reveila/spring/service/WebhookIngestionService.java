@@ -32,13 +32,8 @@ public class WebhookIngestionService {
 
     private <T> T getComponent(String name, Class<T> type) {
         try {
-            com.reveila.system.Proxy p = reveila.getSystemContext().getProxy(name);
-            Object instance;
-            if (p instanceof SystemProxy) {
-                instance = ((SystemProxy) p).getInstance();
-            } else {
-                instance = p.invoke("getInstance", null);
-            }
+            SystemProxy p = reveila.getSystemContext().getProxy(name);
+            Object instance = p.getInstance();
             if (type.isInstance(instance)) {
                 return type.cast(instance);
             }

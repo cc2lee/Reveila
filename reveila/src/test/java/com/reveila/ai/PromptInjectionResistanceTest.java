@@ -39,12 +39,12 @@ class PromptInjectionResistanceTest {
     private LlmGovernanceConfig govConfig = LlmGovernanceConfig.defaultGov();
 
     @Mock private com.reveila.system.SystemContext systemContext;
-    @Mock private com.reveila.system.Proxy proxy;
+    @Mock private com.reveila.system.SystemProxy proxy;
 
     @BeforeEach
     void setUp() throws Exception {
         when(systemContext.getProxy(anyString())).thenReturn(proxy);
-        when(proxy.invoke(eq("getInstance"), any())).thenAnswer(invocation -> {
+        when(proxy.getInstance()).thenAnswer(invocation -> {
             String name = (String) Mockito.mockingDetails(systemContext).getInvocations().stream()
                 .filter(i -> i.getMethod().getName().equals("getProxy"))
                 .reduce((first, second) -> second)

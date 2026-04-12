@@ -28,13 +28,46 @@ public class LlmProviderFactory extends SystemComponent {
 
     @Override
     public void onStart() throws Exception {
-        providers.put("openai", (LlmProvider) context.getProxy("OpenAiProvider").invoke("getInstance", null));
-        providers.put("gemini", (LlmProvider) context.getProxy("GeminiProvider").invoke("getInstance", null));
-        providers.put("ollama", (LlmProvider) context.getProxy("OllamaProvider").invoke("getInstance", null));
+        providers.put("openai", (LlmProvider) context.getProxy("OpenAiProvider").getInstance());
+        providers.put("gemini", (LlmProvider) context.getProxy("GeminiProvider").getInstance());
+        providers.put("ollama", (LlmProvider) context.getProxy("OllamaProvider").getInstance());
     }
 
     @Override
     protected void onStop() throws Exception {
+    }
+
+    /**
+     * Retrieves the best available provider, respecting the user's configuration
+     * and the "local first" policy.
+     * 
+     * @return The best provider instance.
+     */
+    public LlmProvider getBestProvider() {
+        // 1. Try user selected provider if it's available
+        String selected = context.getProperties().getProperty("activeProvider");
+        if (selected != null && !selected.isBlank()) {
+             LlmProvider provider = providers.get(selected.toLowerCase());
+             if (provider != null && provider.isEnabled() && provider.isConfigured()) {
+                 return provider;
+             }
+        }
+
+        // 2. Fallback to Ollama (local) if it's enabled
+        LlmProvider ollama = providers.get("ollama");
+        if (ollama != null && ollama.isEnabled()) {
+            return ollama;
+        }
+
+        // 3. Fallback to any enabled and configured provider
+        for (LlmProvider p : providers.values()) {
+            if (p.isEnabled() && p.isConfigured()) {
+                return p;
+            }
+        }
+
+        // 4. Ultimate fallback to Ollama even if not "enabled" as a last resort for system logic
+        return ollama;
     }
 
     /**

@@ -239,7 +239,7 @@ export default function HomeScreen() {
               placeholderTextColor="#94a3b8"
               value={promptText}
               onChangeText={setPromptText}
-              editable={!isProcessing}
+              editable={!isProcessing && isRunning}
               textAlignVertical="top"
             />
             <TouchableOpacity

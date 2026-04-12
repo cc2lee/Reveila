@@ -28,7 +28,7 @@ public class JsonSchemaEnforcer extends SystemComponent implements SchemaEnforce
 
     @Override
     public void onStart() throws Exception {
-        this.registry = (MetadataRegistry) context.getProxy("MetadataRegistry").invoke("getInstance", null);
+        this.registry = (MetadataRegistry) context.getProxy("MetadataRegistry").getInstance();
     }
 
     @Override

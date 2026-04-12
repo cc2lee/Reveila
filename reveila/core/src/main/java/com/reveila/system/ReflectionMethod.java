@@ -4,7 +4,7 @@ import java.lang.reflect.Method;
 
 public class ReflectionMethod {
 
-    /**
+	/**
 	 * Finds the best-matching method for a given name and arguments.
 	 * This implementation finds the first method that is compatible with the
 	 * argument types.
@@ -59,7 +59,7 @@ public class ReflectionMethod {
 		return null; // No suitable method found.
 	}
 
-    /**
+	/**
 	 * A helper to check for assignability, with special handling for numeric types
 	 * that come from the React Native bridge (usually as Double).
 	 */
@@ -97,7 +97,7 @@ public class ReflectionMethod {
 		return false;
 	}
 
-    /**
+	/**
 	 * Checks if the provided arguments are compatible with the target parameter
 	 * types.
 	 */
@@ -122,31 +122,53 @@ public class ReflectionMethod {
 		return true;
 	}
 
-    /**
+	/**
 	 * Coerces arguments to fit the target parameter types, primarily for numeric
 	 * narrowing.
 	 */
 	public static Object[] coerceArguments(Method method, Object[] args) {
-		if (args == null || args.length == 0) {
-			return args;
-		}
+		// Standardize null/empty to empty array
+		if (args == null)
+			args = new Object[0];
 
 		Class<?>[] paramTypes = method.getParameterTypes();
+		int paramCount = paramTypes.length;
+
+		// Fix for the "Unwrapping" edge case
+		// Only unwrap if we have exactly 1 param expected, 1 arg received,
+		// and that arg is an array that clearly doesn't match the param type.
+		if (paramCount == 1 && args.length == 1 && args[0] instanceof Object[]
+				&& !paramTypes[0].isAssignableFrom(args[0].getClass())) {
+			args = (Object[]) args[0];
+		}
+
+		// Varargs Validation: Must have at least (paramCount - 1) arguments
+		if (method.isVarArgs()) {
+			if (args.length < paramCount - 1) {
+				throw new IllegalArgumentException(String.format(
+						"Varargs method %s expects at least %d arguments, but received %d.",
+						method.getName(), paramCount - 1, args.length));
+			}
+		} else if (args.length != paramCount) {
+			throw new IllegalArgumentException(String.format(
+					"Method %s expects %d arguments, but received %d.",
+					method.getName(), paramCount, args.length));
+		}
+
 		Object[] coerced = new Object[args.length];
 
 		if (method.isVarArgs()) {
-			int fixedParamCount = paramTypes.length - 1;
-			// Coerce fixed parameters
+			int fixedParamCount = paramCount - 1;
+			// 1. Coerce fixed parameters
 			for (int i = 0; i < fixedParamCount; i++) {
 				coerced[i] = coerceArg(paramTypes[i], args[i]);
 			}
-			// Coerce vararg parameters
+			// 2. Coerce vararg elements (from fixedParamCount to the end of input args)
 			Class<?> varargComponentType = paramTypes[fixedParamCount].getComponentType();
 			for (int i = fixedParamCount; i < args.length; i++) {
 				coerced[i] = coerceArg(varargComponentType, args[i]);
 			}
 		} else {
-			// Non-varargs, original logic
 			for (int i = 0; i < args.length; i++) {
 				coerced[i] = coerceArg(paramTypes[i], args[i]);
 			}
@@ -154,18 +176,54 @@ public class ReflectionMethod {
 		return coerced;
 	}
 
-    private static Object coerceArg(Class<?> paramType, Object arg) {
-		if (arg instanceof Double) {
-			Double d = (Double) arg;
-			if (paramType == int.class || paramType == Integer.class) {
-				return d.intValue();
-			} else if (paramType == long.class || paramType == Long.class) {
-				return d.longValue();
-			} else if (paramType == float.class || paramType == Float.class) {
-				return d.floatValue();
-			}
+	private static Object coerceArg(Class<?> paramType, Object arg) {
+		if (arg == null) {
+			// Handle primitives: null cannot be coerced to int/long/etc.
+			return paramType.isPrimitive() ? defaultValue(paramType) : null;
 		}
+
+		// If already assignable, return as is (prevents unnecessary String conversion)
+		if (paramType.isAssignableFrom(arg.getClass())) {
+			return arg;
+		}
+
+		// Handle Numeric Coercion (Common for JSON/JS numbers)
+		if (arg instanceof Number) {
+			Number n = (Number) arg;
+			if (paramType == int.class || paramType == Integer.class)
+				return n.intValue();
+			if (paramType == long.class || paramType == Long.class)
+				return n.longValue();
+			if (paramType == double.class || paramType == Double.class)
+				return n.doubleValue();
+			if (paramType == float.class || paramType == Float.class)
+				return n.floatValue();
+			if (paramType == short.class || paramType == Short.class)
+				return n.shortValue();
+			if (paramType == byte.class || paramType == Byte.class)
+				return n.byteValue();
+		}
+
+		// Handle String Coercion
+		if (paramType == String.class) {
+			return String.valueOf(arg);
+		}
+
+		// Handle Boolean Coercion (e.g. "true" -> true)
+		if ((paramType == boolean.class || paramType == Boolean.class) && arg instanceof String) {
+			return Boolean.parseBoolean((String) arg);
+		}
+
 		return arg;
 	}
 
+	private static Object defaultValue(Class<?> type) {
+		if (type == boolean.class)
+			return false;
+		if (type == void.class)
+			return null;
+		if (type.isPrimitive())
+			return 0;
+		return null;
+	}
 }

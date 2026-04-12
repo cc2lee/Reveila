@@ -29,6 +29,11 @@ public class ConfigurationManager extends SystemComponent {
         String home = context.getProperties().getProperty("system.home");
         if (home == null) home = ".";
         
+        // Prevent path traversal
+        if (tab.contains("..") || tab.contains("/") || tab.contains("\\")) {
+            throw new IllegalArgumentException("Invalid tab name");
+        }
+        
         Path tabFile = Paths.get(home).resolve("configs/settings").resolve(tab);
         if (!Files.exists(tabFile)) {
             return "{}";
@@ -39,6 +44,11 @@ public class ConfigurationManager extends SystemComponent {
     public void saveSettings(String tab, String jsonConfig) throws Exception {
         String home = context.getProperties().getProperty("system.home");
         if (home == null) home = ".";
+        
+        // Prevent path traversal
+        if (tab.contains("..") || tab.contains("/") || tab.contains("\\")) {
+            throw new IllegalArgumentException("Invalid tab name");
+        }
         
         Path settingsDir = Paths.get(home).resolve("configs/settings");
         if (!Files.exists(settingsDir)) {
