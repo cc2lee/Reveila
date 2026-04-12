@@ -34,7 +34,7 @@ public interface LlmProvider {
      * @param systemContext The context/role for the LLM.
      * @return The model's response.
      */
-    String generateResponse(String prompt, String systemContext);
+    String respond(String prompt, String systemContext);
 
     /**
      * Generates a JSON response based on the provided prompts.
@@ -43,5 +43,5 @@ public interface LlmProvider {
      * @param userPrompt   The user prompt containing the task details.
      * @return The model's JSON response string.
      */
-    String generateJson(String systemPrompt, String userPrompt);
+    String respondJson(String userPrompt, String systemPrompt);
 }

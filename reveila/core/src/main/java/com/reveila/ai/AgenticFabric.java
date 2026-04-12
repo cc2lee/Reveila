@@ -200,7 +200,7 @@ public class AgenticFabric extends SystemComponent {
             if (historySize > 10) {
                 LlmProvider worker = llmFactory.getProvider("openai");
                 String historyDump = session.getChatMemory().messages().toString();
-                String summary = worker.generateResponse(
+                String summary = worker.respond(
                         "Summarize the following chat history for context preservation: " + historyDump, "System");
 
                 session.getChatMemory().clear();
@@ -214,7 +214,7 @@ public class AgenticFabric extends SystemComponent {
 
         // Invoke the LLM Provider (Primary model)
         LlmProvider worker = llmFactory.getProvider("openai");
-        String response = worker.generateResponse(userIntent, "You are the Reveila AI Agent.");
+        String response = worker.respond(userIntent, "You are the Reveila AI Agent.");
 
         // Record the raw response in history before returning it to the loop
         session.getChatMemory().add(AiMessage.from(response));

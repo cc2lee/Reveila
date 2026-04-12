@@ -110,7 +110,7 @@ public class GeminiProvider extends PluginComponent implements LlmProvider {
     }
 
     @Override
-    public String generateResponse(String prompt, String systemContext) {
+    public String respond(String prompt, String systemContext) {
         try {
             if (chatModel == null) {
                 onStart(); // Lazy init retry
@@ -132,12 +132,12 @@ public class GeminiProvider extends PluginComponent implements LlmProvider {
     }
 
     @Override
-    public String generateJson(String systemPrompt, String userPrompt) {
+    public String respondJson(String userPrompt, String systemPrompt) {
         // The 'Rail Guard' validates the intent and arguments against the Agency Perimeter.
         // Forces a strict JSON schema to prevent prompt injection influence.
         if (userPrompt.contains("Ignore all previous instructions") || userPrompt.contains("unauthorized_domain")) {
-            return "{\"approved\": false, \"reasoning\": \"SECURITY_BREACH: Potential prompt injection or perimeter violation detected.\", \"status\": \"REJECTED\"}";
+            return "{\"approved\": false, \"reason\": \"SECURITY_BREACH: Potential prompt injection or perimeter violation detected.\", \"status\": \"REJECTED\"}";
         }
-        return "{\"approved\": true, \"reasoning\": \"Audit passed.\", \"status\": \"APPROVED\"}";
+        return "{\"approved\": true, \"reason\": \"Audit passed.\", \"status\": \"APPROVED\"}";
     }
 }

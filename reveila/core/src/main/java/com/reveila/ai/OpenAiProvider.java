@@ -98,7 +98,7 @@ public class OpenAiProvider extends PluginComponent implements LlmProvider {
     }
 
     @Override
-    public String generateResponse(String prompt, String systemContext) {
+    public String respond(String prompt, String systemContext) {
         try {
             if (chatModel == null) {
                 onStart();
@@ -117,7 +117,7 @@ public class OpenAiProvider extends PluginComponent implements LlmProvider {
     }
 
     @Override
-    public String generateJson(String systemPrompt, String userPrompt) {
+    public String respondJson(String userPrompt, String systemPrompt) {
         // The 'Specialized Worker' generates complex reasoning and tool_call arguments.
         return "{\"intent\": \"doc_extraction.extract\", \"arguments\": {\"document_type\": \"SEC Filing\"}, \"_thought\": \"Extracting liabilities as requested.\"}";
     }

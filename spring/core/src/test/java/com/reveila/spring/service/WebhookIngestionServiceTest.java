@@ -64,7 +64,7 @@ class WebhookIngestionServiceTest {
         payload.put("agency_perimeter", "ma_due_diligence_standard");
 
         when(llmFactory.getProvider(anyString())).thenReturn(llmProvider);
-        when(llmProvider.generateJson(anyString(), anyString())).thenReturn("{}");
+        when(llmProvider.respondJson(anyString(), anyString())).thenReturn("{}");
         when(orchestrationService.createSession(anyString())).thenReturn(session);
         when(bridge.invoke(any(), any(), eq("doc_extraction.extract"), anyMap()))
             .thenReturn(InvocationResult.success("Payment Processed"));

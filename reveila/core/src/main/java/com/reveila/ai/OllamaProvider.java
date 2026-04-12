@@ -89,7 +89,7 @@ public class OllamaProvider extends PluginComponent implements LlmProvider {
     }
 
     @Override
-    public String generateResponse(String prompt, String systemContext) {
+    public String respond(String prompt, String systemContext) {
         try {
             if (chatModel == null) {
                 onStart();
@@ -108,7 +108,7 @@ public class OllamaProvider extends PluginComponent implements LlmProvider {
     }
 
     @Override
-    public String generateJson(String systemPrompt, String userPrompt) {
+    public String respondJson(String userPrompt, String systemPrompt) {
         // Fallback or simplified logic for sandbox
         return "{\"approved\": true, \"reasoning\": \"Ollama Sandbox Analysis Complete.\", \"status\": \"APPROVED\"}";
     }

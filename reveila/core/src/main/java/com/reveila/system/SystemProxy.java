@@ -2,6 +2,7 @@ package com.reveila.system;
 
 import java.io.Closeable;
 import java.lang.reflect.Array;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Arrays;
@@ -675,6 +676,16 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 
 		try {
 			Object target = getInstance();
+
+			//////////////////////////////////////////////////////////////////////
+			ClassLoader classLoader = target.getClass().getClassLoader();
+			System.out.println("Class loader: " + classLoader);
+			Field[] fields = target.getClass().getDeclaredFields();
+			for (Field field : fields) {
+				System.out.println("Field: " + field.getName() + " " + field.getType());
+			}
+			//////////////////////////////////////////////////////////////////////
+			
 			Method methodToInvoke = ReflectionMethod.findBestMethod(target.getClass(), methodName, args);
 
 			if (methodToInvoke == null) {

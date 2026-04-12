@@ -14,7 +14,7 @@ public class AiWatchdog {
 
     public String getResponse(String userPrompt) {
         CompletableFuture<String> remoteCall = CompletableFuture.supplyAsync(() -> {
-            return remoteLlmProvider.generateResponse(userPrompt, "You are a helpful assistant."); // Your slow Roo/OpenAI call
+            return remoteLlmProvider.respond(userPrompt, "You are a helpful assistant."); // Your slow Roo/OpenAI call
         });
 
         try {
@@ -32,6 +32,6 @@ public class AiWatchdog {
     private String fallbackToLocal(String prompt) {
         // Switch to a local Ollama instance (Llama 3 / Mistral)
         // Fast, 0ms latency, works offline.
-        return "NOTICE: Remote AI is slow. Using Local Model: " + localOllama.generateResponse(prompt, "You are a helpful assistant.");
+        return "NOTICE: Remote AI is slow. Using Local Model: " + localOllama.respond(prompt, "You are a helpful assistant.");
     }
 }

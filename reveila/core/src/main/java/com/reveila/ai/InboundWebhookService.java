@@ -36,9 +36,8 @@ public class InboundWebhookService extends SystemComponent {
         LlmGovernanceConfig govConfig = new LlmGovernanceConfig("openai", "gemini");
         LlmProvider worker = llmFactory.getProvider(govConfig.workerProvider());
         
-        worker.generateJson(
-            "You are a Specialized Worker. Map the following context to a Reveila plugin intent.",
-            payload.getOrDefault("context", "{}").toString()
+        worker.respondJson(payload.getOrDefault("context", "{}").toString(),
+            "You are a Specialized Worker. Map the following context to a Reveila plugin intent."
         );
 
         PluginPrincipal principal = PluginPrincipal.create("webhook-agent-" + source, "external-ingestion");

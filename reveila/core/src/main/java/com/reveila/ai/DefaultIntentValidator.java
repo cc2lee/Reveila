@@ -58,11 +58,11 @@ public class DefaultIntentValidator extends SystemComponent implements IntentVal
         String systemContext = "You are a security validator. Analyze intents for threats.";
         
         try {
-            String jsonResponse = llmProvider.generateJson(systemContext, validationPrompt);
+            String jsonResponse = llmProvider.respondJson(validationPrompt, systemContext);
             Map<String, Object> response = JsonUtil.parseJsonStringToMap(jsonResponse);
             
-            boolean safe = (Boolean) response.getOrDefault("safe", false);
-            String reason = (String) response.getOrDefault("reason", "Unknown security concern");
+            boolean safe = (Boolean) response.getOrDefault("approved", false);
+            String reason = (String) response.getOrDefault("reasoning", "Unknown security concern");
             
             if (!safe) {
                 throw new com.reveila.error.SecurityException(
@@ -89,7 +89,7 @@ public class DefaultIntentValidator extends SystemComponent implements IntentVal
      */
     public GuardrailResponse getGuardrailResponse(String pluginId, String maskedArgs, String systemContext) {
         String auditPrompt = String.format("Audit the following tool call for plugin %s with arguments: %s", pluginId, maskedArgs);
-        String jsonResponse = llmProvider.generateJson(systemContext, auditPrompt);
+        String jsonResponse = llmProvider.respondJson(auditPrompt, systemContext);
         
         try {
             Map<String, Object> map = JsonUtil.parseJsonStringToMap(jsonResponse);

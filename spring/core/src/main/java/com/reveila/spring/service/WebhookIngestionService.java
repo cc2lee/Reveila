@@ -66,9 +66,9 @@ public class WebhookIngestionService {
         
         // 2. Specialized Worker (OpenAI) processes context to generate internal intent
         LlmProvider worker = llmFactory.getProvider(govConfig.workerProvider());
-        String workerOutput = worker.generateJson(
-            "You are a Specialized Worker. Map the following context to a Reveila plugin intent.",
-            payload.getOrDefault("context", "{}").toString()
+        String workerOutput = worker.respondJson(
+            payload.getOrDefault("context", "{}").toString(),
+            "You are a Specialized Worker. Map the following context to a Reveila plugin intent."
         );
         // Log the output or capture it in the trace (currently a simulated draft step)
         System.out.println("Mapped Intent Output: " + workerOutput);
