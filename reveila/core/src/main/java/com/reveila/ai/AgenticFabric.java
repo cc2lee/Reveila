@@ -198,10 +198,32 @@ public class AgenticFabric extends SystemComponent {
         if ("cost".equalsIgnoreCase(orchestrationService.getOptimizationPriority())) {
             int historySize = session.getChatMemory().messages().size();
             if (historySize > 10) {
-                LlmProvider worker = llmFactory.getProvider("openai");
+                LlmProvider activeProvider = llmFactory.getActiveProvider();
+                LlmProvider worker = activeProvider;
+                try {
+                    Proxy p = context.getProxy("UsageTracker");
+                    if (p instanceof SystemProxy sp) {
+                        UsageTracker tracker = (UsageTracker) sp.getInstance();
+                        worker = new TrackedLlmProvider(activeProvider, tracker);
+                    }
+                } catch (Exception e) {
+                    if (logger != null)
+                        logger.severe("Usage Tracker not found: " + e.getMessage());
+                }
+                
                 String historyDump = session.getChatMemory().messages().toString();
-                String summary = worker.respond(
-                        "Summarize the following chat history for context preservation: " + historyDump, "System");
+                
+                LlmRequest summaryRequest = LlmRequest.builder()
+                        .addMessage(SystemMessage.from("System"))
+                        .addMessage(UserMessage.from("Summarize the following chat history for context preservation: " + historyDump))
+                        .build();
+                        
+                String summary;
+                try {
+                    summary = worker.invoke(summaryRequest).getContent();
+                } catch (Exception e) {
+                    summary = "ERROR summarising context: " + e.getMessage();
+                }
 
                 session.getChatMemory().clear();
                 session.getChatMemory().add(SystemMessage.from("Summary of previous conversation: " + summary));
@@ -213,8 +235,31 @@ public class AgenticFabric extends SystemComponent {
         session.getChatMemory().add(UserMessage.from(userIntent));
 
         // Invoke the LLM Provider (Primary model)
-        LlmProvider worker = llmFactory.getProvider("openai");
-        String response = worker.respond(userIntent, "You are the Reveila AI Agent.");
+        LlmProvider activeProvider = llmFactory.getActiveProvider();
+        LlmProvider worker = activeProvider;
+        
+        try {
+            Proxy p = context.getProxy("UsageTracker");
+            if (p instanceof SystemProxy sp) {
+                UsageTracker tracker = (UsageTracker) sp.getInstance();
+                worker = new TrackedLlmProvider(activeProvider, tracker);
+            }
+        } catch (Exception e) {
+            if (logger != null)
+                    logger.severe("Usage Tracker not found: " + e.getMessage());
+        }
+        
+        LlmRequest request = LlmRequest.builder()
+                .addMessage(SystemMessage.from("You are the Reveila AI Agent."))
+                .addMessage(UserMessage.from(userIntent))
+                .build();
+                
+        String response;
+        try {
+            response = worker.invoke(request).getContent();
+        } catch (Exception e) {
+            response = "ERROR invoking AI: " + e.getMessage();
+        }
 
         // Record the raw response in history before returning it to the loop
         session.getChatMemory().add(AiMessage.from(response));

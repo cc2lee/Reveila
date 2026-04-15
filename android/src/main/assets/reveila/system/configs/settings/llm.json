@@ -1,8 +1,4 @@
 {
-    "provider": "OpenAI",
-    "endpoint": "https://api.openai.com/v1",
-    "apiKey": "",
-    "quantization": "Q4_K_M",
     "onboarded_providers": [
         {
             "name": "OpenAI",
@@ -17,8 +13,15 @@
             "defaultEndpoint": "https://generativelanguage.googleapis.com"
         },
         {
-            "name": "Ollama (Local)",
-            "defaultEndpoint": "http://localhost:11434"
+            "name": "Gemma-3-1b (Local)",
+            "defaultEndpoint": "http://localhost:11434",
+            "quantization": "Q4_K_M",
+            "quantization_options": [
+                "Q4_K_M",
+                "F16"
+            ]
         }
-    ]
+    ],
+    "ai.worker.llm": "OpenAiProvider",
+    "ai.governance.llm": "GeminiProvider"
 }

@@ -21,7 +21,7 @@ public abstract class SystemComponent extends AbstractComponent implements Event
         }
         else {
             this.context = context;
-            this.logger = context.getLogger();
+            this.logger = Logger.getLogger("reveila.component." + this.getClass().getSimpleName());
         }
     }
 

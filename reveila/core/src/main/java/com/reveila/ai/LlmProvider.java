@@ -1,11 +1,20 @@
 package com.reveila.ai;
 
+import com.reveila.error.LlmException;
+
 /**
  * AI Provider Interface for multi-model governance.
  * 
  * @author CL
  */
 public interface LlmProvider {
+
+    /**
+     * The primary entry point for all LLM interactions within the Reveila Suite.
+     * Designed to be provider-agnostic and reflection-friendly.
+     */
+    LlmResponse invoke(LlmRequest request) throws LlmException;
+    
     /**
      * Required by LlmProviderFactory to retrieve the instance via Proxy.
      * 
@@ -27,21 +36,4 @@ public interface LlmProvider {
      */
     boolean isConfigured();
 
-    /**
-     * Generates a response based on the provided prompt and context.
-     *
-     * @param prompt        The user or system-generated prompt.
-     * @param systemContext The context/role for the LLM.
-     * @return The model's response.
-     */
-    String respond(String prompt, String systemContext);
-
-    /**
-     * Generates a JSON response based on the provided prompts.
-     *
-     * @param systemPrompt The system prompt defining the persona and constraints.
-     * @param userPrompt   The user prompt containing the task details.
-     * @return The model's JSON response string.
-     */
-    String respondJson(String userPrompt, String systemPrompt);
 }

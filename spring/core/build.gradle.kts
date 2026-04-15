@@ -51,6 +51,9 @@ dependencies {
     // The Jackson dependency is required for XML/JSON conversions
     implementation(libs.bundles.jackson)
     
+    // Langchain4j
+    implementation(libs.bundles.langchain4j)
+    
     // Alternatives to spring-boot-starter-web:
     // spring-boot-starter-webflux: For reactive, non-blocking applications.
     // spring-boot-starter-rsocket: For RSocket-based binary protocol

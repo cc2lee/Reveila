@@ -2,7 +2,7 @@ package com.reveila.error;
 
 public class SecurityException extends RuntimeException implements ErrorCode {
 
-    private String errorCode = "500";
+    private String errorCode = "300";
 
     public SecurityException(String message) {
         super(message);

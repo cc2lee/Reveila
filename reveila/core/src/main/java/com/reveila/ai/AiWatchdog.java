@@ -14,7 +14,15 @@ public class AiWatchdog {
 
     public String getResponse(String userPrompt) {
         CompletableFuture<String> remoteCall = CompletableFuture.supplyAsync(() -> {
-            return remoteLlmProvider.respond(userPrompt, "You are a helpful assistant."); // Your slow Roo/OpenAI call
+            try {
+                LlmRequest request = LlmRequest.builder()
+                        .addMessage(dev.langchain4j.data.message.SystemMessage.from("You are a helpful assistant."))
+                        .addMessage(dev.langchain4j.data.message.UserMessage.from(userPrompt))
+                        .build();
+                return remoteLlmProvider.invoke(request).getContent(); // Your slow Roo/OpenAI call
+            } catch (Exception e) {
+                throw new CompletionException(e);
+            }
         });
 
         try {
@@ -32,6 +40,14 @@ public class AiWatchdog {
     private String fallbackToLocal(String prompt) {
         // Switch to a local Ollama instance (Llama 3 / Mistral)
         // Fast, 0ms latency, works offline.
-        return "NOTICE: Remote AI is slow. Using Local Model: " + localOllama.respond(prompt, "You are a helpful assistant.");
+        try {
+            LlmRequest request = LlmRequest.builder()
+                    .addMessage(dev.langchain4j.data.message.SystemMessage.from("You are a helpful assistant."))
+                    .addMessage(dev.langchain4j.data.message.UserMessage.from(prompt))
+                    .build();
+            return "NOTICE: Remote AI is slow. Using Local Model: " + localOllama.invoke(request).getContent();
+        } catch (Exception e) {
+            return "NOTICE: Remote AI is slow. Using Local Model: Error - " + e.getMessage();
+        }
     }
 }

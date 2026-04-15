@@ -2,7 +2,7 @@ package com.reveila.error;
 
 public class SystemException extends Exception implements ErrorCode {
 
-    private String errorCode = "undefined";
+    private String errorCode = "400";
 
     public SystemException(String message) {
         super(message);

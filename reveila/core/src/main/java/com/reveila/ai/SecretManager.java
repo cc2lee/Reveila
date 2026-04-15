@@ -10,7 +10,6 @@ import com.reveila.data.Entity;
 import com.reveila.data.Repository;
 import com.reveila.system.PluginPrincipal;
 import com.reveila.system.SystemComponent;
-import com.reveila.system.SystemContext;
 
 /**
  * Phase 3: JIT Token Management.

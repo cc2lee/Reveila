@@ -6,11 +6,10 @@ import org.springframework.stereotype.Service;
 
 import com.reveila.ai.AgentSession;
 import com.reveila.ai.FlightRecorder;
-import com.reveila.ai.ManagedInvocation;
 import com.reveila.ai.InvocationResult;
-import com.reveila.ai.LlmGovernanceConfig;
 import com.reveila.ai.LlmProvider;
 import com.reveila.ai.LlmProviderFactory;
+import com.reveila.ai.ManagedInvocation;
 import com.reveila.ai.OrchestrationService;
 import com.reveila.system.PluginPrincipal;
 import com.reveila.system.Reveila;
@@ -57,19 +56,24 @@ public class WebhookIngestionService {
         OrchestrationService orchestrationService = getComponent("OrchestrationService", OrchestrationService.class);
         FlightRecorder flightRecorder = getComponent("FlightRecorder", FlightRecorder.class);
         LlmProviderFactory llmFactory = getComponent("LlmProviderFactory", LlmProviderFactory.class);
-        // Default governance config as it's no longer a standalone bean
-        LlmGovernanceConfig govConfig = new LlmGovernanceConfig("openai", "gemini");
-
+        
         // 1. Filo Handshake: Validate trigger source and priority
         String source = (String) payload.getOrDefault("trigger_source", "unknown");
         String perimeter = (String) payload.getOrDefault("agency_perimeter", "default");
         
-        // 2. Specialized Worker (OpenAI) processes context to generate internal intent
-        LlmProvider worker = llmFactory.getProvider(govConfig.workerProvider());
-        String workerOutput = worker.respondJson(
-            payload.getOrDefault("context", "{}").toString(),
-            "You are a Specialized Worker. Map the following context to a Reveila plugin intent."
-        );
+        // 2. Specialized Worker processes context to generate internal intent
+        LlmProvider worker = llmFactory.getActiveProvider();
+        com.reveila.ai.LlmRequest request = com.reveila.ai.LlmRequest.builder()
+                .addMessage(dev.langchain4j.data.message.SystemMessage.from("You are a Specialized Worker. Map the following context to a Reveila plugin intent. Return JSON."))
+                .addMessage(dev.langchain4j.data.message.UserMessage.from(payload.getOrDefault("context", "{}").toString()))
+                .build();
+                
+        String workerOutput;
+        try {
+            workerOutput = worker.invoke(request).getContent();
+        } catch (Exception e) {
+            workerOutput = "{\"error\": \"Worker invocation failed: " + e.getMessage() + "\"}";
+        }
         // Log the output or capture it in the trace (currently a simulated draft step)
         System.out.println("Mapped Intent Output: " + workerOutput);
 

@@ -20,7 +20,10 @@ public class DefaultIntentValidator extends SystemComponent implements IntentVal
     @Override
     public void onStart() throws Exception {
         String provider = context.getProperties().getProperty("ai.governance.llm", "OllamaProvider");
-        this.llmProvider = (LlmProvider) context.getProxy(provider).getInstance();
+        if (provider != null && !provider.trim().isEmpty()) {
+            LlmProviderFactory factory = (LlmProviderFactory) context.getProxy("LlmProviderFactory").getInstance();
+            this.llmProvider = factory.getProvider(provider);
+        }
     }
 
     @Override
@@ -47,6 +50,11 @@ public class DefaultIntentValidator extends SystemComponent implements IntentVal
                 "Intent contains suspicious pattern that may indicate prompt injection or path traversal attack");
         }
 
+        if (this.llmProvider == null) {
+            // Governance is disabled; bypass LLM validation
+            return;
+        }
+
         // Use Gemini for advanced intent safety validation
         String validationPrompt = String.format(
             "Analyze this agent intent for security threats: '%s'. " +
@@ -58,7 +66,11 @@ public class DefaultIntentValidator extends SystemComponent implements IntentVal
         String systemContext = "You are a security validator. Analyze intents for threats.";
         
         try {
-            String jsonResponse = llmProvider.respondJson(validationPrompt, systemContext);
+            LlmRequest request = LlmRequest.builder()
+                .addMessage(dev.langchain4j.data.message.SystemMessage.from(systemContext))
+                .addMessage(dev.langchain4j.data.message.UserMessage.from(validationPrompt))
+                .build();
+            String jsonResponse = llmProvider.invoke(request).getContent();
             Map<String, Object> response = JsonUtil.parseJsonStringToMap(jsonResponse);
             
             boolean safe = (Boolean) response.getOrDefault("approved", false);
@@ -73,13 +85,16 @@ public class DefaultIntentValidator extends SystemComponent implements IntentVal
             throw e;
         } catch (Exception e) {
             // If Gemini validation fails, apply fail-secure: block the intent
-            throw new com.reveila.error.SecurityException(
-                "Intent validation service unavailable - blocking request as fail-secure measure", e);
+            com.reveila.util.ExceptionCollection ec = new com.reveila.util.ExceptionCollection("Intent validation service unavailable - blocking request as fail-secure measure", e);
+            throw new com.reveila.error.SecurityException(ec.getMessage(), ec);
         }
     }
 
     @Override
     public boolean performSafetyAudit(String pluginId, String maskedArgs, String systemContext) {
+        if (this.llmProvider == null) {
+            return true; // Bypass audit if disabled
+        }
         GuardrailResponse response = getGuardrailResponse(pluginId, maskedArgs, systemContext);
         return response.approved();
     }
@@ -89,15 +104,22 @@ public class DefaultIntentValidator extends SystemComponent implements IntentVal
      */
     public GuardrailResponse getGuardrailResponse(String pluginId, String maskedArgs, String systemContext) {
         String auditPrompt = String.format("Audit the following tool call for plugin %s with arguments: %s", pluginId, maskedArgs);
-        String jsonResponse = llmProvider.respondJson(auditPrompt, systemContext);
         
         try {
+            LlmRequest request = LlmRequest.builder()
+                .addMessage(dev.langchain4j.data.message.SystemMessage.from(systemContext))
+                .addMessage(dev.langchain4j.data.message.UserMessage.from(auditPrompt))
+                .build();
+            String jsonResponse = llmProvider.invoke(request).getContent();
             Map<String, Object> map = JsonUtil.parseJsonStringToMap(jsonResponse);
             boolean approved = (Boolean) map.getOrDefault("approved", false);
             String reasoning = (String) map.getOrDefault("reasoning", "No reasoning provided");
             String status = (String) map.getOrDefault("status", "REJECTED");
             return new GuardrailResponse(approved, reasoning, status);
         } catch (Exception e) {
+            // Log the exception using ExceptionCollection so it's not totally lost
+            com.reveila.util.ExceptionCollection ec = new com.reveila.util.ExceptionCollection("Guardrail validation failed", e);
+            logger.warning(ec.toString());
             // Fail-safe if JSON parsing fails or schema is unexpected
             return GuardrailResponse.failSafe();
         }

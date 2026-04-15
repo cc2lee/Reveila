@@ -384,7 +384,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
 
     private void configureLogging() throws IOException {
         // %1=Date, %2=Source, %3=Logger Name, %4=Level, %5=Message, %6=Throwable
-        System.setProperty("java.util.logging.SimpleFormatter.format", "[%1$tF %1$tT] [%3$s] %4$s: %5$s%n");
+        System.setProperty("java.util.logging.SimpleFormatter.format", "[%1$tF %1$tT] [Reveila] [%3$s] %4$s: %5$s%n");
 
         Logger rootLogger = Logger.getLogger("");
 
@@ -399,8 +399,18 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         // 3. Add Console Handler if enabled in properties
         String consoleEnabled = properties.getProperty(Constants.LOG_CONSOLE_ENABLED, "true");
         if (Boolean.parseBoolean(consoleEnabled)) {
-            ConsoleHandler console = new ConsoleHandler();
-            console.setFormatter(new SimpleFormatter());
+            // Use a custom StreamHandler pointing to System.out to prevent INFO logs going to System.err
+            Handler console = new java.util.logging.StreamHandler(System.out, new SimpleFormatter()) {
+                @Override
+                public synchronized void publish(java.util.logging.LogRecord record) {
+                    super.publish(record);
+                    flush();
+                }
+                @Override
+                public synchronized void close() throws SecurityException {
+                    flush();
+                }
+            };
             console.setLevel(Level.ALL);
             rootLogger.addHandler(console);
         }

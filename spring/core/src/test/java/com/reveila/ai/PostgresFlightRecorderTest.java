@@ -13,29 +13,30 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.reveila.spring.model.jpa.AuditLog;
 import com.reveila.spring.repository.jpa.JdbcAuditLogRepository;
 import com.reveila.spring.service.PostgresFlightRecorder;
-import com.reveila.system.PlatformAdapter;
 import com.reveila.system.PluginPrincipal;
 import com.reveila.system.SystemContext;
+import com.reveila.system.SystemProxy;
 
 @ExtendWith(MockitoExtension.class)
 class PostgresFlightRecorderTest {
 
     @Mock private JdbcAuditLogRepository auditRepository;
     @Mock private SystemContext systemContext;
-    @Mock private PlatformAdapter platformAdapter;
+    @Mock private SystemProxy dataServiceProxy;
     private PostgresFlightRecorder flightRecorder;
     private PluginPrincipal principal;
 
     @BeforeEach
     void setUp() throws Exception {
-        when(systemContext.getPlatformAdapter()).thenReturn(platformAdapter);
-        doReturn(auditRepository).when(platformAdapter).getRepository("AuditLog");
+        when(systemContext.getProxy("DataService")).thenReturn(dataServiceProxy);
+        doReturn(auditRepository).when(dataServiceProxy).invoke(ArgumentMatchers.eq("getRepository"), ArgumentMatchers.any(Object[].class));
 
         flightRecorder = new PostgresFlightRecorder();
         flightRecorder.setContext(systemContext);

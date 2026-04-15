@@ -632,10 +632,10 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
                 String message = cause != null ? cause.getMessage() : e.getMessage();
                 Log.e(NAME, "invoke: Target exception", cause != null ? cause : e);
                 promise.reject("E_INVOKE_FAILED", message, cause != null ? cause : e);
-            } catch (Exception e) {
-                String message = e.getMessage() != null ? e.getMessage() : e.toString();
-                Log.e(NAME, "invoke: Failed", e);
-                promise.reject("E_INVOKE_FAILED", message, e);
+            } catch (Throwable t) {
+                String message = t.getMessage() != null ? t.getMessage() : t.toString();
+                Log.e(NAME, "invoke: Failed", t);
+                promise.reject("E_INVOKE_FAILED", message, t);
             }
         });
     }

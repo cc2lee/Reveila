@@ -33,12 +33,18 @@ public class InboundWebhookService extends SystemComponent {
         String source = (String) payload.getOrDefault("trigger_source", "unknown");
         String perimeter = (String) payload.getOrDefault("agency_perimeter", "default");
         
-        LlmGovernanceConfig govConfig = new LlmGovernanceConfig("openai", "gemini");
-        LlmProvider worker = llmFactory.getProvider(govConfig.workerProvider());
+        LlmProvider worker = llmFactory.getActiveProvider();
         
-        worker.respondJson(payload.getOrDefault("context", "{}").toString(),
-            "You are a Specialized Worker. Map the following context to a Reveila plugin intent."
-        );
+        LlmRequest request = LlmRequest.builder()
+                .addMessage(dev.langchain4j.data.message.SystemMessage.from("You are a Specialized Worker. Map the following context to a Reveila plugin intent. Return JSON."))
+                .addMessage(dev.langchain4j.data.message.UserMessage.from(payload.getOrDefault("context", "{}").toString()))
+                .build();
+
+        try {
+            worker.invoke(request).getContent();
+        } catch (Exception e) {
+            // Ignore for now
+        }
 
         PluginPrincipal principal = PluginPrincipal.create("webhook-agent-" + source, "external-ingestion");
         AgentSession session = orchestrationService.createSession(principal.getTraceId());

@@ -18,11 +18,11 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
 import com.reveila.data.Entity;
-import com.reveila.data.JsonFileRepository;
-import com.reveila.data.Page;
 import com.reveila.data.Repository;
 import com.reveila.system.BasePlatformAdapter;
 import com.reveila.system.Constants;
+import com.reveila.android.db.ReveilaDatabase;
+import com.reveila.android.data.RoomRepository;
 
 /**
  * An implementation of {@link PlatformAdapter} for the Android environment.
@@ -72,102 +72,8 @@ public class AndroidPlatformAdapter extends BasePlatformAdapter {
             return existingRepo;
         }
 
-        File dataDir = new File(getSystemHome().toFile(), "data");
-        if (!dataDir.exists()) {
-            dataDir.mkdirs();
-        }
-
-        JsonFileRepository<Map, String> jsonRepo = new JsonFileRepository<>(
-            dataDir.getAbsolutePath(), 
-            entityType, 
-            Map.class, 
-            String.class,
-            this
-        );
-        
-        Repository<Entity, Map<String, Map<String, Object>>> repo = new Repository<Entity, Map<String, Map<String, Object>>>() {
-            @Override
-            public Page<Entity> fetchPage(com.reveila.data.Filter filter, com.reveila.data.Sort sort, List<String> fetches, int page, int size, boolean includeCount) {
-                Page<Map> mapPage = jsonRepo.fetchPage(filter, sort, fetches, page, size, includeCount);
-                return mapPage.map(m -> mapToEntity(entityType, m));
-            }
-
-            @Override
-            public Entity store(Entity entity) {
-                Map<String, Object> attributes = new HashMap<>(entity.getAttributes());
-                Map<String, Map<String, Object>> key = entity.getKey();
-                if (key.containsKey("id")) {
-                    attributes.put("id", key.get("id").get("value"));
-                }
-                
-                Map savedMap = jsonRepo.store(attributes);
-                return mapToEntity(entityType, savedMap);
-            }
-
-            @Override
-            public Optional<Entity> fetchById(Map<String, Map<String, Object>> idMap) {
-                String id = extractId(idMap);
-                return jsonRepo.fetchById(id).map(m -> mapToEntity(entityType, m));
-            }
-
-            @Override
-            public void disposeById(Map<String, Map<String, Object>> idMap) {
-                jsonRepo.disposeById(extractId(idMap));
-            }
-
-            @Override
-            public List<Entity> storeAll(java.util.Collection<Entity> entities) {
-                List<Map> maps = new ArrayList<>();
-                for (Entity e : entities) {
-                    Map<String, Object> m = new HashMap<>(e.getAttributes());
-                    if (e.getKey().containsKey("id")) {
-                        m.put("id", e.getKey().get("id").get("value"));
-                    }
-                    maps.add(m);
-                }
-                return jsonRepo.storeAll(maps).stream().map(m -> mapToEntity(entityType, m)).collect(java.util.stream.Collectors.toList());
-            }
-
-            @Override
-            public long count() {
-                return jsonRepo.count();
-            }
-
-            @Override
-            public boolean hasId(Map<String, Map<String, Object>> idMap) {
-                return jsonRepo.hasId(extractId(idMap));
-            }
-
-            @Override
-            public void commit() {
-                jsonRepo.commit();
-            }
-
-            @Override
-            public String getType() {
-                return entityType;
-            }
-
-            @Override
-            public List<Entity> fetchAll() {
-                return jsonRepo.fetchAll().stream().map(m -> mapToEntity(entityType, m)).collect(java.util.stream.Collectors.toList());
-            }
-
-            private Entity mapToEntity(String type, Map m) {
-                Map<String, Map<String, Object>> key = new HashMap<>();
-                Map<String, Object> idPart = new HashMap<>();
-                idPart.put("value", m.get("id"));
-                key.put("id", idPart);
-                return new Entity(type, key, m);
-            }
-
-            private String extractId(Map<String, Map<String, Object>> idMap) {
-                if (idMap.containsKey("id")) {
-                    return String.valueOf(idMap.get("id").get("value"));
-                }
-                return String.valueOf(idMap.values().iterator().next().get("value"));
-            }
-        };
+        ReveilaDatabase db = ReveilaDatabase.Companion.getDatabase(context);
+        Repository repo = new RoomRepository(entityType, db.genericDao());
 
         registerRepository(entityType, repo);
         return repo;

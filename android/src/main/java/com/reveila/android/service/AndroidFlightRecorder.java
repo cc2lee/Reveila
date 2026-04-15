@@ -26,10 +26,12 @@ public class AndroidFlightRecorder extends SystemComponent implements FlightReco
 
     @Override
     protected void onStart() throws Exception {
-        // ADR 0006: Platform-agnostic repository retrieval.
-        this.auditRepository = context.getPlatformAdapter().getRepository("AuditLog");
-        if (this.auditRepository == null) {
-            logger.warning("AuditLog repository not found. FlightRecorder will not persist data.");
+        // ADR 0006: Platform-agnostic repository retrieval via DataService.
+        Object repo = context.getProxy("DataService").invoke("getRepository", new Object[] { "AuditLog" });
+        if (repo instanceof Repository) {
+            this.auditRepository = (Repository<Entity, Map<String, Map<String, Object>>>) repo;
+        } else {
+            logger.warning("AuditLog repository not found or invalid type via DataService. FlightRecorder will not persist data.");
         }
     }
 

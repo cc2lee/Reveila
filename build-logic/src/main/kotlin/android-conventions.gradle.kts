@@ -25,7 +25,6 @@ extensions.configure<LibraryExtension> {
     
     defaultConfig {
         minSdk = libs.findVersion("androidMinSdk").get().requiredVersion.toInt()
-        targetSdk = libs.findVersion("androidTargetSdk").get().requiredVersion.toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
         // Tells the consuming App to keep necessary Reveila classes

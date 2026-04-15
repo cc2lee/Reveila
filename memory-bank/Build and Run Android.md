@@ -8,6 +8,9 @@ This guide outlines the daily Android development workflow.
 
 adb shell am set-debug-app -w --persistent com.reveila.android
 npm run android
+npm run android -- --no-packager
+npm run android -- --port 8081
+cd android && ./gradlew installDebug
 adb forward tcp:5005 "jdwp:$(adb shell pidof com.reveila.android)"
 
 ```

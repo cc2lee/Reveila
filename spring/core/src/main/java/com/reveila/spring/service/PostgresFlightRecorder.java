@@ -27,8 +27,8 @@ public class PostgresFlightRecorder extends SystemComponent implements FlightRec
     @Override
     @SuppressWarnings("unchecked")
     protected void onStart() throws Exception {
-        // ADR 0006: Platform-agnostic repository retrieval.
-        Object repo = context.getPlatformAdapter().getRepository("AuditLog");
+        // ADR 0006: Platform-agnostic repository retrieval via DataService.
+        Object repo = context.getProxy("DataService").invoke("getRepository", new Object[] { "AuditLog" });
         if (repo instanceof Repository) {
             this.auditRepository = (Repository<AuditLog, java.util.UUID>) repo;
         }

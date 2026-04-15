@@ -65,7 +65,7 @@ public class DataService extends SystemComponent {
         // This will now look for a "sort" key inside the requestMap automatically
         SearchRequest request = EntityMapper.getObjectmapper().convertValue(requestMap, SearchRequest.class);
 
-        Repository<Entity, Map<String, Map<String, Object>>> repo = getRepo(request.entityType());
+        Repository<Entity, Map<String, Map<String, Object>>> repo = getRepository(request.entityType());
         return repo.fetchPage(request.filter(), request.sort(), request.fetches(),
                 request.page(), request.size(), request.includeCount());
     }
@@ -74,7 +74,7 @@ public class DataService extends SystemComponent {
      * Finds a single entity by its hierarchical key.
      */
     public Entity findById(String entityType, Map<String, Map<String, Object>> key) {
-        return getRepo(entityType).fetchById(key).orElse(null);
+        return getRepository(entityType).fetchById(key).orElse(null);
     }
 
     /**
@@ -83,22 +83,19 @@ public class DataService extends SystemComponent {
     public Entity save(String entityType, Map<String, Object> entityMap) {
         // Convert Map to Generic Entity DTO
         Entity entity = EntityMapper.getObjectmapper().convertValue(entityMap, Entity.class);
-        return getRepo(entityType).store(entity);
+        return getRepository(entityType).store(entity);
     }
 
     public void delete(String entityType, Map<String, Map<String, Object>> key) {
-        getRepo(entityType).disposeById(key);
+        getRepository(entityType).disposeById(key);
     }
 
     public Repository<Entity, Map<String, Map<String, Object>>> getRepository(String entityType) {
-        return getRepo(entityType);
-    }
-
-    private Repository<Entity, Map<String, Map<String, Object>>> getRepo(String entityType) {
         Repository<Entity, Map<String, Map<String, Object>>> repo = platform.getRepository(entityType);
         if (repo == null) {
             throw new IllegalArgumentException("Unsupported entity type: " + entityType);
         }
         return repo;
     }
+
 }

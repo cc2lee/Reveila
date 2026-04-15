@@ -2,6 +2,7 @@ plugins {
     id("android-conventions")
     id("maven-publish")
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -77,6 +78,14 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.activity:activity-compose:1.9.0")
     
+    // Room Database
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+
+    // Jackson (for JSON serialization in DB fields)
+    implementation(libs.bundles.jackson)
+
     // File system tree parsing
     implementation("androidx.documentfile:documentfile:1.0.1")
 }

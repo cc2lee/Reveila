@@ -11,28 +11,38 @@ import { ReveilaHeader } from '@/components/ReveilaHeader';
 import { ChangePasswordModal } from '@/components/ChangePasswordModal';
 import ReveilaModule from '@/modules/reveila';
 
-const LLM_PROVIDERS = [
-  { name: 'OpenAI', defaultEndpoint: 'https://api.openai.com/v1' },
-  { name: 'Anthropic', defaultEndpoint: 'https://api.anthropic.com' },
-  { name: 'Google Gemini', defaultEndpoint: 'https://generativelanguage.googleapis.com' },
-  { name: 'Ollama (Local)', defaultEndpoint: 'http://localhost:11434' },
-  { name: 'Custom', defaultEndpoint: '' }
+const LLM_PROVIDERS: any[] = [
+  { name: 'OpenAI', defaultEndpoint: 'https://api.openai.com/v1', apiKey: '' },
+  { name: 'Anthropic', defaultEndpoint: 'https://api.anthropic.com', apiKey: '' },
+  { name: 'Google Gemini', defaultEndpoint: 'https://generativelanguage.googleapis.com', apiKey: '' },
+  { name: 'Gemma-3-1b (Local)', defaultEndpoint: 'http://localhost:11434', apiKey: '', quantization: 'Q4_K_M', quantization_options: ['Q4_K_M', 'F16'] },
+  { name: 'Custom', defaultEndpoint: '', apiKey: '' }
 ];
 
 export default function SettingsScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('General');
-  const [quantization, setQuantization] = useState('Q4_K_M');
-  const [isHighSecurity, setIsHighSecurity] = useState(true);
-  const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
-  const [apiKey, setApiKey] = useState('');
   
-  const [providersList, setProvidersList] = useState(LLM_PROVIDERS);
-  const [provider, setProvider] = useState(LLM_PROVIDERS[0].name);
-  const [endpoint, setEndpoint] = useState(LLM_PROVIDERS[0].defaultEndpoint);
-  const [isProviderModalVisible, setProviderModalVisible] = useState(false);
-  const [isCustomProvider, setIsCustomProvider] = useState(false);
+  const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
   const [isChangePasswordVisible, setIsChangePasswordVisible] = useState(false);
+  
+  const [providersList, setProvidersList] = useState<any[]>(LLM_PROVIDERS);
+  
+  // Selection States
+  const [workerProvider, setWorkerProvider] = useState(LLM_PROVIDERS[0].name);
+  const [governanceProvider, setGovernanceProvider] = useState('Disable');
+
+  // Modals
+  const [isWorkerModalVisible, setWorkerModalVisible] = useState(false);
+  const [isGovModalVisible, setGovModalVisible] = useState(false);
+  
+  // Edit Provider Modal State
+  const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+  const [editProviderName, setEditProviderName] = useState('');
+  const [editEndpoint, setEditEndpoint] = useState('');
+  const [editApiKey, setEditApiKey] = useState('');
+  const [editQuantization, setEditQuantization] = useState('Q4_K_M');
+  const [editQuantizationOptions, setEditQuantizationOptions] = useState<string[]>([]);
   
   const [tasks, setTasks] = useState<any[]>([]);
   const [selectedTask, setSelectedTask] = useState<any>(null);
@@ -46,35 +56,41 @@ export default function SettingsScreen() {
   }, [activeTab]);
 
   useEffect(() => {
-    // Load preference on startup
     AsyncStorage.getItem('use_biometrics').then(val => {
       setIsBiometricEnabled(val === 'true');
     });
 
-    // Load official LLM config from the engine
     ReveilaModule.invoke('ConfigurationManager', 'getSettings', ['llm.json']).then((res: string) => {
       if (res) {
         try {
           const config = JSON.parse(res);
-          if (config.onboarded_providers && Array.isArray(config.onboarded_providers)) {
-            setProvidersList(config.onboarded_providers);
-          }
-          if (config.provider) {
-            setProvider(config.provider);
-            setIsCustomProvider(!LLM_PROVIDERS.find(p => p.name === config.provider));
-          }
-          if (config.endpoint) setEndpoint(config.endpoint);
-          if (config.quantization) setQuantization(config.quantization);
+          const onboarded = config.onboarded_providers || LLM_PROVIDERS;
+          setProvidersList(onboarded);
+
+          const legacyWorkerMap: Record<string, string> = { 'OpenAiProvider': 'OpenAI', 'AnthropicProvider': 'Anthropic', 'GeminiProvider': 'Google Gemini', 'OllamaProvider': 'Gemma-3-1b (Local)' };
+          const legacyGovMap: Record<string, string> = { ...legacyWorkerMap, '': 'Disable' };
+          
+          let wProvider = config['ai.worker.llm'] || 'OpenAI';
+          if (legacyWorkerMap[wProvider]) wProvider = legacyWorkerMap[wProvider];
+          
+          let gProvider = config['ai.governance.llm'] || 'Disable';
+          if (legacyGovMap[gProvider]) gProvider = legacyGovMap[gProvider];
+
+          setWorkerProvider(wProvider);
+          setGovernanceProvider(gProvider);
         } catch (e) {}
       }
     }).catch(() => {
-        // Fallback to AsyncStorage if engine call fails
         AsyncStorage.getItem('custom_providers').then(val => {
           if (val) {
             try {
               const parsed = JSON.parse(val);
               if (Array.isArray(parsed)) {
-                setProvidersList(prev => [...prev, ...parsed]);
+                setProvidersList(prev => {
+                   const map = new Map(prev.map(p => [p.name, p]));
+                   parsed.forEach(p => map.set(p.name, p));
+                   return Array.from(map.values());
+                });
               }
             } catch (e) {}
           }
@@ -89,7 +105,7 @@ export default function SettingsScreen() {
 
   const fetchTasks = async () => {
     try {
-      const result = await fetch('/api/tasks'); // Assuming local proxy or direct call
+      const result = await fetch('/api/tasks');
       const data = await result.json();
       setTasks(data);
     } catch (e) {}
@@ -102,8 +118,60 @@ export default function SettingsScreen() {
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'OK', onPress: () => {
-            // Logic to stop service
             alert('Kill Switch Activated. All processes stopped.');
+          }
+        }
+      ]
+    );
+  };
+
+  const openEditModal = (providerName: string) => {
+    if (providerName === 'Disable' || providerName === 'Custom') return;
+    const provider = providersList.find(p => p.name === providerName) || LLM_PROVIDERS.find(p => p.name === providerName);
+    if (provider) {
+        setEditProviderName(provider.name);
+        setEditEndpoint(provider.defaultEndpoint || '');
+        setEditApiKey(provider.apiKey || '');
+        setEditQuantization(provider.quantization || 'Q4_K_M');
+        setEditQuantizationOptions(provider.quantization_options || LLM_PROVIDERS.find(p => p.name === provider.name)?.quantization_options || []);
+        setIsEditModalVisible(true);
+    }
+  };
+
+  const handleSaveProviderEdit = () => {
+    setProvidersList(prev => {
+        const updated = [...prev];
+        const idx = updated.findIndex(p => p.name === editProviderName);
+        const pData = {
+            name: editProviderName,
+            defaultEndpoint: editEndpoint,
+            apiKey: editApiKey,
+            ...(editQuantizationOptions.length > 0 && { quantization: editQuantization, quantization_options: editQuantizationOptions })
+        };
+        if (idx >= 0) {
+            updated[idx] = { ...updated[idx], ...pData };
+        } else {
+            updated.push(pData);
+        }
+        return updated;
+    });
+    setIsEditModalVisible(false);
+  };
+
+  const handleDeleteProvider = () => {
+    Alert.alert(
+      'Confirm Delete',
+      `Are you sure you want to delete ${editProviderName}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: () => {
+            setProvidersList(prev => prev.filter(p => p.name !== editProviderName));
+            if (workerProvider === editProviderName) setWorkerProvider(LLM_PROVIDERS[0].name);
+            if (governanceProvider === editProviderName) setGovernanceProvider('Disable');
+            setIsEditModalVisible(false);
           }
         }
       ]
@@ -112,24 +180,13 @@ export default function SettingsScreen() {
 
   const handleSaveLLM = async () => {
     try {
-      // Check if it's a new custom provider to add to the onboarded list
-      let updatedList = [...providersList];
-      const existing = providersList.find(p => p.name === provider);
-      if (!existing && provider && provider.trim() !== '' && provider !== 'Custom') {
-        updatedList.push({ name: provider, defaultEndpoint: endpoint });
-        setProvidersList(updatedList);
-        
-        // Also keep local sync for redundancy
-        const customOnly = updatedList.filter(p => !LLM_PROVIDERS.find(orig => orig.name === p.name));
-        await AsyncStorage.setItem('custom_providers', JSON.stringify(customOnly));
-      }
+      const customOnly = providersList.filter(p => !LLM_PROVIDERS.find(orig => orig.name === p.name));
+      await AsyncStorage.setItem('custom_providers', JSON.stringify(customOnly));
 
       const config = {
-        provider,
-        endpoint,
-        apiKey,
-        quantization,
-        onboarded_providers: updatedList
+        'ai.worker.llm': workerProvider,
+        'ai.governance.llm': governanceProvider === 'Disable' ? '' : governanceProvider,
+        onboarded_providers: providersList
       };
 
       await ReveilaModule.invoke('ConfigurationManager', 'saveSettings', ['llm.json', JSON.stringify(config)]);
@@ -138,6 +195,72 @@ export default function SettingsScreen() {
       Alert.alert('Error', 'Failed to save configuration: ' + error.message);
     }
   };
+
+  const isProviderConfigured = (pName: string) => {
+    if (pName === 'Disable' || pName === 'Custom') return false;
+    const p = providersList.find(x => x.name === pName) || LLM_PROVIDERS.find(x => x.name === pName);
+    if (!p) return false;
+
+    if (p.name.startsWith('Gemma') || p.name.includes('Ollama')) {
+      return !!(p.defaultEndpoint && p.defaultEndpoint.trim().length > 0);
+    }
+    
+    if (p.name === 'OpenAI' || p.name === 'Google Gemini' || p.name === 'Anthropic') {
+      return !!(p.apiKey && p.apiKey.trim().length > 0);
+    }
+
+    return !!(p.defaultEndpoint && p.defaultEndpoint.trim().length > 0 && p.apiKey && p.apiKey.trim().length > 0);
+  };
+
+  const renderProviderSelector = (label: string, description: string, selectedProvider: string, isWorker: boolean) => (
+      <View style={{ marginBottom: 16 }}>
+        <ThemedText type="defaultSemiBold" style={{ marginBottom: 4 }}>{label}</ThemedText>
+        <ThemedText style={[styles.description, { marginBottom: 8, marginTop: 0 }]}>{description}</ThemedText>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            {selectedProvider === 'Custom' ? (
+                <View style={[styles.monoInput, { flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 0 }]}>
+                   <TextInput 
+                     style={{ flex: 1, color: '#000', padding: 10, fontFamily: 'monospace', fontSize: 12 }}
+                     value={selectedProvider === 'Custom' ? '' : selectedProvider}
+                     placeholder="Enter custom provider name"
+                     onChangeText={(text) => {
+                         if (isWorker) setWorkerProvider(text);
+                         else setGovernanceProvider(text);
+                     }}
+                   />
+                   <TouchableOpacity style={{ padding: 10 }} onPress={() => isWorker ? setWorkerModalVisible(true) : setGovModalVisible(true)}>
+                     <IconSymbol name="chevron.down" size={16} color="#64748b" />
+                   </TouchableOpacity>
+                </View>
+            ) : (
+                <TouchableOpacity 
+                  style={[styles.monoInput, { flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]} 
+                  onPress={() => isWorker ? setWorkerModalVisible(true) : setGovModalVisible(true)}
+                >
+                  <ThemedText style={{ color: '#000' }}>{selectedProvider}</ThemedText>
+                  <IconSymbol name="chevron.down" size={16} color="#64748b" />
+                </TouchableOpacity>
+            )}
+            
+            {selectedProvider !== 'Disable' && selectedProvider !== 'Custom' && (
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={{ 
+                    width: 10, height: 10, borderRadius: 5, marginRight: 8,
+                    backgroundColor: isProviderConfigured(selectedProvider) ? '#22c55e' : '#ef4444',
+                    shadowColor: isProviderConfigured(selectedProvider) ? '#22c55e' : '#ef4444',
+                    shadowOffset: { width: 0, height: 0 },
+                    shadowOpacity: 0.8,
+                    shadowRadius: 4,
+                    elevation: 3
+                  }} />
+                  <TouchableOpacity style={styles.editButton} onPress={() => openEditModal(selectedProvider)}>
+                      <ThemedText style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Edit</ThemedText>
+                  </TouchableOpacity>
+                </View>
+            )}
+        </View>
+      </View>
+  );
 
   return (
     <ThemedView style={styles.container}>
@@ -162,60 +285,23 @@ export default function SettingsScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         {activeTab === 'General' && (
           <View style={styles.section}>
-            <ThemedText type="subtitle">LLM Model Setup</ThemedText>
             
+            <ThemedText type="subtitle">AI Model (LLM) Setup</ThemedText>
             <ThemedView style={styles.card}>
-              <ThemedText type="defaultSemiBold">Provider</ThemedText>
-              {isCustomProvider ? (
-                <View style={[styles.monoInput, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, padding: 0 }]}>
-                   <TextInput 
-                     style={{ flex: 1, color: '#000', padding: 10, fontFamily: 'monospace', fontSize: 12 }}
-                     value={provider === 'Custom' ? '' : provider}
-                     placeholder="Enter custom provider name"
-                     onChangeText={setProvider}
-                   />
-                   <TouchableOpacity style={{ padding: 10 }} onPress={() => setProviderModalVisible(true)}>
-                     <IconSymbol name="chevron.down" size={16} color="#64748b" />
-                   </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity 
-                  style={[styles.monoInput, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }]} 
-                  onPress={() => setProviderModalVisible(true)}
-                >
-                  <ThemedText style={{ color: '#000' }}>{provider}</ThemedText>
-                  <IconSymbol name="chevron.down" size={16} color="#64748b" />
-                </TouchableOpacity>
-              )}
-
-              <ThemedText type="defaultSemiBold" style={{ marginTop: 12 }}>End Point</ThemedText>
-              <TextInput
-                style={[styles.monoInput, { marginTop: 8 }]}
-                placeholder="https://api.example.com"
-                placeholderTextColor="#94a3b8"
-                value={endpoint}
-                onChangeText={setEndpoint}
-              />
-
-              <ThemedText type="defaultSemiBold" style={{ marginTop: 12 }}>API Key</ThemedText>
-              <TextInput
-                style={[styles.monoInput, { marginTop: 8 }]}
-                placeholder="sk-..."
-                placeholderTextColor="#94a3b8"
-                value={apiKey}
-                onChangeText={setApiKey}
-                secureTextEntry={true}
-              />
               
+              {renderProviderSelector("Worker Provider", "This provider is used to perform all regular AI reasoning.", workerProvider, true)}
+              {renderProviderSelector("Governance Provider", "Optional, if set, this provider is used to pre-process prompts to scan for potential security risks like prompt injection and privacy violations.", governanceProvider, false)}
+
               <TouchableOpacity style={[styles.button, { marginTop: 16 }]} onPress={handleSaveLLM}>
                 <ThemedText style={styles.buttonText}>Save Configuration</ThemedText>
               </TouchableOpacity>
             </ThemedView>
 
-            <Modal visible={isProviderModalVisible} transparent={true} animationType="fade">
+            {/* Provider List Modals */}
+            <Modal visible={isWorkerModalVisible} transparent={true} animationType="fade">
               <View style={styles.modalOverlay}>
                 <View style={styles.modalContent}>
-                  <ThemedText type="subtitle" style={{ marginBottom: 16 }}>Select Provider</ThemedText>
+                  <ThemedText type="subtitle" style={{ marginBottom: 16 }}>Select Worker Provider</ThemedText>
                   <FlatList
                     data={providersList}
                     keyExtractor={(item) => item.name}
@@ -223,25 +309,103 @@ export default function SettingsScreen() {
                       <TouchableOpacity 
                         style={styles.providerItem}
                         onPress={() => {
-                          if (item.name === 'Custom') {
-                            setIsCustomProvider(true);
-                            setProvider('Custom');
-                            setEndpoint('');
-                          } else {
-                            setIsCustomProvider(false);
-                            setProvider(item.name);
-                            setEndpoint(item.defaultEndpoint);
-                          }
-                          setProviderModalVisible(false);
+                          setWorkerProvider(item.name);
+                          setWorkerModalVisible(false);
                         }}
                       >
                         <ThemedText>{item.name}</ThemedText>
                       </TouchableOpacity>
                     )}
                   />
-                  <TouchableOpacity style={styles.outlineButton} onPress={() => setProviderModalVisible(false)}>
+                  <TouchableOpacity style={styles.outlineButton} onPress={() => setWorkerModalVisible(false)}>
                     <ThemedText style={styles.outlineButtonText}>Cancel</ThemedText>
                   </TouchableOpacity>
+                </View>
+              </View>
+            </Modal>
+
+            <Modal visible={isGovModalVisible} transparent={true} animationType="fade">
+              <View style={styles.modalOverlay}>
+                <View style={styles.modalContent}>
+                  <ThemedText type="subtitle" style={{ marginBottom: 16 }}>Select Governance Provider</ThemedText>
+                  <FlatList
+                    data={[{ name: 'Disable' }, ...providersList]}
+                    keyExtractor={(item) => item.name}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity 
+                        style={styles.providerItem}
+                        onPress={() => {
+                          setGovernanceProvider(item.name);
+                          setGovModalVisible(false);
+                        }}
+                      >
+                        <ThemedText>{item.name}</ThemedText>
+                      </TouchableOpacity>
+                    )}
+                  />
+                  <TouchableOpacity style={styles.outlineButton} onPress={() => setGovModalVisible(false)}>
+                    <ThemedText style={styles.outlineButtonText}>Cancel</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Modal>
+
+            {/* Edit Provider Modal */}
+            <Modal visible={isEditModalVisible} transparent={true} animationType="slide">
+              <View style={styles.modalOverlay}>
+                <View style={styles.modalContent}>
+                  <ThemedText type="subtitle" style={{ marginBottom: 16 }}>Edit {editProviderName}</ThemedText>
+                  
+                  <ThemedText type="defaultSemiBold">End Point</ThemedText>
+                  <TextInput
+                    style={[styles.monoInput, { marginTop: 8, marginBottom: 12 }]}
+                    placeholder="https://api.example.com"
+                    placeholderTextColor="#94a3b8"
+                    value={editEndpoint}
+                    onChangeText={setEditEndpoint}
+                  />
+
+                  <ThemedText type="defaultSemiBold">API Key</ThemedText>
+                  <TextInput
+                    style={[styles.monoInput, { marginTop: 8 }]}
+                    placeholder={editApiKey ? "••••••••••••••••" : "sk-..."}
+                    placeholderTextColor="#94a3b8"
+                    value={editApiKey}
+                    onChangeText={setEditApiKey}
+                    secureTextEntry={true}
+                  />
+                  
+                  {editQuantizationOptions && editQuantizationOptions.length > 0 && (
+                    <View style={{ marginTop: 16 }}>
+                      <ThemedText type="defaultSemiBold">Quantization</ThemedText>
+                      <View style={styles.radioGroup}>
+                        {editQuantizationOptions.map(opt => (
+                          <TouchableOpacity 
+                            key={opt}
+                            style={[styles.radioButton, editQuantization === opt && styles.radioActive]}
+                            onPress={() => setEditQuantization(opt)}
+                          >
+                            <ThemedText style={[styles.radioText, editQuantization === opt && styles.radioTextActive]}>{opt === 'Q4_K_M' ? 'Q4_K_M (Fast)' : opt === 'F16' ? 'F16 (Accurate)' : opt}</ThemedText>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 24 }}>
+                      <TouchableOpacity style={[styles.button, { flex: 1 }]} onPress={handleSaveProviderEdit}>
+                        <ThemedText style={styles.buttonText}>Save Changes</ThemedText>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.outlineButton, { flex: 1 }]} onPress={() => setIsEditModalVisible(false)}>
+                        <ThemedText style={styles.outlineButtonText}>Cancel</ThemedText>
+                      </TouchableOpacity>
+                  </View>
+                  
+                  {!LLM_PROVIDERS.find(orig => orig.name === editProviderName) && (
+                    <TouchableOpacity style={[styles.outlineButton, { marginTop: 12, borderColor: '#ef4444' }]} onPress={handleDeleteProvider}>
+                      <ThemedText style={{ color: '#ef4444', fontWeight: '700', fontSize: 13 }}>Delete Custom Provider</ThemedText>
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
             </Modal>
@@ -254,26 +418,6 @@ export default function SettingsScreen() {
                 />
               </View>
             </Modal>
-
-            <ThemedText type="subtitle" style={{ marginTop: 16 }}>Local Model: Gemma-3-1b</ThemedText>
-            <ThemedView style={styles.card}>
-              <ThemedText style={styles.description}>Choose your preference, performance vs accuracy, for the local private model.</ThemedText>
-              
-              <View style={styles.radioGroup}>
-                <TouchableOpacity 
-                  style={[styles.radioButton, quantization === 'Q4_K_M' && styles.radioActive]}
-                  onPress={() => setQuantization('Q4_K_M')}
-                >
-                  <ThemedText style={[styles.radioText, quantization === 'Q4_K_M' && styles.radioTextActive]}>Q4_K_M (Fast)</ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.radioButton, quantization === 'F16' && styles.radioActive]}
-                  onPress={() => setQuantization('F16')}
-                >
-                  <ThemedText style={[styles.radioText, quantization === 'F16' && styles.radioTextActive]}>F16 (Accurate)</ThemedText>
-                </TouchableOpacity>
-              </View>
-            </ThemedView>
           </View>
         )}
 
@@ -433,6 +577,7 @@ const styles = StyleSheet.create({
   radioTextActive: { color: '#0891b2' },
   button: { padding: 12, borderRadius: 8, alignItems: 'center', backgroundColor: '#0f172a' },
   buttonText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  editButton: { backgroundColor: '#0ea5e9', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 8, marginLeft: 10 },
   addBtnSmall: { backgroundColor: '#0f172a', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
   outlineButton: { padding: 12, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1' },
   outlineButtonText: { color: '#475569', fontWeight: '700', fontSize: 13 },

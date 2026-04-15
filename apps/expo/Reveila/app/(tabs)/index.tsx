@@ -1,5 +1,5 @@
 import { StyleSheet, TouchableOpacity, ScrollView, View, TextInput, ActivityIndicator, Alert, Modal } from 'react-native';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
@@ -24,6 +24,7 @@ export default function HomeScreen() {
   const [selectedModel, setSelectedModel] = useState('Local: Gemma-3-1b');
   const [agentResponse, setAgentResponse] = useState<string | null>(null);
   const [isCloudMode, setIsCloudMode] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const setupCompleteRef = useRef(false);
 
   // Auth & Session State
@@ -61,6 +62,18 @@ export default function HomeScreen() {
     }
   }, [isCloudMode]);
 
+  const handleStart = useCallback(async () => {
+    if (isStarting) return;
+    setIsStarting(true);
+    setStartingTimestamp(Date.now());
+    try {
+      await ReveilaModule.startService(undefined);
+    } catch (e) {
+      setIsStarting(false);
+      setStartingTimestamp(null);
+    }
+  }, [isStarting]);
+
   useEffect(() => {
     const checkSetupAndStatus = async () => {
       try {
@@ -92,19 +105,7 @@ export default function HomeScreen() {
     checkSetupAndStatus();
     const interval = setInterval(checkSetupAndStatus, 5000);
     return () => clearInterval(interval);
-  }, [autoRestart, isStarting, isSetupComplete, startingTimestamp, isRunning]);
-
-  const handleStart = async () => {
-    if (isStarting) return;
-    setIsStarting(true);
-    setStartingTimestamp(Date.now());
-    try {
-      await ReveilaModule.startService(undefined);
-    } catch (e) {
-      setIsStarting(false);
-      setStartingTimestamp(null);
-    }
-  };
+  }, [autoRestart, isStarting, isSetupComplete, startingTimestamp, isRunning, handleStart]);
 
   const handleFetchLogs = async () => {
     if (!isRunning || isStarting) return;
@@ -196,11 +197,13 @@ export default function HomeScreen() {
               <ThemedText type="defaultSemiBold" style={{ color: isCloudMode ? '#3b82f6' : '#22c55e', marginBottom: 8, fontSize: 11 }}>
                 {isCloudMode ? 'CLOUD RESPONSE' : 'LOCAL REASONING'}
               </ThemedText>
-              {isProcessing ? (
-                <ThemedText style={{ fontStyle: 'italic', color: '#94a3b8' }}>Generating answer...</ThemedText>
-              ) : (
-                <ThemedText selectable={true} style={styles.responseText}>{agentResponse}</ThemedText>
-              )}
+              <ScrollView style={{ maxHeight: 400 }} nestedScrollEnabled={true}>
+                {isProcessing ? (
+                  <ThemedText style={{ fontStyle: 'italic', color: '#94a3b8' }}>Generating answer...</ThemedText>
+                ) : (
+                  <ThemedText selectable={true} style={styles.responseText}>{agentResponse}</ThemedText>
+                )}
+              </ScrollView>
             </ThemedView>
           )}
           {!isRunning && !isStarting && (
@@ -253,19 +256,28 @@ export default function HomeScreen() {
           <View style={styles.minimalRecorder}>
             <View style={styles.row}>
               <ThemedText style={styles.sectionLabel}>ACTIVITY HISTORY</ThemedText>
-              <TouchableOpacity onPress={handleFetchLogs} disabled={!isRunning}>
-                <ThemedText style={{ color: '#3b82f6', fontSize: 10, fontWeight: '700' }}>REFRESH</ThemedText>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <TouchableOpacity onPress={() => setShowHistory(!showHistory)}>
+                  <ThemedText style={{ color: '#3b82f6', fontSize: 10, fontWeight: '700' }}>{showHistory ? 'HIDE' : 'VIEW'}</ThemedText>
+                </TouchableOpacity>
+                {showHistory && (
+                  <TouchableOpacity onPress={handleFetchLogs} disabled={!isRunning}>
+                    <ThemedText style={{ color: '#3b82f6', fontSize: 10, fontWeight: '700' }}>REFRESH</ThemedText>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
-            <ThemedView style={styles.miniTable}>
-              {logs.length > 0 ? logs.slice(0, 3).map((log, i) => (
-                <View key={i} style={styles.miniTableRow}>
-                  <ThemedText numberOfLines={1} style={styles.miniLogText}>{log.attributes?.action || log.attributes?.details}</ThemedText>
-                </View>
-              )) : (
-                <ThemedText style={[styles.miniLogText, { padding: 8, fontStyle: 'italic' }]}>No recent activity found.</ThemedText>
-              )}
-            </ThemedView>
+            {showHistory && (
+              <ThemedView style={styles.miniTable}>
+                {logs.length > 0 ? logs.slice(0, 3).map((log, i) => (
+                  <View key={i} style={styles.miniTableRow}>
+                    <ThemedText numberOfLines={1} style={styles.miniLogText}>{log.attributes?.action || log.attributes?.details}</ThemedText>
+                  </View>
+                )) : (
+                  <ThemedText style={[styles.miniLogText, { padding: 8, fontStyle: 'italic' }]}>No recent activity found.</ThemedText>
+                )}
+              </ThemedView>
+            )}
           </View>
         </ScrollView>
       </View>

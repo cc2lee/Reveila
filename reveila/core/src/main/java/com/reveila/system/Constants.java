@@ -107,4 +107,10 @@ public final class Constants {
 	public static final String AI_STATUS_INSUFFICIENT_CONTEXT = "[STATUS: INSUFFICIENT_CONTEXT]";
 	public static final String AI_STATUS_ESCALATE = "[STATUS: ESCALATE]";
 	public static final String AI_STATUS_FAILED = "[STATUS: FAILED]";
+
+	public static final String LLM_PROVIDER_OPENAI = "OpenAI";
+	public static final String LLM_PROVIDER_ANTHROPIC = "Anthropic";
+	public static final String LLM_PROVIDER_GEMINI = "Google Gemini";
+	public static final String LLM_PROVIDER_OLLAMA = "Ollama";
+	public static final String LLM_PROVIDER_CUSTOM = "Custom";
 }

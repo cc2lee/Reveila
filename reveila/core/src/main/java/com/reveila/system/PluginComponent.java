@@ -12,7 +12,7 @@ public abstract class PluginComponent extends AbstractComponent {
         if (context == null) {
             if (this.logger != null) this.logger = null;
         } else {
-            this.logger = context.getLogger();
+            this.logger = Logger.getLogger("reveila.plugin." + this.getClass().getSimpleName());
         }
     }
 }

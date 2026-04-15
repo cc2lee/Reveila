@@ -63,8 +63,14 @@ class WebhookIngestionServiceTest {
         payload.put("context", Map.of("required_action", "extract_liabilities"));
         payload.put("agency_perimeter", "ma_due_diligence_standard");
 
-        when(llmFactory.getProvider(anyString())).thenReturn(llmProvider);
-        when(llmProvider.respondJson(anyString(), anyString())).thenReturn("{}");
+        when(llmFactory.getActiveProvider()).thenReturn(llmProvider);
+        
+        LlmResponse mockResponse = new LlmResponse();
+        mockResponse.setContent("{}");
+        try {
+            when(llmProvider.invoke(any(LlmRequest.class))).thenReturn(mockResponse);
+        } catch (Exception e) {}
+        
         when(orchestrationService.createSession(anyString())).thenReturn(session);
         when(bridge.invoke(any(), any(), eq("doc_extraction.extract"), anyMap()))
             .thenReturn(InvocationResult.success("Payment Processed"));

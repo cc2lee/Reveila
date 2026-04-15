@@ -74,11 +74,7 @@
             "class": "com.reveila.ai.LlmProviderFactory",
             "description": "Factory for LLM providers.",
             "thread-safe": true,
-            "dependencies": [
-                "OpenAiProvider",
-                "GeminiProvider",
-                "OllamaProvider"
-            ]
+            "dependencies": []
         }
     },
     {
@@ -87,9 +83,7 @@
             "class": "com.reveila.ai.DefaultIntentValidator",
             "description": "Validates agent intents using Gemini.",
             "thread-safe": true,
-            "dependencies": [
-                "GeminiProvider"
-            ]
+            "dependencies": []
         }
     },
     {

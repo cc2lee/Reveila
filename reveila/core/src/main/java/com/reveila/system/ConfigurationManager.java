@@ -35,10 +35,27 @@ public class ConfigurationManager extends SystemComponent {
         }
         
         Path tabFile = Paths.get(home).resolve("configs/settings").resolve(tab);
-        if (!Files.exists(tabFile)) {
-            return "{}";
+        String jsonContent = "{}";
+        if (Files.exists(tabFile)) {
+            jsonContent = new String(Files.readAllBytes(tabFile), java.nio.charset.StandardCharsets.UTF_8);
         }
-        return Files.readString(tabFile);
+
+        if ("llm.json".equals(tab)) {
+            Map<String, Object> configMap = mapper.readValue(jsonContent, new TypeReference<Map<String, Object>>() {});
+            String workerLlm = context.getProperties().getProperty("ai.worker.llm");
+            String govLlm = context.getProperties().getProperty("ai.governance.llm");
+            
+            if (workerLlm != null && !workerLlm.trim().isEmpty()) {
+                configMap.put("ai.worker.llm", workerLlm);
+            }
+            if (govLlm != null) {
+                configMap.put("ai.governance.llm", govLlm); // Empty string is valid for 'Disable'
+            }
+            
+            return mapper.writeValueAsString(configMap);
+        }
+        
+        return jsonContent;
     }
 
     public void saveSettings(String tab, String jsonConfig) throws Exception {
@@ -55,6 +72,44 @@ public class ConfigurationManager extends SystemComponent {
             Files.createDirectories(settingsDir);
         }
 
+        Map<String, Object> configMap = mapper.readValue(jsonConfig, new TypeReference<Map<String, Object>>() {});
+        boolean modifiedConfig = false;
+
+        if ("llm.json".equals(tab)) {
+            Object onboardedObj = configMap.get("onboarded_providers");
+            if (onboardedObj instanceof java.util.List) {
+                @SuppressWarnings("unchecked")
+                java.util.List<Map<String, Object>> providers = (java.util.List<Map<String, Object>>) onboardedObj;
+                for (Map<String, Object> p : providers) {
+                    String pName = (String) p.get("name");
+                    String pKey = (String) p.get("apiKey");
+                    String pEndpoint = (String) p.get("defaultEndpoint");
+                    
+                    if (pName != null && pKey != null && !pKey.isBlank() && !pKey.startsWith("REF:")) {
+                        String sKey = pName.replaceAll("\\s+", "_").toUpperCase() + "_API_KEY";
+                        try {
+                            context.getProxy("SecretManager").invoke("storeSecret", new Object[] { sKey, pKey });
+                            p.put("apiKey", "REF:" + sKey);
+                            modifiedConfig = true;
+                        } catch (Exception e) {
+                            logger.warning("Failed to store provider API key in SecretManager: " + e.getMessage());
+                        }
+                    }
+                    
+                    // Expose specific legacy properties to DI container
+                    if (pName != null && pEndpoint != null) {
+                        if (pName.startsWith("Gemma") || pName.equalsIgnoreCase("Ollama")) {
+                            configMap.put("plugin.OllamaProvider.apiUrl", pEndpoint);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (modifiedConfig) {
+            jsonConfig = mapper.writeValueAsString(configMap);
+        }
+
         Path tabFile = settingsDir.resolve(tab);
         
         // Write the raw JSON to the file
@@ -63,7 +118,6 @@ public class ConfigurationManager extends SystemComponent {
         }
         
         // Merge into main properties
-        Map<String, Object> configMap = mapper.readValue(jsonConfig, new TypeReference<Map<String, Object>>() {});
         Path mainFile = Paths.get(home).resolve("configs/reveila.properties");
         
         Properties mainProps = new Properties();

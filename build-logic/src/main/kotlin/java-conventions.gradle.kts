@@ -35,6 +35,7 @@ dependencies {
 
     "implementation"(libs.findBundle("slf4j").get()) // logging bundle
     "implementation"(libs.findBundle("jackson").get()) // XML/JSON manipulation
+    "implementation"(libs.findLibrary("org-json").get())
     
     // Configure JUnit dependencies:
 

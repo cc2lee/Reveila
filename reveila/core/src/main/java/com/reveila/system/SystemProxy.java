@@ -678,6 +678,7 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 			Object target = getInstance();
 
 			//////////////////////////////////////////////////////////////////////
+			// DEBUG
 			ClassLoader classLoader = target.getClass().getClassLoader();
 			System.out.println("Class loader: " + classLoader);
 			Field[] fields = target.getClass().getDeclaredFields();
