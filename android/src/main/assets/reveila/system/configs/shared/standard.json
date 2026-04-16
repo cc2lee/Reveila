@@ -1,6 +1,16 @@
 [
     {
         "component": {
+            "name": "UsageTracker",
+            "class": "com.reveila.ai.UsageTracker",
+            "thread-safe": true,
+            "dependencies": [
+                "DataService"
+            ]
+        }
+    },
+    {
+        "component": {
             "name": "InboundWebhookService",
             "class": "com.reveila.ai.InboundWebhookService",
             "thread-safe": true,
@@ -74,7 +84,13 @@
             "class": "com.reveila.ai.LlmProviderFactory",
             "description": "Factory for LLM providers.",
             "thread-safe": true,
-            "dependencies": []
+            "dependencies": [],
+            "methods": [
+                {
+                    "name": "loadProviders",
+                    "description": "Reloads LLM providers from configuration."
+                }
+            ]
         }
     },
     {

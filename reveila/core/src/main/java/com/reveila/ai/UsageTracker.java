@@ -3,6 +3,9 @@ package com.reveila.ai;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+
+import org.json.JSONObject;
+
 import java.time.Instant;
 
 import com.reveila.data.Entity;
@@ -28,12 +31,17 @@ public class UsageTracker extends SystemComponent {
     protected void onStop() throws Exception {
     }
 
-    public void logUsage(String tenantId, String requestId, String modelId, Usage usage) {
+    public void logUsage(String tenantId, String requestId, String modelId,
+            Usage usage, long latencyMs, JSONObject securityResult) {
+
         if (this.usageRepository == null) {
             logger.warning("Usage data not persisted because usageRepository is null.");
             return;
         }
 
+        boolean isSafe = securityResult.optBoolean("safe", true);
+        String risk = securityResult.optString("risk_category", "UNKNOWN");
+        boolean mismatch = (!isSafe && risk.equals("NONE"));
         Map<String, Object> attributes = new HashMap<>();
         attributes.put("tenant_id", tenantId);
         attributes.put("request_id", requestId);
@@ -43,6 +51,9 @@ public class UsageTracker extends SystemComponent {
         attributes.put("cached_tokens", usage.getCachedPromptTokens());
         attributes.put("reasoning_tokens", usage.getReasoningTokens());
         attributes.put("estimated_cost", usage.getEstimatedCost());
+        attributes.put("validation_latency_ms", latencyMs);
+        attributes.put("logic_mismatch", mismatch);
+        attributes.put("risk_category", risk);
         attributes.put("timestamp", Instant.now().toString());
 
         Map<String, Map<String, Object>> key = new HashMap<>();

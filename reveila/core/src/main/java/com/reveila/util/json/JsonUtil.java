@@ -13,20 +13,37 @@ import com.fasterxml.jackson.databind.ObjectWriter;
 /**
  * A utility class for JSON serialization and deserialization.
  * <p>
- * This class provides static methods to convert between JSON strings/files and Java objects.
+ * This class provides static methods to convert between JSON strings/files and
+ * Java objects.
  */
 public final class JsonUtil {
 
     public static final ObjectMapper MAPPER = new ObjectMapper();
     public static final ObjectWriter PRETTY_WRITER = MAPPER.writerWithDefaultPrettyPrinter();
 
-    public static final TypeReference<Map<String, Object>> MAP_TYPE_REFERENCE = new TypeReference<>() {};
-    public static final TypeReference<List<Map<String, Object>>> LIST_OF_MAPS_TYPE_REFERENCE = new TypeReference<>() {};
+    public static final TypeReference<Map<String, Object>> MAP_TYPE_REFERENCE = new TypeReference<>() {
+    };
+    public static final TypeReference<List<Map<String, Object>>> LIST_OF_MAPS_TYPE_REFERENCE = new TypeReference<>() {
+    };
 
     /**
      * Private constructor to prevent instantiation of this utility class.
      */
     private JsonUtil() {
+    }
+
+    public static String clean(String json) {
+        if (json == null)
+            return null;
+
+        int begin = json.indexOf("{");
+        int end = json.lastIndexOf("}");
+
+        if (begin != -1 && end != -1 && end > begin) {
+            return json.substring(begin, end + 1).trim();
+        }
+
+        return json.trim();
     }
 
     /**
@@ -92,7 +109,8 @@ public final class JsonUtil {
      *
      * @param data     The object to serialize.
      * @param filePath The path to the output file.
-     * @throws JsonException if a problem occurs during file writing or serialization.
+     * @throws JsonException if a problem occurs during file writing or
+     *                       serialization.
      */
     public static void toJsonFile(Object data, String filePath) throws JsonException {
         try {
@@ -111,27 +129,27 @@ public final class JsonUtil {
     }
 
     // Recursively find all values for a given key in a (possibly nested) Map
-	public static List<Object> findValuesByKey(Map<String, Object> map, String key) {
-		List<Object> results = new ArrayList<>();
-		findValuesByKeyHelper(map, key, results);
-		return results;
-	}
+    public static List<Object> findValuesByKey(Map<String, Object> map, String key) {
+        List<Object> results = new ArrayList<>();
+        findValuesByKeyHelper(map, key, results);
+        return results;
+    }
 
-	private static void findValuesByKeyHelper(Map<?, ?> map, String key, List<Object> results) {
-		for (Map.Entry<?, ?> entry : map.entrySet()) {
-			if (entry.getKey().equals(key)) {
-				results.add(entry.getValue());
-			}
-			Object value = entry.getValue();
-			if (value instanceof Map<?, ?>) {
-				findValuesByKeyHelper((Map<?, ?>) value, key, results);
-			} else if (value instanceof List) {
-				for (Object item : (List<?>) value) {
-					if (item instanceof Map<?, ?>) {
-						findValuesByKeyHelper((Map<?, ?>) item, key, results);
-					}
-				}
-			}
-		}
-	}
+    private static void findValuesByKeyHelper(Map<?, ?> map, String key, List<Object> results) {
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (entry.getKey().equals(key)) {
+                results.add(entry.getValue());
+            }
+            Object value = entry.getValue();
+            if (value instanceof Map<?, ?>) {
+                findValuesByKeyHelper((Map<?, ?>) value, key, results);
+            } else if (value instanceof List) {
+                for (Object item : (List<?>) value) {
+                    if (item instanceof Map<?, ?>) {
+                        findValuesByKeyHelper((Map<?, ?>) item, key, results);
+                    }
+                }
+            }
+        }
+    }
 }

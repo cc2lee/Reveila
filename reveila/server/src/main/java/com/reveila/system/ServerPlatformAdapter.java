@@ -13,7 +13,6 @@ public class ServerPlatformAdapter extends BasePlatformAdapter {
 
     public ServerPlatformAdapter(Properties commandLineArgs) throws Exception {
         super(commandLineArgs);
-        System.err.println("[CRITICAL_LOG] ServerPlatformAdapter Initialized");
     }
 
     @Override

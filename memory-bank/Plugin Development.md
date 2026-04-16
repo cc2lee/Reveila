@@ -46,7 +46,7 @@ Administrators add these settings to the Global Settings UI (e.g., inside `llm.p
 **Example Plugin Usage:**
 ```java
 // Inside your plugin's onStart() or execute() method:
-String apiKey = this.context.getProperties().getProperty("apiKey"); // "REF:SECRET_123"
+String apiKey = this.context.getProperties().getProperty("api.key"); // "REF:SECRET_123"
 String retries = this.context.getProperties().getProperty("maxRetries"); // "3"
 String mode = this.context.getProperties().getProperty("system.mode"); // "production" (Safe global property)
 ```

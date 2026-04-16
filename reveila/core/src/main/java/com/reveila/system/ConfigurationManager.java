@@ -76,20 +76,20 @@ public class ConfigurationManager extends SystemComponent {
         boolean modifiedConfig = false;
 
         if ("llm.json".equals(tab)) {
-            Object onboardedObj = configMap.get("onboarded_providers");
+            Object onboardedObj = configMap.get("onboarded.providers");
             if (onboardedObj instanceof java.util.List) {
                 @SuppressWarnings("unchecked")
                 java.util.List<Map<String, Object>> providers = (java.util.List<Map<String, Object>>) onboardedObj;
                 for (Map<String, Object> p : providers) {
                     String pName = (String) p.get("name");
-                    String pKey = (String) p.get("apiKey");
-                    String pEndpoint = (String) p.get("defaultEndpoint");
+                    String pKey = (String) p.get("api.key");
+                    String pEndpoint = (String) p.get("endpoint");
                     
                     if (pName != null && pKey != null && !pKey.isBlank() && !pKey.startsWith("REF:")) {
                         String sKey = pName.replaceAll("\\s+", "_").toUpperCase() + "_API_KEY";
                         try {
                             context.getProxy("SecretManager").invoke("storeSecret", new Object[] { sKey, pKey });
-                            p.put("apiKey", "REF:" + sKey);
+                            p.put("api.key", "REF:" + sKey);
                             modifiedConfig = true;
                         } catch (Exception e) {
                             logger.warning("Failed to store provider API key in SecretManager: " + e.getMessage());
@@ -137,6 +137,18 @@ public class ConfigurationManager extends SystemComponent {
 
         // Reload properties
         context.getPlatformAdapter().reloadProperties();
+        
+        // If llm.json changed, reload the providers factory
+        if ("llm.json".equals(tab)) {
+            try {
+                Proxy factory = context.getProxy("LlmProviderFactory");
+                factory.invoke("loadProviders", null);
+                logger.info("LLM Providers factory reloaded successfully.");
+            } catch (Exception e) {
+                logger.warning("Failed to reload LlmProviderFactory: " + e.getMessage());
+            }
+        }
+        
         logger.info("Saved and reloaded settings for tab: " + tab);
     }
 }

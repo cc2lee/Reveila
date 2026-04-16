@@ -1,8 +1,21 @@
 package com.reveila.ai;
 
+import java.io.File;
+import java.io.InputStream;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reveila.data.Entity;
+import com.reveila.data.Repository;
+import com.reveila.system.Constants;
 import com.reveila.system.SystemComponent;
 
 /**
@@ -23,6 +36,8 @@ import com.reveila.system.SystemComponent;
 public class MetadataRegistry extends SystemComponent {
     
     private final Map<String, PluginManifest> plugins = new ConcurrentHashMap<>();
+    private Repository<Entity, Map<String, Map<String, Object>>> agentRepository;
+    private final ObjectMapper mapper = new ObjectMapper();
 
     /**
      * Registers a plugin manifest.
@@ -35,12 +50,85 @@ public class MetadataRegistry extends SystemComponent {
 
     /**
      * Retrieves a plugin manifest by ID.
+     * Checks L1 (Memory Cache), then L3 (Database Repository).
+     * L2 (File Configs) are loaded into Memory Cache during startup.
      *
      * @param pluginId The plugin ID.
      * @return The manifest, or null if not found.
      */
     public PluginManifest getManifest(String pluginId) {
-        return plugins.get(pluginId);
+        // 1. Check L1 Cache
+        PluginManifest cached = plugins.get(pluginId);
+        if (cached != null) {
+            return cached;
+        }
+
+        // 2. Check L3 Database Repository
+        if (agentRepository != null) {
+            try {
+                Map<String, Map<String, Object>> key = Map.of("plugin_id", Map.of("value", pluginId));
+                Optional<Entity> opt = agentRepository.fetchById(key);
+                if (opt.isPresent()) {
+                    Entity entity = opt.get();
+                    Map<String, Object> attrs = entity.getAttributes();
+                    PluginManifest dbManifest = mapAttributesToManifest(pluginId, attrs);
+                    // Cache it for future
+                    if (dbManifest != null) {
+                        plugins.put(pluginId, dbManifest);
+                        return dbManifest;
+                    }
+                }
+            } catch (Exception e) {
+                logger.warning("Failed to fetch agent manifest from repository: " + e.getMessage());
+            }
+        }
+
+        return null;
+    }
+
+    private PluginManifest mapAttributesToManifest(String id, Map<String, Object> attrs) {
+        try {
+            String name = (String) attrs.getOrDefault("name", id);
+            String version = (String) attrs.getOrDefault("version", "1.0");
+            
+            @SuppressWarnings("unchecked")
+            Map<String, Object> tools = attrs.containsKey("tool_definitions") ? 
+                (Map<String, Object>) attrs.get("tool_definitions") : new HashMap<>();
+            
+            AgencyPerimeter perimeter = parseAgencyPerimeter(attrs.get("agency_perimeter"));
+            
+            Set<String> secrets = parseSet(attrs.get("secret_parameters"));
+            Set<String> masked = parseSet(attrs.get("masked_parameters"));
+            
+            return new PluginManifest(id, name, version, tools, perimeter, secrets, masked);
+        } catch (Exception e) {
+            logger.warning("Invalid manifest attributes for " + id + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Set<String> parseSet(Object obj) {
+        if (obj instanceof List) {
+            return new HashSet<>((List<String>) obj);
+        }
+        return new HashSet<>();
+    }
+
+    @SuppressWarnings("unchecked")
+    private AgencyPerimeter parseAgencyPerimeter(Object obj) {
+        if (obj instanceof Map) {
+            Map<String, Object> pMap = (Map<String, Object>) obj;
+            Set<String> accessScopes = parseSet(pMap.get("accessScopes"));
+            Set<String> allowedDomains = parseSet(pMap.get("allowedDomains"));
+            boolean internetBlocked = Boolean.TRUE.equals(pMap.get("internetAccessBlocked"));
+            long mem = pMap.containsKey("maxMemoryMb") ? ((Number) pMap.get("maxMemoryMb")).longValue() : 512L;
+            int cpu = pMap.containsKey("maxCpuCores") ? ((Number) pMap.get("maxCpuCores")).intValue() : 1;
+            int exec = pMap.containsKey("maxExecutionSec") ? ((Number) pMap.get("maxExecutionSec")).intValue() : 30;
+            boolean delegation = Boolean.TRUE.equals(pMap.get("delegationAllowed"));
+            return new AgencyPerimeter(accessScopes, allowedDomains, internetBlocked, mem, cpu, exec, delegation);
+        }
+        return new AgencyPerimeter(Collections.emptySet(), Collections.emptySet(), true, 128L, 1, 5, false);
     }
 
     /**
@@ -88,11 +176,69 @@ public class MetadataRegistry extends SystemComponent {
 
     @Override
     protected void onStop() throws Exception {
-        
+        plugins.clear();
     }
 
     @Override
     protected void onStart() throws Exception {
+        // 1. Connect to Database Repository
+        this.agentRepository = context.getPlatformAdapter().getRepository("agent_manifest");
+
+        // 2. Bootstrap Core Agents
+        registerCoreAgents();
+
+        // 3. Discover File-Based Agents
+        discoverAgents();
         
+        logger.info("MetadataRegistry initialized. Loaded " + plugins.size() + " agent/plugin manifests.");
+    }
+
+    private void registerCoreAgents() {
+        // Bootstrap 'ui-client' which is the default caller for UI interactions
+        AgencyPerimeter uiClientPerimeter = new AgencyPerimeter(
+            Collections.emptySet(), // accessScopes
+            Collections.emptySet(), // allowedDomains
+            false, // internetAccessBlocked
+            1024L, // maxMemoryMb
+            2, // maxCpuCores
+            60, // maxExecutionSec
+            true // delegationAllowed
+        );
+        
+        PluginManifest uiClient = new PluginManifest(
+            "ui-client",
+            "Reveila UI Client",
+            "1.0",
+            new HashMap<>(), // No specific tools exposed by the UI itself
+            uiClientPerimeter,
+            Collections.emptySet(),
+            Collections.emptySet()
+        );
+        register(uiClient);
+    }
+
+    private void discoverAgents() {
+        try {
+            String agentsDir = Constants.CONFIGS_DIR_NAME + File.separator + "agents";
+            String[] files = context.getPlatformAdapter().listRelativePaths(agentsDir, ".json");
+            
+            if (files != null && files.length > 0) {
+                for (String file : files) {
+                    try (InputStream is = context.getPlatformAdapter().getFileInputStream(file)) {
+                        Map<String, Object> attrs = mapper.readValue(is, new TypeReference<Map<String, Object>>() {});
+                        String id = (String) attrs.getOrDefault("plugin_id", new File(file).getName().replace(".json", ""));
+                        PluginManifest manifest = mapAttributesToManifest(id, attrs);
+                        if (manifest != null) {
+                            register(manifest);
+                        }
+                    } catch (Exception e) {
+                        logger.warning("Failed to load agent profile from " + file + ": " + e.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // It's okay if the directory doesn't exist
+            logger.info("No file-based agent profiles discovered.");
+        }
     }
 }

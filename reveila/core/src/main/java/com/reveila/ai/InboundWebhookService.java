@@ -34,6 +34,12 @@ public class InboundWebhookService extends SystemComponent {
         String perimeter = (String) payload.getOrDefault("agency_perimeter", "default");
         
         LlmProvider worker = llmFactory.getActiveProvider();
+        if (worker == null) {
+            String msg = "System Error: No active LLM Provider found.";
+            if (logger != null)
+                logger.severe(msg);
+            return InvocationResult.error(msg);
+        }
         
         LlmRequest request = LlmRequest.builder()
                 .addMessage(dev.langchain4j.data.message.SystemMessage.from("You are a Specialized Worker. Map the following context to a Reveila plugin intent. Return JSON."))

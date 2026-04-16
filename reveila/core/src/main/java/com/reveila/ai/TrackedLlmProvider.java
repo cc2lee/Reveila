@@ -1,5 +1,7 @@
 package com.reveila.ai;
 
+import org.json.JSONObject;
+
 import com.reveila.error.LlmException;
 
 public class TrackedLlmProvider implements LlmProvider {
@@ -13,16 +15,18 @@ public class TrackedLlmProvider implements LlmProvider {
 
     @Override
     public LlmResponse invoke(LlmRequest request) throws LlmException {
+        long startTime = System.currentTimeMillis();
         LlmResponse response = delegate.invoke(request);
-        
+        long latency = System.currentTimeMillis() - startTime;
+
+        String tenantId = request.getMetadata().getOrDefault("tenantId", "default").toString();
+        String requestId = response.getRequestId();
+        String modelId = request.getModelId();
+
         // Asynchronously log usage to avoid blocking the Agent's thought loop
         new Thread(() -> {
-            tracker.logUsage(
-                request.getMetadata().getOrDefault("tenantId", "default").toString(),
-                response.getRequestId(),
-                request.getModelId(),
-                response.getUsage()
-            );
+            JSONObject securityData = new JSONObject(response.getContent());
+            tracker.logUsage(tenantId, requestId, modelId, response.getUsage(), latency, securityData);
         }).start();
 
         return response;

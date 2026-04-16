@@ -26,8 +26,9 @@ export default function SettingsScreen() {
   const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
   const [isChangePasswordVisible, setIsChangePasswordVisible] = useState(false);
   
+  const [isLoadingProviders, setIsLoadingProviders] = useState(true);
   const [providersList, setProvidersList] = useState<any[]>(LLM_PROVIDERS);
-  
+
   // Selection States
   const [workerProvider, setWorkerProvider] = useState(LLM_PROVIDERS[0].name);
   const [governanceProvider, setGovernanceProvider] = useState('Disable');
@@ -38,16 +39,26 @@ export default function SettingsScreen() {
   
   // Edit Provider Modal State
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
-  const [editProviderName, setEditProviderName] = useState('');
-  const [editEndpoint, setEditEndpoint] = useState('');
-  const [editApiKey, setEditApiKey] = useState('');
-  const [editQuantization, setEditQuantization] = useState('Q4_K_M');
-  const [editQuantizationOptions, setEditQuantizationOptions] = useState<string[]>([]);
+  const [editData, setEditData] = useState<any>({});
   
   const [tasks, setTasks] = useState<any[]>([]);
   const [selectedTask, setSelectedTask] = useState<any>(null);
 
   const tabs = ['General', 'Security', 'Tasks', 'Advanced'];
+
+  const [isRunning, setIsRunning] = useState(false);
+
+  useEffect(() => {
+    const checkRunning = async () => {
+      try {
+        const running = await ReveilaModule.isRunning();
+        setIsRunning(running);
+      } catch (e) {}
+    };
+    checkRunning();
+    const interval = setInterval(checkRunning, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'Tasks') {
@@ -59,12 +70,16 @@ export default function SettingsScreen() {
     AsyncStorage.getItem('use_biometrics').then(val => {
       setIsBiometricEnabled(val === 'true');
     });
+  }, []);
+
+  useEffect(() => {
+    if (!isRunning) return;
 
     ReveilaModule.invoke('ConfigurationManager', 'getSettings', ['llm.json']).then((res: string) => {
       if (res) {
         try {
           const config = JSON.parse(res);
-          const onboarded = config.onboarded_providers || LLM_PROVIDERS;
+          const onboarded = config['onboarded.providers'] || config.onboarded_providers || LLM_PROVIDERS;
           setProvidersList(onboarded);
 
           const legacyWorkerMap: Record<string, string> = { 'OpenAiProvider': 'OpenAI', 'AnthropicProvider': 'Anthropic', 'GeminiProvider': 'Google Gemini', 'OllamaProvider': 'Gemma-3-1b (Local)' };
@@ -95,8 +110,10 @@ export default function SettingsScreen() {
             } catch (e) {}
           }
         });
+    }).finally(() => {
+      setIsLoadingProviders(false);
     });
-  }, []);
+  }, [isRunning]);
 
   const toggleBiometrics = async (value: boolean) => {
     setIsBiometricEnabled(value);
@@ -129,11 +146,7 @@ export default function SettingsScreen() {
     if (providerName === 'Disable' || providerName === 'Custom') return;
     const provider = providersList.find(p => p.name === providerName) || LLM_PROVIDERS.find(p => p.name === providerName);
     if (provider) {
-        setEditProviderName(provider.name);
-        setEditEndpoint(provider.defaultEndpoint || '');
-        setEditApiKey(provider.apiKey || '');
-        setEditQuantization(provider.quantization || 'Q4_K_M');
-        setEditQuantizationOptions(provider.quantization_options || LLM_PROVIDERS.find(p => p.name === provider.name)?.quantization_options || []);
+        setEditData({ ...provider });
         setIsEditModalVisible(true);
     }
   };
@@ -141,17 +154,11 @@ export default function SettingsScreen() {
   const handleSaveProviderEdit = () => {
     setProvidersList(prev => {
         const updated = [...prev];
-        const idx = updated.findIndex(p => p.name === editProviderName);
-        const pData = {
-            name: editProviderName,
-            defaultEndpoint: editEndpoint,
-            apiKey: editApiKey,
-            ...(editQuantizationOptions.length > 0 && { quantization: editQuantization, quantization_options: editQuantizationOptions })
-        };
+        const idx = updated.findIndex(p => p.name === editData.name);
         if (idx >= 0) {
-            updated[idx] = { ...updated[idx], ...pData };
+            updated[idx] = { ...editData };
         } else {
-            updated.push(pData);
+            updated.push({ ...editData });
         }
         return updated;
     });
@@ -161,16 +168,16 @@ export default function SettingsScreen() {
   const handleDeleteProvider = () => {
     Alert.alert(
       'Confirm Delete',
-      `Are you sure you want to delete ${editProviderName}?`,
+      `Are you sure you want to delete ${editData.name}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         { 
           text: 'Delete', 
           style: 'destructive',
           onPress: () => {
-            setProvidersList(prev => prev.filter(p => p.name !== editProviderName));
-            if (workerProvider === editProviderName) setWorkerProvider(LLM_PROVIDERS[0].name);
-            if (governanceProvider === editProviderName) setGovernanceProvider('Disable');
+            setProvidersList(prev => prev.filter(p => p.name !== editData.name));
+            if (workerProvider === editData.name) setWorkerProvider(LLM_PROVIDERS[0].name);
+            if (governanceProvider === editData.name) setGovernanceProvider('Disable');
             setIsEditModalVisible(false);
           }
         }
@@ -186,7 +193,7 @@ export default function SettingsScreen() {
       const config = {
         'ai.worker.llm': workerProvider,
         'ai.governance.llm': governanceProvider === 'Disable' ? '' : governanceProvider,
-        onboarded_providers: providersList
+        'onboarded.providers': providersList
       };
 
       await ReveilaModule.invoke('ConfigurationManager', 'saveSettings', ['llm.json', JSON.stringify(config)]);
@@ -197,6 +204,7 @@ export default function SettingsScreen() {
   };
 
   const isProviderConfigured = (pName: string) => {
+    if (isLoadingProviders) return false; // Prevent rendering red LED while loading
     if (pName === 'Disable' || pName === 'Custom') return false;
     const p = providersList.find(x => x.name === pName) || LLM_PROVIDERS.find(x => x.name === pName);
     if (!p) return false;
@@ -244,15 +252,19 @@ export default function SettingsScreen() {
             
             {selectedProvider !== 'Disable' && selectedProvider !== 'Custom' && (
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <View style={{ 
-                    width: 10, height: 10, borderRadius: 5, marginRight: 8,
-                    backgroundColor: isProviderConfigured(selectedProvider) ? '#22c55e' : '#ef4444',
-                    shadowColor: isProviderConfigured(selectedProvider) ? '#22c55e' : '#ef4444',
-                    shadowOffset: { width: 0, height: 0 },
-                    shadowOpacity: 0.8,
-                    shadowRadius: 4,
-                    elevation: 3
-                  }} />
+                  {isLoadingProviders ? (
+                    <View style={{ width: 10, height: 10, borderRadius: 5, marginRight: 8, backgroundColor: '#94a3b8' }} />
+                  ) : (
+                    <View style={{ 
+                      width: 10, height: 10, borderRadius: 5, marginRight: 8,
+                      backgroundColor: isProviderConfigured(selectedProvider) ? '#22c55e' : '#ef4444',
+                      shadowColor: isProviderConfigured(selectedProvider) ? '#22c55e' : '#ef4444',
+                      shadowOffset: { width: 0, height: 0 },
+                      shadowOpacity: 0.8,
+                      shadowRadius: 4,
+                      elevation: 3
+                    }} />
+                  )}
                   <TouchableOpacity style={styles.editButton} onPress={() => openEditModal(selectedProvider)}>
                       <ThemedText style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Edit</ThemedText>
                   </TouchableOpacity>
@@ -354,43 +366,48 @@ export default function SettingsScreen() {
             <Modal visible={isEditModalVisible} transparent={true} animationType="slide">
               <View style={styles.modalOverlay}>
                 <View style={styles.modalContent}>
-                  <ThemedText type="subtitle" style={{ marginBottom: 16 }}>Edit {editProviderName}</ThemedText>
+                  <ThemedText type="subtitle" style={{ marginBottom: 16 }}>Edit {editData.name}</ThemedText>
                   
-                  <ThemedText type="defaultSemiBold">End Point</ThemedText>
-                  <TextInput
-                    style={[styles.monoInput, { marginTop: 8, marginBottom: 12 }]}
-                    placeholder="https://api.example.com"
-                    placeholderTextColor="#94a3b8"
-                    value={editEndpoint}
-                    onChangeText={setEditEndpoint}
-                  />
-
-                  <ThemedText type="defaultSemiBold">API Key</ThemedText>
-                  <TextInput
-                    style={[styles.monoInput, { marginTop: 8 }]}
-                    placeholder={editApiKey ? "••••••••••••••••" : "sk-..."}
-                    placeholderTextColor="#94a3b8"
-                    value={editApiKey}
-                    onChangeText={setEditApiKey}
-                    secureTextEntry={true}
-                  />
-                  
-                  {editQuantizationOptions && editQuantizationOptions.length > 0 && (
-                    <View style={{ marginTop: 16 }}>
-                      <ThemedText type="defaultSemiBold">Quantization</ThemedText>
-                      <View style={styles.radioGroup}>
-                        {editQuantizationOptions.map(opt => (
-                          <TouchableOpacity 
-                            key={opt}
-                            style={[styles.radioButton, editQuantization === opt && styles.radioActive]}
-                            onPress={() => setEditQuantization(opt)}
-                          >
-                            <ThemedText style={[styles.radioText, editQuantization === opt && styles.radioTextActive]}>{opt === 'Q4_K_M' ? 'Q4_K_M (Fast)' : opt === 'F16' ? 'F16 (Accurate)' : opt}</ThemedText>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </View>
-                  )}
+                  <ScrollView style={{ maxHeight: '70%' }} contentContainerStyle={{ gap: 12 }}>
+                    {Object.keys(editData).filter(key => key !== 'name' && !key.endsWith('options') && !key.endsWith('.options')).map(key => {
+                      const optionsKey = `${key}_options`;
+                      const optionsKeyAlt = `${key}.options`;
+                      const options = editData[optionsKey] || editData[optionsKeyAlt];
+                      
+                      if (Array.isArray(options) && options.length > 0) {
+                          return (
+                              <View key={key} style={{ marginTop: 8 }}>
+                                <ThemedText type="defaultSemiBold">{key.charAt(0).toUpperCase() + key.slice(1)}</ThemedText>
+                                <View style={styles.radioGroup}>
+                                  {options.map((opt: string) => (
+                                    <TouchableOpacity 
+                                      key={opt}
+                                      style={[styles.radioButton, editData[key] === opt && styles.radioActive]}
+                                      onPress={() => setEditData({...editData, [key]: opt})}
+                                    >
+                                      <ThemedText style={[styles.radioText, editData[key] === opt && styles.radioTextActive]}>{opt}</ThemedText>
+                                    </TouchableOpacity>
+                                  ))}
+                                </View>
+                              </View>
+                          );
+                      }
+                      
+                      const isSecret = key.toLowerCase().includes('key') || key.toLowerCase().includes('password');
+                      return (
+                        <View key={key} style={{ marginTop: 8 }}>
+                          <ThemedText type="defaultSemiBold">{key}</ThemedText>
+                          <TextInput
+                            style={[styles.monoInput, { marginTop: 8 }]}
+                            value={String(editData[key] || '')}
+                            onChangeText={(text) => setEditData({...editData, [key]: text})}
+                            secureTextEntry={isSecret}
+                            placeholderTextColor="#94a3b8"
+                          />
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
 
                   <View style={{ flexDirection: 'row', gap: 10, marginTop: 24 }}>
                       <TouchableOpacity style={[styles.button, { flex: 1 }]} onPress={handleSaveProviderEdit}>
@@ -401,7 +418,7 @@ export default function SettingsScreen() {
                       </TouchableOpacity>
                   </View>
                   
-                  {!LLM_PROVIDERS.find(orig => orig.name === editProviderName) && (
+                  {!LLM_PROVIDERS.find(orig => orig.name === editData.name) && (
                     <TouchableOpacity style={[styles.outlineButton, { marginTop: 12, borderColor: '#ef4444' }]} onPress={handleDeleteProvider}>
                       <ThemedText style={{ color: '#ef4444', fontWeight: '700', fontSize: 13 }}>Delete Custom Provider</ThemedText>
                     </TouchableOpacity>

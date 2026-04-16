@@ -184,6 +184,14 @@ public class AgenticFabric extends SystemComponent {
      * Internal call to the LLM Provider to get a single reasoning response.
      */
     private String askAi(AgentSession session, PluginPrincipal principal, String userIntent) {
+        LlmProvider worker = llmFactory.getActiveProvider();
+        if (worker == null) {
+            String msg = "System Error: No active LLM Provider found.";
+            if (logger != null)
+                logger.severe(msg);
+            return msg;
+        }
+        
         // Gather current tool definitions for context
         Map<String, Object> toolDefinitions = metadataRegistry.exportToMCP();
 
@@ -198,26 +206,15 @@ public class AgenticFabric extends SystemComponent {
         if ("cost".equalsIgnoreCase(orchestrationService.getOptimizationPriority())) {
             int historySize = session.getChatMemory().messages().size();
             if (historySize > 10) {
-                LlmProvider activeProvider = llmFactory.getActiveProvider();
-                LlmProvider worker = activeProvider;
-                try {
-                    Proxy p = context.getProxy("UsageTracker");
-                    if (p instanceof SystemProxy sp) {
-                        UsageTracker tracker = (UsageTracker) sp.getInstance();
-                        worker = new TrackedLlmProvider(activeProvider, tracker);
-                    }
-                } catch (Exception e) {
-                    if (logger != null)
-                        logger.severe("Usage Tracker not found: " + e.getMessage());
-                }
-                
+
                 String historyDump = session.getChatMemory().messages().toString();
-                
+
                 LlmRequest summaryRequest = LlmRequest.builder()
                         .addMessage(SystemMessage.from("System"))
-                        .addMessage(UserMessage.from("Summarize the following chat history for context preservation: " + historyDump))
+                        .addMessage(UserMessage
+                                .from("Summarize the following chat history for context preservation: " + historyDump))
                         .build();
-                        
+
                 String summary;
                 try {
                     summary = worker.invoke(summaryRequest).getContent();
@@ -234,26 +231,11 @@ public class AgenticFabric extends SystemComponent {
         session.getChatMemory().add(SystemMessage.from(systemInstructions));
         session.getChatMemory().add(UserMessage.from(userIntent));
 
-        // Invoke the LLM Provider (Primary model)
-        LlmProvider activeProvider = llmFactory.getActiveProvider();
-        LlmProvider worker = activeProvider;
-        
-        try {
-            Proxy p = context.getProxy("UsageTracker");
-            if (p instanceof SystemProxy sp) {
-                UsageTracker tracker = (UsageTracker) sp.getInstance();
-                worker = new TrackedLlmProvider(activeProvider, tracker);
-            }
-        } catch (Exception e) {
-            if (logger != null)
-                    logger.severe("Usage Tracker not found: " + e.getMessage());
-        }
-        
         LlmRequest request = LlmRequest.builder()
                 .addMessage(SystemMessage.from("You are the Reveila AI Agent."))
                 .addMessage(UserMessage.from(userIntent))
                 .build();
-                
+
         String response;
         try {
             response = worker.invoke(request).getContent();

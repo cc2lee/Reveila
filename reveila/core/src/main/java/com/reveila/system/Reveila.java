@@ -510,8 +510,10 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		}
 
 		for (MetaObject mObj : metaObjectList) {
+			boolean debug = "true".equalsIgnoreCase(this.properties.getProperty("debug"));
 			Manifest manifest = createManifest(tag, mObj);
 			SystemProxy proxy = new SystemProxy(mObj, manifest);
+			proxy.setDebug(debug);
 			Subject subject = new Subject();
 			if (Constants.COMPONENT.equalsIgnoreCase(manifest.getComponentType())) {
 				subject.getPrincipals().add(new RolePrincipal(Constants.SYSTEM));

@@ -2,16 +2,26 @@
 
 This guide outlines the daily Android development workflow.
 
-## Most used commands quick reference
+## Frequently Used Commands Quick Reference
 
 ```bash
 
-adb shell am set-debug-app -w --persistent com.reveila.android
+# cd C:\IDE\Projects\Reveila-Suite>
+./gradlew.bat clean bootJar
+
+# cd C:\IDE\Projects\Reveila-Suite\apps\expo\Reveila>
+npm start
+
+# cd C:\IDE\Projects\Reveila-Suite\apps\expo\Reveila>
 npm run android
 npm run android -- --no-packager
 npm run android -- --port 8081
 cd android && ./gradlew installDebug
+
+# Set up native debug
+adb shell am set-debug-app -w --persistent com.reveila.android
 adb forward tcp:5005 "jdwp:$(adb shell pidof com.reveila.android)"
+adb logcat | findstr reveila
 
 ```
 

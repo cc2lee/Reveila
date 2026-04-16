@@ -1,25 +1,39 @@
 package com.reveila.ai;
 
+import java.time.Duration;
+
 import com.reveila.system.PluginComponent;
 
 import dev.langchain4j.model.chat.ChatLanguageModel;
-import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.ollama.OllamaChatModel;
-import com.reveila.system.Constants;
+import dev.langchain4j.model.openai.OpenAiChatModel;
 
 /**
  * Generic LLM Provider Implementation.
- * Encapsulates the specific LangChain4j ChatLanguageModels based on the active provider name.
+ * Encapsulates the specific LangChain4j ChatLanguageModels based on the active
+ * provider name.
  * 
  * @author CL
  */
 public class GenericLlmProvider extends PluginComponent implements LlmProvider {
-    private String name = Constants.LLM_PROVIDER_OPENAI; // Default
-    private String apiKey;
-    private String endpoint;
-    private String model;
+    private String name = null;
+    private String apiKey = null;
+    private String resolvedApiKey = null;
+    private String endpoint = null;
+    private String model = null;
     private double temperature = 0.7;
+    private String quantization = null;
+
+    public String getQuantization() {
+        return quantization;
+    }
+
+    public void setQuantization(String quantization) {
+        this.quantization = quantization;
+    }
+
     private boolean enabled = true;
     private ChatLanguageModel chatModel;
 
@@ -61,105 +75,104 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
         return enabled;
     }
 
-    @Override
-    public boolean isConfigured() {
-        if (name.equalsIgnoreCase(Constants.LLM_PROVIDER_OLLAMA) || name.startsWith("Gemma")) {
-            return endpoint != null && !endpoint.isBlank();
-        }
-
-        String resolvedApiKey = getResolvedApiKey();
-        if (resolvedApiKey == null || resolvedApiKey.isBlank() || "ERROR_DECRYPTION_FAILED".equals(resolvedApiKey)) {
-            return false;
-        }
-
-        // For custom OpenAI endpoints, an endpoint must also be configured
-        if (!name.equalsIgnoreCase(Constants.LLM_PROVIDER_OPENAI) && 
-            !name.equalsIgnoreCase(Constants.LLM_PROVIDER_GEMINI) && 
-            !name.equalsIgnoreCase(Constants.LLM_PROVIDER_ANTHROPIC) &&
-            (endpoint == null || endpoint.isBlank())) {
-            return false;
-        }
-
-        return true;
+    public boolean isLocal() {
+        return name != null && name.toLowerCase().contains("(local)");
     }
 
-    private String getResolvedApiKey() {
-        String resolvedApiKey = apiKey;
+    @Override
+    public boolean isConfigured() {
+        if (isLocal()) {
+            return name != null && !name.isBlank()
+                    && endpoint != null && !endpoint.isBlank();
+        } else {
+            return name != null && !name.isBlank()
+                    && endpoint != null && !endpoint.isBlank()
+                    && apiKey != null && !apiKey.isBlank();
+        }
+    }
 
-        // Try to fetch global if not set
-        if (resolvedApiKey == null || resolvedApiKey.isBlank()) {
-            if (this.context != null && this.context.getProperties() != null) {
-                resolvedApiKey = this.context.getProperties().getProperty("apiKey");
-            }
+    private String resolveApiKey() throws Exception {
+        if (resolvedApiKey != null && !resolvedApiKey.isBlank()) {
+            return resolvedApiKey;
         }
 
-        if (resolvedApiKey != null && resolvedApiKey.startsWith("REF:")) {
-            try {
-                resolvedApiKey = (String) this.context.getProxy("SecretManager")
-                        .invoke("getSecret", new Object[] { resolvedApiKey.substring(4) });
-            } catch (Exception e) {
-                return null;
-            }
+        if (apiKey != null && apiKey.startsWith("REF:")) {
+            resolvedApiKey = (String) this.context.getProxy("SecretManager")
+                    .invoke("getSecret", new Object[] { resolvedApiKey.substring(4) });
+        } else {
+            resolvedApiKey = apiKey;
         }
+
         return resolvedApiKey;
     }
 
     @Override
     protected void onStart() throws Exception {
-        if (!isEnabled()) {
+        if (!isEnabled() || !isConfigured()) {
             return;
         }
 
-        if (name.equalsIgnoreCase(Constants.LLM_PROVIDER_OLLAMA) || name.startsWith("Gemma")) {
+        if (isLocal()) {
             if (endpoint == null || endpoint.isBlank()) {
+                logger.info("LLM Provider endpoint is not set. Checking OS environment variable OLLAMA_API_URL...");
                 endpoint = System.getenv("OLLAMA_API_URL");
             }
+
             if (endpoint == null || endpoint.isBlank()) {
-                endpoint = "http://ollama-service:11434"; // Default Sandbox
+                logger.info(
+                        "LLM Provider endpoint is not set. Neither is OS environment variable OLLAMA_API_URL. Using default endpoint: http://ollama-service:11434");
+                endpoint = "http://ollama-service:11434";
             }
+
+            // If model is blank, default to 'llama3' as a common standard for Ollama
+            String activeModel = (model == null || model.isBlank()) ? "llama3" : model;
 
             this.chatModel = OllamaChatModel.builder()
                     .baseUrl(endpoint)
-                    .modelName(model != null ? model : "llama3")
+                    .modelName(activeModel)
+                    .format("json") // Request JSON format for response
+                    //.responseFormat(ResponseFormat.JSON)
+                    .temperature(0.0) // Higher = more creative, Lower = more deterministic
+                    .topP(0.9) // Nucleus sampling
+                    .numPredict(100) // Roughly equivalent to maxTokens
+                    .timeout(Duration.ofSeconds(60))
+                    .logRequests(true) // Useful for native debugging in VS Code
+                    .logResponses(true)
                     .build();
 
-            String msg = "Ollama connection established via LangChain4j: " + endpoint;
-            System.err.println("[CRITICAL_LOG] " + msg);
             if (this.logger != null) {
-                this.logger.info(msg);
+                this.logger.info("Local LLM connection established: " + endpoint + " using model: " + activeModel);
             }
+
             return;
         }
 
-        String resolvedApiKey = getResolvedApiKey();
+        resolvedApiKey = resolveApiKey();
 
         if (resolvedApiKey == null || resolvedApiKey.isBlank() || "ERROR_DECRYPTION_FAILED".equals(resolvedApiKey)) {
             throw new IllegalStateException("API Key could not be resolved for " + name);
         }
 
-        if (name.equalsIgnoreCase(Constants.LLM_PROVIDER_GEMINI)) {
+        if (name.toLowerCase().contains("gemini")) {
             this.chatModel = GoogleAiGeminiChatModel.builder()
                     .apiKey(resolvedApiKey)
-                    .modelName(model != null ? model : "gemini-1.5-pro")
-                    .temperature(0.1) // Gemini prefers lower default temperature
+                    .modelName(model)
+                    .temperature(temperature)
                     .build();
 
-        } else if (name.equalsIgnoreCase(Constants.LLM_PROVIDER_OPENAI)) {
+        } else if (name.toLowerCase().contains("openai")) {
             this.chatModel = OpenAiChatModel.builder()
                     .apiKey(resolvedApiKey)
-                    .modelName(model != null ? model : "gpt-4")
+                    .modelName(model)
                     .temperature(temperature)
                     .build();
 
         } else {
             // Treat as Custom Provider (OpenAI Compatible)
-            if (endpoint == null || endpoint.isBlank()) {
-                throw new IllegalStateException("Endpoint is missing for custom provider: " + name);
-            }
             this.chatModel = OpenAiChatModel.builder()
                     .baseUrl(endpoint)
                     .apiKey(resolvedApiKey)
-                    .modelName(model != null ? model : "gpt-4")
+                    .modelName(model)
                     .temperature(temperature)
                     .build();
         }
@@ -179,11 +192,12 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
                 }
             }
 
-            dev.langchain4j.model.output.Response<dev.langchain4j.data.message.AiMessage> response = chatModel.generate(request.getMessages());
-            
+            dev.langchain4j.model.output.Response<dev.langchain4j.data.message.AiMessage> response = chatModel
+                    .generate(request.getMessages());
+
             LlmResponse llmResponse = new LlmResponse();
             llmResponse.setContent(response.content().text());
-            
+
             if (response.finishReason() != null) {
                 llmResponse.setFinishReason(response.finishReason().name());
             }
@@ -195,14 +209,15 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
                 usage.setTotalTokens(response.tokenUsage().totalTokenCount());
                 llmResponse.setUsage(usage);
             }
-            
+
             return llmResponse;
         } catch (Exception e) {
             if (this.logger != null) {
                 this.logger.severe("ERROR invoking " + name + " via LangChain4j: " + e.getMessage());
                 e.printStackTrace();
             }
-            throw new com.reveila.error.LlmException("ERROR invoking " + name + " via LangChain4j: " + e.getMessage(), e);
+            throw new com.reveila.error.LlmException("ERROR invoking " + name + " via LangChain4j: " + e.getMessage(),
+                    e);
         }
     }
 }

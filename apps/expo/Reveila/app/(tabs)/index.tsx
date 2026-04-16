@@ -31,13 +31,54 @@ export default function HomeScreen() {
   const [isLocked, setIsLocked] = useState(true);
   const [needsIdentitySetup, setNeedsIdentitySetup] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
+  
+  const [providersList, setProvidersList] = useState<any[]>([]);
 
-  const availableModels = isCloudMode ? [
-    'Remote: Gemini 1.5 Flash',
-    'Remote: OpenAI GPT-4o-mini'
-  ] : [
-    'Local: Gemma-3-1b'
-  ];
+  const availableModels = providersList.filter(p => {
+    // Local vs Cloud filtering logic based on name or endpoint
+    const ep = p.endpoint || p.defaultEndpoint;
+    const isLocal = p.name.includes('Local') || (ep && ep.includes('localhost'));
+    return isCloudMode ? !isLocal : isLocal;
+  }).map(p => p.name);
+
+  useEffect(() => {
+    if (!isRunning) return; // Only fetch when running
+    
+    ReveilaModule.invoke('ConfigurationManager', 'getSettings', ['llm.json']).then((res: string) => {
+      if (res) {
+        try {
+          const config = JSON.parse(res);
+          const onboarded = config['onboarded.providers'] || config.onboarded_providers;
+          if (onboarded) {
+            setProvidersList(onboarded);
+          } else {
+            setProvidersList([
+              { name: 'OpenAI', endpoint: 'https://api.openai.com/v1', 'api.key': '' },
+              { name: 'Anthropic', endpoint: 'https://api.anthropic.com', 'api.key': '' },
+              { name: 'Google Gemini', endpoint: 'https://generativelanguage.googleapis.com', 'api.key': '' },
+              { name: 'Gemma-3-1b (Local)', endpoint: 'http://localhost:11434', 'api.key': '' },
+              { name: 'Custom', endpoint: '', 'api.key': '' }
+            ]);
+          }
+        } catch (e) {
+          // Fallback if parsing fails
+          setProvidersList([
+            { name: 'Gemma-3-1b (Local)', endpoint: 'http://localhost:11434', 'api.key': '' }
+          ]);
+        }
+      }
+    }).catch((e: any) => {
+      console.log('Reveila service not yet available or failed to load configs:', e?.message || e);
+      // Fallback if invoke fails
+      setProvidersList([
+        { name: 'OpenAI', endpoint: 'https://api.openai.com/v1', 'api.key': '' },
+        { name: 'Anthropic', endpoint: 'https://api.anthropic.com', 'api.key': '' },
+        { name: 'Google Gemini', endpoint: 'https://generativelanguage.googleapis.com', 'api.key': '' },
+        { name: 'Gemma-3-1b (Local)', endpoint: 'http://localhost:11434', 'api.key': '' },
+        { name: 'Custom', endpoint: '', 'api.key': '' }
+      ]);
+    });
+  }, [isRunning]);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -55,12 +96,23 @@ export default function HomeScreen() {
   }, [isRunning, isStarting]);
 
   useEffect(() => {
-    if (isCloudMode) {
-      setSelectedModel('Remote: Gemini 1.5 Flash');
-    } else {
-      setSelectedModel('Local: Gemma-3-1b');
+    if (providersList.length > 0) {
+      const locals = providersList.filter((p: any) => {
+          const ep = p.endpoint || p.defaultEndpoint;
+          return p.name.includes('Local') || (ep && ep.includes('localhost'));
+      });
+      const clouds = providersList.filter((p: any) => {
+          const ep = p.endpoint || p.defaultEndpoint;
+          return !(p.name.includes('Local') || (ep && ep.includes('localhost')));
+      });
+      
+      if (isCloudMode && clouds.length > 0) {
+        setSelectedModel(clouds[0].name);
+      } else if (!isCloudMode && locals.length > 0) {
+        setSelectedModel(locals[0].name);
+      }
     }
-  }, [isCloudMode]);
+  }, [isCloudMode, providersList]);
 
   const handleStart = useCallback(async () => {
     if (isStarting) return;
@@ -216,7 +268,7 @@ export default function HomeScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
               {availableModels.map(model => (
                 <TouchableOpacity key={model} style={[styles.modelChip, selectedModel === model && styles.modelChipActive]} onPress={() => setSelectedModel(model)}>
-                  <ThemedText style={[styles.modelChipText, selectedModel === model && styles.modelChipTextActive]}>{model.split(': ')[1]}</ThemedText>
+                  <ThemedText style={[styles.modelChipText, selectedModel === model && styles.modelChipTextActive]}>{model}</ThemedText>
                 </TouchableOpacity>
               ))}
             </ScrollView>

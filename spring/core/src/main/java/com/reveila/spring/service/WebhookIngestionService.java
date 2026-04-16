@@ -61,8 +61,24 @@ public class WebhookIngestionService {
         String source = (String) payload.getOrDefault("trigger_source", "unknown");
         String perimeter = (String) payload.getOrDefault("agency_perimeter", "default");
         
+        // Initiate AgentSession and record ingestion early to capture worker trace
+        PluginPrincipal principal = PluginPrincipal.create("webhook-agent-" + source, "external-ingestion");
+        AgentSession session = orchestrationService.createSession(principal.getTraceId());
+        session.put("ingestion_source", source);
+        session.put("filo_task_id", payload.get("task_id"));
+        session.put("perimeter_requested", perimeter);
+
+        flightRecorder.recordStep(principal, "filo_handshake_received", Map.of(
+            "task_id", payload.getOrDefault("task_id", "N/A"),
+            "perimeter", perimeter
+        ));
+
         // 2. Specialized Worker processes context to generate internal intent
         LlmProvider worker = llmFactory.getActiveProvider();
+        if (worker == null) {
+            return InvocationResult.error("System Error: No active LLM Provider found.");
+        }
+
         com.reveila.ai.LlmRequest request = com.reveila.ai.LlmRequest.builder()
                 .addMessage(dev.langchain4j.data.message.SystemMessage.from("You are a Specialized Worker. Map the following context to a Reveila plugin intent. Return JSON."))
                 .addMessage(dev.langchain4j.data.message.UserMessage.from(payload.getOrDefault("context", "{}").toString()))
@@ -74,19 +90,10 @@ public class WebhookIngestionService {
         } catch (Exception e) {
             workerOutput = "{\"error\": \"Worker invocation failed: " + e.getMessage() + "\"}";
         }
-        // Log the output or capture it in the trace (currently a simulated draft step)
-        System.out.println("Mapped Intent Output: " + workerOutput);
-
-        // 3. Initiate AgentSession and record ingestion
-        PluginPrincipal principal = PluginPrincipal.create("webhook-agent-" + source, "external-ingestion");
-        AgentSession session = orchestrationService.createSession(principal.getTraceId());
-        session.put("ingestion_source", source);
-        session.put("filo_task_id", payload.get("task_id"));
-        session.put("perimeter_requested", perimeter);
-
-        flightRecorder.recordStep(principal, "filo_handshake_received", Map.of(
-            "task_id", payload.getOrDefault("task_id", "N/A"),
-            "perimeter", perimeter
+        
+        // Capture the mapped intent output in the trace
+        flightRecorder.recordStep(principal, "worker_intent_mapped", Map.of(
+            "worker_output", workerOutput
         ));
 
         // 4. Trigger Dual-Model Governance Audit via the Bridge

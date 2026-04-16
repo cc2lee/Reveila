@@ -80,7 +80,7 @@ public final class SystemContext {
 			}
 			
 			// Allow common LLM keys to pass through if they are set globally without a prefix
-			if ("apiKey".equals(name) || "endpoint".equals(name) || "provider".equals(name)) {
+			if ("api.key".equals(name) || "endpoint".equals(name) || "provider".equals(name)) {
 				return properties.getProperty(name);
 			}
 

@@ -4,6 +4,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.util.Map;
 
+import com.reveila.system.Constants;
 import com.reveila.system.PluginPrincipal;
 import com.reveila.system.SystemComponent;
 import com.reveila.system.SystemProxy;
@@ -38,11 +39,15 @@ public class AutonomousAgent extends SystemComponent {
      * Iterates through the tasks directory and executes each defined AI workflow.
      */
     public void doTask() {
-        String tasksDirPath = context.getProperties().getProperty("system.home", "../../system-home/standard") + "/tasks";
-        File tasksDir = new File(tasksDirPath);
+        String systemHome = context.getProperties().getProperty(Constants.SYSTEM_HOME);
+        if (systemHome == null || systemHome.isBlank()) {
+            logger.warning("SYSTEM_HOME is not set. Unable to process autonomous tasks.");
+            return;
+        }
         
-        if (!tasksDir.exists() || !tasksDir.isDirectory()) {
-            logger.warning("Autonomous tasks directory not found: " + tasksDirPath);
+        File tasksDir = new File(systemHome, "tasks");
+        if (!tasksDir.exists()) {
+            tasksDir.mkdirs();
             return;
         }
 
@@ -55,7 +60,7 @@ public class AutonomousAgent extends SystemComponent {
             try {
                 processTaskFile(file);
             } catch (Exception e) {
-                logger.severe("Failed to process autonomous task file: " + file.getName() + ". Error: " + e.getMessage());
+                logger.severe("Failed to process autonomous task: " + file.getName() + ". Error: " + e.getMessage());
             }
         }
     }

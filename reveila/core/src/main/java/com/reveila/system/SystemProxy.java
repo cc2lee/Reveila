@@ -2,7 +2,6 @@ package com.reveila.system;
 
 import java.io.Closeable;
 import java.lang.reflect.Array;
-import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Arrays;
@@ -348,6 +347,55 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 	}
 
 	public void onStart() throws Exception {
+		if (Constants.PLUGIN.equalsIgnoreCase(manifest.getComponentType())) {
+			try {
+				if (context != null) {
+					Proxy registryProxy = context.getProxy("MetadataRegistry");
+					if (registryProxy instanceof SystemProxy) {
+						Object registryInstance = ((SystemProxy) registryProxy).getInstance();
+						if (registryInstance instanceof com.reveila.ai.MetadataRegistry) {
+							com.reveila.ai.MetadataRegistry registry = (com.reveila.ai.MetadataRegistry) registryInstance;
+							
+							Map<String, Object> tools = new java.util.HashMap<>();
+							Set<String> secrets = new java.util.HashSet<>();
+							Set<String> masked = new java.util.HashSet<>();
+							
+							if (manifest.getExposedMethods() != null) {
+								for (Manifest.ExposedMethod m : manifest.getExposedMethods()) {
+									if (m.parameters != null) {
+										for (Manifest.Parameter p : m.parameters) {
+											if (p.isSecret) {
+												secrets.add(p.name);
+												masked.add(p.name);
+											}
+										}
+									}
+								}
+							}
+
+							com.reveila.ai.AgencyPerimeter perimeter = buildAgencyPerimeter();
+							
+							com.reveila.ai.MetadataRegistry.PluginManifest pManifest = new com.reveila.ai.MetadataRegistry.PluginManifest(
+								getName(),
+								manifest.getDisplayName() != null ? manifest.getDisplayName() : getName(),
+								manifest.getVersion() != null ? manifest.getVersion() : "1.0",
+								tools,
+								perimeter,
+								secrets,
+								masked
+							);
+							
+							registry.register(pManifest);
+							logger.info("Registered plugin manifest for: " + getName());
+						}
+					}
+				}
+			} catch (IllegalArgumentException e) {
+				// MetadataRegistry might not be loaded if AI features are not present
+			} catch (Exception e) {
+				logger.warning("Failed to register plugin with MetadataRegistry: " + e.getMessage());
+			}
+		}
 	}
 
 	public void onStop() throws Exception {
@@ -676,17 +724,6 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 
 		try {
 			Object target = getInstance();
-
-			//////////////////////////////////////////////////////////////////////
-			// DEBUG
-			ClassLoader classLoader = target.getClass().getClassLoader();
-			System.out.println("Class loader: " + classLoader);
-			Field[] fields = target.getClass().getDeclaredFields();
-			for (Field field : fields) {
-				System.out.println("Field: " + field.getName() + " " + field.getType());
-			}
-			//////////////////////////////////////////////////////////////////////
-			
 			Method methodToInvoke = ReflectionMethod.findBestMethod(target.getClass(), methodName, args);
 
 			if (methodToInvoke == null) {

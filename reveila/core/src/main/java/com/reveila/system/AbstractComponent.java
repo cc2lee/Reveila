@@ -5,6 +5,15 @@ import java.time.Instant;
 
 public abstract class AbstractComponent implements Startable, Stoppable {
 
+    protected boolean debug = false;
+    public boolean isDebug() {
+        return debug;
+    }
+
+    public void setDebug(boolean debug) {
+        this.debug = debug;
+    }
+
     private ComponentState state = ComponentState.STOPPED;
     private Instant startTime;
     private Duration startupLatency;

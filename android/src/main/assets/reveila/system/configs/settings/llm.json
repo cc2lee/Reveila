@@ -1,27 +1,35 @@
 {
-    "onboarded_providers": [
+    "onboarded.providers": [
         {
             "name": "OpenAI",
-            "defaultEndpoint": "https://api.openai.com/v1"
+            "endpoint": "https://api.openai.com/v1",
+            "model": "gpt-4",
+            "temperature": 0.7
         },
         {
             "name": "Anthropic",
-            "defaultEndpoint": "https://api.anthropic.com"
+            "endpoint": "https://api.anthropic.com",
+            "model": "claude-2",
+            "temperature": 0.7
         },
         {
             "name": "Google Gemini",
-            "defaultEndpoint": "https://generativelanguage.googleapis.com"
+            "endpoint": "https://generativelanguage.googleapis.com",
+            "model": "gemini-1.5-pro",
+            "temperature": 0.1
         },
         {
-            "name": "Gemma-3-1b (Local)",
-            "defaultEndpoint": "http://localhost:11434",
+            "name": "Ollama (Local)",
+            "endpoint": "http://localhost:11434",
+            "model": "qwen2.5-coder:1.5b",
+            "temperature": 0.7,
             "quantization": "Q4_K_M",
-            "quantization_options": [
+            "quantization.options": [
                 "Q4_K_M",
                 "F16"
             ]
         }
     ],
-    "ai.worker.llm": "OpenAiProvider",
-    "ai.governance.llm": "GeminiProvider"
+    "ai.worker.llm": "Ollama (Local)",
+    "ai.governance.llm": "Ollama (Local)"
 }
