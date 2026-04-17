@@ -307,18 +307,21 @@ public class Reveila implements AutoCloseable, EventConsumer {
 			String cryptoKey = System.getenv("REVEILA_CRYPTO_KEY");
 			if (cryptoKey != null && !cryptoKey.isBlank()) {
 				String saltHex = System.getenv("REVEILA_CRYPTO_SALT");
-				
-				// Optional: fallback to properties only for backward compatibility during transition
+
+				// Optional: fallback to properties only for backward compatibility during
+				// transition
 				if (saltHex == null || saltHex.isBlank()) {
 					saltHex = props.getProperty("auth.master.salt");
 				}
-				
+
 				if (saltHex == null || saltHex.isBlank()) {
-					throw new IllegalStateException("No Crypto Salt found. Please set REVEILA_CRYPTO_SALT environment variable.");
+					throw new IllegalStateException(
+							"No Crypto Salt found. Please set REVEILA_CRYPTO_SALT environment variable.");
 				}
 				encrypter = new DefaultCryptographer(cryptoKey, hexToBytes(saltHex));
 			} else {
-				throw new IllegalStateException("No Cryptographer found. Please set REVEILA_CRYPTO_KEY environment variable.");
+				throw new IllegalStateException(
+						"No Cryptographer found. Please set REVEILA_CRYPTO_KEY environment variable.");
 			}
 		}
 
@@ -512,6 +515,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		for (MetaObject mObj : metaObjectList) {
 			boolean debug = "true".equalsIgnoreCase(this.properties.getProperty("debug"));
 			Manifest manifest = createManifest(tag, mObj);
+
 			SystemProxy proxy = new SystemProxy(mObj, manifest);
 			proxy.setDebug(debug);
 			Subject subject = new Subject();
@@ -519,6 +523,21 @@ public class Reveila implements AutoCloseable, EventConsumer {
 				subject.getPrincipals().add(new RolePrincipal(Constants.SYSTEM));
 			} else {
 				subject.getPrincipals().add(PluginPrincipal.create(manifest.getName(), manifest.getOrg()));
+
+				// Use Plugin Child-First Class Loader
+				try {
+					String pluginsRootDir = this.properties.getProperty("plugin.local.dir");
+					if (pluginsRootDir == null || pluginsRootDir.isBlank()) {
+						pluginsRootDir = this.properties.getProperty(Constants.SYSTEM_HOME + File.separator + "plugins");
+					}
+					java.io.File pluginFolder = new java.io.File(pluginsRootDir, mObj.getName());
+					if (pluginFolder.exists() && pluginFolder.isDirectory()) {
+						ClassLoader loader = RuntimeUtil.createPluginClassLoader(pluginFolder.getAbsolutePath(), this.getClass().getClassLoader());
+						proxy.setClassLoader(loader);
+					}
+				} catch (Exception e) {
+					logger.warning("Failed to initialize plugin ClassLoader for " + mObj.getName() + ": " + e.getMessage());
+				}
 			}
 			systemContext.add(proxy);
 			try {

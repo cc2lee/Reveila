@@ -12,6 +12,8 @@ import java.util.logging.Logger;
 
 import javax.security.auth.Subject;
 
+import org.jspecify.annotations.NonNull;
+
 import com.reveila.crypto.Cryptographer;
 import com.reveila.error.ConfigurationException;
 import com.reveila.error.SecurityException;
@@ -54,9 +56,9 @@ public final class SystemContext {
 
 		// Security Check: Only allow access to properties prefixed with the plugin's name,
 		// or safe common properties, to enforce the Principle of Least Privilege.
-		java.util.Set<PluginPrincipal> plugins = subject.getPrincipals(PluginPrincipal.class);
-		if (!plugins.isEmpty()) {
-			PluginPrincipal plugin = plugins.iterator().next();
+		Set<@NonNull PluginPrincipal> plugins = subject.getPrincipals(PluginPrincipal.class);
+		if (plugins != null && !plugins.isEmpty()) {
+			PluginPrincipal plugin = (PluginPrincipal) plugins.iterator().next();
 			String pluginName = plugin.getName();
 			
 			String prefix1 = "plugin." + pluginName + ".";
@@ -164,7 +166,7 @@ public final class SystemContext {
 	public SystemProxy getProxy(String name, Subject subject) throws com.reveila.error.SecurityException, IllegalArgumentException {
 		Objects.requireNonNull(name, "Component name cannot be null when getting a proxy.");
 		Objects.requireNonNull(subject, "Subject cannot be null when getting a proxy.");
-		Set<RolePrincipal> roles = subject.getPrincipals(RolePrincipal.class);
+		Set<@NonNull RolePrincipal> roles = subject.getPrincipals(RolePrincipal.class);
 		if (roles == null || roles.isEmpty()) {
 			throw new IllegalArgumentException("Subject must have at least one role.");
 		}

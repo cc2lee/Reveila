@@ -1,6 +1,5 @@
 package com.reveila.system;
 
-import java.io.Closeable;
 import java.lang.reflect.Array;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -53,34 +52,19 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 		this.requiredRoles = Collections.unmodifiableList(manifest.getRequiredRoles());
 	}
 
-	private void setClassLoader(ClassLoader newLoader) {
+	public synchronized ClassLoader setClassLoader(ClassLoader newLoader) {
 		if (newLoader == this.loaderRef.get()) {
-			return;
+			return null;
 		}
-		// 1. Acquire the Write Lock
+		// Acquire the Write Lock
 		// This blocks until all current 'invoke' calls are finished
 		lock.writeLock().lock();
-		try {
-			ClassLoader oldLoader = loaderRef.getAndSet(newLoader);
+		ClassLoader oldLoader = loaderRef.getAndSet(newLoader);
+		this.implementationClass = null;
+		this.singletonInstance = null;
+		lock.writeLock().unlock();
 
-			// 2. Invalidate state while under Write Lock
-			this.implementationClass = null;
-			this.singletonInstance = null;
-
-			// 3. Cleanup old resources
-			if (oldLoader != null && oldLoader != newLoader) {
-				if (oldLoader instanceof Closeable) {
-					try {
-						((Closeable) oldLoader).close();
-					} catch (Exception e) {
-						System.err.println(
-								"Failed to close class loader for component (plugin): " + name + "." + e.getMessage());
-					}
-				}
-			}
-		} finally {
-			lock.writeLock().unlock();
-		}
+		return oldLoader;
 	}
 
 	/**
@@ -191,17 +175,17 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 			throw new IllegalArgumentException("Method name must not be null");
 
 		PluginPrincipal plugin = null;
-		java.util.Iterator<PluginPrincipal> pluginIter = subject.getPrincipals(PluginPrincipal.class).iterator();
+		java.util.Iterator<? extends PluginPrincipal> pluginIter = subject.getPrincipals(PluginPrincipal.class).iterator();
 		if (pluginIter.hasNext()) {
 			plugin = pluginIter.next();
 		}
 
-		Set<RolePrincipal> roles = subject.getPrincipals(RolePrincipal.class);
+		Set<? extends RolePrincipal> roles = subject.getPrincipals(RolePrincipal.class);
 
 		boolean systemCall = false;
 		if (roles != null) {
 			for (RolePrincipal role : roles) {
-				if (role.getName().equalsIgnoreCase(Constants.SYSTEM)) {
+				if (role != null && role.getName() != null && role.getName().equalsIgnoreCase(Constants.SYSTEM)) {
 					systemCall = true;
 					break;
 				}
@@ -221,10 +205,12 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 				boolean hasRequiredRoles = false;
 				List<String> requiredRoles = method.requiredRoles;
 				if (requiredRoles != null && !requiredRoles.isEmpty()) {
-					for (RolePrincipal role : roles) {
-						if (requiredRoles.contains(role.getName())) {
-							hasRequiredRoles = true;
-							break;
+					if (roles != null) {
+						for (RolePrincipal role : roles) {
+							if (role != null && role.getName() != null && requiredRoles.contains(role.getName())) {
+								hasRequiredRoles = true;
+								break;
+							}
 						}
 					}
 				}
@@ -259,26 +245,6 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 	}
 
 	private Object newInstance() throws Exception {
-		// Before loading the class, inject the plugin's ClassLoader if it's a plugin
-		if (Constants.PLUGIN.equalsIgnoreCase(manifest.getComponentType()) && this.loaderRef.get() == null) {
-			try {
-				String pluginsDir = context != null && context.getProperties() != null
-						? context.getProperties().getProperty("plugin.local.dir")
-						: null;
-				if (pluginsDir != null) {
-					java.io.File pluginFolder = new java.io.File(pluginsDir, metaObject.getName());
-					if (pluginFolder.exists() && pluginFolder.isDirectory()) {
-						ClassLoader pluginLoader = RuntimeUtil.createPluginClassLoader(
-								pluginFolder.getAbsolutePath(),
-								Thread.currentThread().getContextClassLoader());
-						setClassLoader(pluginLoader);
-					}
-				}
-			} catch (Exception e) {
-				logger.warning("Failed to initialize plugin ClassLoader for " + name + ": " + e.getMessage());
-			}
-		}
-
 		Class<?> clazz = getComponentClass();
 		Object object = clazz.getDeclaredConstructor().newInstance();
 		List<Map<String, Object>> arguments = this.metaObject.getArguments();
@@ -355,11 +321,11 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 						Object registryInstance = ((SystemProxy) registryProxy).getInstance();
 						if (registryInstance instanceof com.reveila.ai.MetadataRegistry) {
 							com.reveila.ai.MetadataRegistry registry = (com.reveila.ai.MetadataRegistry) registryInstance;
-							
+
 							Map<String, Object> tools = new java.util.HashMap<>();
 							Set<String> secrets = new java.util.HashSet<>();
 							Set<String> masked = new java.util.HashSet<>();
-							
+
 							if (manifest.getExposedMethods() != null) {
 								for (Manifest.ExposedMethod m : manifest.getExposedMethods()) {
 									if (m.parameters != null) {
@@ -374,17 +340,16 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 							}
 
 							com.reveila.ai.AgencyPerimeter perimeter = buildAgencyPerimeter();
-							
+
 							com.reveila.ai.MetadataRegistry.PluginManifest pManifest = new com.reveila.ai.MetadataRegistry.PluginManifest(
-								getName(),
-								manifest.getDisplayName() != null ? manifest.getDisplayName() : getName(),
-								manifest.getVersion() != null ? manifest.getVersion() : "1.0",
-								tools,
-								perimeter,
-								secrets,
-								masked
-							);
-							
+									getName(),
+									manifest.getDisplayName() != null ? manifest.getDisplayName() : getName(),
+									manifest.getVersion() != null ? manifest.getVersion() : "1.0",
+									tools,
+									perimeter,
+									secrets,
+									masked);
+
 							registry.register(pManifest);
 							logger.info("Registered plugin manifest for: " + getName());
 						}
@@ -456,7 +421,6 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 	}
 
 	private Class<?> getClass(String className) throws ClassNotFoundException {
-		// Explicitly use the plugin's class loader
 		ClassLoader classLoader = loaderRef.get();
 		if (classLoader != null) {
 			return Class.forName(className, true, classLoader);
@@ -758,5 +722,10 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 			}
 			lock.readLock().unlock();
 		}
+	}
+
+	@Override
+	public ClassLoader getClassLoader() {
+		return this.loaderRef.get();
 	}
 }

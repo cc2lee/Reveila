@@ -4,8 +4,9 @@ import java.time.Duration;
 
 import com.reveila.system.PluginComponent;
 
-import dev.langchain4j.model.chat.ChatLanguageModel;
-import dev.langchain4j.model.chat.request.ResponseFormat;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.ollama.OllamaChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
@@ -35,7 +36,7 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
     }
 
     private boolean enabled = true;
-    private ChatLanguageModel chatModel;
+    private ChatModel chatModel;
 
     public GenericLlmProvider() {
         super();
@@ -130,8 +131,6 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
             this.chatModel = OllamaChatModel.builder()
                     .baseUrl(endpoint)
                     .modelName(activeModel)
-                    .format("json") // Request JSON format for response
-                    //.responseFormat(ResponseFormat.JSON)
                     .temperature(0.0) // Higher = more creative, Lower = more deterministic
                     .topP(0.9) // Nucleus sampling
                     .numPredict(100) // Roughly equivalent to maxTokens
@@ -192,11 +191,14 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
                 }
             }
 
-            dev.langchain4j.model.output.Response<dev.langchain4j.data.message.AiMessage> response = chatModel
-                    .generate(request.getMessages());
+            ChatRequest chatRequest = ChatRequest.builder()
+                    .messages(request.getMessages())
+                    .build();
+
+            ChatResponse response = chatModel.chat(chatRequest);
 
             LlmResponse llmResponse = new LlmResponse();
-            llmResponse.setContent(response.content().text());
+            llmResponse.setContent(response.aiMessage().text());
 
             if (response.finishReason() != null) {
                 llmResponse.setFinishReason(response.finishReason().name());

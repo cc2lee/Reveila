@@ -21,6 +21,11 @@ public class PluginProxy implements Proxy {
     }
 
     @Override
+    public ClassLoader getClassLoader() {
+        return systemProxy.getClassLoader();
+    }
+
+    @Override
     public String getName() {
         return systemProxy.getName();
     }

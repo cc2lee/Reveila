@@ -8,7 +8,7 @@ import java.util.Map;
 import android.content.Context;
 import java.io.File;
 
-import com.reveila.android.SafePluginLoader;
+import com.reveila.android.AndroidPlugins;
 
 /**
  * Android-specific implementation of GuardedRuntime.

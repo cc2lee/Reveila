@@ -28,7 +28,8 @@ public class ReflectionMethod {
 					// Check fixed params
 					boolean compatible = true;
 					for (int i = 0; i < paramTypes.length - 1; i++) {
-						if (!isAssignable(paramTypes[i], args[i] == null ? null : args[i].getClass())) {
+						Object arg = (args == null) ? null : args[i];
+						if (!isAssignable(paramTypes[i], arg == null ? null : arg.getClass())) {
 							compatible = false;
 							break;
 						}
@@ -39,7 +40,8 @@ public class ReflectionMethod {
 					// Check varargs params
 					Class<?> varargComponentType = paramTypes[paramTypes.length - 1].getComponentType();
 					for (int i = paramTypes.length - 1; i < numArgs; i++) {
-						if (!isAssignable(varargComponentType, args[i] == null ? null : args[i].getClass())) {
+						Object arg = (args == null) ? null : args[i];
+						if (!isAssignable(varargComponentType, arg == null ? null : arg.getClass())) {
 							compatible = false;
 							break;
 						}
@@ -102,6 +104,9 @@ public class ReflectionMethod {
 	 * types.
 	 */
 	protected static boolean areTypesCompatible(Class<?>[] paramTypes, Object[] args) {
+		if (args == null) {
+			return paramTypes.length == 0;
+		}
 		for (int i = 0; i < paramTypes.length; i++) {
 			Object arg = args[i];
 			Class<?> paramType = paramTypes[i];

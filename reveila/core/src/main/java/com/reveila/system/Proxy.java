@@ -3,6 +3,8 @@ package com.reveila.system;
 import java.util.List;
 
 public interface Proxy {
+
+	ClassLoader getClassLoader();
 	
 	String getName();
 

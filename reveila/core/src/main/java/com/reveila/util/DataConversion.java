@@ -31,7 +31,7 @@ public class DataConversion {
         try {
             ArrayNode jsonArray = JsonUtil.MAPPER.createArrayNode();
             for (Map<?, ?> map : mapArray) {
-                ObjectNode jsonObject = JsonUtil.MAPPER.convertValue(map, ObjectNode.class);
+                ObjectNode jsonObject = (ObjectNode)JsonUtil.MAPPER.convertValue(map, ObjectNode.class);
                 jsonArray.add(jsonObject);
             }
             JsonUtil.MAPPER.writerWithDefaultPrettyPrinter().writeValue(output, jsonArray);

@@ -1,6 +1,7 @@
 package com.reveila.data;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.TimeZone;
 
@@ -56,35 +57,54 @@ public abstract class EntityMapper<T> {
 
             .build();
 
-    public static ObjectMapper getObjectmapper() {
+    public static ObjectMapper getObjectMapper() {
         return objectMapper;
     }
 
     public Entity toGenericEntity(T pojo, String type) {
+        if (pojo == null) {
+            throw new IllegalArgumentException("pojo cannot be null");
+        }
+        if (type == null) {
+            throw new IllegalArgumentException("type cannot be null");
+        }
         @SuppressWarnings("unchecked")
-        Map<String, Object> attributes = getObjectmapper().convertValue(pojo, Map.class);
+        Map<String, Object> attributes = (Map<String, Object>) getObjectMapper().convertValue(pojo, Map.class);
         Map<String, Map<String, Object>> keyMap = extractKey(pojo);
         return new Entity(type, keyMap, attributes);
     }
 
     public T fromGenericEntity(Entity entity, Class<T> targetClass) {
+        if (entity == null) {
+            throw new IllegalArgumentException("entity cannot be null");
+        }
+        if (targetClass == null) {
+            throw new IllegalArgumentException("targetClass cannot be null");
+        }
         // Combine attributes and key back into a single map for Jackson conversion
         Map<String, Object> sourceMap = new HashMap<>();
         if (entity.getAttributes() != null)
             sourceMap.putAll(entity.getAttributes());
         Map<String, Map<String, Object>> keyMap = entity.getKey();
-        if (keyMap != null) {
+        if (keyMap != null && !keyMap.isEmpty()) {
             String keyName = keyMap.keySet().stream().findFirst().orElse(null);
-            if (keyName != null && keyName.length() > 0) {
+            if (keyName != null && !keyName.isEmpty()) {
                 // If there is a specific key name (e.g., "id"), it's a composite key
                 sourceMap.put(keyName, keyMap.get(keyName));
             } else {
                 // If no specific key name (flat), just merge all key parts
-                sourceMap.putAll(keyMap.values().iterator().next());
+                Iterator<Map<String, Object>> it = keyMap.values().iterator();
+                if (it.hasNext()) {
+                    sourceMap.putAll(it.next());
+                }
             }
         }
 
-        return getObjectmapper().convertValue(sourceMap, targetClass);
+        T result = getObjectMapper().convertValue(sourceMap, targetClass);
+        if (result == null) {
+            throw new IllegalStateException("Failed to convert GenericEntity to " + targetClass.getName());
+        }
+        return result;
     }
 
     /*

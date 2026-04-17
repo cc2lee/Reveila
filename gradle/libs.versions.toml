@@ -33,7 +33,7 @@ commonmark = "0.24.0"
 jsoup = "1.18.1"
 docker-java = "3.4.0"
 json-schema-validator = "1.4.0"
-langchain4j = "0.35.0"
+langchain4j = "1.13.0"
 json = "20240303"
 
 # https://github.com/GradleUp/shadow

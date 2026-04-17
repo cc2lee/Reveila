@@ -5,6 +5,7 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -136,8 +137,11 @@ public final class JsonUtil {
     }
 
     private static void findValuesByKeyHelper(Map<?, ?> map, String key, List<Object> results) {
+        if (map == null) {
+            return;
+        }
         for (Map.Entry<?, ?> entry : map.entrySet()) {
-            if (entry.getKey().equals(key)) {
+            if (Objects.equals(entry.getKey(), key)) {
                 results.add(entry.getValue());
             }
             Object value = entry.getValue();

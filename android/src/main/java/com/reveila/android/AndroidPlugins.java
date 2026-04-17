@@ -14,14 +14,16 @@ import com.reveila.system.MetaObject;
 import com.reveila.system.Manifest;
 import com.reveila.system.RuntimeUtil;
 
-public class SafePluginLoader {
+public class AndroidPlugins {
+
+    public static final String RELATIVE_ROOT_DIR = "reveila/system/plugins/";
 
     public static SystemProxy createProxy(Context context, String pluginId, String className) {
         Map<String, Object> config = Map.of(
                 "name", pluginId,
                 "class", className,
                 "plugin",
-                Map.of("directory", new File(context.getFilesDir(), "plugins/" + pluginId).getAbsolutePath()));
+                Map.of("directory", new File(context.getFilesDir(), RELATIVE_ROOT_DIR + pluginId).getAbsolutePath()));
         
         Manifest manifest = new Manifest();
         manifest.setComponentType("plugin");
@@ -37,7 +39,7 @@ public class SafePluginLoader {
     public static SystemProxy loadPlugin(Context context, SystemContext systemContext, String pluginFileName, String className) {
         try {
             String pluginId = pluginFileName.replace(".jar", "").replace(".dex", "");
-            File pluginDir = new File(context.getFilesDir(), "plugins/" + pluginId);
+            File pluginDir = new File(context.getFilesDir(), RELATIVE_ROOT_DIR + pluginId);
             if (!pluginDir.exists())
                 pluginDir.mkdirs();
 
@@ -47,7 +49,7 @@ public class SafePluginLoader {
 
             SystemProxy proxy = createProxy(context, pluginId, className);
             proxy.setContext(systemContext);
-            ClassLoader loader = RuntimeUtil.createPluginClassLoader(pluginDir.getAbsolutePath(), SafePluginLoader.class.getClassLoader());
+            ClassLoader loader = RuntimeUtil.createPluginClassLoader(pluginDir.getAbsolutePath(), AndroidPlugins.class.getClassLoader());
             
             Method setClassLoaderMethod = SystemProxy.class.getDeclaredMethod("setClassLoader", ClassLoader.class);
             setClassLoaderMethod.setAccessible(true);

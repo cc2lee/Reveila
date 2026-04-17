@@ -2,7 +2,6 @@ package com.reveila.data;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,18 +35,18 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
         if (entity == null) {
             throw new IllegalArgumentException("Entity cannot be null");
         }
-        ID id = reverseId(entity.getKey());
+        Optional<ID> idOpt = reverseId(entity.getKey());
         T target;
 
-        if (id != null && repository.hasId(id)) {
+        if (idOpt.isPresent() && repository.hasId(idOpt.get())) {
             // 1. Fetch existing entity
-            target = repository.fetchById(id).orElseThrow();
+            target = repository.fetchById(idOpt.get()).orElseThrow();
 
             // 2. Merge incoming attributes
             try {
-                EntityMapper.getObjectmapper()
+                EntityMapper.getObjectMapper()
                         .readerForUpdating(target)
-                        .readValue(EntityMapper.getObjectmapper().writeValueAsBytes(entity.getAttributes()));
+                        .readValue(EntityMapper.getObjectMapper().writeValueAsBytes(entity.getAttributes()));
             } catch (Exception e) {
                 throw new RuntimeException("Merge failed", e);
             }
@@ -62,26 +61,24 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
 
     @Override
     public Optional<Entity> fetchById(Map<String, Map<String, Object>> idMap) {
-        ID id = reverseId(idMap);
-        return repository.fetchById(id).map(this::mapToGeneric);
+        return reverseId(idMap)
+                .flatMap(repository::fetchById)
+                .map(this::mapToGeneric);
     }
 
     @Override
     public void disposeById(Map<String, Map<String, Object>> idMap) {
-        repository.disposeById(reverseId(idMap));
+        reverseId(idMap).ifPresent(repository::disposeById);
     }
 
     @Override
     public List<Entity> storeAll(Collection<Entity> entities) {
         List<T> typedList = new ArrayList<>();
-        Iterator<Entity> i = entities.iterator();
-        while (i.hasNext()) {
-            Entity e = i.next();
-            if (!(e instanceof Entity)) {
-                throw new IllegalArgumentException("This repository only supports " + Entity.class.getName() + ".");
-            } else {
-                typedList.add(entityMapper.fromGenericEntity(e, typeClass));
+        for (Entity e : entities) {
+            if (e == null) {
+                throw new IllegalArgumentException("Entities collection cannot contain null.");
             }
+            typedList.add(entityMapper.fromGenericEntity(e, typeClass));
         }
         return repository.storeAll(typedList).stream()
                 .map(this::mapToGeneric)
@@ -95,7 +92,7 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
 
     @Override
     public boolean hasId(Map<String, Map<String, Object>> idMap) {
-        return repository.hasId(reverseId(idMap));
+        return reverseId(idMap).map(repository::hasId).orElse(false);
     }
 
     @Override
@@ -112,18 +109,23 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
      * Helper to extract the primary ID value (e.g., UUID or Composite Key Class)
      * from the key map using the localized mapper for type-safe conversion.
      */
-    private ID reverseId(Map<String, Map<String, Object>> keyMap) {
+    private Optional<ID> reverseId(Map<String, Map<String, Object>> keyMap) {
         if (keyMap == null || keyMap.isEmpty()) {
-            return null;
+            return Optional.empty();
         }
-        
+
         String key = keyMap.keySet().stream().findFirst().orElse("");
-        if (key.length() > 0) {
-            // If there is a specific key name (e.g., "id"), it's a composite key
-            return EntityMapper.getObjectmapper().convertValue(keyMap, idClass);
-        } else {
-            // If no specific key name (flat), just merge all key parts
-            return EntityMapper.getObjectmapper().convertValue(keyMap.values().iterator().next(), idClass);
+        try {
+            if (key.length() > 0) {
+                // If there is a specific key name (e.g., "id"), it's a composite key
+                return Optional.ofNullable(EntityMapper.getObjectMapper().convertValue(keyMap, idClass));
+            } else {
+                // If no specific key name (flat), just merge all key parts
+                return Optional.ofNullable(
+                        EntityMapper.getObjectMapper().convertValue(keyMap.values().iterator().next(), idClass));
+            }
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
         }
     }
 

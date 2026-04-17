@@ -46,14 +46,11 @@ public final class Markdown {
         }
 
         Node document = PARSER.parse(markdown);
-        String unsafeHtml;
-        if (escapeHtml) {
-            unsafeHtml = RENDERER_ESCAPE.render(document);
-        } else {
-            unsafeHtml = RENDERER.render(document);
-        }
+        String renderedHtml = (escapeHtml ? RENDERER_ESCAPE : RENDERER).render(document);
 
         // Sanitize HTML to prevent Cross-Site Scripting (XSS) attacks
+        // Ensure non-null to satisfy @NonNull requirements of Jsoup.clean
+        String unsafeHtml = (renderedHtml != null) ? renderedHtml : "";
         return Jsoup.clean(unsafeHtml, Safelist.relaxed());
     }
 }

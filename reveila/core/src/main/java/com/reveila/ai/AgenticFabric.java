@@ -184,6 +184,7 @@ public class AgenticFabric extends SystemComponent {
      * Internal call to the LLM Provider to get a single reasoning response.
      */
     private String askAi(AgentSession session, PluginPrincipal principal, String userIntent) {
+
         LlmProvider worker = llmFactory.getActiveProvider();
         if (worker == null) {
             String msg = "System Error: No active LLM Provider found.";
@@ -191,15 +192,33 @@ public class AgenticFabric extends SystemComponent {
                 logger.severe(msg);
             return msg;
         }
-        
-        // Gather current tool definitions for context
-        Map<String, Object> toolDefinitions = metadataRegistry.exportToMCP();
+
+        // Gather current tool definitions for context and tool-calling
+        Map<String, Object> mcpData = metadataRegistry.exportToMCP();
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> mcpTools = (java.util.List<Map<String, Object>>) mcpData.get("tools");
+
+        java.util.List<LlmTool> tools = new java.util.ArrayList<>();
+        if (mcpTools != null) {
+            for (Map<String, Object> toolMap : mcpTools) {
+                LlmTool tool = new LlmTool();
+                tool.setName((String) toolMap.get("name"));
+                tool.setDescription((String) toolMap.get("description"));
+                Object inputSchema = toolMap.get("inputSchema");
+                if (inputSchema instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> schemaMap = (Map<String, Object>) inputSchema;
+                    tool.setParameterSchema(new org.json.JSONObject(schemaMap));
+                }
+                tools.add(tool);
+            }
+        }
 
         // Generate the dynamic system instruction
         String systemInstructions = Prompt.getPrompt(
                 "Reveila AI Agent",
                 userIntent,
-                "Available Tool Definitions (MCP): " + toolDefinitions,
+                "Available Tool Definitions (MCP): " + mcpData,
                 "Adhere to Agency Perimeter security constraints.");
 
         // Optimization: Context Window Management (Summary Strategy)
@@ -234,6 +253,7 @@ public class AgenticFabric extends SystemComponent {
         LlmRequest request = LlmRequest.builder()
                 .addMessage(SystemMessage.from("You are the Reveila AI Agent."))
                 .addMessage(UserMessage.from(userIntent))
+                .tools(tools)
                 .build();
 
         String response;
