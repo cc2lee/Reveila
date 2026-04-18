@@ -346,6 +346,7 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 									manifest.getDisplayName() != null ? manifest.getDisplayName() : getName(),
 									manifest.getVersion() != null ? manifest.getVersion() : "1.0",
 									tools,
+									"Tier 3", // Default to Tier 3 for discovered plugins
 									perimeter,
 									secrets,
 									masked);

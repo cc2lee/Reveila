@@ -12,7 +12,7 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.commonmark)
     implementation(libs.jsoup)
-    implementation(libs.bundles.langchain4j)
+    implementation(libs.jspecify)
     
     // AI / Security Runtime dependencies
     implementation(libs.json.schema.validator)

@@ -1,20 +1,18 @@
 package com.reveila.ai;
 
-import java.time.Duration;
-
+import com.reveila.service.HttpClientService;
 import com.reveila.system.PluginComponent;
+import com.reveila.system.SystemProxy;
+import com.reveila.util.json.JsonUtil;
 
-import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.chat.request.ChatRequest;
-import dev.langchain4j.model.chat.response.ChatResponse;
-import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
-import dev.langchain4j.model.ollama.OllamaChatModel;
-import dev.langchain4j.model.openai.OpenAiChatModel;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
- * Generic LLM Provider Implementation.
- * Encapsulates the specific LangChain4j ChatLanguageModels based on the active
- * provider name.
+ * Generic LLM Provider Implementation using native Reveila networking.
+ * Replaces LangChain4j with a lean, Android-compatible implementation.
  * 
  * @author CL
  */
@@ -36,7 +34,6 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
     }
 
     private boolean enabled = true;
-    private ChatModel chatModel;
 
     public GenericLlmProvider() {
         super();
@@ -49,6 +46,10 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
 
     public void setName(String name) {
         this.name = name;
+        // Pre-configure defaults for local providers to ensure isConfigured() returns true immediately
+        if (isLocal() && (endpoint == null || endpoint.isBlank())) {
+            endpoint = "http://localhost:11434";
+        }
     }
 
     public void setApiKey(String apiKey) {
@@ -77,7 +78,9 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
     }
 
     public boolean isLocal() {
-        return name != null && name.toLowerCase().contains("(local)");
+        if (name == null) return false;
+        String lowerName = name.toLowerCase();
+        return lowerName.contains("(local)") || lowerName.contains("ollama") || lowerName.contains("local-");
     }
 
     @Override
@@ -86,9 +89,10 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
             return name != null && !name.isBlank()
                     && endpoint != null && !endpoint.isBlank();
         } else {
+            // Cloud providers are configured if they have a name, endpoint, and either a direct API key or a reference
             return name != null && !name.isBlank()
                     && endpoint != null && !endpoint.isBlank()
-                    && apiKey != null && !apiKey.isBlank();
+                    && apiKey != null && !apiKey.isBlank() && !apiKey.equalsIgnoreCase("null");
         }
     }
 
@@ -99,7 +103,7 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
 
         if (apiKey != null && apiKey.startsWith("REF:")) {
             resolvedApiKey = (String) this.context.getProxy("SecretManager")
-                    .invoke("getSecret", new Object[] { resolvedApiKey.substring(4) });
+                    .invoke("getSecret", new Object[] { apiKey.substring(4) });
         } else {
             resolvedApiKey = apiKey;
         }
@@ -107,73 +111,27 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
         return resolvedApiKey;
     }
 
+    private HttpClientService getHttpClientService() {
+        try {
+            SystemProxy sp = (SystemProxy) context.getProxy("HttpClientService");
+            return (HttpClientService) sp.getInstance();
+        } catch (Exception e) {
+            // If not found in context, create a transient one for bootstrapping
+            HttpClientService transientService = new HttpClientService();
+            try {
+                transientService.start();
+                return transientService;
+            } catch (Exception ex) {
+                return null;
+            }
+        }
+    }
+
     @Override
     protected void onStart() throws Exception {
-        if (!isEnabled() || !isConfigured()) {
-            return;
-        }
-
-        if (isLocal()) {
-            if (endpoint == null || endpoint.isBlank()) {
-                logger.info("LLM Provider endpoint is not set. Checking OS environment variable OLLAMA_API_URL...");
-                endpoint = System.getenv("OLLAMA_API_URL");
-            }
-
-            if (endpoint == null || endpoint.isBlank()) {
-                logger.info(
-                        "LLM Provider endpoint is not set. Neither is OS environment variable OLLAMA_API_URL. Using default endpoint: http://ollama-service:11434");
-                endpoint = "http://ollama-service:11434";
-            }
-
-            // If model is blank, default to 'llama3' as a common standard for Ollama
-            String activeModel = (model == null || model.isBlank()) ? "llama3" : model;
-
-            this.chatModel = OllamaChatModel.builder()
-                    .baseUrl(endpoint)
-                    .modelName(activeModel)
-                    .temperature(0.0) // Higher = more creative, Lower = more deterministic
-                    .topP(0.9) // Nucleus sampling
-                    .numPredict(100) // Roughly equivalent to maxTokens
-                    .timeout(Duration.ofSeconds(60))
-                    .logRequests(true) // Useful for native debugging in VS Code
-                    .logResponses(true)
-                    .build();
-
-            if (this.logger != null) {
-                this.logger.info("Local LLM connection established: " + endpoint + " using model: " + activeModel);
-            }
-
-            return;
-        }
-
-        resolvedApiKey = resolveApiKey();
-
-        if (resolvedApiKey == null || resolvedApiKey.isBlank() || "ERROR_DECRYPTION_FAILED".equals(resolvedApiKey)) {
-            throw new IllegalStateException("API Key could not be resolved for " + name);
-        }
-
-        if (name.toLowerCase().contains("gemini")) {
-            this.chatModel = GoogleAiGeminiChatModel.builder()
-                    .apiKey(resolvedApiKey)
-                    .modelName(model)
-                    .temperature(temperature)
-                    .build();
-
-        } else if (name.toLowerCase().contains("openai")) {
-            this.chatModel = OpenAiChatModel.builder()
-                    .apiKey(resolvedApiKey)
-                    .modelName(model)
-                    .temperature(temperature)
-                    .build();
-
-        } else {
-            // Treat as Custom Provider (OpenAI Compatible)
-            this.chatModel = OpenAiChatModel.builder()
-                    .baseUrl(endpoint)
-                    .apiKey(resolvedApiKey)
-                    .modelName(model)
-                    .temperature(temperature)
-                    .build();
+        // Validation during startup
+        if (isEnabled() && !isConfigured()) {
+            logger.warning("LLM Provider " + name + " is enabled but not fully configured.");
         }
     }
 
@@ -184,42 +142,104 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
     @Override
     public LlmResponse invoke(LlmRequest request) throws com.reveila.error.LlmException {
         try {
-            if (chatModel == null) {
-                onStart();
-                if (chatModel == null) {
-                    throw new com.reveila.error.LlmException(name + " is not properly configured.");
+            HttpClientService httpService = getHttpClientService();
+            if (httpService == null) {
+                throw new com.reveila.error.LlmException("HttpClientService not available");
+            }
+
+            String activeApiKey = resolveApiKey();
+            String activeModel = (model != null && !model.isBlank()) ? model : request.getModelId();
+            
+            JSONObject body = new JSONObject();
+            body.put("model", activeModel);
+            body.put("temperature", temperature);
+            body.put("stream", false);
+
+            JSONArray messages = new JSONArray();
+            for (ReveilaMessage msg : request.getMessages()) {
+                JSONObject msgJson = new JSONObject();
+                msgJson.put("role", msg.role().name().toLowerCase());
+                msgJson.put("content", msg.content());
+                messages.put(msgJson);
+            }
+            body.put("messages", messages);
+
+            // Tools (OpenAI format)
+            if (request.getTools() != null && !request.getTools().isEmpty()) {
+                JSONArray toolsJson = new JSONArray();
+                for (LlmTool tool : request.getTools()) {
+                    try {
+                        toolsJson.put(new JSONObject(tool.toJsonString()));
+                    } catch (Exception e) {
+                        logger.warning("Failed to serialize tool " + tool.toString() + ": " + e.getMessage());
+                    }
                 }
+                body.put("tools", toolsJson);
             }
 
-            ChatRequest chatRequest = ChatRequest.builder()
-                    .messages(request.getMessages())
-                    .build();
+            Map<String, String> headers = new HashMap<>();
+            if (activeApiKey != null && !activeApiKey.isBlank()) {
+                headers.put("Authorization", "Bearer " + activeApiKey);
+            }
+            headers.put("Content-Type", "application/json");
 
-            ChatResponse response = chatModel.chat(chatRequest);
+            String url = endpoint;
+            if (url == null) url = "http://localhost:11434"; // Absolute fallback
 
-            LlmResponse llmResponse = new LlmResponse();
-            llmResponse.setContent(response.aiMessage().text());
-
-            if (response.finishReason() != null) {
-                llmResponse.setFinishReason(response.finishReason().name());
+            if (!url.contains("chat/completions")) {
+                if (!url.endsWith("/")) url += "/";
+                if (!url.contains("/v1")) url += "v1/";
+                url += "chat/completions";
             }
 
-            if (response.tokenUsage() != null) {
-                Usage usage = new Usage();
-                usage.setPromptTokens(response.tokenUsage().inputTokenCount());
-                usage.setCompletionTokens(response.tokenUsage().outputTokenCount());
-                usage.setTotalTokens(response.tokenUsage().totalTokenCount());
-                llmResponse.setUsage(usage);
-            }
+            String responseJson = httpService.invokeRest(url, "POST", body.toString(), HttpClientService.JSON, headers);
+            return parseResponse(responseJson);
 
-            return llmResponse;
         } catch (Exception e) {
             if (this.logger != null) {
-                this.logger.severe("ERROR invoking " + name + " via LangChain4j: " + e.getMessage());
-                e.printStackTrace();
+                this.logger.severe("ERROR invoking " + name + ": " + e.getMessage());
             }
-            throw new com.reveila.error.LlmException("ERROR invoking " + name + " via LangChain4j: " + e.getMessage(),
-                    e);
+            throw new com.reveila.error.LlmException("ERROR invoking " + name + ": " + e.getMessage(), e);
         }
+    }
+
+    private LlmResponse parseResponse(String json) {
+        json = JsonUtil.clean(json); // Remove any non-JSON content
+        JSONObject resp = new JSONObject(json);
+        LlmResponse llmResponse = new LlmResponse();
+        
+        String content = "";
+        JSONObject firstChoice = resp.optJSONArray("choices") != null ? resp.getJSONArray("choices").optJSONObject(0) : null;
+        if (firstChoice != null) {
+            Object messageObj = firstChoice.opt("message");
+            if (messageObj instanceof JSONObject) {
+                content = ((JSONObject) messageObj).optString("content", "");
+            } else if (messageObj instanceof String) {
+                content = (String) messageObj;
+            }
+        } else {
+            // Try Ollama native format
+            Object messageObj = resp.opt("message");
+            if (messageObj instanceof JSONObject) {
+                content = ((JSONObject) messageObj).optString("content", "");
+            } else if (messageObj instanceof String) {
+                content = (String) messageObj;
+            } else if (resp.has("response")) {
+                content = resp.optString("response", "");
+            }
+        }
+
+        llmResponse.setContent(content);
+
+        JSONObject usage = resp.optJSONObject("usage");
+        if (usage != null) {
+            Usage u = new Usage();
+            u.setPromptTokens(usage.optInt("prompt_tokens"));
+            u.setCompletionTokens(usage.optInt("completion_tokens"));
+            u.setTotalTokens(usage.optInt("total_tokens"));
+            llmResponse.setUsage(u);
+        }
+
+        return llmResponse;
     }
 }

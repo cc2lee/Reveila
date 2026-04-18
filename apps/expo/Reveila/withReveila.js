@@ -189,9 +189,14 @@ project(':android').projectDir = new File(rootProject.projectDir, '../../../../a
 
     // Force Kotlin version at the buildscript level
     if (!contents.includes('kotlinVersion =')) {
-        contents = contents.replace(/buildscript\s?{/, "buildscript {\n    ext.kotlinVersion = '2.0.21'");
+        contents = contents.replace(/buildscript\s?{/, "buildscript {\n    ext.kotlinVersion = '2.0.21'\n    ext.minSdkVersion = 26");
     } else {
         contents = contents.replace(/kotlinVersion\s?=\s?['"].*?['"]/, "kotlinVersion = '2.0.21'");
+        if (!contents.includes('minSdkVersion =')) {
+            contents = contents.replace(/ext\.kotlinVersion\s?=\s?.*?\n/, (match) => `${match}    ext.minSdkVersion = 26\n`);
+        } else {
+            contents = contents.replace(/minSdkVersion\s?=\s?\d+/, "minSdkVersion = 26");
+        }
     }
 
     // Ensure gradlePluginPortal() is in the buildscript repositories

@@ -124,3 +124,18 @@ All Tool calls must observe:
 1. Execution Policy: Scripts must run with -ExecutionPolicy under a Low-Privilege User Account (Service Account) specifically for Reveila.
 2. Timeouts: Hard-cap every script at 30 seconds. This prevents the LLM from accidentally writing an infinite loop that freezes the system.
 3. The "Human-in-the-Loop" (HITL) Proxy: For the Personal Edition, the UI should show the script with a [Run] / [Edit] / [Cancel] button before execution.
+
+
+# Tool RAG (High Precision Tooling)
+
+Implemented a two-stage retrieval pipeline in DynamicToolProvider.java.
+
+* Stage 1: Semantic search using the VectorStore to identify potential tool candidates.
+* Stage 2: Reranking using a new ScoringModel abstraction to ensure the most relevant tools are selected for the AI context window.
+
+This prevents "Short Model Tax" and reduces logic mismatches by only injecting high-relevance tools into the prompt.
+
+# Knowledge Vault Integration (Internal Knowledge RAG)
+
+Enhanced AgenticFabric.java to perform a semantic search in the KnowledgeVault for every user intent.
+Relevant snippets from internal documentation (e.g., PDFs, manuals) are now automatically retrieved and injected into the dynamic system instruction under the `<context_boundary>`. This ensures the AI agent has access to the organization's private knowledge base when reasoning about tasks.

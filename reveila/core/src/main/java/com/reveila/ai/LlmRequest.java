@@ -5,11 +5,9 @@ import java.util.Map;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-import dev.langchain4j.data.message.ChatMessage;
-
 public class LlmRequest {
     private final String modelId;           // e.g., "gemini-3-flash", "gpt-5-preview", "local-gemma-3"
-    private final List<ChatMessage> messages; // System, User, Assistant, and Tool roles
+    private final List<ReveilaMessage> messages; // System, User, Assistant, and Tool roles
     private final Double temperature;
     private final Map<String, Object> metadata; // For provider-specific extras (top_k, max_tokens)
     private final List<LlmTool> tools;      // Manifests for Agentic Tool Calling
@@ -25,7 +23,7 @@ public class LlmRequest {
     public String getModelId() {
         return modelId;
     }
-    public List<ChatMessage> getMessages() {
+    public List<ReveilaMessage> getMessages() {
         return messages;
     }
     public Double getTemperature() {
@@ -44,7 +42,7 @@ public class LlmRequest {
 
     public static class Builder {
         private String modelId;
-        private List<ChatMessage> messages = new ArrayList<>();
+        private List<ReveilaMessage> messages = new ArrayList<>();
         private Double temperature;
         private Map<String, Object> metadata = new HashMap<>();
         private List<LlmTool> tools = new ArrayList<>();
@@ -54,12 +52,12 @@ public class LlmRequest {
             return this;
         }
 
-        public Builder messages(List<ChatMessage> messages) {
+        public Builder messages(List<ReveilaMessage> messages) {
             this.messages = messages != null ? messages : new ArrayList<>();
             return this;
         }
 
-        public Builder addMessage(ChatMessage message) {
+        public Builder addMessage(ReveilaMessage message) {
             if (message != null) {
                 this.messages.add(message);
             }

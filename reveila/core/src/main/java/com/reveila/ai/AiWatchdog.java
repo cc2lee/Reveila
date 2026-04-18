@@ -16,8 +16,8 @@ public class AiWatchdog {
         CompletableFuture<String> remoteCall = CompletableFuture.supplyAsync(() -> {
             try {
                 LlmRequest request = LlmRequest.builder()
-                        .addMessage(dev.langchain4j.data.message.SystemMessage.from("You are a helpful assistant."))
-                        .addMessage(dev.langchain4j.data.message.UserMessage.from(userPrompt))
+                        .addMessage(ReveilaMessage.system("You are a helpful assistant."))
+                        .addMessage(ReveilaMessage.user(userPrompt))
                         .build();
                 return remoteLlmProvider.invoke(request).getContent(); // Your slow Roo/OpenAI call
             } catch (Exception e) {
@@ -42,8 +42,8 @@ public class AiWatchdog {
         // Fast, 0ms latency, works offline.
         try {
             LlmRequest request = LlmRequest.builder()
-                    .addMessage(dev.langchain4j.data.message.SystemMessage.from("You are a helpful assistant."))
-                    .addMessage(dev.langchain4j.data.message.UserMessage.from(prompt))
+                    .addMessage(ReveilaMessage.system("You are a helpful assistant."))
+                    .addMessage(ReveilaMessage.user(prompt))
                     .build();
             return "NOTICE: Remote AI is slow. Using Local Model: " + localOllama.invoke(request).getContent();
         } catch (Exception e) {

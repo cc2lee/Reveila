@@ -25,14 +25,14 @@ if (useManagedAndroidSdkVersions) {
   project.android {
     compileSdkVersion safeExtGet("compileSdkVersion", 36)
     defaultConfig {
-      minSdkVersion safeExtGet("minSdkVersion", 24)
+      minSdkVersion safeExtGet("minSdkVersion", 26)
       targetSdkVersion safeExtGet("targetSdkVersion", 36)
     }
   }
 }
 
 android {
-  namespace "expo.modules.reveila"
+  namespace = "expo.modules.reveila"
   defaultConfig {
     versionCode 1
     versionName "0.7.6"

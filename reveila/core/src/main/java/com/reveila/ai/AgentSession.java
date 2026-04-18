@@ -1,7 +1,5 @@
 package com.reveila.ai;
 
-import dev.langchain4j.memory.ChatMemory;
-import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -9,15 +7,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * The AgentSession represents a stateful container for shared context
  * and conversation history within a single agentic workflow.
  * 
- * Refactored from a Record to a Class to support stateful LangChain4j ChatMemory
- * and persistence for the Reveila AI Loop.
- * 
  * @author CL
  */
 public class AgentSession {
     private final String sessionId;
     private final String parentTraceId;
-    private final ChatMemory chatMemory;
+    private final ReveilaChatMemory chatMemory;
     private final Map<String, Object> context;
 
     /**
@@ -40,8 +35,7 @@ public class AgentSession {
     public AgentSession(String sessionId, String parentTraceId, int windowSize) {
         this.sessionId = sessionId;
         this.parentTraceId = parentTraceId;
-        // The sliding window size is now driven by ai.optimization.priority
-        this.chatMemory = MessageWindowChatMemory.withMaxMessages(windowSize);
+        this.chatMemory = new ReveilaChatMemory(windowSize);
         this.context = new ConcurrentHashMap<>();
     }
 
@@ -54,12 +48,12 @@ public class AgentSession {
     }
 
     /**
-     * Provides access to the LangChain4j ChatMemory for this session.
+     * Provides access to the ChatMemory for this session.
      * Used to maintain the "State" across the AI Loop.
      * 
      * @return The ChatMemory instance.
      */
-    public ChatMemory getChatMemory() {
+    public ReveilaChatMemory getChatMemory() {
         return chatMemory;
     }
 

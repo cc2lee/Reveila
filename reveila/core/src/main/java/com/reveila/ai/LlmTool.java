@@ -26,8 +26,20 @@ public class LlmTool {
         this.description = description;
     }
 
-    public void setParameterSchema(JSONObject schema) {
-        this.parameterSchema = schema.toMap();
+    public String getName() {
+        return name;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setParameterSchema(Map<String, Object> schema) {
+        if (schema != null) {
+            this.parameterSchema = schema;
+        } else {
+            this.parameterSchema = new HashMap<>();
+        }
     }
 
     public void setReveilaMetadata(String tier, List<String> humanInTheLoop, List<String> accessScopes) {
@@ -61,11 +73,19 @@ public class LlmTool {
         sb.append("Description: ").append(description).append("\n");
         if (parameterSchema != null) {
             sb.append("Parameters Schema:\n");
-            sb.append(new JSONObject(parameterSchema).toString(2)).append("\n");
+            try {
+                sb.append(JsonUtil.PRETTY_WRITER.writeValueAsString(parameterSchema)).append("\n");
+            } catch (Exception e) {
+                sb.append(parameterSchema).append("\n");
+            }
         }
         if (!reveilaMetadata.isEmpty()) {
             sb.append("Reveila Metadata:\n");
-            sb.append(new JSONObject(reveilaMetadata).toString(2)).append("\n");
+            try {
+                sb.append(JsonUtil.PRETTY_WRITER.writeValueAsString(reveilaMetadata)).append("\n");
+            } catch (Exception e) {
+                sb.append(reveilaMetadata).append("\n");
+            }
         }
         return sb.toString();
     }

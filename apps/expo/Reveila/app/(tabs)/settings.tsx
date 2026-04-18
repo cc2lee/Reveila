@@ -204,20 +204,23 @@ export default function SettingsScreen() {
   };
 
   const isProviderConfigured = (pName: string) => {
-    if (isLoadingProviders) return false; // Prevent rendering red LED while loading
+    if (isLoadingProviders) return false; 
     if (pName === 'Disable' || pName === 'Custom') return false;
     const p = providersList.find(x => x.name === pName) || LLM_PROVIDERS.find(x => x.name === pName);
     if (!p) return false;
 
+    const endpoint = p.endpoint || p.defaultEndpoint;
+    const apiKey = p['api.key'] || p.apiKey;
+
     if (p.name.startsWith('Gemma') || p.name.includes('Ollama')) {
-      return !!(p.defaultEndpoint && p.defaultEndpoint.trim().length > 0);
+      return !!(endpoint && endpoint.trim().length > 0);
     }
     
     if (p.name === 'OpenAI' || p.name === 'Google Gemini' || p.name === 'Anthropic') {
-      return !!(p.apiKey && p.apiKey.trim().length > 0);
+      return !!(apiKey && apiKey.trim().length > 0);
     }
 
-    return !!(p.defaultEndpoint && p.defaultEndpoint.trim().length > 0 && p.apiKey && p.apiKey.trim().length > 0);
+    return !!(endpoint && endpoint.trim().length > 0 && apiKey && apiKey.trim().length > 0);
   };
 
   const renderProviderSelector = (label: string, description: string, selectedProvider: string, isWorker: boolean) => (

@@ -8,11 +8,6 @@ import com.reveila.system.Proxy;
 import com.reveila.system.SystemComponent;
 import com.reveila.system.SystemProxy;
 
-import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.data.message.ToolExecutionResultMessage;
-import dev.langchain4j.data.message.UserMessage;
-
 /**
  * Phase 5: Collaboration (The Agentic Fabric).
  * Manages multi-agent workflows and verticalized skill sets.
@@ -27,6 +22,7 @@ public class AgenticFabric extends SystemComponent {
     private OrchestrationService orchestrationService;
     private MetadataRegistry metadataRegistry;
     private LlmProviderFactory llmFactory;
+    private DynamicToolProvider toolProvider;
     private int aiLoopLimit = 5;
 
     public AgenticFabric() {
@@ -86,6 +82,15 @@ public class AgenticFabric extends SystemComponent {
             }
         } catch (IllegalArgumentException e) {
             throw new IllegalStateException("LlmProviderFactory not found.", e);
+        }
+
+        try {
+            Proxy p = context.getProxy("DynamicToolProvider");
+            if (p instanceof SystemProxy sp) {
+                this.toolProvider = (DynamicToolProvider) sp.getInstance();
+            }
+        } catch (IllegalArgumentException e) {
+            // Optional for now
         }
     }
 
@@ -147,15 +152,15 @@ public class AgenticFabric extends SystemComponent {
 
                     // Explicitly log the tool execution in chat memory for context
                     session.getChatMemory()
-                            .add(AiMessage.from("Reasoning: Action required. Initiating tool execution."));
-                    session.getChatMemory().add(ToolExecutionResultMessage.from("tool-id", response, toolResult));
+                            .add(ReveilaMessage.assistant("Reasoning: Action required. Initiating tool execution."));
+                    session.getChatMemory().add(ReveilaMessage.tool("The tool has returned: " + toolResult));
 
                     currentIntent = "The tool has returned the following result: " + toolResult
                             + ". Please analyze this and provide the next step or final answer.";
                 } else if (result.status() == InvocationResult.Status.PENDING_APPROVAL) {
                     // Step 5 (HITL): Pause the loop for user approval
                     session.getChatMemory().add(
-                            AiMessage.from("Reasoning: Task requires a protected script. Awaiting user approval."));
+                            ReveilaMessage.assistant("Reasoning: Task requires a protected script. Awaiting user approval."));
                     return "APPROVAL_REQUIRED|" + result.message() + "|"
                             + (result.data() != null ? result.data().toString() : "");
                 } else {
@@ -193,24 +198,30 @@ public class AgenticFabric extends SystemComponent {
             return msg;
         }
 
-        // Gather current tool definitions for context and tool-calling
-        Map<String, Object> mcpData = metadataRegistry.exportToMCP();
-        @SuppressWarnings("unchecked")
-        java.util.List<Map<String, Object>> mcpTools = (java.util.List<Map<String, Object>>) mcpData.get("tools");
-
-        java.util.List<LlmTool> tools = new java.util.ArrayList<>();
-        if (mcpTools != null) {
-            for (Map<String, Object> toolMap : mcpTools) {
-                LlmTool tool = new LlmTool();
-                tool.setName((String) toolMap.get("name"));
-                tool.setDescription((String) toolMap.get("description"));
-                Object inputSchema = toolMap.get("inputSchema");
-                if (inputSchema instanceof Map) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> schemaMap = (Map<String, Object>) inputSchema;
-                    tool.setParameterSchema(new org.json.JSONObject(schemaMap));
+        // Tool RAG Implementation:
+        // Use DynamicToolProvider to semantic search and rerank tools.
+        java.util.List<LlmTool> tools;
+        if (toolProvider != null) {
+            tools = toolProvider.provideTools(userIntent);
+        } else {
+            // Fallback to manual mapping from full registry (legacy)
+            Map<String, Object> mcpData = metadataRegistry.exportToMCP();
+            @SuppressWarnings("unchecked")
+            java.util.List<Map<String, Object>> mcpTools = (java.util.List<Map<String, Object>>) mcpData.get("tools");
+            tools = new java.util.ArrayList<>();
+            if (mcpTools != null) {
+                for (Map<String, Object> toolMap : mcpTools) {
+                    LlmTool tool = new LlmTool();
+                    tool.setName((String) toolMap.get("name"));
+                    tool.setDescription((String) toolMap.get("description"));
+                    Object inputSchema = toolMap.get("inputSchema");
+                    if (inputSchema instanceof Map) {
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> schemaMap = (Map<String, Object>) inputSchema;
+                        tool.setParameterSchema(schemaMap);
+                    }
+                    tools.add(tool);
                 }
-                tools.add(tool);
             }
         }
 
@@ -218,7 +229,8 @@ public class AgenticFabric extends SystemComponent {
         String systemInstructions = Prompt.getPrompt(
                 "Reveila AI Agent",
                 userIntent,
-                "Available Tool Definitions (MCP): " + mcpData,
+                "Available Tools: " + tools.stream().map(LlmTool::getName).collect(java.util.stream.Collectors.joining(", ")) + "\n\n" +
+                "Knowledge Vault Context: " + searchKnowledgeVault(userIntent),
                 "Adhere to Agency Perimeter security constraints.");
 
         // Optimization: Context Window Management (Summary Strategy)
@@ -229,9 +241,8 @@ public class AgenticFabric extends SystemComponent {
                 String historyDump = session.getChatMemory().messages().toString();
 
                 LlmRequest summaryRequest = LlmRequest.builder()
-                        .addMessage(SystemMessage.from("System"))
-                        .addMessage(UserMessage
-                                .from("Summarize the following chat history for context preservation: " + historyDump))
+                        .addMessage(ReveilaMessage.system("System"))
+                        .addMessage(ReveilaMessage.user("Summarize the following chat history for context preservation: " + historyDump))
                         .build();
 
                 String summary;
@@ -242,17 +253,17 @@ public class AgenticFabric extends SystemComponent {
                 }
 
                 session.getChatMemory().clear();
-                session.getChatMemory().add(SystemMessage.from("Summary of previous conversation: " + summary));
+                session.getChatMemory().add(ReveilaMessage.system("Summary of previous conversation: " + summary));
             }
         }
 
         // Maintain the chain of thought in the session chat memory
-        session.getChatMemory().add(SystemMessage.from(systemInstructions));
-        session.getChatMemory().add(UserMessage.from(userIntent));
+        session.getChatMemory().add(ReveilaMessage.system(systemInstructions));
+        session.getChatMemory().add(ReveilaMessage.user(userIntent));
 
         LlmRequest request = LlmRequest.builder()
-                .addMessage(SystemMessage.from("You are the Reveila AI Agent."))
-                .addMessage(UserMessage.from(userIntent))
+                .addMessage(ReveilaMessage.system("You are the Reveila AI Agent."))
+                .addMessage(ReveilaMessage.user(userIntent))
                 .tools(tools)
                 .build();
 
@@ -264,9 +275,29 @@ public class AgenticFabric extends SystemComponent {
         }
 
         // Record the raw response in history before returning it to the loop
-        session.getChatMemory().add(AiMessage.from(response));
+        session.getChatMemory().add(ReveilaMessage.assistant(response));
 
         return response;
+    }
+
+    /**
+     * Semantic search for relevant documents in the Knowledge Vault.
+     * 
+     * @param query The user's message.
+     * @return A formatted string of relevant snippets.
+     */
+    private String searchKnowledgeVault(String query) {
+        try {
+            Proxy p = context.getProxy("KnowledgeVault");
+            if (p instanceof SystemProxy sp) {
+                // Assuming KnowledgeVault component exists and has a search method
+                Object result = sp.invoke("search", new Object[] { query, 3 });
+                return result != null ? result.toString() : "No relevant internal documents found.";
+            }
+        } catch (Exception e) {
+            // Silently fail if Vault is not available
+        }
+        return "Knowledge Vault is offline.";
     }
 
     @Override

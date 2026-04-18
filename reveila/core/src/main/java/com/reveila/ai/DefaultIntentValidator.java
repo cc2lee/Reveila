@@ -80,8 +80,7 @@ public class DefaultIntentValidator extends SystemComponent implements IntentVal
         
         try {
             LlmRequest request = LlmRequest.builder()
-                    //.addMessage(dev.langchain4j.data.message.SystemMessage.from(systemContext))
-                    .addMessage(dev.langchain4j.data.message.UserMessage.from(validationPrompt))
+                    .addMessage(ReveilaMessage.user(validationPrompt))
                     .build();
             String jsonResponse = llmProvider.invoke(request).getContent();
             String cleanJson = JsonUtil.clean(jsonResponse);
@@ -123,8 +122,8 @@ public class DefaultIntentValidator extends SystemComponent implements IntentVal
 
         try {
             LlmRequest request = LlmRequest.builder()
-                    .addMessage(dev.langchain4j.data.message.SystemMessage.from(systemContext))
-                    .addMessage(dev.langchain4j.data.message.UserMessage.from(auditPrompt))
+                    .addMessage(ReveilaMessage.system(systemContext))
+                    .addMessage(ReveilaMessage.user(auditPrompt))
                     .build();
             String jsonResponse = llmProvider.invoke(request).getContent();
             Map<String, Object> map = JsonUtil.parseJsonStringToMap(jsonResponse);

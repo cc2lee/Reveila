@@ -80,8 +80,8 @@ public class WebhookIngestionService {
         }
 
         com.reveila.ai.LlmRequest request = com.reveila.ai.LlmRequest.builder()
-                .addMessage(dev.langchain4j.data.message.SystemMessage.from("You are a Specialized Worker. Map the following context to a Reveila plugin intent. Return JSON."))
-                .addMessage(dev.langchain4j.data.message.UserMessage.from(payload.getOrDefault("context", "{}").toString()))
+                .addMessage(com.reveila.ai.ReveilaMessage.system("You are a Specialized Worker. Map the following context to a Reveila plugin intent. Return JSON."))
+                .addMessage(com.reveila.ai.ReveilaMessage.user(payload.getOrDefault("context", "{}").toString()))
                 .build();
                 
         String workerOutput;

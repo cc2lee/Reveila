@@ -95,12 +95,14 @@ public class MetadataRegistry extends SystemComponent {
             Map<String, Object> tools = attrs.containsKey("tool_definitions") ? 
                 (Map<String, Object>) attrs.get("tool_definitions") : new HashMap<>();
             
+            String tier = (String) attrs.getOrDefault("tier", "Tier 3");
+            
             AgencyPerimeter perimeter = parseAgencyPerimeter(attrs.get("agency_perimeter"));
             
             Set<String> secrets = parseSet(attrs.get("secret_parameters"));
             Set<String> masked = parseSet(attrs.get("masked_parameters"));
             
-            return new PluginManifest(id, name, version, tools, perimeter, secrets, masked);
+            return new PluginManifest(id, name, version, tools, tier, perimeter, secrets, masked);
         } catch (Exception e) {
             logger.warning("Invalid manifest attributes for " + id + ": " + e.getMessage());
             return null;
@@ -139,6 +141,7 @@ public class MetadataRegistry extends SystemComponent {
             String name,
             String version,
             Map<String, Object> tool_definitions,
+            String tier,
             AgencyPerimeter agency_perimeter,
             java.util.Set<String> secret_parameters,
             java.util.Set<String> masked_parameters) {
@@ -187,10 +190,10 @@ public class MetadataRegistry extends SystemComponent {
         // 2. Bootstrap Core Agents
         registerCoreAgents();
 
-        // 3. Discover File-Based Agents
-        discoverAgents();
+        // 3. Discover Plugin Manifests
+        discoverPlugins();
         
-        logger.info("MetadataRegistry initialized. Loaded " + plugins.size() + " agent/plugin manifests.");
+        logger.info("MetadataRegistry initialized. Loaded " + plugins.size() + " capability manifests.");
     }
 
     private void registerCoreAgents() {
@@ -210,6 +213,7 @@ public class MetadataRegistry extends SystemComponent {
             "Reveila UI Client",
             "1.0",
             new HashMap<>(), // No specific tools exposed by the UI itself
+            "Tier 3", // UI client is a standard user tier
             uiClientPerimeter,
             Collections.emptySet(),
             Collections.emptySet()
@@ -217,10 +221,10 @@ public class MetadataRegistry extends SystemComponent {
         register(uiClient);
     }
 
-    private void discoverAgents() {
+    private void discoverPlugins() {
         try {
-            String agentsDir = Constants.CONFIGS_DIR_NAME + File.separator + "agents";
-            String[] files = context.getPlatformAdapter().listRelativePaths(agentsDir, ".json");
+            String pluginsDir = Constants.CONFIGS_DIR_NAME + File.separator + "plugins";
+            String[] files = context.getPlatformAdapter().listRelativePaths(pluginsDir, ".json");
             
             if (files != null && files.length > 0) {
                 for (String file : files) {
@@ -232,13 +236,13 @@ public class MetadataRegistry extends SystemComponent {
                             register(manifest);
                         }
                     } catch (Exception e) {
-                        logger.warning("Failed to load agent profile from " + file + ": " + e.getMessage());
+                        logger.warning("Failed to load plugin profile from " + file + ": " + e.getMessage());
                     }
                 }
             }
         } catch (Exception e) {
             // It's okay if the directory doesn't exist
-            logger.info("No file-based agent profiles discovered.");
+            logger.info("No file-based plugin profiles discovered.");
         }
     }
 }

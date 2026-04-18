@@ -42,8 +42,8 @@ public class InboundWebhookService extends SystemComponent {
         }
         
         LlmRequest request = LlmRequest.builder()
-                .addMessage(dev.langchain4j.data.message.SystemMessage.from("You are a Specialized Worker. Map the following context to a Reveila plugin intent. Return JSON."))
-                .addMessage(dev.langchain4j.data.message.UserMessage.from(payload.getOrDefault("context", "{}").toString()))
+                .addMessage(ReveilaMessage.system("You are a Specialized Worker. Map the following context to a Reveila plugin intent. Return JSON."))
+                .addMessage(ReveilaMessage.user(payload.getOrDefault("context", "{}").toString()))
                 .build();
 
         try {

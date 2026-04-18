@@ -3,6 +3,7 @@ package com.reveila.ai;
 import org.json.JSONObject;
 
 import com.reveila.error.LlmException;
+import com.reveila.util.json.JsonUtil;
 
 public class TrackedLlmProvider implements LlmProvider {
     private final LlmProvider delegate;
@@ -25,7 +26,18 @@ public class TrackedLlmProvider implements LlmProvider {
 
         // Asynchronously log usage to avoid blocking the Agent's thought loop
         new Thread(() -> {
-            JSONObject securityData = new JSONObject(response.getContent());
+            String content = response.getContent();
+            JSONObject securityData = new JSONObject();
+            try {
+                String cleanJson = JsonUtil.clean(content);
+                if (cleanJson != null && cleanJson.startsWith("{") && cleanJson.endsWith("}")) {
+                    securityData = new JSONObject(cleanJson);
+                } else {
+                    securityData.put("raw_response", content);
+                }
+            } catch (Exception e) {
+                securityData.put("raw_response", content);
+            }
             tracker.logUsage(tenantId, requestId, modelId, response.getUsage(), latency, securityData);
         }).start();
 

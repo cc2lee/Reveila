@@ -7,8 +7,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.reveila.system.SystemComponent;
 
-import dev.langchain4j.data.message.ChatMessage;
-
 /**
  * Phase 5: Stateful Context Persistence.
  * Manages agent sessions and histories with automated size-based eviction.
@@ -102,8 +100,8 @@ public class AgentSessionManager extends SystemComponent {
         long size = 0;
         // 1. Messages size
         if (session.getChatMemory() != null) {
-            for (ChatMessage msg : session.getChatMemory().messages()) {
-                String text = getMessageText(msg);
+            for (ReveilaMessage msg : session.getChatMemory().messages()) {
+                String text = msg.content();
                 if (text != null) {
                     size += text.length() * 2L;
                 }
@@ -119,19 +117,6 @@ public class AgentSessionManager extends SystemComponent {
             }
         }
         return size;
-    }
-
-    private String getMessageText(ChatMessage msg) {
-        if (msg instanceof dev.langchain4j.data.message.UserMessage user) {
-            return user.contents().stream()
-                    .filter(c -> c instanceof dev.langchain4j.data.message.TextContent)
-                    .map(c -> ((dev.langchain4j.data.message.TextContent) c).text())
-                    .collect(java.util.stream.Collectors.joining("\n"));
-        }
-        if (msg instanceof dev.langchain4j.data.message.AiMessage ai) return ai.text();
-        if (msg instanceof dev.langchain4j.data.message.SystemMessage sys) return sys.text();
-        if (msg instanceof dev.langchain4j.data.message.ToolExecutionResultMessage tool) return tool.text();
-        return null;
     }
 
     /**

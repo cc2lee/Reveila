@@ -24,6 +24,7 @@ springBoot = "3.5.9"
 kotlin = "2.1.20"
 
 # Common libs:
+jspecify = "1.0.0"
 jackson = "2.17.1"
 okhttp = "4.12.0"
 slf4j = "2.0.13"
@@ -41,7 +42,7 @@ shadow = "8.3.5"
 
 # Android:
 androidCompileSdk = "35"
-androidMinSdk = "24"
+androidMinSdk = "26"
 androidTargetSdk = "35"
 androidJvmTarget = "17"
 androidGradlePlugin = "8.7.2" # Android Gradle Plugin version
@@ -109,6 +110,7 @@ docker-java-transport-httpclient5 = { module = "com.github.docker-java:docker-ja
 
 # JSON Schema Validator
 json-schema-validator = { module = "com.networknt:json-schema-validator", version.ref = "json-schema-validator" }
+jspecify = { module = "org.jspecify:jspecify", version.ref = "jspecify" }
 org-json = { module = "org.json:json", version.ref = "json" }
 
 # Networking and Logging

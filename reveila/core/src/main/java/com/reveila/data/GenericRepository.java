@@ -35,7 +35,8 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
         if (entity == null) {
             throw new IllegalArgumentException("Entity cannot be null");
         }
-        Optional<ID> idOpt = reverseId(entity.getKey());
+        Map<String, Map<String, Object>> keyMap = entity.getKey();
+        Optional<ID> idOpt = keyMap != null && !keyMap.isEmpty() ? reverseId(keyMap) : Optional.empty();
         T target;
 
         if (idOpt.isPresent() && repository.hasId(idOpt.get())) {
@@ -61,6 +62,7 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
 
     @Override
     public Optional<Entity> fetchById(Map<String, Map<String, Object>> idMap) {
+        if (idMap == null || idMap.isEmpty()) return Optional.empty();
         return reverseId(idMap)
                 .flatMap(repository::fetchById)
                 .map(this::mapToGeneric);
@@ -68,7 +70,9 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
 
     @Override
     public void disposeById(Map<String, Map<String, Object>> idMap) {
-        reverseId(idMap).ifPresent(repository::disposeById);
+        if (idMap != null && !idMap.isEmpty()) {
+            reverseId(idMap).ifPresent(repository::disposeById);
+        }
     }
 
     @Override
@@ -92,6 +96,7 @@ public class GenericRepository<T, ID> implements Repository<Entity, Map<String, 
 
     @Override
     public boolean hasId(Map<String, Map<String, Object>> idMap) {
+        if (idMap == null || idMap.isEmpty()) return false;
         return reverseId(idMap).map(repository::hasId).orElse(false);
     }
 

@@ -17,7 +17,7 @@ class RoomRepository(
     private val dao: GenericDao
 ) : Repository<Entity, MutableMap<String, MutableMap<String, Any>>> {
 
-    private val objectMapper = EntityMapper.getObjectmapper()
+    private val objectMapper = EntityMapper.getObjectMapper()
     private val mapTypeRef = object : TypeReference<MutableMap<String, Any>>() {}
 
     override fun getType(): String {
