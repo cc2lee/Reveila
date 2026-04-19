@@ -1,8 +1,9 @@
 package com.reveila.system;
 
+import java.io.Serializable;
 import java.security.Principal;
 
-public class RolePrincipal implements Principal {
+public final class RolePrincipal implements Principal, Serializable {
 
     private String name;
 

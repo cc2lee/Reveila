@@ -118,14 +118,20 @@ public class AgenticFabric extends SystemComponent {
 
     public String processIntent(AgentSession session, Principal principal, String intent) {
 
-        //TODO: Does the principal have permission to invoke the agent? If not, return an error message. Security first!
+        if (principal instanceof RolePrincipal rp) {
+            if (!rp.getName().equals("ui-client") && !rp.getName().equals("admin")) {
+                return "ERROR: Access Denied. Principal does not have permission to invoke the agent.";
+            }
+        } else {
+            return "ERROR: Access Denied. Invalid principal type.";
+        }
 
         String modifiedIntent = intent;
 
         // Step 1: Execute initial LLM reasoning
         String response = null;
         try {
-            response = askAi(session, modifiedIntent);
+            response = askAi(session, principal, modifiedIntent);
         } catch (LlmException e) {
             response = "ERROR: Failed to get response from LLM: " + e.getMessage();
             if (logger != null) {
@@ -146,8 +152,8 @@ public class AgenticFabric extends SystemComponent {
                 JSONObject jsonResponse = new JSONObject(response);
                 String status = jsonResponse.optString("status", "");
                 String reasoning = jsonResponse.optString("reasoning", "");
-                String result = jsonResponse.optString("result", "");
-                double confidenceScore = jsonResponse.optDouble("confidence-score", 0.0);
+                // String result = jsonResponse.optString("result", "");
+                // double confidenceScore = jsonResponse.optDouble("confidence-score", 0.0);
                 JSONObject toolCall = jsonResponse.optJSONObject("tool-call");
 
                 if (status.equalsIgnoreCase(Constants.AI_STATUS_COMPLETED)) {
@@ -181,7 +187,7 @@ public class AgenticFabric extends SystemComponent {
                 }
 
                 try {
-                    response = askAi(session, modifiedIntent);
+                    response = askAi(session, principal, modifiedIntent);
                 } catch (LlmException e) {
                     response = "ERROR: Failed to get response from LLM: " + e.getMessage();
                     if (logger != null) {
@@ -204,22 +210,25 @@ public class AgenticFabric extends SystemComponent {
 
     private String handleToolCall(AgentSession session, JSONObject toolCall, String response) throws Exception {
 
-        Plugin plugin = null;
-
         Map<String, Object> bridgeArgs = new HashMap<>();
         bridgeArgs.put("_session_id", session.getSessionId());
         bridgeArgs.put("_thought", toolCall);
 
-        // TODO: Implement a more robust mapping from toolCall to plugin and method, potentially using a registry or dynamic discovery mechanism.
-        // For now, we will assume the toolCall JSON has a "plugin" field and an "arguments" field.
         String pluginId = toolCall.optString("plugin", "");
         String methodName = toolCall.optString("method", "");
-        // plugin = session.getPlugin(pluginId);
+        
+        Plugin plugin = new Plugin(
+                java.util.UUID.fromString(session.getSessionId()), 
+                pluginId, 
+                "default", 
+                session.getParentTraceId() != null ? session.getParentTraceId() : java.util.UUID.randomUUID().toString()
+        );
+        
         bridgeArgs.put("arguments", toolCall.optJSONObject("arguments"));
 
         // Step 4: Invoke the tool via the bridge and capture the output
         // The bridge performs parsing, security audit, and tool execution
-        InvocationResult result = bridge.invoke(plugin, null, response, bridgeArgs);
+        InvocationResult result = bridge.invoke(plugin, null, methodName.isEmpty() ? response : methodName, bridgeArgs);
 
         if (result.status() == InvocationResult.Status.SUCCESS) {
             // Step 4: Capture tool output and feed it back for the next reasoning iteration
@@ -239,8 +248,8 @@ public class AgenticFabric extends SystemComponent {
                     ReveilaMessage
                             .assistant("Task requires approval."));
             
-            // TODO: Implement a callback mechanism to resume the loop once approval is granted.
-            throw new SecurityException("APPROVAL_REQUIRED|" + result.message() + "|"
+            session.put("pendingApproval", result.callbackUrl());
+            throw new com.reveila.error.SecurityException("APPROVAL_REQUIRED|" + result.message() + "|"
                     + (result.data() != null ? result.data().toString() : ""));
         } else {
             throw new RuntimeException("Tool execution failed: " + result.message());
@@ -252,9 +261,15 @@ public class AgenticFabric extends SystemComponent {
      * 
      * @throws LlmException
      */
-    private String askAi(AgentSession session, String prompt) throws LlmException {
+    private String askAi(AgentSession session, Principal principal, String prompt) throws LlmException {
 
-        // TODO: Does the principal have permission to invoke the agent? If not, throw a security exception. Security first!
+        if (principal instanceof RolePrincipal rp) {
+            if (!rp.getName().equals("ui-client") && !rp.getName().equals("admin")) {
+                throw new com.reveila.error.SecurityException("Access Denied: Principal does not have permission to invoke the agent.");
+            }
+        } else {
+            throw new com.reveila.error.SecurityException("Access Denied: Invalid principal type.");
+        }
         
         LlmProvider worker = llmFactory.getActiveProvider();
         if (worker == null) {
@@ -265,7 +280,7 @@ public class AgenticFabric extends SystemComponent {
         }
 
         // Tool RAG Implementation:
-        // TODO: Use DynamicToolProvider to semantic search and rerank tools.
+        // Uses DynamicToolProvider to semantic search and rerank tools.
         java.util.List<LlmTool> tools;
         if (toolProvider != null) {
             tools = toolProvider.provideTools(prompt);

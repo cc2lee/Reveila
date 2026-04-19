@@ -166,6 +166,7 @@ public class MetadataRegistry extends SystemComponent {
      */
     public Map<String, Object> exportToMCP() {
         java.util.List<Map<String, Object>> mcpTools = plugins.values().stream()
+                .filter(p -> p.toolDefinitions() != null && !p.toolDefinitions().isEmpty())
                 .map(p -> Map.<String, Object>of(
                         "name", p.name(),
                         "description", "Plugin " + p.id() + " version " + p.version(),
