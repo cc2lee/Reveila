@@ -2,7 +2,7 @@ package com.reveila.ai;
 
 import java.util.Map;
 
-import com.reveila.system.PluginPrincipal;
+import com.reveila.system.Plugin;
 
 /**
  * The Execution Layer (Guarded Runtime).
@@ -14,12 +14,12 @@ public interface GuardedRuntime {
     /**
      * Executes a plugin within the guarded environment.
      *
-     * @param principal The agent principal.
+     * @param plugin The agent plugin.
      * @param perimeter The security perimeter for execution.
      * @param pluginId The ID of the plugin to execute.
      * @param arguments The validated arguments for the plugin.
      * @param jitCredentials Temporary credentials to inject.
      * @return The result of the execution.
      */
-    Object execute(PluginPrincipal principal, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials);
+    Object execute(Plugin plugin, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials);
 }

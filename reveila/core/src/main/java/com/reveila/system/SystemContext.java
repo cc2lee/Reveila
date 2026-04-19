@@ -49,50 +49,48 @@ public final class SystemContext {
 		return properties;
 	}
 
-	public String getProperty(String name, Subject subject) {
-		if (name == null || subject == null) {
-			return null;
+	public String getProperty(String propertyName, String pluginName) {
+		if (propertyName == null || propertyName.isBlank()) {
+			throw new IllegalArgumentException("Property name cannot be null or blank.");
 		}
 
-		// Security Check: Only allow access to properties prefixed with the plugin's name,
-		// or safe common properties, to enforce the Principle of Least Privilege.
-		Set<@NonNull PluginPrincipal> plugins = subject.getPrincipals(PluginPrincipal.class);
-		if (plugins != null && !plugins.isEmpty()) {
-			PluginPrincipal plugin = (PluginPrincipal) plugins.iterator().next();
-			String pluginName = plugin.getName();
-			
-			String prefix1 = "plugin." + pluginName + ".";
-			String prefix2 = pluginName + ".";
-
-			if (name.startsWith(prefix1) || name.startsWith(prefix2)) {
-				return properties.getProperty(name);
-			}
-
-			// Handle unprefixed keys requested by the plugin
-			// by automatically checking for the prefixed version in the global properties
-			String prefixedGlobal1 = properties.getProperty(prefix1 + name);
-			if (prefixedGlobal1 != null) return prefixedGlobal1;
-
-			String prefixedGlobal2 = properties.getProperty(prefix2 + name);
-			if (prefixedGlobal2 != null) return prefixedGlobal2;
-
-			// Safe globals
-			if ("system.home".equals(name) || "system.mode".equals(name)) {
-				return properties.getProperty(name);
-			}
-			
-			// Allow common LLM keys to pass through if they are set globally without a prefix
-			if ("api.key".equals(name) || "endpoint".equals(name) || "provider".equals(name)) {
-				return properties.getProperty(name);
-			}
-
-			// Deny access to other global properties
-			logger.warning("Security Policy Violation: Plugin '" + pluginName + "' attempted to read unauthorized global property: " + name);
-			return null;
+		if (pluginName == null) {
+			return properties.getProperty(propertyName);
 		}
 
-		// If it's a System role (not a plugin), allow full access
-		return properties.getProperty(name);
+		String prefix1 = "plugin." + pluginName + ".";
+		String prefix2 = pluginName + ".";
+
+		if (propertyName.startsWith(prefix1) || propertyName.startsWith(prefix2)) {
+			return properties.getProperty(propertyName);
+		}
+
+		// Handle unprefixed keys requested by the plugin
+		// by automatically checking for the prefixed version in the global properties
+		String prefixedGlobal1 = properties.getProperty(prefix1 + propertyName);
+		if (prefixedGlobal1 != null)
+			return prefixedGlobal1;
+
+		String prefixedGlobal2 = properties.getProperty(prefix2 + propertyName);
+		if (prefixedGlobal2 != null)
+			return prefixedGlobal2;
+
+		// Safe globals
+		if ("system.home".equals(propertyName) || "system.mode".equals(propertyName)) {
+			return properties.getProperty(propertyName);
+		}
+
+		// Allow common LLM keys to pass through if they are set globally without a
+		// prefix
+		if ("api.key".equals(propertyName) || "endpoint".equals(propertyName) || "provider".equals(propertyName)) {
+			return properties.getProperty(propertyName);
+		}
+
+		// Deny access to other global properties
+		logger.warning("Security Policy Violation: Plugin '" + pluginName
+				+ "' attempted to read unauthorized global property: " + propertyName);
+		
+		return null;
 	}
 
 	public EventManager getEventManager() {
@@ -135,9 +133,9 @@ public final class SystemContext {
 
 		proxiesByName.put(name, proxy);
 		if (proxy instanceof EventConsumer) {
-			eventManager.addEventWatcher((EventConsumer)proxy);
+			eventManager.addEventWatcher((EventConsumer) proxy);
 		}
-		
+
 		proxy.setContext(this);
 	}
 
@@ -147,7 +145,7 @@ public final class SystemContext {
 		}
 		proxiesByName.remove(proxy.getName());
 		if (proxy instanceof EventConsumer) {
-			eventManager.removeEventConsumer((EventConsumer)proxy);
+			eventManager.removeEventConsumer((EventConsumer) proxy);
 		}
 		proxy.setContext(null);
 	}
@@ -163,7 +161,8 @@ public final class SystemContext {
 		return getProxy(name, this.subject);
 	}
 
-	public SystemProxy getProxy(String name, Subject subject) throws com.reveila.error.SecurityException, IllegalArgumentException {
+	public SystemProxy getProxy(String name, Subject subject)
+			throws com.reveila.error.SecurityException, IllegalArgumentException {
 		Objects.requireNonNull(name, "Component name cannot be null when getting a proxy.");
 		Objects.requireNonNull(subject, "Subject cannot be null when getting a proxy.");
 		Set<@NonNull RolePrincipal> roles = subject.getPrincipals(RolePrincipal.class);
@@ -186,7 +185,8 @@ public final class SystemContext {
 					return proxy;
 				}
 			}
-			throw new SecurityException("Access to component '" + name + "' is denied. Subject must have one of the following roles: " + requiredRoles);
+			throw new SecurityException("Access to component '" + name
+					+ "' is denied. Subject must have one of the following roles: " + requiredRoles);
 		}
 	}
 

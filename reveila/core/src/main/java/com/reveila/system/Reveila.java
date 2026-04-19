@@ -515,16 +515,13 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		for (MetaObject mObj : metaObjectList) {
 			boolean debug = "true".equalsIgnoreCase(this.properties.getProperty("debug"));
 			Manifest manifest = createManifest(tag, mObj);
-
+			String type = manifest.getComponentType();
 			SystemProxy proxy = new SystemProxy(mObj, manifest);
 			proxy.setDebug(debug);
 			Subject subject = new Subject();
-			if (Constants.COMPONENT.equalsIgnoreCase(manifest.getComponentType())) {
-				subject.getPrincipals().add(new RolePrincipal(Constants.SYSTEM));
-			} else {
-				subject.getPrincipals().add(PluginPrincipal.create(manifest.getName(), manifest.getOrg()));
-
-				// Use Plugin Child-First Class Loader
+			subject.getPrincipals().add(new RolePrincipal(type));
+			if (!Constants.COMPONENT.equalsIgnoreCase(type)) {
+				// treat as plugin - set plugin classloader
 				try {
 					String pluginsRootDir = this.properties.getProperty("plugin.local.dir");
 					if (pluginsRootDir == null || pluginsRootDir.isBlank()) {

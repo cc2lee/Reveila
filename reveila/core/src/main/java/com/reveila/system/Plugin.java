@@ -8,7 +8,7 @@ import java.util.UUID;
  * 
  * @author CL
  */
-public class PluginPrincipal extends RolePrincipal {
+public class Plugin {
 
     private String sessionId;
 
@@ -17,22 +17,25 @@ public class PluginPrincipal extends RolePrincipal {
     }
 
     private String agentId;
+
     public String getAgentId() {
         return agentId;
     }
 
     private String tenantId;
+
     public String getTenantId() {
         return tenantId;
     }
 
     private String traceId;
+
     public String getTraceId() {
         return traceId;
     }
 
-    public PluginPrincipal(UUID sessionId, String agentId, String tenantId, String traceId) {
-        super(Constants.PLUGIN);
+    public Plugin(UUID sessionId, String agentId, String tenantId, String traceId) {
+        super();
         this.sessionId = sessionId.toString();
         this.agentId = agentId;
         this.tenantId = tenantId;
@@ -46,8 +49,8 @@ public class PluginPrincipal extends RolePrincipal {
      * @param tenantId The tenant associated with the agent.
      * @return A new AgentPrincipal instance.
      */
-    public static PluginPrincipal create(String agentId, String tenantId) {
-        return new PluginPrincipal(UUID.randomUUID(), agentId, tenantId, UUID.randomUUID().toString());
+    public static Plugin create(String agentId, String tenantId) {
+        return new Plugin(UUID.randomUUID(), agentId, tenantId, UUID.randomUUID().toString());
     }
 
     /**
@@ -57,7 +60,7 @@ public class PluginPrincipal extends RolePrincipal {
      * @param agentId The unique identifier for the child agent.
      * @return A new AgentPrincipal instance linked by traceId.
      */
-    public PluginPrincipal deriveChild(String agentId) {
-        return new PluginPrincipal(UUID.randomUUID(), agentId, this.tenantId, this.traceId);
+    public Plugin deriveChild(String agentId) {
+        return new Plugin(UUID.randomUUID(), agentId, this.tenantId, this.traceId);
     }
 }

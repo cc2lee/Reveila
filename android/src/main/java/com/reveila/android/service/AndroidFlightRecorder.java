@@ -8,7 +8,7 @@ import java.time.Instant;
 import com.reveila.data.Entity;
 import com.reveila.data.Repository;
 import com.reveila.system.SystemComponent;
-import com.reveila.system.PluginPrincipal;
+import com.reveila.system.Plugin;
 import com.reveila.ai.FlightRecorder;
 
 /**
@@ -39,39 +39,39 @@ public class AndroidFlightRecorder extends SystemComponent implements FlightReco
     protected void onStop() throws Exception {
     }
 
-    public void recordStep(PluginPrincipal principal, String stepName, Map<String, Object> data) {
-        Entity log = createBaseLog(principal, stepName);
+    public void recordStep(Plugin plugin, String stepName, Map<String, Object> data) {
+        Entity log = createBaseLog(plugin, stepName);
         if (data != null) {
             log.getAttributes().put("metadata", data.toString());
         }
         store(log);
     }
 
-    public void recordReasoning(PluginPrincipal principal, String reasoning) {
-        Entity log = createBaseLog(principal, "REASONING_TRACE");
+    public void recordReasoning(Plugin plugin, String reasoning) {
+        Entity log = createBaseLog(plugin, "REASONING_TRACE");
         log.getAttributes().put("inner_monologue", reasoning);
         store(log);
     }
 
-    public void recordToolOutput(PluginPrincipal principal, String toolName, Object output) {
-        Entity log = createBaseLog(principal, "TOOL_OUTPUT: " + toolName);
+    public void recordToolOutput(Plugin plugin, String toolName, Object output) {
+        Entity log = createBaseLog(plugin, "TOOL_OUTPUT: " + toolName);
         if (output != null) {
             log.getAttributes().put("metadata", output.toString());
         }
         store(log);
     }
 
-    public void recordForensicMetadata(PluginPrincipal principal, Map<String, Object> metadata) {
-        Entity log = createBaseLog(principal, "FORENSIC_METRICS");
+    public void recordForensicMetadata(Plugin plugin, Map<String, Object> metadata) {
+        Entity log = createBaseLog(plugin, "FORENSIC_METRICS");
         if (metadata != null) {
             log.getAttributes().put("metadata", metadata.toString());
         }
         store(log);
     }
 
-    private Entity createBaseLog(PluginPrincipal principal, String action) {
+    private Entity createBaseLog(Plugin plugin, String action) {
         Map<String, Object> attributes = new HashMap<>();
-        attributes.put("agent_id", principal.getTraceId());
+        attributes.put("agent_id", plugin.getTraceId());
         attributes.put("proposed_action", action);
         attributes.put("timestamp", Instant.now().toString());
 

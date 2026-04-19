@@ -17,7 +17,7 @@ public final class PluginContext implements Context {
         this.systemContext = context;
         this.manifest = manifest;
         this.subject = new Subject();
-        this.subject.getPrincipals().add(PluginPrincipal.create(manifest.getName(), manifest.getOrg()));
+        this.subject.getPrincipals().add(new RolePrincipal(manifest.getComponentType()));
         if (properties != null) {
             this.properties.putAll(properties);
         }
@@ -41,7 +41,7 @@ public final class PluginContext implements Context {
         return new Properties() {
             @Override
             public String getProperty(String key) {
-                String dynamicValue = systemContext.getProperty(key, subject);
+                String dynamicValue = systemContext.getProperty(key, manifest.getName());
                 if (dynamicValue != null) {
                     return dynamicValue;
                 }

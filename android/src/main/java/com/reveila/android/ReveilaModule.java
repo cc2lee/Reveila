@@ -22,7 +22,7 @@ import com.reveila.android.safety.BiometricSafetyGuard;
 import com.reveila.android.safety.MobileKillSwitch;
 import com.reveila.core.safety.AgentSafetyCommand;
 import com.reveila.system.RolePrincipal;
-import com.reveila.system.PluginPrincipal;
+import com.reveila.system.UserPrincipal;
 import com.reveila.system.Constants;
 import javax.security.auth.Subject;
 
@@ -300,7 +300,7 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
         try {
             this.currentSubject = new Subject();
             // Local Identity Principal
-            this.currentSubject.getPrincipals().add(PluginPrincipal.create(userId != null ? userId : "local-user", org != null ? org : "sovereign-local"));
+            this.currentSubject.getPrincipals().add(new UserPrincipal(userId));
             
             // Inject Mandatory Roles for UI-originated executions
             this.currentSubject.getPrincipals().add(new RolePrincipal("ui"));

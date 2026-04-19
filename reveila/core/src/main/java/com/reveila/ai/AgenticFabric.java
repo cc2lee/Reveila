@@ -1,20 +1,20 @@
 package com.reveila.ai;
 
+import java.security.Principal;
 import java.util.HashMap;
 import java.util.Map;
 
-import com.reveila.system.PluginPrincipal;
+import org.json.JSONObject;
+
+import com.reveila.error.LlmException;
+import com.reveila.system.Constants;
+import com.reveila.system.Plugin;
 import com.reveila.system.Proxy;
+import com.reveila.system.RolePrincipal;
 import com.reveila.system.SystemComponent;
 import com.reveila.system.SystemProxy;
+import com.reveila.util.ExceptionCollection;
 
-/**
- * Phase 5: Collaboration (The Agentic Fabric).
- * Manages multi-agent workflows and verticalized skill sets.
- * Uses Redis for context persistence across execution boundaries.
- * 
- * @author CL
- */
 public class AgenticFabric extends SystemComponent {
 
     private ManagedInvocation bridge;
@@ -106,90 +106,156 @@ public class AgenticFabric extends SystemComponent {
             sessionId = java.util.UUID.randomUUID().toString();
         }
 
-        PluginPrincipal principal = PluginPrincipal.create("ui-client", "system");
+        RolePrincipal principal = new RolePrincipal("ui-client");
 
         AgentSession session = orchestrationService.getSession(sessionId);
         if (session == null) {
-            session = orchestrationService.createSession(principal.getTraceId());
+            session = orchestrationService.createSession(sessionId);
         }
 
         return processIntent(session, principal, userIntent);
     }
 
-    public String processIntent(AgentSession session, PluginPrincipal principal, String initialIntent) {
-        String currentIntent = initialIntent;
+    public String processIntent(AgentSession session, Principal principal, String intent) {
+
+        //TODO: Does the principal have permission to invoke the agent? If not, return an error message. Security first!
+
+        String modifiedIntent = intent;
 
         // Step 1: Execute initial LLM reasoning
-        String response = askAi(session, principal, currentIntent);
+        String response = null;
+        try {
+            response = askAi(session, modifiedIntent);
+        } catch (LlmException e) {
+            response = "ERROR: Failed to get response from LLM: " + e.getMessage();
+            if (logger != null) {
+                logger.severe(response);
+            }
+            return response;
+        }
+
+        // Step 2: The "AI Loop" - parse the response and
+        // determine if further action is needed based on the defined output format in
+        // the Prompt.
         AiResponseValidator validator = new AiResponseValidator();
         int loopCount = 0;
         while (validator.getMessage(response) != null && loopCount < aiLoopLimit) {
             loopCount++;
             try {
-                // Step 2: Handle terminal statuses defined in Prompt.getBasePrompt()
-                if (response.contains("[STATUS: COMPLETED]") || response.contains("## Status: COMPLETED")) {
-                    return response; // AI said "Done"
-                } else if (response.contains("[STATUS: INSUFFICIENT_CONTEXT]")
-                        || response.contains("## Status: INSUFFICIENT_CONTEXT")) {
-                    // In a real scenario, we might trigger a context-gathering tool here
-                    return response; // Let the message sender decides what to do
-                } else if (response.contains("[STATUS: ESCALATE]") || response.contains("## Status: ESCALATE")) {
-                    return "APPROVAL_REQUIRED|" + "[STATUS: ESCALATE]" + "|" + response;
-                }
+                // Step 3: Handle terminal statuses defined in Prompt
+                JSONObject jsonResponse = new JSONObject(response);
+                String status = jsonResponse.optString("status", "");
+                String reasoning = jsonResponse.optString("reasoning", "");
+                String result = jsonResponse.optString("result", "");
+                double confidenceScore = jsonResponse.optDouble("confidence-score", 0.0);
+                JSONObject toolCall = jsonResponse.optJSONObject("tool-call");
 
-                // Step 3: If not terminal, interpret the response as a request for action
-                Map<String, Object> bridgeArgs = new HashMap<>();
-                bridgeArgs.put("_session_id", session.getSessionId());
-                bridgeArgs.put("_thought", response);
-
-                // The bridge performs parsing, security audit, and tool execution
-                InvocationResult result = bridge.invoke(principal, null, response, bridgeArgs);
-
-                if (result.status() == InvocationResult.Status.SUCCESS) {
-                    // Step 4: Capture tool output and feed it back for the next reasoning iteration
-                    String toolResult = result.data() != null ? result.data().toString()
-                            : "Action completed successfully.";
-
-                    // Explicitly log the tool execution in chat memory for context
-                    session.getChatMemory()
-                            .add(ReveilaMessage.assistant("Reasoning: Action required. Initiating tool execution."));
-                    session.getChatMemory().add(ReveilaMessage.tool("The tool has returned: " + toolResult));
-
-                    currentIntent = "The tool has returned the following result: " + toolResult
-                            + ". Please analyze this and provide the next step or final answer.";
-                } else if (result.status() == InvocationResult.Status.PENDING_APPROVAL) {
-                    // Step 5 (HITL): Pause the loop for user approval
-                    session.getChatMemory().add(
-                            ReveilaMessage.assistant("Reasoning: Task requires a protected script. Awaiting user approval."));
-                    return "APPROVAL_REQUIRED|" + result.message() + "|"
-                            + (result.data() != null ? result.data().toString() : "");
+                if (status.equalsIgnoreCase(Constants.AI_STATUS_COMPLETED)) {
+                    return response;
+                } else if (status.equalsIgnoreCase(Constants.AI_STATUS_ESCALATE)) {
+                    return response;
+                } else if (status.equalsIgnoreCase(Constants.AI_STATUS_FAILED)) {
+                    return response;
+                } else if (status.equalsIgnoreCase(Constants.AI_STATUS_TOOL_CALL)) {
+                    try {
+                        if (toolCall == null) {
+                            modifiedIntent = "The AI indicated a tool call is needed but did not specify the tool or arguments. Reasoning provided: "
+                                    + reasoning
+                                    + ". Please clarify the tool to call and its arguments.";
+                        } else {
+                            String toolCallResult = handleToolCall(session, toolCall, response);
+                            modifiedIntent = "The AI has requested to call a tool with the following details: "
+                                    + toolCall.toString()
+                                    + ". Reasoning provided: " + reasoning
+                                    + ". Here are the results from the tool execution: " + toolCallResult
+                                    + ". Please analyze this information and provide the next step or final answer.";
+                        }
+                    } catch (Exception e) {
+                        modifiedIntent = "The AI requested a tool call, but the call could not be completed: "
+                                + e.getMessage()
+                                + ". Reasoning provided: " + reasoning
+                                + ". Please clarify the tool to call and its arguments.";
+                    }
                 } else {
-                    // Handle tool failure as context for the AI
-                    currentIntent = "The tool execution failed: " + result.message()
-                            + ". Please suggest a workaround or report the error.";
+                    return response;
                 }
-                response = askAi(session, principal, currentIntent);
-            } catch (Exception e) {
+
+                try {
+                    response = askAi(session, modifiedIntent);
+                } catch (LlmException e) {
+                    response = "ERROR: Failed to get response from LLM: " + e.getMessage();
+                    if (logger != null) {
+                        logger.severe(response);
+                    }
+                    return response;
+                }
+            } catch (Throwable t) {
+                String errorMsg = "Exception in AI Loop iteration " + loopCount + ": " + t.getMessage();
                 if (logger != null) {
-                    logger.severe("Agentic Loop failure on iteration " + loopCount + ": " + e.getMessage());
+                    logger.severe(errorMsg);
                 }
-                return "ERROR: Agentic Loop failed due to a system exception: " + e.getMessage();
+                return "ERROR: Agentic Loop failed due to a system exception: " + errorMsg;
             }
         }
 
-        if (loopCount >= aiLoopLimit) {
-            return "AI_LOOP_LIMIT_REACHED: The task could not be completed within the execution limit of " + aiLoopLimit
-                    + " iteration(s).";
+        return "AI_LOOP_LIMIT_REACHED: The task could not be completed within the execution limit of " + aiLoopLimit
+                + " iteration(s).";
+    }
+
+    private String handleToolCall(AgentSession session, JSONObject toolCall, String response) throws Exception {
+
+        Plugin plugin = null;
+
+        Map<String, Object> bridgeArgs = new HashMap<>();
+        bridgeArgs.put("_session_id", session.getSessionId());
+        bridgeArgs.put("_thought", toolCall);
+
+        // TODO: Implement a more robust mapping from toolCall to plugin and method, potentially using a registry or dynamic discovery mechanism.
+        // For now, we will assume the toolCall JSON has a "plugin" field and an "arguments" field.
+        String pluginId = toolCall.optString("plugin", "");
+        String methodName = toolCall.optString("method", "");
+        // plugin = session.getPlugin(pluginId);
+        bridgeArgs.put("arguments", toolCall.optJSONObject("arguments"));
+
+        // Step 4: Invoke the tool via the bridge and capture the output
+        // The bridge performs parsing, security audit, and tool execution
+        InvocationResult result = bridge.invoke(plugin, null, response, bridgeArgs);
+
+        if (result.status() == InvocationResult.Status.SUCCESS) {
+            // Step 4: Capture tool output and feed it back for the next reasoning iteration
+            String toolResult = result.data() != null ? result.data().toString()
+                    : "Action completed successfully.";
+
+            // Explicitly log the tool execution in chat memory for context
+            session.getChatMemory()
+                    .add(ReveilaMessage.assistant("Reasoning: Action required. Initiating tool execution."));
+            session.getChatMemory().add(ReveilaMessage.tool("The tool has returned: " + toolResult));
+
+            return toolResult;
+
+        } else if (result.status() == InvocationResult.Status.PENDING_APPROVAL) {
+            // Step 5 (HITL): Pause the loop for user approval
+            session.getChatMemory().add(
+                    ReveilaMessage
+                            .assistant("Task requires approval."));
+            
+            // TODO: Implement a callback mechanism to resume the loop once approval is granted.
+            throw new SecurityException("APPROVAL_REQUIRED|" + result.message() + "|"
+                    + (result.data() != null ? result.data().toString() : ""));
         } else {
-            return "FAILED: The quality of the task could not be determined.";
+            throw new RuntimeException("Tool execution failed: " + result.message());
         }
     }
 
     /**
      * Internal call to the LLM Provider to get a single reasoning response.
+     * 
+     * @throws LlmException
      */
-    private String askAi(AgentSession session, PluginPrincipal principal, String userIntent) {
+    private String askAi(AgentSession session, String prompt) throws LlmException {
 
+        // TODO: Does the principal have permission to invoke the agent? If not, throw a security exception. Security first!
+        
         LlmProvider worker = llmFactory.getActiveProvider();
         if (worker == null) {
             String msg = "System Error: No active LLM Provider found.";
@@ -199,10 +265,10 @@ public class AgenticFabric extends SystemComponent {
         }
 
         // Tool RAG Implementation:
-        // Use DynamicToolProvider to semantic search and rerank tools.
+        // TODO: Use DynamicToolProvider to semantic search and rerank tools.
         java.util.List<LlmTool> tools;
         if (toolProvider != null) {
-            tools = toolProvider.provideTools(userIntent);
+            tools = toolProvider.provideTools(prompt);
         } else {
             // Fallback to manual mapping from full registry (legacy)
             Map<String, Object> mcpData = metadataRegistry.exportToMCP();
@@ -226,11 +292,12 @@ public class AgenticFabric extends SystemComponent {
         }
 
         // Generate the dynamic system instruction
-        String systemInstructions = Prompt.getPrompt(
+        String systemInstructions = Prompt.getSystemPrompt(
                 "Reveila AI Agent",
-                userIntent,
-                "Available Tools: " + tools.stream().map(LlmTool::getName).collect(java.util.stream.Collectors.joining(", ")) + "\n\n" +
-                "Knowledge Vault Context: " + searchKnowledgeVault(userIntent),
+                "Available Tools: "
+                        + tools.stream().map(LlmTool::getName).collect(java.util.stream.Collectors.joining(", "))
+                        + "\n\n" +
+                        "Related Documents: " + searchKnowledgeVault(prompt),
                 "Adhere to Agency Perimeter security constraints.");
 
         // Optimization: Context Window Management (Summary Strategy)
@@ -242,7 +309,8 @@ public class AgenticFabric extends SystemComponent {
 
                 LlmRequest summaryRequest = LlmRequest.builder()
                         .addMessage(ReveilaMessage.system("System"))
-                        .addMessage(ReveilaMessage.user("Summarize the following chat history for context preservation: " + historyDump))
+                        .addMessage(ReveilaMessage
+                                .user("Summarize the following chat history for context preservation: " + historyDump))
                         .build();
 
                 String summary;
@@ -259,23 +327,43 @@ public class AgenticFabric extends SystemComponent {
 
         // Maintain the chain of thought in the session chat memory
         session.getChatMemory().add(ReveilaMessage.system(systemInstructions));
-        session.getChatMemory().add(ReveilaMessage.user(userIntent));
+        session.getChatMemory().add(ReveilaMessage.user(prompt));
 
         LlmRequest request = LlmRequest.builder()
                 .addMessage(ReveilaMessage.system("You are the Reveila AI Agent."))
-                .addMessage(ReveilaMessage.user(userIntent))
+                .addMessage(ReveilaMessage.user(prompt))
                 .tools(tools)
                 .build();
 
-        String response;
+        String response = null;
         try {
+            if (debug && logger != null) {
+                logger.info("Invoking LLM provider [" + worker.getName() + "] with prompt: " + prompt);
+            }
             response = worker.invoke(request).getContent();
+            if (debug && logger != null) {
+                logger.info("Received response from LLM provider [" + worker.getName() + "]: " + response);
+            }
         } catch (Exception e) {
-            response = "ERROR invoking AI: " + e.getMessage();
+            ExceptionCollection ec = new ExceptionCollection();
+            ec.addException(e);
+            Throwable t = e.getCause();
+            while (t != null) {
+                ec.addException(t);
+                t = t.getCause();
+            }
+            throw new LlmException("LLM Invocation Failure, caused by: " + ec.toString());
+        } finally {
+            // Record the raw response in history before returning it to the loop
+            try {
+                session.getChatMemory()
+                        .add(ReveilaMessage.assistant(response != null ? response : "No response received from LLM."));
+            } catch (Exception e) {
+                if (logger != null) {
+                    logger.severe("Error recording response in chat memory: " + e.getMessage());
+                }
+            }
         }
-
-        // Record the raw response in history before returning it to the loop
-        session.getChatMemory().add(ReveilaMessage.assistant(response));
 
         return response;
     }
@@ -313,9 +401,9 @@ public class AgenticFabric extends SystemComponent {
      * @param taskArguments The task-specific arguments.
      * @return The result of the delegated task.
      */
-    public Object delegate(PluginPrincipal parent, String targetIntent, Map<String, Object> taskArguments) {
-        PluginPrincipal child = parent
-                .deriveChild("worker-agent-" + java.util.UUID.randomUUID().toString().substring(0, 4));
+    public Object delegate(Plugin parent, String targetIntent, Map<String, Object> taskArguments) {
+        Plugin child = parent
+                .deriveChild("plugin-" + java.util.UUID.randomUUID().toString().substring(0, 4));
 
         // Maintain episodic memory by passing context from the parent trace
         Map<String, Object> parentContext = sessionManager.getContext(parent.getTraceId());

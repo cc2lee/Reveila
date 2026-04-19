@@ -242,4 +242,9 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
 
         return llmResponse;
     }
+
+    @Override
+    public String getName() {
+        return name;
+    }
 }

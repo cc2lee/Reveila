@@ -174,12 +174,6 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 		if (methodName == null)
 			throw new IllegalArgumentException("Method name must not be null");
 
-		PluginPrincipal plugin = null;
-		java.util.Iterator<? extends PluginPrincipal> pluginIter = subject.getPrincipals(PluginPrincipal.class).iterator();
-		if (pluginIter.hasNext()) {
-			plugin = pluginIter.next();
-		}
-
 		Set<? extends RolePrincipal> roles = subject.getPrincipals(RolePrincipal.class);
 
 		boolean systemCall = false;
@@ -219,26 +213,6 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 					throw new SecurityException("Subject does not have the required roles to invoke the method");
 				}
 			}
-		}
-
-		// ADR 0006: We enforce execution isolation for plugins that are not promoted to
-		// "system" role.
-		if (plugin != null && !systemCall) {
-			com.reveila.ai.AgencyPerimeter perimeter = buildAgencyPerimeter();
-			Object[] list = new Object[] {
-					plugin,
-					perimeter,
-					metaObject.getName(),
-					Map.of("method", methodName, "args", args != null ? args : new Object[0]),
-					null
-			};
-			Proxy proxy;
-			try {
-				proxy = context.getProxy("GuardedRuntime");
-			} catch (IllegalArgumentException e) {
-				throw new IllegalStateException("GuardedRuntime not found or invalid", e);
-			}
-			return proxy.invoke("execute", list);
 		}
 
 		return invoke(methodName, args);

@@ -36,4 +36,6 @@ public interface LlmProvider {
      */
     boolean isConfigured();
 
+    String getName();
+
 }

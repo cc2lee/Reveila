@@ -2,45 +2,11 @@ package com.reveila.ai;
 
 import java.util.Map;
 
-import com.reveila.system.PluginPrincipal;
+import com.reveila.system.Plugin;
 import com.reveila.system.Proxy;
 import com.reveila.system.SystemComponent;
 import com.reveila.system.SystemProxy;
 
-/**
- * The Invocation Bridge is the central orchestrator for all
- * agentic tool calls. This class serves as the Agentic Control Plane (ACP),
- * orchestrating the entire lifecycle of an AI tool call.
- * 
- * Every agent request is intercepted by the bridge to ensure the intent
- * maps to a registered, metadata-defined plugin.
- * 
- * Sequential Enforcement: It correctly implements a linear safety pipeline:
- * Intercept → Validate Intent → Check Metadata → Enforce Schema → Execute →
- * Record Output.
- * 
- * Registry Dependency: It includes a critical check to ensure the plugin is
- * registered in the MetadataRegistry, throwing an IllegalArgumentException if
- * an unauthorized "shadow" plugin is detected.
- * 
- * Perimeter Application: It intelligently merges agent-level perimeters with
- * manifest defaults, ensuring a baseline security posture is always active.
- * 
- * The Validation Pipeline:
- * 
- * Intercept: The bridge catches the Worker's intent.
- * 
- * Mask: Parameters marked as SECRET in the MetadataRegistry are redacted to
- * prevent PII/PHI leakage to the safety model.
- * 
- * Audit: The IntentValidator performs the performSafetyAudit.
- * 
- * Enforce: If Gemini detects a violation (e.g., an unauthorized domain or a
- * prompt injection attempt), the bridge returns a SECURITY_BREACH status and
- * blocks the sandbox from spawning.
- * 
- * @author CL
- */
 public class ManagedInvocation extends SystemComponent {
     
     private IntentValidator intentValidator;
@@ -90,46 +56,60 @@ public class ManagedInvocation extends SystemComponent {
     /**
      * Invokes a plugin based on an agent's intent.
      *
-     * @param principal    The agent principal.
+     * @param plugin    The plugin to invoke on.
      * @param perimeter    The defined perimeter for the agent.
      * @param intent       The intent string.
-     * @param rawArguments The unvalidated arguments from the model.
+     * @param arguments The unvalidated arguments from the model.
      * @return An InvocationResult containing status and data.
      * @throws IllegalArgumentException If validation fails.
      */
-    public InvocationResult invoke(PluginPrincipal principal, AgencyPerimeter perimeter, String intent,
-            Map<String, Object> rawArguments) {
+    public InvocationResult invoke(Plugin plugin, AgencyPerimeter perimeter, String intent, Map<String, Object> arguments) {
+        
+        if (plugin == null) {
+            throw new IllegalArgumentException("Plugin cannot be null");
+        }
+        if (perimeter == null) {
+            throw new IllegalArgumentException("Perimeter cannot be null");
+        }
+        if (intent == null) {
+            throw new IllegalArgumentException("Intent cannot be null");
+        }
+        if (arguments == null) {
+            throw new IllegalArgumentException("Arguments cannot be null");
+        }
 
         // Session Management: Recursive Invocation & Delegation
-        String sessionId = (String) rawArguments.get("_session_id");
+        String sessionId = (String) arguments.get("_session_id");
         if (sessionId != null) {
             orchestrationService.getSession(sessionId);
         }
 
+        String traceId = plugin.getTraceId();
+
         // Trace Context Propagation
         String effectiveTraceId = TraceContextHolder.getTraceId();
         if (effectiveTraceId == null) {
-            effectiveTraceId = principal.getTraceId();
+            effectiveTraceId = traceId;
             TraceContextHolder.setTraceId(effectiveTraceId);
         }
 
         // Step 1: Intercept Intent
-        String reasoning = (String) rawArguments.getOrDefault("_thought", "No reasoning provided");
-        flightRecorder.recordReasoning(principal, reasoning);
+        String reasoning = (String) arguments.getOrDefault("_thought", "No reasoning provided");
+        flightRecorder.recordReasoning(plugin, reasoning);
 
-        flightRecorder.recordStep(principal, "intent_intercepted", Map.of(
+        flightRecorder.recordStep(plugin, "intent_intercepted", Map.of(
                 "intent", intent,
-                "trace_id", principal.getTraceId()));
+                "trace_id", traceId));
 
-        String pluginId = principal.getAgentId();
+        String pluginId = plugin.getAgentId();
 
         // Step 2: Validate Intent
         try {
             intentValidator.validateIntent(intent);
         } catch (SecurityException e) {
-            flightRecorder.recordStep(principal, "intent_blocked", Map.of(
+            flightRecorder.recordStep(plugin, "intent_blocked", Map.of(
                     "intent", intent,
-                    "trace_id", principal.getTraceId()));
+                    "trace_id", traceId));
             return InvocationResult.securityBreach("INTENT BLOCKED: " + e.getMessage());
         }
 
@@ -141,7 +121,7 @@ public class ManagedInvocation extends SystemComponent {
 
         // Multi-Model Governance: Use OpenAI to simulate/generate response if needed,
         // then Gemini for Safety Audit on masked arguments.
-        Map<String, Object> validatedArgs = schemaEnforcer.enforce(pluginId, rawArguments);
+        Map<String, Object> validatedArgs = schemaEnforcer.enforce(pluginId, arguments);
 
         // Mask Sensitive Parameters before Safety Audit
         Map<String, Object> maskedArgs = new java.util.HashMap<>(validatedArgs);
@@ -155,7 +135,7 @@ public class ManagedInvocation extends SystemComponent {
 
         boolean safe = intentValidator.performSafetyAudit(pluginId, maskedArgs.toString(), "Safety Guardrail Context");
         if (!safe) {
-            flightRecorder.recordStep(principal, "safety_audit_failed", Map.of("pluginId", pluginId));
+            flightRecorder.recordStep(plugin, "safety_audit_failed", Map.of("pluginId", pluginId));
 
             // Use structured audit to check for security breach
             if (intentValidator instanceof DefaultIntentValidator validator) {
@@ -178,29 +158,29 @@ public class ManagedInvocation extends SystemComponent {
         // Delegation Enforcement
         boolean isDelegationRequested = intent.startsWith("delegate:");
         if (isDelegationRequested && !activePerimeter.delegationAllowed()) {
-            flightRecorder.recordStep(principal, "delegation_blocked", Map.of("intent", intent));
+            flightRecorder.recordStep(plugin, "delegation_blocked", Map.of("intent", intent));
             return InvocationResult.error("Delegation not allowed for this plugin perimeter.");
         }
 
         // 2. HITL Check for High-Risk Actions
         if ("system.execute_dynamic_script".equals(intent)) {
-            flightRecorder.recordStep(principal, "hitl_triggered_dynamic_script", Map.of("intent", intent));
-            return InvocationResult.pendingApproval(intent, principal.getTraceId(), validatedArgs.get("script"));
+            flightRecorder.recordStep(plugin, "hitl_triggered_dynamic_script", Map.of("intent", intent));
+            return InvocationResult.pendingApproval(intent, traceId, validatedArgs.get("script"));
         }
 
         if (isHighRiskAction(manifest, intent, validatedArgs)) {
-            flightRecorder.recordStep(principal, "hitl_triggered", Map.of("intent", intent));
-            return InvocationResult.pendingApproval(intent, principal.getTraceId());
+            flightRecorder.recordStep(plugin, "hitl_triggered", Map.of("intent", intent));
+            return InvocationResult.pendingApproval(intent, traceId);
         }
 
         // 3. JIT Credential Injection
         Map<String, String> jitCreds = null;
         if (!activePerimeter.accessScopes().isEmpty()) {
-            jitCreds = secretManager.generateJitToken(principal, activePerimeter.accessScopes().iterator().next());
+            jitCreds = secretManager.generateJitToken(plugin, activePerimeter.accessScopes().iterator().next());
         }
 
         try {
-            Object result = guardedRuntime.execute(principal, activePerimeter, pluginId, validatedArgs, jitCreds);
+            Object result = guardedRuntime.execute(plugin, activePerimeter, pluginId, validatedArgs, jitCreds);
 
             // Log output, but mask parameters marked as MASKED in the manifest
             Object loggedOutput = result;
@@ -215,14 +195,14 @@ public class ManagedInvocation extends SystemComponent {
                 loggedOutput = outputMap;
             }
 
-            flightRecorder.recordToolOutput(principal, pluginId, loggedOutput);
+            flightRecorder.recordToolOutput(plugin, pluginId, loggedOutput);
             return InvocationResult.success(result);
         } catch (Exception e) {
-            flightRecorder.recordStep(principal, "execution_failed", Map.of("error", e.getMessage()));
+            flightRecorder.recordStep(plugin, "execution_failed", Map.of("error", e.getMessage()));
             return InvocationResult.error(e.getMessage());
         } finally {
             // Only clear if we were the root of the trace context
-            if (principal.getTraceId().equals(TraceContextHolder.getTraceId())) {
+            if (traceId.equals(TraceContextHolder.getTraceId())) {
                 TraceContextHolder.clear();
             }
         }

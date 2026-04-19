@@ -20,7 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.reveila.spring.model.jpa.AuditLog;
 import com.reveila.spring.repository.jpa.JdbcAuditLogRepository;
 import com.reveila.spring.service.PostgresFlightRecorder;
-import com.reveila.system.PluginPrincipal;
+import com.reveila.system.Plugin;
 import com.reveila.system.SystemContext;
 import com.reveila.system.SystemProxy;
 
@@ -31,7 +31,7 @@ class PostgresFlightRecorderTest {
     @Mock private SystemContext systemContext;
     @Mock private SystemProxy dataServiceProxy;
     private PostgresFlightRecorder flightRecorder;
-    private PluginPrincipal principal;
+    private Plugin plugin;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -42,20 +42,20 @@ class PostgresFlightRecorderTest {
         flightRecorder.setContext(systemContext);
         flightRecorder.start();
         
-        principal = PluginPrincipal.create("audit-agent", "tenant-1");
+        plugin = Plugin.create("audit-agent", "tenant-1");
     }
 
     @Test
     void testAuditIntegrity() {
         String reasoning = "I need to fetch the user's data to calculate the budget.";
         
-        flightRecorder.recordReasoning(principal, reasoning);
+        flightRecorder.recordReasoning(plugin, reasoning);
 
         ArgumentCaptor<AuditLog> captor = ArgumentCaptor.forClass(AuditLog.class);
         verify(auditRepository).store(captor.capture());
 
         AuditLog savedLog = captor.getValue();
-        assertEquals(principal.getTraceId(), savedLog.getTraceId());
+        assertEquals(plugin.getTraceId(), savedLog.getTraceId());
         assertEquals("REASONING_TRACE", savedLog.getAction());
         assertEquals(reasoning, savedLog.getReasoningTrace());
     }
@@ -65,13 +65,13 @@ class PostgresFlightRecorderTest {
         String toolName = "budget-plugin";
         Object output = Map.of("total", 5000);
 
-        flightRecorder.recordToolOutput(principal, toolName, output);
+        flightRecorder.recordToolOutput(plugin, toolName, output);
 
         ArgumentCaptor<AuditLog> captor = ArgumentCaptor.forClass(AuditLog.class);
         verify(auditRepository).store(captor.capture());
 
         AuditLog savedLog = captor.getValue();
-        assertEquals(principal.getTraceId(), savedLog.getTraceId());
+        assertEquals(plugin.getTraceId(), savedLog.getTraceId());
         assertTrue(savedLog.getAction().contains(toolName));
         assertNotNull(savedLog.getMetadata());
     }

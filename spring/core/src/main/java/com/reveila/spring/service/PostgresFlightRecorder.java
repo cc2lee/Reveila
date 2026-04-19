@@ -8,7 +8,7 @@ import org.springframework.scheduling.annotation.Async;
 import com.reveila.ai.FlightRecorder;
 import com.reveila.data.Repository;
 import com.reveila.spring.model.jpa.AuditLog;
-import com.reveila.system.PluginPrincipal;
+import com.reveila.system.Plugin;
 import com.reveila.system.SystemComponent;
 
 /**
@@ -40,8 +40,8 @@ public class PostgresFlightRecorder extends SystemComponent implements FlightRec
 
     @Override
     @Async
-    public void recordStep(PluginPrincipal principal, String stepName, Map<String, Object> data) {
-        AuditLog log = createBaseLog(principal, stepName);
+    public void recordStep(Plugin plugin, String stepName, Map<String, Object> data) {
+        AuditLog log = createBaseLog(plugin, stepName);
         if (data != null) {
             log.setMetadata(data.toString());
         }
@@ -50,16 +50,16 @@ public class PostgresFlightRecorder extends SystemComponent implements FlightRec
 
     @Override
     @Async
-    public void recordReasoning(PluginPrincipal principal, String reasoning) {
-        AuditLog log = createBaseLog(principal, "REASONING_TRACE");
+    public void recordReasoning(Plugin plugin, String reasoning) {
+        AuditLog log = createBaseLog(plugin, "REASONING_TRACE");
         log.setReasoningTrace(reasoning);
         if (auditRepository != null) auditRepository.store(log);
     }
 
     @Override
     @Async
-    public void recordToolOutput(PluginPrincipal principal, String toolName, Object output) {
-        AuditLog log = createBaseLog(principal, "TOOL_OUTPUT: " + toolName);
+    public void recordToolOutput(Plugin plugin, String toolName, Object output) {
+        AuditLog log = createBaseLog(plugin, "TOOL_OUTPUT: " + toolName);
         if (output != null) {
             log.setMetadata(output.toString());
         }
@@ -68,8 +68,8 @@ public class PostgresFlightRecorder extends SystemComponent implements FlightRec
 
     @Override
     @Async
-    public void recordForensicMetadata(PluginPrincipal principal, Map<String, Object> metadata) {
-        AuditLog log = createBaseLog(principal, "FORENSIC_METRICS");
+    public void recordForensicMetadata(Plugin plugin, Map<String, Object> metadata) {
+        AuditLog log = createBaseLog(plugin, "FORENSIC_METRICS");
         
         // ADR: Track "Who watches the watchers"
         java.util.Map<String, Object> forensicData = new java.util.HashMap<>();
@@ -95,9 +95,9 @@ public class PostgresFlightRecorder extends SystemComponent implements FlightRec
         if (auditRepository != null) auditRepository.store(log);
     }
 
-    private @NonNull AuditLog createBaseLog(PluginPrincipal principal, String action) {
+    private @NonNull AuditLog createBaseLog(Plugin plugin, String action) {
         AuditLog log = new AuditLog();
-        log.setTraceId(principal.getTraceId());
+        log.setTraceId(plugin.getTraceId());
         log.setAction(action);
         return log;
     }

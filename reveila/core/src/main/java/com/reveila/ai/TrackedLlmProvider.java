@@ -58,4 +58,9 @@ public class TrackedLlmProvider implements LlmProvider {
     public boolean isConfigured() {
         return delegate.isConfigured();
     }
+
+    @Override
+    public String getName() {
+        return delegate.getName();
+    }
 }

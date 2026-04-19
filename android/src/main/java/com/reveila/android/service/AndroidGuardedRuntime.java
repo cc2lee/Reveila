@@ -1,7 +1,7 @@
 package com.reveila.android.service;
 
 import com.reveila.ai.AgencyPerimeter;
-import com.reveila.system.PluginPrincipal;
+import com.reveila.system.Plugin;
 import com.reveila.ai.AbstractGuardedRuntime;
 import com.reveila.system.SystemProxy;
 import java.util.Map;
@@ -31,11 +31,11 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
     }
 
     @Override
-    public Object execute(PluginPrincipal principal, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials) {
-        validateRequest(principal, perimeter);
+    public Object execute(Plugin plugin, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials) {
+        validateRequest(plugin, perimeter);
         
         long startTime = System.currentTimeMillis();
-        logger.info("Executing via AndroidGuardedRuntime for " + pluginId + " [Trace: " + principal.getTraceId() + "] Started at: " + startTime);
+        logger.info("Executing via AndroidGuardedRuntime for " + pluginId + " [Trace: " + plugin.getTraceId() + "] Started at: " + startTime);
 
         if (arguments == null || !arguments.containsKey("method")) {
             throw new IllegalArgumentException("Invocation arguments must specify the target 'method' name.");

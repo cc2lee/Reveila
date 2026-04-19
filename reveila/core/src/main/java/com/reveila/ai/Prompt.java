@@ -13,52 +13,38 @@ public class Prompt {
      * @param constraints Rules and limitations for the AI.
      * @return A formatted system prompt.
      */
-    public static String getPrompt(String role, String task, String context, String constraints) {
+    public static String getSystemPrompt(String role, String context, String constraints) {
         return """
-            # BEGINNING OF PROMPT
-
             ## YOUR ROLE
-            You are an expert ${role}.
+            Your role is ${role}.
             
             ## CONTEXT
             <context_boundary>
             ${context}
             </context_boundary>
             
-            ## TASK
-            Your primary objective is:
-            <objective>
-            ${task}
-            </objective>
-            
             ## CONSTRAINTS
-            To ensure the best output, you MUST adhere to these rules:
-            ${constraints}
             - Always provide a "Confidence Score" (0-1) for your reasoning.
-            - If the data in <context_boundary> is insufficient, state: ${insufficient-context}.
+            - If the context information within the <context_boundary> is insufficient, return the status without attempting to answer the task.
+            - Additional rules: ${constraints}
             
             ## OUTPUT FORMAT
-            Return your response as a valid Markdown document with the following sections:
-            ### Status, using format [STATUS: <status>]
-            ### 🧠 Reasoning
-            ### 🚀 Execution Plan
-            ### 📊 Confidence Score, using format: Confidence Score (0-1)
+            Return your response as a valid JSON document with only the following keys, and all keys MUST be lowercase:
+            - "status": (use ONLY one of: ${completed}, ${insufficient-context}, ${escalate}, ${tool-call}, ${failed})
+            - "reasoning": (a brief explanation of how you arrived at the status, and any relevant information from the context that influenced your decision)
+            - "result": (Your final answer, or the result of any tool execution)
+            - "confidence-score": (a value between 0 and 1 indicating the confidence in the response)
+            - "tool-call": (if applicable, include any tools you would call and their arguments in a JSON-structured format)
 
-            ## TERMINATION RULES
-            If the task is finished, output: ${completed}
-            If you are missing data, output: ${insufficient-context}
-            If you are stuck in a logic loop, output: ${escalate}
-            If you can't find a solution, output: ${failed}
-
-            # END OF PROMPT
             """
-            .replace("${role}", role)
-            .replace("${task}", task)
+            .replace("${role}", (role == null || role.isBlank()) ? "generalist agent" : role)
             .replace("${context}", context)
-            .replace("${constraints}", constraints)
+            .replace("${constraints}", (constraints == null || constraints.isBlank()) ? "No additional rules" : constraints)
+            // Status values
             .replace("${completed}", Constants.AI_STATUS_COMPLETED)
             .replace("${insufficient-context}", Constants.AI_STATUS_INSUFFICIENT_CONTEXT)
             .replace("${escalate}", Constants.AI_STATUS_ESCALATE)
+            .replace("${tool-call}", Constants.AI_STATUS_TOOL_CALL)
             .replace("${failed}", Constants.AI_STATUS_FAILED);
     }
 }

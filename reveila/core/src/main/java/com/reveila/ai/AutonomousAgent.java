@@ -2,10 +2,12 @@ package com.reveila.ai;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 import com.reveila.system.Constants;
-import com.reveila.system.PluginPrincipal;
+import com.reveila.system.RolePrincipal;
 import com.reveila.system.SystemComponent;
 import com.reveila.system.SystemProxy;
 import com.reveila.util.json.JsonUtil;
@@ -20,13 +22,18 @@ public class AutonomousAgent extends SystemComponent {
 
     private AgenticFabric agenticFabric;
     private OrchestrationService orchestrationService;
+    private AgentSession session;
+    private RolePrincipal principal;
 
     @Override
     protected void onStart() throws Exception {
-        // Wiring dependencies via the Proxy system
+        principal = new RolePrincipal("autonomous-agent");
+        LocalDateTime now = LocalDateTime.now();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        String formattedTimestamp = now.format(formatter);
         this.agenticFabric = (AgenticFabric) ((SystemProxy) context.getProxy("AgenticFabric")).getInstance();
         this.orchestrationService = (OrchestrationService) ((SystemProxy) context.getProxy("OrchestrationService")).getInstance();
-                
+        this.session = orchestrationService.createSession("autonomous-agent-session " + formattedTimestamp);
         logger.info("AutonomousAgent started. Ready to process recurring tasks.");
     }
 
@@ -77,17 +84,8 @@ public class AutonomousAgent extends SystemComponent {
             return;
         }
 
-        // Create a dedicated security principal for this autonomous task
-        PluginPrincipal principal = PluginPrincipal.create("autonomous-agent-" + taskId, "system-internal");
-        
-        // Create a new session (topic) for the task
-        AgentSession session = orchestrationService.createSession(principal.getTraceId());
-        
         logger.info("[AUTONOMOUS] Starting task loop: " + taskId);
-        
-        // Execute the AI Session Loop
         String finalResult = agenticFabric.processIntent(session, principal, prompt);
-        
         logger.info("[AUTONOMOUS] Task " + taskId + " completed. Result summary: " + finalResult);
     }
 }

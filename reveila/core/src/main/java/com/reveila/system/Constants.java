@@ -103,9 +103,10 @@ public final class Constants {
 	public static final String REQUIRED_PLUGINS_RESTART_ON_INSTALL_ALL = "required-plugins-restart-on-install-all";
 	public static final String REQUIRED_PLUGINS_RESTART_ON_UPDATE_ALL = "required-plugins-restart-on-update-all";
 
-	public static final String AI_STATUS_COMPLETED = "[STATUS: COMPLETED]";
-	public static final String AI_STATUS_INSUFFICIENT_CONTEXT = "[STATUS: INSUFFICIENT_CONTEXT]";
-	public static final String AI_STATUS_ESCALATE = "[STATUS: ESCALATE]";
-	public static final String AI_STATUS_FAILED = "[STATUS: FAILED]";
+	public static final String AI_STATUS_COMPLETED = "COMPLETED";
+	public static final String AI_STATUS_INSUFFICIENT_CONTEXT = "INSUFFICIENT CONTEXT";
+	public static final String AI_STATUS_ESCALATE = "ESCALATE";
+	public static final String AI_STATUS_FAILED = "FAILED";
+	public static final String AI_STATUS_TOOL_CALL = "TOOL CALL";
 
 }
