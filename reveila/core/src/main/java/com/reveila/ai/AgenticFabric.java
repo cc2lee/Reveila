@@ -14,6 +14,7 @@ import com.reveila.system.RolePrincipal;
 import com.reveila.system.SystemComponent;
 import com.reveila.system.SystemProxy;
 import com.reveila.util.ExceptionCollection;
+import com.reveila.util.json.JsonUtil;
 
 public class AgenticFabric extends SystemComponent {
 
@@ -143,6 +144,7 @@ public class AgenticFabric extends SystemComponent {
         // Step 2: The "AI Loop" - parse the response and
         // determine if further action is needed based on the defined output format in
         // the Prompt.
+        response = JsonUtil.clean(response);
         AiResponseValidator validator = new AiResponseValidator();
         int loopCount = 0;
         while (validator.getMessage(response) != null && loopCount < aiLoopLimit) {

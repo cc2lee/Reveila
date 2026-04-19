@@ -221,6 +221,11 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 	private Object newInstance() throws Exception {
 		Class<?> clazz = getComponentClass();
 		Object object = clazz.getDeclaredConstructor().newInstance();
+		if (object == null) {
+			throw new Exception("Failed to create instance of class: " + clazz.getName());
+		} else if (object instanceof AbstractComponent) {
+			((AbstractComponent) object).setDebug(debug);
+		}
 		List<Map<String, Object>> arguments = this.metaObject.getArguments();
 		setArguments(object, clazz, arguments);
 
