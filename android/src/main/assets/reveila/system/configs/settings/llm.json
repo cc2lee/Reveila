@@ -2,28 +2,28 @@
     "onboarded.providers": [
         {
             "name": "OpenAI",
-            "endpoint": "https://api.openai.com/v1",
+            "endpoint": "https://api.openai.com/v1/chat/completions",
             "model": "gpt-4",
             "temperature": 0.7,
             "api.key": ""
         },
         {
             "name": "Anthropic",
-            "endpoint": "https://api.anthropic.com",
+            "endpoint": "https://api.anthropic.com/v1/messages",
             "model": "claude-2",
             "temperature": 0.7,
             "api.key": ""
         },
         {
             "name": "Google Gemini",
-            "endpoint": "https://generativelanguage.googleapis.com",
-            "model": "gemini-1.5-pro",
+            "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+            "model": "gemini-3-flash",
             "temperature": 0.1,
             "api.key": ""
         },
         {
             "name": "Ollama (Local)",
-            "endpoint": "http://localhost:11434",
+            "endpoint": "http://localhost:11434/v1/chat/completions",
             "model": "qwen2.5-coder:1.5b",
             "temperature": 0.7,
             "quantization": "Q4_K_M",

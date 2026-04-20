@@ -36,6 +36,12 @@ public class LlmRequest {
         return tools;
     }
     
+    @Override
+    public String toString() {
+        return "LlmRequest [modelId=" + modelId + ", messages=" + messages + ", temperature=" + temperature
+                + ", metadata=" + metadata + ", tools=" + tools + "]";
+    }
+    
     public static Builder builder() {
         return new Builder();
     }
@@ -89,6 +95,12 @@ public class LlmRequest {
                 this.tools.add(tool);
             }
             return this;
+        }
+
+        @Override
+        public String toString() {
+            return "Builder [modelId=" + modelId + ", messages=" + messages + ", temperature=" + temperature
+                    + ", metadata=" + metadata + ", tools=" + tools + "]";
         }
 
         public LlmRequest build() {

@@ -139,3 +139,15 @@ This prevents "Short Model Tax" and reduces logic mismatches by only injecting h
 
 Enhanced AgenticFabric.java to perform a semantic search in the KnowledgeVault for every user intent.
 Relevant snippets from internal documentation (e.g., PDFs, manuals) are now automatically retrieved and injected into the dynamic system instruction under the `<context_boundary>`. This ensures the AI agent has access to the organization's private knowledge base when reasoning about tasks.
+
+To invoke an onboard LLM provider via it REST API, call the AgenticFabric processIntent() method, which returns a JSONObject with the following content:
+
+```json
+{
+  "status": "completed",
+  "reasoning": "I am Reveila AI Agent.",
+  "result": "I am an AI developed by Anthropic. My purpose is to assist with knowledge and provide helpful responses.",
+  "confidence-score": 1,
+  "tool-call": []
+}
+```

@@ -20,7 +20,9 @@ public class Prompt {
             
             ## CONTEXT
             <context_boundary>
+
             ${context}
+            
             </context_boundary>
             
             ## CONSTRAINTS

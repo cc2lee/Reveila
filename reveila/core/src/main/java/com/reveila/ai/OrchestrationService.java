@@ -30,19 +30,44 @@ public class OrchestrationService extends SystemComponent {
     }
 
     /**
+     * Returns the maximum number of messages allowed in a single session.
+     */
+    public int getMaxMessages() {
+        String max = context.getProperties().getProperty("ai.session.maxMessages");
+        if (max != null && !max.isBlank()) {
+            try {
+                return Integer.parseInt(max);
+            } catch (Exception e) {}
+        }
+        // Default based on optimization priority
+        return "cost".equalsIgnoreCase(optimizationPriority) ? 10 : 50;
+    }
+
+    /**
      * Creates a new AgentSession with settings derived from system properties.
+     * 
+     * @param sessionId Optional preferred session ID. If null, a random UUID will be generated.
+     * @param parentTraceId The trace_id of the parent task.
+     * @return The newly created AgentSession.
+     */
+    public AgentSession createSession(String sessionId, String parentTraceId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            sessionId = UUID.randomUUID().toString();
+        }
+        
+        AgentSession session = new AgentSession(sessionId, parentTraceId, getMaxMessages());
+        sessions.put(sessionId, session);
+        return session;
+    }
+
+    /**
+     * Creates a new AgentSession with a random UUID.
      * 
      * @param parentTraceId The trace_id of the parent task.
      * @return The newly created AgentSession.
      */
     public AgentSession createSession(String parentTraceId) {
-        String sessionId = UUID.randomUUID().toString();
-        // Window size depends on optimization priority: cost (10) vs quality (50)
-        int windowSize = "cost".equalsIgnoreCase(optimizationPriority) ? 10 : 50;
-        
-        AgentSession session = new AgentSession(sessionId, parentTraceId, windowSize);
-        sessions.put(sessionId, session);
-        return session;
+        return createSession(null, parentTraceId);
     }
 
     /**
@@ -71,10 +96,33 @@ public class OrchestrationService extends SystemComponent {
         return sessions.values().stream().map(session -> {
             java.util.Map<String, Object> map = new java.util.HashMap<>();
             map.put("id", session.getSessionId());
-            map.put("plugin", "Reveila Agent");
-            // Random mock stats for cpu/ram since we don't have real hardware metrics per session
-            map.put("cpu", (int)(Math.random() * 20));
-            map.put("ram", 100 + (int)(Math.random() * 100));
+            
+            // find the first user message for title
+            String title = "New Session";
+            for (com.reveila.ai.ReveilaMessage msg : session.getChatMemory().messages()) {
+                if (com.reveila.ai.LlmRole.USER.equals(msg.role())) {
+                    title = msg.content();
+                    if (title.length() > 30) title = title.substring(0, 30) + "...";
+                    break;
+                }
+            }
+            map.put("title", title);
+            map.put("messageCount", session.getChatMemory().messages().size());
+            return map;
+        }).collect(java.util.stream.Collectors.toList());
+    }
+
+    /**
+     * Returns the chat history for a specific session.
+     */
+    public java.util.List<java.util.Map<String, String>> getSessionHistory(String sessionId) {
+        AgentSession session = getSession(sessionId);
+        if (session == null) return java.util.Collections.emptyList();
+        
+        return session.getChatMemory().messages().stream().map(msg -> {
+            java.util.Map<String, String> map = new java.util.HashMap<>();
+            map.put("role", msg.role().name());
+            map.put("content", msg.content());
             return map;
         }).collect(java.util.stream.Collectors.toList());
     }

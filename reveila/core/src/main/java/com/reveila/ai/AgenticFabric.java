@@ -3,6 +3,10 @@ package com.reveila.ai;
 import java.security.Principal;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+import javax.security.auth.Subject;
 
 import org.json.JSONObject;
 
@@ -98,47 +102,162 @@ public class AgenticFabric extends SystemComponent {
     /**
      * Exposes a simple entry point for UI clients to talk to the agent.
      * 
-     * @param userIntent The user's prompt.
-     * @param sessionId  Optional session ID to continue a conversation.
-     * @return The final answer from the LLM.
+     * @param userIntent   The user's prompt.
+     * @param sessionId    Optional session ID to continue a conversation.
+     * @param systemPrompt Optional initial system prompt (e.g., summary from previous session).
+     * @return A JSON object containing the result and the session id.
      */
-    public String askAgent(String userIntent, String sessionId) {
+    public JSONObject askAgent(String userIntent, String sessionId, String systemPrompt) {
+
         if (sessionId == null || sessionId.isBlank()) {
             sessionId = java.util.UUID.randomUUID().toString();
         }
 
-        RolePrincipal principal = new RolePrincipal("ui-client");
-
         AgentSession session = orchestrationService.getSession(sessionId);
-        if (session == null) {
-            session = orchestrationService.createSession(sessionId);
+        boolean isNewSession = (session == null);
+        if (isNewSession) {
+            session = orchestrationService.createSession(sessionId, sessionId);
+            if (systemPrompt != null && !systemPrompt.isBlank()) {
+                session.getChatMemory().add(ReveilaMessage.system("Context carried over from previous session: " + systemPrompt));
+            }
         }
 
-        return processIntent(session, principal, userIntent);
+        RolePrincipal principal = new RolePrincipal("ui-client");
+        Subject subject = new Subject();
+        subject.getPrincipals().add(principal);
+
+        JSONObject jsonResponse = processIntent(session, subject, userIntent);
+        
+        String finalAnswer = "";
+        try {
+            String status = jsonResponse.optString("status", "");
+            String reasoning = jsonResponse.optString("reasoning", "");
+            String result = jsonResponse.optString("result", "");
+
+            if (status.equalsIgnoreCase(Constants.AI_STATUS_COMPLETED)) {
+                finalAnswer = !result.isBlank() ? result : reasoning;
+            } else if (status.equalsIgnoreCase(Constants.AI_STATUS_INSUFFICIENT_CONTEXT)) {
+                finalAnswer = reasoning;
+            } else if (status.equalsIgnoreCase(Constants.AI_STATUS_ESCALATE)) {
+                finalAnswer = "ESCALATION REQUIRED: " + reasoning;
+            } else if (status.equalsIgnoreCase(Constants.AI_STATUS_FAILED)) {
+                finalAnswer = "FAILED: " + reasoning;
+            } else if (status.equalsIgnoreCase(Constants.AI_STATUS_TOOL_CALL)) {
+                finalAnswer = "TOOL CALL: " + reasoning;
+            } else {
+                finalAnswer = !result.isBlank() ? result : (!reasoning.isBlank() ? reasoning : jsonResponse.toString());
+            }
+        } catch (Exception e) {
+            finalAnswer = jsonResponse.toString();
+        }
+        
+        JSONObject resultWrapper = new JSONObject();
+        resultWrapper.put("answer", finalAnswer);
+        resultWrapper.put("sessionId", session.getSessionId());
+        return resultWrapper;
     }
 
-    public String processIntent(AgentSession session, Principal principal, String intent) {
+    /**
+     * Summarizes a session history for carry-over.
+     */
+    public String summarizeSession(String sessionId) {
+        try {
+            AgentSession session = orchestrationService.getSession(sessionId);
+            if (session == null) return "";
+            
+            LlmProvider worker = llmFactory.getActiveProvider();
+            if (worker == null) return "";
 
-        if (principal instanceof RolePrincipal rp) {
-            if (!rp.getName().equals("ui-client") && !rp.getName().equals("admin")) {
-                return "ERROR: Access Denied. Principal does not have permission to invoke the agent.";
+            String historyDump = session.getChatMemory().messages().stream()
+                .map(m -> m.role().name() + ": " + m.content())
+                .collect(java.util.stream.Collectors.joining("\n"));
+
+            LlmRequest request = LlmRequest.builder()
+                    .addMessage(ReveilaMessage.system("Summarize the following chat history briefly for context preservation in a new session."))
+                    .addMessage(ReveilaMessage.user(historyDump))
+                    .build();
+
+            return worker.invoke(request).getContent();
+        } catch (Exception e) {
+            if (logger != null) logger.warning("Failed to summarize session: " + e.getMessage());
+            return "";
+        }
+    }
+
+    private JSONObject buildErrorResponse(String errorMessage) {
+        JSONObject json = new JSONObject();
+        json.put("status", Constants.AI_STATUS_FAILED);
+        json.put("reasoning", errorMessage);
+        json.put("result", "");
+        json.put("confidence-score", 0.0);
+        json.put("tool-call", new org.json.JSONArray());
+        return json;
+    }
+
+    private void recordAuditLog(String action, String details) {
+        try {
+            Proxy p = context.getProxy("DataService");
+            if (p != null) {
+                java.util.Map<String, Object> log = new java.util.HashMap<>();
+                log.put("action", action);
+                log.put("details", details);
+                log.put("timestamp", System.currentTimeMillis());
+                p.invoke("save", new Object[] { "AuditLog", log });
             }
-        } else {
-            return "ERROR: Access Denied. Invalid principal type.";
+        } catch (Exception e) {
+            if (logger != null) {
+                logger.warning("Failed to write AuditLog: " + e.getMessage());
+            }
+        }
+    }
+
+    public JSONObject processIntent(AgentSession session, Subject subject, String intent) {
+
+        Objects.requireNonNull(session, "AgentSession cannot be null.");
+        Objects.requireNonNull(subject, "Subject cannot be null.");
+        Objects.requireNonNull(intent, "Intent cannot be null.");
+
+        if (logger != null) {
+            logger.info("Processing intent: " + intent);
         }
 
-        String modifiedIntent = intent;
+        Set<Principal> principals = subject.getPrincipals();
+        if (principals == null || principals.isEmpty()) {
+            return buildErrorResponse("ERROR: Access Denied. No principals found in subject.");
+        }
+
+        boolean authorized = false;
+        for (Principal p : principals) {
+            if (p instanceof RolePrincipal rp) {
+                String roleName = rp.getName();
+                if ("ui-client".equalsIgnoreCase(roleName)
+                    || "admin".equalsIgnoreCase(roleName)) {
+                    authorized = true;
+                    break;
+                }
+            }
+        }
+
+        if (!authorized) {
+            if (logger != null) {
+                logger.info("Access Denied. No authorized principals found in subject.");
+            }
+            return buildErrorResponse("ERROR: Access Denied. No authorized principals found in subject.");
+
+        }
+
+        String intentBuffer = intent;
 
         // Step 1: Execute initial LLM reasoning
         String response = null;
         try {
-            response = askAi(session, principal, modifiedIntent);
+            response = askAi(session, intentBuffer);
         } catch (LlmException e) {
             response = "ERROR: Failed to get response from LLM: " + e.getMessage();
             if (logger != null) {
                 logger.severe(response);
             }
-            return response;
+            return buildErrorResponse(response);
         }
 
         // Step 2: The "AI Loop" - parse the response and
@@ -146,9 +265,22 @@ public class AgenticFabric extends SystemComponent {
         // the Prompt.
         response = JsonUtil.clean(response);
         AiResponseValidator validator = new AiResponseValidator();
-        int loopCount = 0;
-        while (validator.getMessage(response) != null && loopCount < aiLoopLimit) {
-            loopCount++;
+        
+        for (int loopCount = 0;loopCount < aiLoopLimit; loopCount++) {
+            if (validator.getMessage(response) == null) {
+                intentBuffer = "Invalid response from AI: " + response;
+                try {
+                    response = askAi(session, intentBuffer);
+                    continue;
+                } catch (LlmException e) {
+                    response = "ERROR: Failed to get response from LLM: " + e.getMessage();
+                    if (logger != null) {
+                        logger.severe(response);
+                    }
+                    return buildErrorResponse(response);
+                }
+            }
+
             try {
                 // Step 3: Handle terminal statuses defined in Prompt
                 JSONObject jsonResponse = new JSONObject(response);
@@ -159,55 +291,73 @@ public class AgenticFabric extends SystemComponent {
                 JSONObject toolCall = jsonResponse.optJSONObject("tool-call");
 
                 if (status.equalsIgnoreCase(Constants.AI_STATUS_COMPLETED)) {
-                    return response;
+                    recordAuditLog("TASK_COMPLETED", reasoning);
+                    return jsonResponse;
+                } else if (status.equalsIgnoreCase(Constants.AI_STATUS_INSUFFICIENT_CONTEXT)) {
+                    recordAuditLog("INSUFFICIENT_CONTEXT", reasoning);
+                    return jsonResponse;
                 } else if (status.equalsIgnoreCase(Constants.AI_STATUS_ESCALATE)) {
-                    return response;
+                    recordAuditLog("ESCALATED", reasoning);
+                    return jsonResponse;
                 } else if (status.equalsIgnoreCase(Constants.AI_STATUS_FAILED)) {
-                    return response;
+                    recordAuditLog("TASK_FAILED", reasoning);
+                    return jsonResponse;
                 } else if (status.equalsIgnoreCase(Constants.AI_STATUS_TOOL_CALL)) {
                     try {
                         if (toolCall == null) {
-                            modifiedIntent = "The AI indicated a tool call is needed but did not specify the tool or arguments. Reasoning provided: "
+                            intentBuffer = "The AI indicated a tool call is needed but did not specify the tool or arguments. Reasoning provided: "
                                     + reasoning
                                     + ". Please clarify the tool to call and its arguments.";
+                            recordAuditLog("TOOL_CALL_FAILED", "Missing tool/arguments.");
                         } else {
                             String toolCallResult = handleToolCall(session, toolCall, response);
-                            modifiedIntent = "The AI has requested to call a tool with the following details: "
+                            intentBuffer = "The AI has requested to call a tool with the following details: "
                                     + toolCall.toString()
                                     + ". Reasoning provided: " + reasoning
                                     + ". Here are the results from the tool execution: " + toolCallResult
                                     + ". Please analyze this information and provide the next step or final answer.";
+                            recordAuditLog("TOOL_CALLED", "Called: " + toolCall.optString("method"));
                         }
                     } catch (Exception e) {
-                        modifiedIntent = "The AI requested a tool call, but the call could not be completed: "
+                        intentBuffer = "The AI requested a tool call, but the call could not be completed: "
                                 + e.getMessage()
                                 + ". Reasoning provided: " + reasoning
                                 + ". Please clarify the tool to call and its arguments.";
                     }
                 } else {
-                    return response;
+                    intentBuffer = "The AI provided an unexpected status: " + status
+                            + ". Reasoning provided: " + reasoning
+                            + ". Please analyze this information and provide the next step or final answer.";
                 }
 
                 try {
-                    response = askAi(session, principal, modifiedIntent);
+                    response = askAi(session, intentBuffer);
                 } catch (LlmException e) {
                     response = "ERROR: Failed to get response from LLM: " + e.getMessage();
                     if (logger != null) {
                         logger.severe(response);
                     }
-                    return response;
+                    return buildErrorResponse(response);
                 }
             } catch (Throwable t) {
-                String errorMsg = "Exception in AI Loop iteration " + loopCount + ": " + t.getMessage();
-                if (logger != null) {
-                    logger.severe(errorMsg);
+                intentBuffer = "Exception occurred while processing response: " + (t.getMessage() != null && !t.getMessage().isBlank() ? t.getMessage() : t.toString())
+                            + "\nPlease analyze this information and provide the next step or final answer."
+                            + "\nOriginal response: " + response;
+                recordAuditLog("EXCEPTION", t.getMessage());
+                try {
+                    response = askAi(session, intentBuffer);
+                } catch (LlmException e) {
+                    response = "ERROR: Failed to get response from LLM: " + e.getMessage();
+                    if (logger != null) {
+                        logger.severe(response);
+                    }
+                    return buildErrorResponse(response);
                 }
-                return "ERROR: Agentic Loop failed due to a system exception: " + errorMsg;
             }
         }
 
-        return "AI_LOOP_LIMIT_REACHED: The task could not be completed within the execution limit of " + aiLoopLimit
-                + " iteration(s).";
+        return buildErrorResponse("AI_LOOP_LIMIT_REACHED: The task could not be completed within the execution limit of " + aiLoopLimit
+                + " iteration(s).");
     }
 
     private String handleToolCall(AgentSession session, JSONObject toolCall, String response) throws Exception {
@@ -218,17 +368,17 @@ public class AgenticFabric extends SystemComponent {
 
         String pluginId = toolCall.optString("plugin", "");
         String methodName = toolCall.optString("method", "");
-        
+
         Plugin plugin = new Plugin(
-                java.util.UUID.fromString(session.getSessionId()), 
-                pluginId, 
-                "default", 
-                session.getParentTraceId() != null ? session.getParentTraceId() : java.util.UUID.randomUUID().toString()
-        );
-        
+                java.util.UUID.fromString(session.getSessionId()),
+                pluginId,
+                "default",
+                session.getParentTraceId() != null ? session.getParentTraceId()
+                        : java.util.UUID.randomUUID().toString());
+
         bridgeArgs.put("arguments", toolCall.optJSONObject("arguments"));
 
-        // Step 4: Invoke the tool via the bridge and capture the output
+        // Invoke the tool via the bridge and capture the output
         // The bridge performs parsing, security audit, and tool execution
         InvocationResult result = bridge.invoke(plugin, null, methodName.isEmpty() ? response : methodName, bridgeArgs);
 
@@ -249,7 +399,7 @@ public class AgenticFabric extends SystemComponent {
             session.getChatMemory().add(
                     ReveilaMessage
                             .assistant("Task requires approval."));
-            
+
             session.put("pendingApproval", result.callbackUrl());
             throw new com.reveila.error.SecurityException("APPROVAL_REQUIRED|" + result.message() + "|"
                     + (result.data() != null ? result.data().toString() : ""));
@@ -263,16 +413,8 @@ public class AgenticFabric extends SystemComponent {
      * 
      * @throws LlmException
      */
-    private String askAi(AgentSession session, Principal principal, String prompt) throws LlmException {
+    private String askAi(AgentSession session, String userPrompt) throws LlmException {
 
-        if (principal instanceof RolePrincipal rp) {
-            if (!rp.getName().equals("ui-client") && !rp.getName().equals("admin")) {
-                throw new com.reveila.error.SecurityException("Access Denied: Principal does not have permission to invoke the agent.");
-            }
-        } else {
-            throw new com.reveila.error.SecurityException("Access Denied: Invalid principal type.");
-        }
-        
         LlmProvider worker = llmFactory.getActiveProvider();
         if (worker == null) {
             String msg = "System Error: No active LLM Provider found.";
@@ -285,7 +427,7 @@ public class AgenticFabric extends SystemComponent {
         // Uses DynamicToolProvider to semantic search and rerank tools.
         java.util.List<LlmTool> tools;
         if (toolProvider != null) {
-            tools = toolProvider.provideTools(prompt);
+            tools = toolProvider.provideTools(userPrompt);
         } else {
             // Fallback to manual mapping from full registry (legacy)
             Map<String, Object> mcpData = metadataRegistry.exportToMCP();
@@ -314,8 +456,8 @@ public class AgenticFabric extends SystemComponent {
                 "Available Tools: "
                         + tools.stream().map(LlmTool::getName).collect(java.util.stream.Collectors.joining(", "))
                         + "\n\n" +
-                        "Related Documents: " + searchKnowledgeVault(prompt),
-                "Adhere to Agency Perimeter security constraints.");
+                        "Related Documents: " + searchKnowledgeVault(userPrompt),
+                "");
 
         // Optimization: Context Window Management (Summary Strategy)
         if ("cost".equalsIgnoreCase(orchestrationService.getOptimizationPriority())) {
@@ -343,19 +485,25 @@ public class AgenticFabric extends SystemComponent {
         }
 
         // Maintain the chain of thought in the session chat memory
-        session.getChatMemory().add(ReveilaMessage.system(systemInstructions));
-        session.getChatMemory().add(ReveilaMessage.user(prompt));
+        session.getChatMemory().add(ReveilaMessage.user(userPrompt));
 
-        LlmRequest request = LlmRequest.builder()
-                .addMessage(ReveilaMessage.system("You are the Reveila AI Agent."))
-                .addMessage(ReveilaMessage.user(prompt))
-                .tools(tools)
-                .build();
+        LlmRequest.Builder requestBuilder = LlmRequest.builder()
+                .tools(tools);
+
+        // Inject the dynamic system instructions as the first message for this request
+        // (We don't save it to chat memory to avoid duplicating it on every loop)
+        requestBuilder.addMessage(ReveilaMessage.system(systemInstructions));
+
+        for (ReveilaMessage msg : session.getChatMemory().messages()) {
+            requestBuilder.addMessage(msg);
+        }
+
+        LlmRequest request = requestBuilder.build();
 
         String response = null;
         try {
             if (debug && logger != null) {
-                logger.info("Invoking LLM provider [" + worker.getName() + "] with prompt: " + prompt);
+                logger.info("Invoking LLM provider [" + worker.getName() + "] with prompt: " + request.toString());
             }
             response = worker.invoke(request).getContent();
             if (debug && logger != null) {
@@ -394,15 +542,15 @@ public class AgenticFabric extends SystemComponent {
     private String searchKnowledgeVault(String query) {
         try {
             Proxy p = context.getProxy("KnowledgeVault");
-            if (p instanceof SystemProxy sp) {
-                // Assuming KnowledgeVault component exists and has a search method
-                Object result = sp.invoke("search", new Object[] { query, 3 });
+            if (p != null) {
+                // KnowledgeVault component exists and has a search method
+                Object result = p.invoke("search", new Object[] { query, 3 });
                 return result != null ? result.toString() : "No relevant internal documents found.";
             }
         } catch (Exception e) {
             // Silently fail if Vault is not available
         }
-        return "Knowledge Vault is offline.";
+        return "No relevant internal documents found.";
     }
 
     @Override

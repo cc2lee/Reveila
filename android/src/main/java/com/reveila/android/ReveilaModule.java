@@ -20,7 +20,7 @@ import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.bridge.Arguments;
 import com.reveila.android.safety.BiometricSafetyGuard;
 import com.reveila.android.safety.MobileKillSwitch;
-import com.reveila.core.safety.AgentSafetyCommand;
+import com.reveila.safety.AgentSafetyCommand;
 import com.reveila.system.RolePrincipal;
 import com.reveila.system.UserPrincipal;
 import com.reveila.system.Constants;
@@ -618,6 +618,9 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
                     promise.reject("E_LOCKED", "System is locked. Please unlock first.");
                     return;
                 }
+                
+                // Reset the session timeout clock on any valid UI interaction
+                this.lastActivityTimestamp = System.currentTimeMillis();
                 
                 Log.d(NAME, "invoke: All checks passed, proceeding with invocation");
 

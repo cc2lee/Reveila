@@ -44,12 +44,16 @@ public class ConfigurationManager extends SystemComponent {
             Map<String, Object> configMap = mapper.readValue(jsonContent, new TypeReference<Map<String, Object>>() {});
             String workerLlm = context.getProperties().getProperty("ai.worker.llm");
             String govLlm = context.getProperties().getProperty("ai.governance.llm");
+            String maxMsgs = context.getProperties().getProperty("ai.session.maxMessages");
             
             if (workerLlm != null && !workerLlm.trim().isEmpty()) {
                 configMap.put("ai.worker.llm", workerLlm);
             }
             if (govLlm != null) {
                 configMap.put("ai.governance.llm", govLlm); // Empty string is valid for 'Disable'
+            }
+            if (maxMsgs != null) {
+                configMap.put("ai.session.maxMessages", maxMsgs);
             }
             
             return mapper.writeValueAsString(configMap);

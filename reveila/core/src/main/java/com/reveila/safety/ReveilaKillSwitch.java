@@ -1,4 +1,4 @@
-package com.reveila.core.safety;
+package com.reveila.safety;
 
 /**
  * The Sovereign Kill Switch Interface. 

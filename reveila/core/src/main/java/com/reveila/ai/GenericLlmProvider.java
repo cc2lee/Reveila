@@ -48,7 +48,7 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
         this.name = name;
         // Pre-configure defaults for local providers to ensure isConfigured() returns true immediately
         if (isLocal() && (endpoint == null || endpoint.isBlank())) {
-            endpoint = "http://localhost:11434";
+            endpoint = "http://localhost:11434/v1/chat/completions";
         }
     }
 
@@ -56,12 +56,24 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
         this.apiKey = apiKey;
     }
 
+    public String getEndpoint() {
+        return endpoint;
+    }
+
     public void setEndpoint(String endpoint) {
         this.endpoint = endpoint;
     }
 
+    public String getModel() {
+        return model;
+    }
+
     public void setModel(String model) {
         this.model = model;
+    }
+
+    public double getTemperature() {
+        return temperature;
     }
 
     public void setTemperature(double temperature) {
@@ -96,7 +108,7 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
         }
     }
 
-    private String resolveApiKey() throws Exception {
+    protected String resolveApiKey() throws Exception {
         if (resolvedApiKey != null && !resolvedApiKey.isBlank()) {
             return resolvedApiKey;
         }
@@ -111,7 +123,7 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
         return resolvedApiKey;
     }
 
-    private HttpClientService getHttpClientService() {
+    protected HttpClientService getHttpClientService() {
         try {
             SystemProxy sp = (SystemProxy) context.getProxy("HttpClientService");
             return (HttpClientService) sp.getInstance();
@@ -150,47 +162,66 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
             String activeApiKey = resolveApiKey();
             String activeModel = (model != null && !model.isBlank()) ? model : request.getModelId();
             
+            // Fix Google Gemini model alias bug for v1beta openai compatibility endpoint
+            if (activeModel != null && (activeModel.equals("gemini-1.5-pro") || activeModel.equals("gemini-1.5-pro-latest") || activeModel.equals("gemini-2.0-flash"))) {
+                activeModel = "gemini-3-flash";
+            }
+            
+            String url = endpoint;
+            if (url == null || url.isBlank()) url = "http://localhost:11434/v1/chat/completions";
+
+            boolean isInteractionApi = url.contains("interactions");
+
             JSONObject body = new JSONObject();
             body.put("model", activeModel);
-            body.put("temperature", temperature);
-            body.put("stream", false);
-
-            JSONArray messages = new JSONArray();
-            for (ReveilaMessage msg : request.getMessages()) {
-                JSONObject msgJson = new JSONObject();
-                msgJson.put("role", msg.role().name().toLowerCase());
-                msgJson.put("content", msg.content());
-                messages.put(msgJson);
-            }
-            body.put("messages", messages);
-
-            // Tools (OpenAI format)
-            if (request.getTools() != null && !request.getTools().isEmpty()) {
-                JSONArray toolsJson = new JSONArray();
-                for (LlmTool tool : request.getTools()) {
-                    try {
-                        toolsJson.put(new JSONObject(tool.toJsonString()));
-                    } catch (Exception e) {
-                        logger.warning("Failed to serialize tool " + tool.toString() + ": " + e.getMessage());
-                    }
+            
+            if (isInteractionApi) {
+                JSONArray input = new JSONArray();
+                for (ReveilaMessage msg : request.getMessages()) {
+                    JSONObject msgJson = new JSONObject();
+                    String role = msg.role().name().toLowerCase();
+                    if (role.equals("assistant")) role = "model";
+                    msgJson.put("role", role);
+                    msgJson.put("content", msg.content());
+                    input.put(msgJson);
                 }
-                body.put("tools", toolsJson);
+                body.put("input", input);
+            } else {
+                body.put("temperature", temperature);
+                body.put("stream", false);
+
+                JSONArray messages = new JSONArray();
+                for (ReveilaMessage msg : request.getMessages()) {
+                    JSONObject msgJson = new JSONObject();
+                    msgJson.put("role", msg.role().name().toLowerCase());
+                    msgJson.put("content", msg.content());
+                    messages.put(msgJson);
+                }
+                body.put("messages", messages);
+
+                // Tools (OpenAI format)
+                if (request.getTools() != null && !request.getTools().isEmpty()) {
+                    JSONArray toolsJson = new JSONArray();
+                    for (LlmTool tool : request.getTools()) {
+                        try {
+                            toolsJson.put(new JSONObject(tool.toJsonString()));
+                        } catch (Exception e) {
+                            logger.warning("Failed to serialize tool " + tool.toString() + ": " + e.getMessage());
+                        }
+                    }
+                    body.put("tools", toolsJson);
+                }
             }
 
             Map<String, String> headers = new HashMap<>();
             if (activeApiKey != null && !activeApiKey.isBlank()) {
-                headers.put("Authorization", "Bearer " + activeApiKey);
+                if (name != null && name.toLowerCase().contains("gemini")) {
+                    headers.put("x-goog-api-key", activeApiKey);
+                } else {
+                    headers.put("Authorization", "Bearer " + activeApiKey);
+                }
             }
             headers.put("Content-Type", "application/json");
-
-            String url = endpoint;
-            if (url == null) url = "http://localhost:11434"; // Absolute fallback
-
-            if (!url.contains("chat/completions")) {
-                if (!url.endsWith("/")) url += "/";
-                if (!url.contains("/v1")) url += "v1/";
-                url += "chat/completions";
-            }
 
             String responseJson = httpService.invokeRest(url, "POST", body.toString(), HttpClientService.JSON, headers);
             return parseResponse(responseJson);
@@ -203,7 +234,7 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
         }
     }
 
-    private LlmResponse parseResponse(String json) {
+    protected LlmResponse parseResponse(String json) {
         json = JsonUtil.clean(json); // Remove any non-JSON content
         JSONObject resp = new JSONObject(json);
         LlmResponse llmResponse = new LlmResponse();
@@ -216,6 +247,25 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
                 content = ((JSONObject) messageObj).optString("content", "");
             } else if (messageObj instanceof String) {
                 content = (String) messageObj;
+            }
+        } else if (resp.optJSONArray("candidates") != null) {
+            // Handle Google Gemini native format (from /v1beta/interactions or generateContent)
+            JSONObject candidate = resp.getJSONArray("candidates").optJSONObject(0);
+            if (candidate != null && candidate.has("content")) {
+                JSONObject contentObj = candidate.getJSONObject("content");
+                if (contentObj.has("parts")) {
+                    JSONArray parts = contentObj.getJSONArray("parts");
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 0; i < parts.length(); i++) {
+                        JSONObject part = parts.optJSONObject(i);
+                        if (part != null && part.has("text")) {
+                            sb.append(part.getString("text"));
+                        }
+                    }
+                    content = sb.toString();
+                } else {
+                    content = contentObj.optString("content", "");
+                }
             }
         } else {
             // Try Ollama native format

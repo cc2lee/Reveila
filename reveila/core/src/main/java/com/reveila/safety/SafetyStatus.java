@@ -1,4 +1,4 @@
-package com.reveila.core.safety;
+package com.reveila.safety;
 
 /**
  * Status of the Agent safety check.

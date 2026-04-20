@@ -6,6 +6,8 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
+import javax.security.auth.Subject;
+
 import com.reveila.system.Constants;
 import com.reveila.system.RolePrincipal;
 import com.reveila.system.SystemComponent;
@@ -23,11 +25,13 @@ public class AutonomousAgent extends SystemComponent {
     private AgenticFabric agenticFabric;
     private OrchestrationService orchestrationService;
     private AgentSession session;
-    private RolePrincipal principal;
+    private Subject subject;
 
     @Override
     protected void onStart() throws Exception {
-        principal = new RolePrincipal("autonomous-agent");
+        subject = new Subject();
+        subject.getPrincipals().add(new RolePrincipal("system"));
+        subject.getPrincipals().add(new RolePrincipal("autonomous-agent"));
         LocalDateTime now = LocalDateTime.now();
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
         String formattedTimestamp = now.format(formatter);
@@ -85,7 +89,7 @@ public class AutonomousAgent extends SystemComponent {
         }
 
         logger.info("[AUTONOMOUS] Starting task loop: " + taskId);
-        String finalResult = agenticFabric.processIntent(session, principal, prompt);
-        logger.info("[AUTONOMOUS] Task " + taskId + " completed. Result summary: " + finalResult);
+        org.json.JSONObject finalResult = agenticFabric.processIntent(session, subject, prompt);
+        logger.info("[AUTONOMOUS] Task " + taskId + " completed. Result summary: " + finalResult.toString());
     }
 }

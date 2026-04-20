@@ -1,4 +1,4 @@
-package com.reveila.core.safety;
+package com.reveila.safety;
 
 /**
  * Types of safety actions that can be issued to agents.

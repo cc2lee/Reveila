@@ -1,7 +1,7 @@
 package com.reveila.server.safety;
 
-import com.reveila.core.safety.ReveilaKillSwitch;
-import com.reveila.core.safety.SafetyStatus;
+import com.reveila.safety.ReveilaKillSwitch;
+import com.reveila.safety.SafetyStatus;
 
 /**
  * Server-side implementation of the Sovereign Kill Switch.

@@ -1,7 +1,6 @@
 package com.reveila.service;
 
 import java.util.Map;
-import java.util.Objects;
 
 import com.reveila.data.Entity;
 import com.reveila.data.EntityMapper;
@@ -62,11 +61,10 @@ public class DataService extends SystemComponent {
         ]
     }
      */
+    @SuppressWarnings("null")
     public Page<Entity> search(Map<String, Object> requestMap) {
         // This will now look for a "sort" key inside the requestMap automatically
-        SearchRequest request = Objects.requireNonNull(
-                EntityMapper.getObjectMapper().convertValue(requestMap, SearchRequest.class),
-                "SearchRequest conversion failed");
+        SearchRequest request = EntityMapper.getObjectMapper().convertValue(requestMap, SearchRequest.class);
 
         Repository<Entity, Map<String, Map<String, Object>>> repo = getRepository(request.entityType());
         return repo.fetchPage(request.filter(), request.sort(), request.fetches(),
@@ -83,11 +81,10 @@ public class DataService extends SystemComponent {
     /**
      * Persists a generic Entity.
      */
+    @SuppressWarnings("null")
     public Entity save(String entityType, Map<String, Object> entityMap) {
         // Convert Map to Generic Entity DTO
-        Entity entity = Objects.requireNonNull(
-                EntityMapper.getObjectMapper().convertValue(entityMap, Entity.class),
-                "Entity conversion failed");
+        Entity entity = EntityMapper.getObjectMapper().convertValue(entityMap, Entity.class);
         return getRepository(entityType).store(entity);
     }
 

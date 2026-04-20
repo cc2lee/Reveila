@@ -12,11 +12,11 @@ import { ChangePasswordModal } from '@/components/ChangePasswordModal';
 import ReveilaModule from '@/modules/reveila';
 
 const LLM_PROVIDERS: any[] = [
-  { name: 'OpenAI', defaultEndpoint: 'https://api.openai.com/v1', apiKey: '' },
-  { name: 'Anthropic', defaultEndpoint: 'https://api.anthropic.com', apiKey: '' },
-  { name: 'Google Gemini', defaultEndpoint: 'https://generativelanguage.googleapis.com', apiKey: '' },
-  { name: 'Gemma-3-1b (Local)', defaultEndpoint: 'http://localhost:11434', apiKey: '', quantization: 'Q4_K_M', quantization_options: ['Q4_K_M', 'F16'] },
-  { name: 'Custom', defaultEndpoint: '', apiKey: '' }
+  { name: 'OpenAI', defaultEndpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o', apiKey: '' },
+  { name: 'Anthropic', defaultEndpoint: 'https://api.anthropic.com/v1/messages', model: 'claude-3-5-sonnet-latest', apiKey: '' },
+  { name: 'Google Gemini', defaultEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-3-flash', apiKey: '' },
+  { name: 'Ollama (Local)', defaultEndpoint: 'http://localhost:11434/v1/chat/completions', model: 'qwen2.5-coder:1.5b', apiKey: '', quantization: 'Q4_K_M', quantization_options: ['Q4_K_M', 'F16'] },
+  { name: 'Custom', defaultEndpoint: '', model: '', apiKey: '' }
 ];
 
 export default function SettingsScreen() {
@@ -82,7 +82,7 @@ export default function SettingsScreen() {
           const onboarded = config['onboarded.providers'] || config.onboarded_providers || LLM_PROVIDERS;
           setProvidersList(onboarded);
 
-          const legacyWorkerMap: Record<string, string> = { 'OpenAiProvider': 'OpenAI', 'AnthropicProvider': 'Anthropic', 'GeminiProvider': 'Google Gemini', 'OllamaProvider': 'Gemma-3-1b (Local)' };
+          const legacyWorkerMap: Record<string, string> = { 'OpenAiProvider': 'OpenAI', 'AnthropicProvider': 'Anthropic', 'GeminiProvider': 'Google Gemini', 'OllamaProvider': 'Ollama (Local)' };
           const legacyGovMap: Record<string, string> = { ...legacyWorkerMap, '': 'Disable' };
           
           let wProvider = config['ai.worker.llm'] || 'OpenAI';

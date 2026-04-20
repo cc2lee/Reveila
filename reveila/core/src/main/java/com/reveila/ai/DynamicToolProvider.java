@@ -6,8 +6,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import org.jspecify.annotations.NonNull;
-
 import com.reveila.persistence.VectorMatch;
 import com.reveila.persistence.VectorStore;
 
@@ -58,29 +56,39 @@ public class DynamicToolProvider {
         }
 
         // Stage 2: Reranking (High Precision)
-        List<@NonNull String> finalIds;
+        List<String> finalIds;
         if (reranker != null && candidateIds.size() > 1) {
-            List<MetadataRegistry.@NonNull PluginManifest> candidates = candidateIds.stream()
+            List<MetadataRegistry.PluginManifest> candidates = candidateIds.stream()
                 .map(registry::getManifest)
-                .filter(Objects::nonNull)
+                .filter(m -> m != null)
                 .filter(m -> securityTier.compareTo(m.tier()) <= 0)
-                .map(Objects::requireNonNull)
                 .toList();
 
             if (candidates.isEmpty()) {
                 return Collections.emptyList();
             }
 
-            List<@NonNull String> candidateDescriptions = candidates.stream()
+            List<String> candidateDescriptions = candidates.stream()
                 .map(m -> {
                     String name = m.name();
                     Map<String, Object> tools = m.tool_definitions();
                     return (name != null ? name : "unknown") + ": " + (tools != null ? tools.toString() : "{}");
                 })
-                .filter(Objects::nonNull)
+                .filter(s -> s != null)
                 .toList();
 
-            List<@NonNull Double> scores = reranker.scoreAll(Objects.requireNonNull(query), candidateDescriptions);
+            List<Double> initialScores;
+            try {
+                initialScores = reranker.scoreAll(query, candidateDescriptions);
+            } catch (Exception e) {
+                // If reranking fails, gracefully fall back to the original order from Vector Search
+                initialScores = new ArrayList<>();
+                for (int i = 0; i < candidates.size(); i++) {
+                    initialScores.add((double) (candidates.size() - i)); // Assign descending mock scores to preserve original order
+                }
+            }
+            
+            final List<Double> scores = initialScores;
             
             List<Integer> indices = new ArrayList<>();
             for (int i = 0; i < candidates.size(); i++) indices.add(i);
@@ -100,17 +108,16 @@ public class DynamicToolProvider {
                     MetadataRegistry.PluginManifest manifest = Objects.requireNonNull(candidates.get(idx));
                     return manifest.plugin_id();
                 })
-                .filter(Objects::nonNull)
-                .map(Objects::requireNonNull)
+                .filter(id -> id != null)
                 .toList();
         } else {
             finalIds = candidateIds.stream()
                 .map(registry::getManifest)
-                .filter(Objects::nonNull)
+                .filter(m -> m != null)
                 .filter(m -> securityTier.compareTo(m.tier()) <= 0)
                 .limit(topK)
                 .map(MetadataRegistry.PluginManifest::plugin_id)
-                .filter(Objects::nonNull)
+                .filter(id -> id != null)
                 .toList();
         }
 

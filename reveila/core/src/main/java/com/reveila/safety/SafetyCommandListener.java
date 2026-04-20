@@ -1,4 +1,4 @@
-package com.reveila.core.safety;
+package com.reveila.safety;
 
 /**
  * Listener for safety commands issued from authoritative clients.

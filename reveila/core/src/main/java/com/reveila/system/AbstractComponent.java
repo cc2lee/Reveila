@@ -2,8 +2,11 @@ package com.reveila.system;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.logging.Logger;
 
 public abstract class AbstractComponent implements Startable, Stoppable {
+
+    protected Logger logger = Logger.getLogger("reveila." + this.getClass().getName());
 
     protected boolean debug = false;
     public boolean isDebug() {

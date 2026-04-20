@@ -1,9 +1,9 @@
 package com.reveila.android.safety;
 
-import com.reveila.core.safety.ReveilaKillSwitch;
-import com.reveila.core.safety.SafetyStatus;
-import com.reveila.core.safety.AgentSafetyCommand;
-import com.reveila.core.safety.SafetyAction;
+import com.reveila.safety.ReveilaKillSwitch;
+import com.reveila.safety.SafetyStatus;
+import com.reveila.safety.AgentSafetyCommand;
+import com.reveila.safety.SafetyAction;
 import androidx.fragment.app.FragmentActivity;
 import android.util.Log;
 import java.nio.charset.StandardCharsets;

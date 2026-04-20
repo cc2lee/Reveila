@@ -6,17 +6,13 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.jspecify.annotations.NonNull;
-
-import com.reveila.system.PluginComponent;
-
 /**
  * Implementation of ScoringModel that uses an LlmProvider to rank tools.
  * This acts as a surgical reranker in the Tool RAG pipeline.
  * 
  * @author CL
  */
-public class LlmScoringModel extends PluginComponent implements ScoringModel {
+public class LlmScoringModel implements ScoringModel {
     
     private final LlmProvider provider;
     private static final Pattern SCORE_PATTERN = Pattern.compile("Score:\\s*(\\d+\\.?\\d*)");
@@ -26,8 +22,8 @@ public class LlmScoringModel extends PluginComponent implements ScoringModel {
     }
 
     @Override
-    public List<@NonNull Double> scoreAll(@NonNull String query, List<@NonNull String> candidates) {
-        List<@NonNull Double> scores = new ArrayList<>();
+    public List<Double> scoreAll(String query, List<String> candidates) throws Exception {
+        List<Double> scores = new ArrayList<>();
         
         for (String candidate : candidates) {
             scores.add(scoreCandidate(query, candidate));
@@ -36,7 +32,11 @@ public class LlmScoringModel extends PluginComponent implements ScoringModel {
         return scores;
     }
 
-    private double scoreCandidate(String query, String candidate) {
+    private double scoreCandidate(String query, String candidate) throws Exception {
+
+        Objects.requireNonNull(query, "query must not be null");
+        Objects.requireNonNull(candidate, "candidate must not be null");
+        
         LlmRequest request = LlmRequest.builder()
             .addMessage(ReveilaMessage.system("You are a surgical tool reranker. Your task is to evaluate the relevance of a tool to a user's intent. " +
                 "Respond ONLY with 'Score: X.X' where X.X is between 0.0 (irrelevant) and 1.0 (perfect match)."))
@@ -44,8 +44,7 @@ public class LlmScoringModel extends PluginComponent implements ScoringModel {
             .temperature(0.0)
             .build();
 
-        try {
-            LlmResponse response = provider.invoke(request);
+        LlmResponse response = provider.invoke(request);
             String content = response.getContent();
             if (content != null) {
                 Matcher matcher = SCORE_PATTERN.matcher(content);
@@ -53,22 +52,7 @@ public class LlmScoringModel extends PluginComponent implements ScoringModel {
                     return Double.parseDouble(matcher.group(1));
                 }
             }
-        } catch (Exception e) {
-            if (logger != null) {
-                logger.warning("Failed to score tool candidate: " + e.getMessage());
-            }
-        }
         
         return 0.0;
-    }
-
-    @Override
-    protected void onStart() throws Exception {
-        // Initialization if needed
-    }
-
-    @Override
-    protected void onStop() throws Exception {
-        // Cleanup if needed
     }
 }

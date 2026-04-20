@@ -1,6 +1,6 @@
 import { StyleSheet, TouchableOpacity, ScrollView, View, TextInput, ActivityIndicator, Alert, Modal } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -21,11 +21,15 @@ export default function HomeScreen() {
   const [promptText, setPromptText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [startingTimestamp, setStartingTimestamp] = useState<number | null>(null);
-  const [selectedModel, setSelectedModel] = useState('Local: Gemma-3-1b');
-  const [agentResponse, setAgentResponse] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState('Ollama (Local)');
+  const [activeMessages, setActiveMessages] = useState<any[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isCloudMode, setIsCloudMode] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const setupCompleteRef = useRef(false);
+  const [sessionCap, setSessionCap] = useState(50);
+  const [carrySummary, setCarrySummary] = useState(true);
+  const [showCapModal, setShowCapModal] = useState(false);
 
   // Auth & Session State
   const [isLocked, setIsLocked] = useState(true);
@@ -34,51 +38,61 @@ export default function HomeScreen() {
   
   const [providersList, setProvidersList] = useState<any[]>([]);
 
+  const isConfigured = (p: any) => {
+    const isLocal = p.name.includes('Local') || (p.endpoint && p.endpoint.includes('localhost'));
+    if (isLocal) return !!p.endpoint;
+    return !!p['api.key'] && p['api.key'].trim().length > 0;
+  };
+
   const availableModels = providersList.filter(p => {
     // Local vs Cloud filtering logic based on name or endpoint
     const ep = p.endpoint || p.defaultEndpoint;
     const isLocal = p.name.includes('Local') || (ep && ep.includes('localhost'));
     return isCloudMode ? !isLocal : isLocal;
-  }).map(p => p.name);
+  });
 
-  useEffect(() => {
-    if (!isRunning) return; // Only fetch when running
-    
-    ReveilaModule.invoke('ConfigurationManager', 'getSettings', ['llm.json']).then((res: string) => {
-      if (res) {
-        try {
-          const config = JSON.parse(res);
-          const onboarded = config['onboarded.providers'] || config.onboarded_providers;
-          if (onboarded) {
-            setProvidersList(onboarded);
-          } else {
+  useFocusEffect(
+    useCallback(() => {
+      if (!isRunning) return; // Only fetch when running
+      
+      ReveilaModule.invoke('ConfigurationManager', 'getSettings', ['llm.json']).then((res: string) => {
+        if (res) {
+          try {
+            const config = JSON.parse(res);
+            const onboarded = config['onboarded.providers'] || config.onboarded_providers;
+            const maxMsgs = config['ai.session.maxMessages'] || config.ai_session_maxMessages;
+            if (maxMsgs) setSessionCap(parseInt(String(maxMsgs)));
+            if (onboarded) {
+              setProvidersList(onboarded);
+            } else {
+              setProvidersList([
+                { name: 'OpenAI', endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o', 'api.key': '' },
+                { name: 'Anthropic', endpoint: 'https://api.anthropic.com/v1/messages', model: 'claude-3-5-sonnet-latest', 'api.key': '' },
+                { name: 'Google Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-3-flash', 'api.key': '' },
+                { name: 'Ollama (Local)', endpoint: 'http://localhost:11434/v1/chat/completions', model: 'qwen2.5-coder:1.5b', 'api.key': '' },
+                { name: 'Custom', endpoint: '', model: '', 'api.key': '' }
+              ]);
+            }
+          } catch (e) {
+            // Fallback if parsing fails
             setProvidersList([
-              { name: 'OpenAI', endpoint: 'https://api.openai.com/v1', 'api.key': '' },
-              { name: 'Anthropic', endpoint: 'https://api.anthropic.com', 'api.key': '' },
-              { name: 'Google Gemini', endpoint: 'https://generativelanguage.googleapis.com', 'api.key': '' },
-              { name: 'Gemma-3-1b (Local)', endpoint: 'http://localhost:11434', 'api.key': '' },
-              { name: 'Custom', endpoint: '', 'api.key': '' }
+              { name: 'Ollama (Local)', endpoint: 'http://localhost:11434/v1/chat/completions', model: 'qwen2.5-coder:1.5b', 'api.key': '' }
             ]);
           }
-        } catch (e) {
-          // Fallback if parsing fails
-          setProvidersList([
-            { name: 'Gemma-3-1b (Local)', endpoint: 'http://localhost:11434', 'api.key': '' }
-          ]);
         }
-      }
-    }).catch((e: any) => {
-      console.log('Reveila service not yet available or failed to load configs:', e?.message || e);
-      // Fallback if invoke fails
-      setProvidersList([
-        { name: 'OpenAI', endpoint: 'https://api.openai.com/v1', 'api.key': '' },
-        { name: 'Anthropic', endpoint: 'https://api.anthropic.com', 'api.key': '' },
-        { name: 'Google Gemini', endpoint: 'https://generativelanguage.googleapis.com', 'api.key': '' },
-        { name: 'Gemma-3-1b (Local)', endpoint: 'http://localhost:11434', 'api.key': '' },
-        { name: 'Custom', endpoint: '', 'api.key': '' }
-      ]);
-    });
-  }, [isRunning]);
+      }).catch((e: any) => {
+        console.log('Reveila service not yet available or failed to load configs:', e?.message || e);
+        // Fallback if invoke fails
+        setProvidersList([
+          { name: 'OpenAI', endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o', 'api.key': '' },
+          { name: 'Anthropic', endpoint: 'https://api.anthropic.com/v1/messages', model: 'claude-3-5-sonnet-latest', 'api.key': '' },
+          { name: 'Google Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-3-flash', 'api.key': '' },
+          { name: 'Ollama (Local)', endpoint: 'http://localhost:11434/v1/chat/completions', model: 'qwen2.5-coder:1.5b', 'api.key': '' },
+          { name: 'Custom', endpoint: '', model: '', 'api.key': '' }
+        ]);
+      });
+    }, [isRunning])
+  );
 
   useEffect(() => {
     const checkSession = async () => {
@@ -106,13 +120,31 @@ export default function HomeScreen() {
           return !(p.name.includes('Local') || (ep && ep.includes('localhost')));
       });
       
-      if (isCloudMode && clouds.length > 0) {
-        setSelectedModel(clouds[0].name);
-      } else if (!isCloudMode && locals.length > 0) {
-        setSelectedModel(locals[0].name);
+      const activeList = isCloudMode ? clouds : locals;
+      
+      // Check if the currently selected model is in the new active list and is configured
+      const isCurrentValid = activeList.some((p: any) => p.name === selectedModel && isConfigured(p));
+      
+      if (!isCurrentValid) {
+        // Find the first configured provider as default fallback
+        const firstConfigured = activeList.find(isConfigured);
+        if (firstConfigured) {
+          setSelectedModel(firstConfigured.name);
+        } else {
+          setSelectedModel('');
+        }
       }
     }
   }, [isCloudMode, providersList]);
+
+  // Sync selected model to backend whenever it changes
+  useEffect(() => {
+    if (isRunning && selectedModel && !isLocked && isSetupComplete && !needsIdentitySetup) {
+      ReveilaModule.invoke('LlmProviderFactory', 'setActiveProvider', [selectedModel]).catch((e: any) => {
+        console.error('Failed to set active provider in backend:', e);
+      });
+    }
+  }, [selectedModel, isRunning, isLocked, isSetupComplete, needsIdentitySetup]);
 
   const handleStart = useCallback(async () => {
     if (isStarting) return;
@@ -162,9 +194,40 @@ export default function HomeScreen() {
   const handleFetchLogs = async () => {
     if (!isRunning || isStarting) return;
     try {
-      const result = await ReveilaModule.invoke('DataService', 'search', [{ entityType: 'AuditLog', page: 0, size: 5 }]);
-      if (result && result.content) setLogs(result.content);
+      const result = await ReveilaModule.invoke('OrchestrationService', 'getActiveSessions', []);
+      if (result) setLogs(result);
     } catch (e) { }
+  };
+
+  const handleSessionClick = async (sessionId: string) => {
+    if (!isRunning || isStarting) return;
+    try {
+      const history = await ReveilaModule.invoke('OrchestrationService', 'getSessionHistory', [sessionId]);
+      if (history) {
+        setActiveSessionId(sessionId); // Track that we are now in this session
+        setActiveMessages(history);
+      }
+    } catch (e) {}
+  };
+
+  const handleNewChat = async (withSummary: boolean) => {
+    setIsProcessing(true);
+    let summary = null;
+    if (withSummary && activeSessionId) {
+      try {
+        summary = await ReveilaModule.invoke('AgenticFabric', 'summarizeSession', [activeSessionId]);
+      } catch (e) {
+        console.error('Failed to summarize session:', e);
+      }
+    }
+    setActiveSessionId(null);
+    setActiveMessages([]);
+    setShowCapModal(false);
+
+    if (summary) {
+      setActiveMessages([{ role: 'SYSTEM', content: `Summary from previous session: ${summary}` }]);
+    }
+    setIsProcessing(false);
   };
 
   const handleSendPrompt = async () => {
@@ -174,15 +237,33 @@ export default function HomeScreen() {
       if (!isStarting) handleStart();
       return;
     }
+
+    if (activeMessages.length >= sessionCap) {
+      setShowCapModal(true);
+      return;
+    }
+
+    const currentPrompt = promptText;
+    setPromptText('');
     setIsProcessing(true);
-    setAgentResponse(null);
+    
+    // Add user message optimistically
+    setActiveMessages(prev => [...prev, { role: 'USER', content: currentPrompt }]);
 
     try {
+      // Find the previous summary if it exists to pass as systemPrompt for new sessions
+      let prevSummary = null;
+      if (!activeSessionId && activeMessages.length > 0 && activeMessages[0].role === 'SYSTEM') {
+          prevSummary = activeMessages[0].content;
+      }
+
       // Call the real AgenticFabric
-      const result = await ReveilaModule.invoke('AgenticFabric', 'askAgent', [promptText, ""]);
-      setLogs(prev => [{ attributes: { action: 'PROMPT', details: promptText } }, ...prev]);
-      setAgentResponse(typeof result === 'string' ? result : JSON.stringify(result));
-      setPromptText('');
+      const result = await ReveilaModule.invoke('AgenticFabric', 'askAgent', [currentPrompt, activeSessionId || "", prevSummary || ""]);
+      handleFetchLogs(); // Refresh sessions
+      if (result) {
+        if (result.sessionId) setActiveSessionId(result.sessionId);
+        setActiveMessages(prev => [...prev, { role: 'ASSISTANT', content: result.answer || JSON.stringify(result) }]);
+      }
     } catch (e: any) {
       const errorMsg = `Error communicating with AI: ${e.message}`;
       const stack = e.stack || "No JS stack available";
@@ -190,8 +271,7 @@ export default function HomeScreen() {
       // Log to terminal (via expo-cli)
       console.error(errorMsg, stack);
 
-      // Display in the UI response card
-      setAgentResponse(`${errorMsg}\n\n[JS STACK]:\n${stack}`);
+      setActiveMessages(prev => [...prev, { role: 'SYSTEM', content: errorMsg }]);
     } finally {
       setIsProcessing(false);
     }
@@ -244,17 +324,23 @@ export default function HomeScreen() {
       </ReveilaHeader>
       <View style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.content} style={{ flex: 1 }}>
-          {(agentResponse || isProcessing) && (
+          {(activeMessages.length > 0 || isProcessing) && (
             <ThemedView style={[styles.responseCard, { borderColor: isCloudMode ? '#3b82f6' : '#22c55e', borderLeftWidth: 4 }]}>
               <ThemedText type="defaultSemiBold" style={{ color: isCloudMode ? '#3b82f6' : '#22c55e', marginBottom: 8, fontSize: 11 }}>
-                {isCloudMode ? 'CLOUD RESPONSE' : 'LOCAL REASONING'}
+                {isCloudMode ? 'CLOUD CHAT' : 'LOCAL CHAT'}
               </ThemedText>
-              <ScrollView style={{ maxHeight: 400 }} nestedScrollEnabled={true}>
-                {isProcessing ? (
-                  <ThemedText style={{ fontStyle: 'italic', color: '#94a3b8' }}>Generating answer...</ThemedText>
-                ) : (
-                  <ThemedText selectable={true} style={styles.responseText}>{agentResponse}</ThemedText>
-                )}
+              <ScrollView style={{ maxHeight: 300 }} nestedScrollEnabled={true}>
+                <View style={{ gap: 16 }}>
+                  {activeMessages.map((msg, i) => (
+                    <View key={i} style={{ borderBottomWidth: i < activeMessages.length - 1 ? 1 : 0, borderBottomColor: '#f1f5f9', paddingBottom: 10 }}>
+                      <ThemedText style={{ fontSize: 10, fontWeight: '900', color: msg.role === 'USER' ? '#3b82f6' : '#64748b', marginBottom: 4 }}>{msg.role}</ThemedText>
+                      <ThemedText selectable={true} style={styles.responseText}>{msg.content}</ThemedText>
+                    </View>
+                  ))}
+                  {isProcessing && (
+                    <ThemedText style={{ fontStyle: 'italic', color: '#94a3b8' }}>Thinking...</ThemedText>
+                  )}
+                </View>
               </ScrollView>
             </ThemedView>
           )}
@@ -265,12 +351,25 @@ export default function HomeScreen() {
           )}
           <View style={styles.modelSelectorContainer}>
             <ThemedText style={styles.sectionLabel}>{isCloudMode ? 'REMOTE MODELS' : 'LOCAL MODELS'}</ThemedText>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-              {availableModels.map(model => (
-                <TouchableOpacity key={model} style={[styles.modelChip, selectedModel === model && styles.modelChipActive]} onPress={() => setSelectedModel(model)}>
-                  <ThemedText style={[styles.modelChipText, selectedModel === model && styles.modelChipTextActive]}>{model}</ThemedText>
-                </TouchableOpacity>
-              ))}
+            <ScrollView horizontal showsHorizontalScrollIndicator={true} style={styles.chipScroll} contentContainerStyle={{ paddingRight: 20 }}>
+              {availableModels.map(p => {
+                const configured = isConfigured(p);
+                return (
+                  <TouchableOpacity 
+                    key={p.name} 
+                    style={[styles.modelChip, selectedModel === p.name && styles.modelChipActive, !configured && { opacity: 0.5 }]} 
+                    onPress={() => { if(configured) setSelectedModel(p.name); }}
+                    disabled={!configured}
+                  >
+                    <ThemedText style={[
+                        styles.modelChipText, 
+                        configured && { color: selectedModel === p.name ? '#4ade80' : '#16a34a' }
+                    ]}>
+                      {p.name}{!configured ? ' (Setup Req)' : ''}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           </View>
           
@@ -279,6 +378,34 @@ export default function HomeScreen() {
               <ThemedText style={{ color: '#ff6600', fontSize: 13, fontWeight: '700', textAlign: 'center' }}>Change Master Password</ThemedText>
             </TouchableOpacity>
           )}
+
+          <Modal visible={showCapModal} animationType="slide" transparent>
+            <View style={styles.modalOverlay}>
+              <ThemedView style={styles.modalContent}>
+                <ThemedText type="subtitle">Session Length Reached</ThemedText>
+                <ThemedText style={{ marginTop: 12, marginBottom: 20 }}>
+                  This session has reached the maximum message limit. To maintain performance, please start a new session.
+                </ThemedText>
+                
+                <TouchableOpacity 
+                  style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24, gap: 8 }}
+                  onPress={() => setCarrySummary(!carrySummary)}
+                >
+                  <IconSymbol name={carrySummary ? "checkmark.circle.fill" : "circle"} size={24} color={carrySummary ? "#22c55e" : "#64748b"} />
+                  <ThemedText>Carry over summary to new session</ThemedText>
+                </TouchableOpacity>
+
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <TouchableOpacity style={[styles.button, { flex: 1, backgroundColor: '#22c55e' }]} onPress={() => handleNewChat(carrySummary)}>
+                    <ThemedText style={styles.buttonText}>START NEW CHAT</ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.outlineButton, { flex: 1 }]} onPress={() => setShowCapModal(false)}>
+                    <ThemedText style={styles.outlineButtonText}>NOT NOW</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </ThemedView>
+            </View>
+          </Modal>
 
           <Modal visible={showChangePassword} animationType="slide" transparent>
             <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center' }}>
@@ -307,11 +434,16 @@ export default function HomeScreen() {
           </ThemedView>
           <View style={styles.minimalRecorder}>
             <View style={styles.row}>
-              <ThemedText style={styles.sectionLabel}>ACTIVITY HISTORY</ThemedText>
+              <ThemedText style={styles.sectionLabel}>RECENT SESSIONS</ThemedText>
               <View style={{ flexDirection: 'row', gap: 12 }}>
                 <TouchableOpacity onPress={() => setShowHistory(!showHistory)}>
                   <ThemedText style={{ color: '#3b82f6', fontSize: 10, fontWeight: '700' }}>{showHistory ? 'HIDE' : 'VIEW'}</ThemedText>
                 </TouchableOpacity>
+                {showHistory && (
+                  <TouchableOpacity onPress={() => handleNewChat(false)} disabled={!isRunning}>
+                    <ThemedText style={{ color: '#22c55e', fontSize: 10, fontWeight: '700' }}>NEW CHAT</ThemedText>
+                  </TouchableOpacity>
+                )}
                 {showHistory && (
                   <TouchableOpacity onPress={handleFetchLogs} disabled={!isRunning}>
                     <ThemedText style={{ color: '#3b82f6', fontSize: 10, fontWeight: '700' }}>REFRESH</ThemedText>
@@ -321,12 +453,12 @@ export default function HomeScreen() {
             </View>
             {showHistory && (
               <ThemedView style={styles.miniTable}>
-                {logs.length > 0 ? logs.slice(0, 3).map((log, i) => (
-                  <View key={i} style={styles.miniTableRow}>
-                    <ThemedText numberOfLines={1} style={styles.miniLogText}>{log.attributes?.action || log.attributes?.details}</ThemedText>
-                  </View>
+                {logs.length > 0 ? logs.slice(0, 5).map((log, i) => (
+                  <TouchableOpacity key={i} style={styles.miniTableRow} onPress={() => handleSessionClick(log.id)}>
+                    <ThemedText numberOfLines={1} style={styles.miniLogText}>{log.title || 'Session'} ({log.messageCount || 0} msgs)</ThemedText>
+                  </TouchableOpacity>
                 )) : (
-                  <ThemedText style={[styles.miniLogText, { padding: 8, fontStyle: 'italic' }]}>No recent activity found.</ThemedText>
+                  <ThemedText style={[styles.miniLogText, { padding: 8, fontStyle: 'italic' }]}>No active sessions found.</ThemedText>
                 )}
               </ThemedView>
             )}
@@ -365,5 +497,9 @@ const styles = StyleSheet.create({
   miniTableRow: { padding: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   miniLogText: { fontSize: 12, color: '#64748b', fontWeight: '500' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  description: { fontSize: 14, color: '#64748b' }
+  description: { fontSize: 14, color: '#64748b' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+  modalContent: { backgroundColor: '#fff', borderRadius: 16, padding: 24, elevation: 5 },
+  outlineButton: { borderWidth: 1, borderColor: '#e2e8f0', padding: 14, borderRadius: 10, alignItems: 'center' },
+  outlineButtonText: { color: '#64748b', fontWeight: '800', fontSize: 14 }
 });

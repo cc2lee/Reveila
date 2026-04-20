@@ -72,9 +72,16 @@ public class LlmProviderFactory extends SystemComponent {
                         Manifest manifest = new Manifest();
                         manifest.setComponentType("plugin");
                         manifest.setName(name);
-                        manifest.setImplementationClass(GenericLlmProvider.class.getName());
+                        
+                        GenericLlmProvider generic;
+                        if (name.toLowerCase().contains("gemini")) {
+                            generic = new GeminiLlmProvider();
+                            manifest.setImplementationClass(GeminiLlmProvider.class.getName());
+                        } else {
+                            generic = new GenericLlmProvider();
+                            manifest.setImplementationClass(GenericLlmProvider.class.getName());
+                        }
 
-                        GenericLlmProvider generic = new GenericLlmProvider();
                         generic.setContext(new PluginContext(context, manifest, new Properties()));
                         generic.setName(name);
                         
@@ -148,19 +155,19 @@ public class LlmProviderFactory extends SystemComponent {
         }
         if ("android".equalsIgnoreCase(platform) || "mobile".equalsIgnoreCase(platform)
                 || "ios".equalsIgnoreCase(platform)) {
-            fallbackOllama.setEndpoint("http://10.0.2.2:11434");
+            fallbackOllama.setEndpoint("http://10.0.2.2:11434/v1/chat/completions");
             fallbackOllama.setModel("llama3");
             fallbackOllama.setTemperature(0.7);
             fallbackOllama.setQuantization("Q4_K_M");
 
         } else if ("server".equalsIgnoreCase(platform) || "docker".equalsIgnoreCase(platform)
                 || "spring".equalsIgnoreCase(platform)) {
-            fallbackOllama.setEndpoint("http://ollama-service:11434");
+            fallbackOllama.setEndpoint("http://ollama-service:11434/v1/chat/completions");
             fallbackOllama.setModel("llama3");
             fallbackOllama.setTemperature(0.7);
             
         } else {
-            fallbackOllama.setEndpoint("http://localhost:11434");
+            fallbackOllama.setEndpoint("http://localhost:11434/v1/chat/completions");
             fallbackOllama.setModel("llama3");
             fallbackOllama.setTemperature(0.7);
             
@@ -190,19 +197,44 @@ public class LlmProviderFactory extends SystemComponent {
         return activeProvider;
     }
 
+    /**
+     * Dynamically sets the active LLM provider based on user selection.
+     * 
+     * @param slug The provider slug/name to set as active.
+     */
+    public void setActiveProvider(String slug) {
+        if (slug != null && !slug.trim().isEmpty()) {
+            context.getProperties().setProperty("ai.worker.llm", slug);
+        }
+        
+        // Clear the current active provider cache so it re-evaluates
+        this.activeProvider = null;
+        
+        // Force evaluation right now to ensure a valid provider is ready
+        this.activeProvider = getBestProvider();
+        
+        if (this.activeProvider != null && logger != null) {
+            logger.info("Active LLM provider is now dynamically set to: " + this.activeProvider.getName());
+        }
+    }
+
     private LlmProvider getBestProvider() {
         // 1. Try user selected provider
         String selected = context.getProperties().getProperty("ai.worker.llm");
         if (selected != null && !selected.isBlank()) {
             LlmProvider provider = getProvider(selected);
-            if (provider != null && provider.isEnabled() && provider.isConfigured()) {
-                return provider;
+            if (provider != null) {
+                if (provider.isEnabled() && provider.isConfigured()) {
+                    return provider;
+                } else {
+                    throw new IllegalStateException("The selected LLM Provider (" + selected + ") is either disabled or missing required configuration. Please check your settings.");
+                }
             } else {
-                logger.warning("The selected LLM Provider " + selected + " either does not exist or is not useable.");
+                throw new IllegalStateException("The selected LLM Provider (" + selected + ") could not be found in the system.");
             }
         }
 
-        // 2. Fallback to the backup provider
+        // 2. Fallback to the backup provider (only if no explicit selection was made)
         if (backupProvider != null) {
             return backupProvider;
         } else {
