@@ -8,7 +8,7 @@ import org.springframework.scheduling.annotation.Async;
 import com.reveila.ai.FlightRecorder;
 import com.reveila.data.Repository;
 import com.reveila.spring.model.jpa.AuditLog;
-import com.reveila.system.Plugin;
+import com.reveila.system.InvocationTarget;
 import com.reveila.system.SystemComponent;
 
 /**
@@ -40,7 +40,7 @@ public class PostgresFlightRecorder extends SystemComponent implements FlightRec
 
     @Override
     @Async
-    public void recordStep(Plugin plugin, String stepName, Map<String, Object> data) {
+    public void recordStep(InvocationTarget plugin, String stepName, Map<String, Object> data) {
         AuditLog log = createBaseLog(plugin, stepName);
         if (data != null) {
             log.setMetadata(data.toString());
@@ -50,7 +50,7 @@ public class PostgresFlightRecorder extends SystemComponent implements FlightRec
 
     @Override
     @Async
-    public void recordReasoning(Plugin plugin, String reasoning) {
+    public void recordReasoning(InvocationTarget plugin, String reasoning) {
         AuditLog log = createBaseLog(plugin, "REASONING_TRACE");
         log.setReasoningTrace(reasoning);
         if (auditRepository != null) auditRepository.store(log);
@@ -58,7 +58,7 @@ public class PostgresFlightRecorder extends SystemComponent implements FlightRec
 
     @Override
     @Async
-    public void recordToolOutput(Plugin plugin, String toolName, Object output) {
+    public void recordToolOutput(InvocationTarget plugin, String toolName, Object output) {
         AuditLog log = createBaseLog(plugin, "TOOL_OUTPUT: " + toolName);
         if (output != null) {
             log.setMetadata(output.toString());
@@ -68,7 +68,7 @@ public class PostgresFlightRecorder extends SystemComponent implements FlightRec
 
     @Override
     @Async
-    public void recordForensicMetadata(Plugin plugin, Map<String, Object> metadata) {
+    public void recordForensicMetadata(InvocationTarget plugin, Map<String, Object> metadata) {
         AuditLog log = createBaseLog(plugin, "FORENSIC_METRICS");
         
         // ADR: Track "Who watches the watchers"
@@ -95,7 +95,7 @@ public class PostgresFlightRecorder extends SystemComponent implements FlightRec
         if (auditRepository != null) auditRepository.store(log);
     }
 
-    private @NonNull AuditLog createBaseLog(Plugin plugin, String action) {
+    private @NonNull AuditLog createBaseLog(InvocationTarget plugin, String action) {
         AuditLog log = new AuditLog();
         log.setTraceId(plugin.getTraceId());
         log.setAction(action);

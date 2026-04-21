@@ -97,7 +97,7 @@ public class MetadataRegistry extends SystemComponent {
             
             String tier = (String) attrs.getOrDefault("tier", "Tier 3");
             
-            AgencyPerimeter perimeter = parseAgencyPerimeter(attrs.get("agency_perimeter"));
+            SecurityPerimeter perimeter = parseAgencyPerimeter(attrs.get("agency_perimeter"));
             
             Set<String> secrets = parseSet(attrs.get("secret_parameters"));
             Set<String> masked = parseSet(attrs.get("masked_parameters"));
@@ -118,7 +118,7 @@ public class MetadataRegistry extends SystemComponent {
     }
 
     @SuppressWarnings("unchecked")
-    private AgencyPerimeter parseAgencyPerimeter(Object obj) {
+    private SecurityPerimeter parseAgencyPerimeter(Object obj) {
         if (obj instanceof Map) {
             Map<String, Object> pMap = (Map<String, Object>) obj;
             Set<String> accessScopes = parseSet(pMap.get("accessScopes"));
@@ -128,9 +128,9 @@ public class MetadataRegistry extends SystemComponent {
             int cpu = pMap.containsKey("maxCpuCores") ? ((Number) pMap.get("maxCpuCores")).intValue() : 1;
             int exec = pMap.containsKey("maxExecutionSec") ? ((Number) pMap.get("maxExecutionSec")).intValue() : 30;
             boolean delegation = Boolean.TRUE.equals(pMap.get("delegationAllowed"));
-            return new AgencyPerimeter(accessScopes, allowedDomains, internetBlocked, mem, cpu, exec, delegation);
+            return new SecurityPerimeter(accessScopes, allowedDomains, internetBlocked, mem, cpu, exec, delegation);
         }
-        return new AgencyPerimeter(Collections.emptySet(), Collections.emptySet(), true, 128L, 1, 5, false);
+        return new SecurityPerimeter(Collections.emptySet(), Collections.emptySet(), true, 128L, 1, 5, false);
     }
 
     /**
@@ -142,14 +142,14 @@ public class MetadataRegistry extends SystemComponent {
             String version,
             Map<String, Object> tool_definitions,
             String tier,
-            AgencyPerimeter agency_perimeter,
+            SecurityPerimeter agency_perimeter,
             java.util.Set<String> secret_parameters,
             java.util.Set<String> masked_parameters) {
         
         // Helper to match old usage if needed or bridge to new snake_case
         public String id() { return plugin_id; }
         public Map<String, Object> toolDefinitions() { return tool_definitions; }
-        public AgencyPerimeter defaultPerimeter() { return agency_perimeter; }
+        public SecurityPerimeter defaultPerimeter() { return agency_perimeter; }
         public java.util.Set<String> secretParameters() { return secret_parameters; }
         public java.util.Set<String> maskedParameters() { return masked_parameters; }
         public java.util.Set<String> hitlRequiredIntents() {
@@ -199,7 +199,7 @@ public class MetadataRegistry extends SystemComponent {
 
     private void registerCoreAgents() {
         // Bootstrap 'ui-client' which is the default caller for UI interactions
-        AgencyPerimeter uiClientPerimeter = new AgencyPerimeter(
+        SecurityPerimeter uiClientPerimeter = new SecurityPerimeter(
             Collections.emptySet(), // accessScopes
             Collections.emptySet(), // allowedDomains
             false, // internetAccessBlocked

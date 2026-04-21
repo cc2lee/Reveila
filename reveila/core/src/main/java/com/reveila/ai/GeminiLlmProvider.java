@@ -77,7 +77,7 @@ public class GeminiLlmProvider extends GenericLlmProvider {
 
             Map<String, String> headers = new HashMap<>();
             if (activeApiKey != null && !activeApiKey.isBlank()) {
-                headers.put("x-goog-api-key", activeApiKey);
+                headers.put("Authorization", "Bearer " + activeApiKey);
             }
             headers.put("Content-Type", "application/json");
 

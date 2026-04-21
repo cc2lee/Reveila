@@ -8,7 +8,7 @@ import java.util.UUID;
  * 
  * @author CL
  */
-public class Plugin {
+public class InvocationTarget {
 
     private String sessionId;
 
@@ -16,10 +16,10 @@ public class Plugin {
         return sessionId;
     }
 
-    private String agentId;
+    private String targetName;
 
-    public String getAgentId() {
-        return agentId;
+    public String getTargetName() {
+        return targetName;
     }
 
     private String tenantId;
@@ -34,10 +34,10 @@ public class Plugin {
         return traceId;
     }
 
-    public Plugin(UUID sessionId, String agentId, String tenantId, String traceId) {
+    public InvocationTarget(UUID sessionId, String targetName, String tenantId, String traceId) {
         super();
         this.sessionId = sessionId.toString();
-        this.agentId = agentId;
+        this.targetName = targetName;
         this.tenantId = tenantId;
         this.traceId = traceId;
     }
@@ -45,22 +45,22 @@ public class Plugin {
     /**
      * Creates a new AgentPrincipal with a random session ID and trace ID.
      *
-     * @param agentId  The unique identifier for the agent.
+     * @param targetName  The unique identifier for the agent.
      * @param tenantId The tenant associated with the agent.
      * @return A new AgentPrincipal instance.
      */
-    public static Plugin create(String agentId, String tenantId) {
-        return new Plugin(UUID.randomUUID(), agentId, tenantId, UUID.randomUUID().toString());
+    public static InvocationTarget create(String targetName, String tenantId) {
+        return new InvocationTarget(UUID.randomUUID(), targetName, tenantId, UUID.randomUUID().toString());
     }
 
     /**
      * Creates a child AgentPrincipal with a new session ID but inheriting the
      * parent's trace ID.
      *
-     * @param agentId The unique identifier for the child agent.
+     * @param targetName The unique identifier for the child agent.
      * @return A new AgentPrincipal instance linked by traceId.
      */
-    public Plugin deriveChild(String agentId) {
-        return new Plugin(UUID.randomUUID(), agentId, this.tenantId, this.traceId);
+    public InvocationTarget deriveChild(String targetName) {
+        return new InvocationTarget(UUID.randomUUID(), targetName, this.tenantId, this.traceId);
     }
 }

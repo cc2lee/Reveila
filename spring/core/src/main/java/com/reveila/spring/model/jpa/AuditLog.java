@@ -24,8 +24,8 @@ public class AuditLog {
     @Column(name = "timestamp")
     private Instant timestamp = Instant.now();
 
-    @Column(name = "agent_id", nullable = false)
-    private String agentId;
+    @Column(name = "target_id", nullable = false)
+    private String targetName;
 
     @Column(name = "session_id", nullable = false)
     private UUID sessionId;
@@ -58,14 +58,14 @@ public class AuditLog {
     // --- Backward Compatibility & Helper Methods ---
     
     public void setTraceId(String traceId) { 
-        this.agentId = traceId; 
+        this.targetName = traceId; 
         try {
             this.sessionId = UUID.fromString(traceId);
         } catch (Exception e) {
             if (this.sessionId == null) this.sessionId = UUID.randomUUID();
         }
     }
-    public String getTraceId() { return this.agentId; }
+    public String getTraceId() { return this.targetName; }
     
     public void setReasoningTrace(String trace) { this.innerMonologue = trace; }
     public String getReasoningTrace() { return this.innerMonologue; }
@@ -81,8 +81,8 @@ public class AuditLog {
     public Instant getTimestamp() { return timestamp; }
     public void setTimestamp(Instant timestamp) { this.timestamp = timestamp; }
 
-    public String getAgentId() { return agentId; }
-    public void setAgentId(String agentId) { this.agentId = agentId; }
+    public String getTargetName() { return targetName; }
+    public void setTargetName(String targetName) { this.targetName = targetName; }
 
     public UUID getSessionId() { return sessionId; }
     public void setSessionId(UUID sessionId) { this.sessionId = sessionId; }
@@ -114,10 +114,10 @@ public class AuditLog {
     @Override
     public String toString() {
         return String.format(
-            "[AuditLog | %s] Status: %s, Agent: %s, Action: %s, Risk: %s, Policy: %s",
+            "[AuditLog | %s] Status: %s, Target: %s, Action: %s, Risk: %s, Policy: %s",
             timestamp,
             status,
-            agentId,
+            targetName,
             action,
             riskScore != null ? riskScore.toPlainString() : "N/A",
             policyTriggered != null ? policyTriggered : "NONE"

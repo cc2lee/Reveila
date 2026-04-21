@@ -93,12 +93,14 @@ public class OrchestrationService extends SystemComponent {
      * Returns a list of active sessions for the dashboard.
      */
     public java.util.List<java.util.Map<String, Object>> getActiveSessions() {
-        return sessions.values().stream().map(session -> {
+        return sessions.values().stream()
+            .filter(session -> session.getChatMemory().messages().size() > 0)
+            .map(session -> {
             java.util.Map<String, Object> map = new java.util.HashMap<>();
             map.put("id", session.getSessionId());
             
             // find the first user message for title
-            String title = "New Session";
+            String title = "Session";
             for (com.reveila.ai.ReveilaMessage msg : session.getChatMemory().messages()) {
                 if (com.reveila.ai.LlmRole.USER.equals(msg.role())) {
                     title = msg.content();
@@ -122,7 +124,18 @@ public class OrchestrationService extends SystemComponent {
         return session.getChatMemory().messages().stream().map(msg -> {
             java.util.Map<String, String> map = new java.util.HashMap<>();
             map.put("role", msg.role().name());
-            map.put("content", msg.content());
+            String content = msg.content();
+            if (com.reveila.ai.LlmRole.ASSISTANT.equals(msg.role())) {
+                try {
+                    String cleaned = com.reveila.util.json.JsonUtil.clean(content);
+                    if (cleaned.startsWith("{")) {
+                        content = com.reveila.ai.AgenticFabric.interpretAiResponse(new org.json.JSONObject(cleaned));
+                    }
+                } catch (Exception e) {
+                    // Not JSON or parse failed, keep original content
+                }
+            }
+            map.put("content", content);
             return map;
         }).collect(java.util.stream.Collectors.toList());
     }

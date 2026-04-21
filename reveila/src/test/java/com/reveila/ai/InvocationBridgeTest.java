@@ -30,7 +30,7 @@ class ManagedInvocationTest {
     private ManagedInvocation bridge;
     private OrchestrationService orchestrationService;
     private AgentPrincipal principal;
-    private AgencyPerimeter perimeter;
+    private SecurityPerimeter perimeter;
     @Mock private com.reveila.system.SystemContext systemContext;
     @Mock private com.reveila.system.SystemProxy proxy;
 
@@ -62,13 +62,13 @@ class ManagedInvocationTest {
         
         bridge.start();
         principal = AgentPrincipal.create("test-agent", "tenant-1");
-        perimeter = new AgencyPerimeter(Set.of("read"), Set.of(), true, 1024, 1, 10, false);
+        perimeter = new SecurityPerimeter(Set.of("read"), Set.of(), true, 1024, 1, 10, false);
     }
 
     @Test
     void testGoodPath() {
         String intent = "test.action";
-        Map<String, Object> args = Map.of("key", "value", "_thought", "thinking...");
+        Map<String, Object> args = Map.of("key", "value", AgentSession.THOUGHT, "thinking...");
         MetadataRegistry.PluginManifest manifest = new MetadataRegistry.PluginManifest(
             "p1", "Plugin 1", "1.0", Map.of(), perimeter, Set.of(), Set.of()
         );

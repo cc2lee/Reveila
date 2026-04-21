@@ -26,7 +26,7 @@ class DockerGuardedRuntimeTest {
     @Test
     void testContainerSpawning() {
         AgentPrincipal principal = AgentPrincipal.create("a1", "t1");
-        AgencyPerimeter perimeter = new AgencyPerimeter(Set.of(), Set.of(), false, 512, 1, 30, false);
+        SecurityPerimeter perimeter = new SecurityPerimeter(Set.of(), Set.of(), false, 512, 1, 30, false);
         
         CreateContainerCmd createCmd = mock(CreateContainerCmd.class);
         CreateContainerResponse response = new CreateContainerResponse();

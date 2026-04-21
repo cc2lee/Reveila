@@ -1,0 +1,26 @@
+[
+  {
+    "component": {
+      "name": "FlightRecorder",
+      "class": "com.reveila.android.service.AndroidFlightRecorder",
+      "description": "Records reasoning traces and tool outputs.",
+      "thread-safe": true
+    }
+  },
+  {
+    "component": {
+      "name": "GuardedRuntime",
+      "class": "com.reveila.android.service.AndroidGuardedRuntime",
+      "description": "Secure execution layer for plugins.",
+      "thread-safe": true
+    }
+  },
+  {
+    "component": {
+      "name": "DataService",
+      "class": "com.reveila.android.service.AndroidDataService",
+      "description": "Bridges the Reveila API to local Android storage.",
+      "thread-safe": true
+    }
+  }
+]

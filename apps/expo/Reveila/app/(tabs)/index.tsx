@@ -37,6 +37,7 @@ export default function HomeScreen() {
   const [showChangePassword, setShowChangePassword] = useState(false);
   
   const [providersList, setProvidersList] = useState<any[]>([]);
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const isConfigured = (p: any) => {
     const isLocal = p.name.includes('Local') || (p.endpoint && p.endpoint.includes('localhost'));
@@ -146,6 +147,14 @@ export default function HomeScreen() {
     }
   }, [selectedModel, isRunning, isLocked, isSetupComplete, needsIdentitySetup]);
 
+  useEffect(() => {
+    if (activeMessages.length > 0) {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [activeMessages]);
+
   const handleStart = useCallback(async () => {
     if (isStarting) return;
     setIsStarting(true);
@@ -202,8 +211,13 @@ export default function HomeScreen() {
   const handleSessionClick = async (sessionId: string) => {
     if (!isRunning || isStarting) return;
     try {
-      const history = await ReveilaModule.invoke('OrchestrationService', 'getSessionHistory', [sessionId]);
+      let history = await ReveilaModule.invoke('OrchestrationService', 'getSessionHistory', [sessionId]);
       if (history) {
+        // Strip nameValuePairs from any historical messages if present
+        history = history.map((msg: any) => {
+          if (msg.nameValuePairs) return msg.nameValuePairs;
+          return msg;
+        });
         setActiveSessionId(sessionId); // Track that we are now in this session
         setActiveMessages(history);
       }
@@ -258,12 +272,16 @@ export default function HomeScreen() {
       }
 
       // Call the real AgenticFabric
-      const result = await ReveilaModule.invoke('AgenticFabric', 'askAgent', [currentPrompt, activeSessionId || "", prevSummary || ""]);
-      handleFetchLogs(); // Refresh sessions
+      let result = await ReveilaModule.invoke('AgenticFabric', 'askAgent', [currentPrompt, activeSessionId || "", prevSummary || ""]);
       if (result) {
+        // Strip nameValuePairs if it exists (added by some serialization tools)
+        if (result.nameValuePairs) {
+          result = result.nameValuePairs;
+        }
         if (result.sessionId) setActiveSessionId(result.sessionId);
         setActiveMessages(prev => [...prev, { role: 'ASSISTANT', content: result.answer || JSON.stringify(result) }]);
       }
+      handleFetchLogs(); // Refresh sessions after potential state changes
     } catch (e: any) {
       const errorMsg = `Error communicating with AI: ${e.message}`;
       const stack = e.stack || "No JS stack available";
@@ -329,7 +347,7 @@ export default function HomeScreen() {
               <ThemedText type="defaultSemiBold" style={{ color: isCloudMode ? '#3b82f6' : '#22c55e', marginBottom: 8, fontSize: 11 }}>
                 {isCloudMode ? 'CLOUD CHAT' : 'LOCAL CHAT'}
               </ThemedText>
-              <ScrollView style={{ maxHeight: 300 }} nestedScrollEnabled={true}>
+              <ScrollView ref={scrollViewRef} style={{ maxHeight: 300 }} nestedScrollEnabled={true} onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}>
                 <View style={{ gap: 16 }}>
                   {activeMessages.map((msg, i) => (
                     <View key={i} style={{ borderBottomWidth: i < activeMessages.length - 1 ? 1 : 0, borderBottomColor: '#f1f5f9', paddingBottom: 10 }}>

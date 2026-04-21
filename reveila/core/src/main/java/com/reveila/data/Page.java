@@ -8,51 +8,7 @@ import java.util.function.Function;
  * Represents a page of paginated content.
  * 
  * This record provides a flexible pagination model that supports both full
- * pagination
- * (with total element count) and slice-based pagination (without total count).
- * 
- * <h3>Constructors</h3>
- * <ul>
- * <li><strong>Full Constructor:</strong> Includes all five
- * parameters for complete pagination info</li>
- * <li><strong>Slice Constructor:</strong> Accepts four
- * parameters; totalElements is set to null</li>
- * </ul>
- * 
- * <h3>Validation</h3>
- * <ul>
- * <li>pageSize must be at least 1, otherwise an
- * IllegalArgumentException is thrown</li>
- * <li>content is normalized to an empty list if null is
- * provided</li>
- * <li>content is immutable; a defensive copy is
- * created</li>
- * </ul>
- * 
- * Example: An Admin dashboard needing total counts
- * long total = repository.count();
- * List<Plugin> data = repository.fetchData(page, size);
- * 
- * This uses the 5-parameter constructor
- * return new Page<>(data, page, size, hasNext, total);
- * 
- * Example: A mobile sync or infinite scroll
- * List<Plugin> data = repository.fetchData(page, size +
- * 1);
- * boolean hasNext = data.size() > size;
- * 
- * This uses the 4-parameter constructor (totalElements will be null)
- * return new Page<>(data, page, size, hasNext);
- * 
- * Handling the "Total Count" in the UI
- * 
- * Method Result if totalElements is null Result if
- * totalElements is 100
- * totalElements() return null if totalElements is null, or
- * the actual count, e.g. 100L
- * getPagesCount() return -1 if totalElements is null, or
- * the actual count, e.g. 10 (if size is 10)
- * isLast() return !hasNext()
+ * pagination (with total element count) and slice-based pagination (without total count).
  * 
  * @param <T>           the type of elements contained in this page
  * @param content       the list of elements in this page; never null (empty

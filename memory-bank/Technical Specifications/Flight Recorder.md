@@ -21,7 +21,7 @@ This schema captures the context of the agentic "thought process" before a tool 
 {
   "trace_id": "rev-99283-abc",
   "timestamp": "2026-02-10T18:05:00Z",
-  "agent_id": "agent-alpha-ops",
+  "target_id": "agent-alpha-ops",
   "reasoning_trace": {
     "goal": "Generate quarterly report for Healthfirst region 4.",
     "thought": "I need to access the analytics database to aggregate Q4 claims data.",

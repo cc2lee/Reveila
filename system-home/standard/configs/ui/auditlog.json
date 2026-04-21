@@ -1,0 +1,22 @@
+{
+    "table": {
+        "displayColumns": [
+            "riskScore",
+            "timestamp",
+            "innerMonologue",
+            "status",
+            "agentId",
+            "proposedAction",
+            "policyTriggered",
+            "modelUsed",
+            "actualOutput",
+            "id"
+        ],
+        "excludeColumns": [
+            "sessionId",
+            "metadata",
+            "password",
+            "secret_key"
+        ]
+    }
+}

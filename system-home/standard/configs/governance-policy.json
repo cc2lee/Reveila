@@ -1,0 +1,17 @@
+{
+    "policyName": "SOVEREIGN_ACCESS_CONTROL_v1",
+    "description": "Protects core system assets and sensitive data identifiers.",
+    "restrictedKeywords": [
+        "ENCRYPTION",
+        "DATABASE",
+        "METADATA",
+        "SSN",
+        "KEYS",
+        "CREDENTIALS",
+        "SURPLUS",
+        "PROJECT MARS"
+    ],
+    "baseRiskScore": 0.80,
+    "keywordPenalty": 0.05,
+    "alertThreshold": 0.80
+}

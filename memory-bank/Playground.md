@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS governance_audit (
     timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     
     -- Metadata
-    agent_id VARCHAR(50) NOT NULL,
+    target_id VARCHAR(50) NOT NULL,
     session_id UUID NOT NULL,
     model_used VARCHAR(50), -- e.g., 'llama3', 'gpt-4o'
     
@@ -51,7 +51,7 @@ SQL:
 
 SELECT 
     timestamp, 
-    agent_id, 
+    target_id, 
     status, 
     policy_triggered,
     -- This shows the difference between 'Thought' and 'Action'

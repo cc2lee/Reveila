@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 import javax.security.auth.Subject;
 
@@ -12,7 +13,7 @@ import org.json.JSONObject;
 
 import com.reveila.error.LlmException;
 import com.reveila.system.Constants;
-import com.reveila.system.Plugin;
+import com.reveila.system.InvocationTarget;
 import com.reveila.system.Proxy;
 import com.reveila.system.RolePrincipal;
 import com.reveila.system.SystemComponent;
@@ -29,6 +30,7 @@ public class AgenticFabric extends SystemComponent {
     private LlmProviderFactory llmFactory;
     private DynamicToolProvider toolProvider;
     private int aiLoopLimit = 5;
+    private static boolean showReasoning = false;
 
     public AgenticFabric() {
         // Wired in onStart
@@ -44,6 +46,7 @@ public class AgenticFabric extends SystemComponent {
 
     @Override
     public void onStart() throws Exception {
+        showReasoning = context.getProperties().getProperty("ai.show.reasoning", "false").equalsIgnoreCase("true");
         try {
             Proxy p = context.getProxy("ManagedInvocation");
             if (p instanceof SystemProxy sp) {
@@ -104,7 +107,8 @@ public class AgenticFabric extends SystemComponent {
      * 
      * @param userIntent   The user's prompt.
      * @param sessionId    Optional session ID to continue a conversation.
-     * @param systemPrompt Optional initial system prompt (e.g., summary from previous session).
+     * @param systemPrompt Optional initial system prompt (e.g., summary from
+     *                     previous session).
      * @return A JSON object containing the result and the session id.
      */
     public JSONObject askAgent(String userIntent, String sessionId, String systemPrompt) {
@@ -114,11 +118,11 @@ public class AgenticFabric extends SystemComponent {
         }
 
         AgentSession session = orchestrationService.getSession(sessionId);
-        boolean isNewSession = (session == null);
-        if (isNewSession) {
+        if (session == null) {
             session = orchestrationService.createSession(sessionId, sessionId);
             if (systemPrompt != null && !systemPrompt.isBlank()) {
-                session.getChatMemory().add(ReveilaMessage.system("Context carried over from previous session: " + systemPrompt));
+                session.getChatMemory()
+                        .add(ReveilaMessage.system("Context carried over from previous session: " + systemPrompt));
             }
         }
 
@@ -127,34 +131,70 @@ public class AgenticFabric extends SystemComponent {
         subject.getPrincipals().add(principal);
 
         JSONObject jsonResponse = processIntent(session, subject, userIntent);
-        
-        String finalAnswer = "";
+        String interpretation = interpretAiResponse(jsonResponse);
+        JSONObject uiResponse = new JSONObject();
+        uiResponse.put("answer", interpretation);
+        uiResponse.put("sessionId", session.getSessionId());
+
+        if (debug && logger != null) {
+            logger.info("Final response to UI client: " + uiResponse.toString());
+        }
+
+        return uiResponse;
+    }
+
+    public static String interpretAiResponse(JSONObject jsonResponse) {
+        String prettyAnswer = "";
         try {
             String status = jsonResponse.optString("status", "");
             String reasoning = jsonResponse.optString("reasoning", "");
             String result = jsonResponse.optString("result", "");
 
-            if (status.equalsIgnoreCase(Constants.AI_STATUS_COMPLETED)) {
-                finalAnswer = !result.isBlank() ? result : reasoning;
-            } else if (status.equalsIgnoreCase(Constants.AI_STATUS_INSUFFICIENT_CONTEXT)) {
-                finalAnswer = reasoning;
+            if (reasoning.equals("null")) reasoning = "";
+            if (result.equals("null")) result = "";
+            
+            if (status.equalsIgnoreCase(Constants.AI_STATUS_COMPLETED)
+                    || status.equalsIgnoreCase(Constants.AI_STATUS_INSUFFICIENT_CONTEXT)) {
+                if (showReasoning && reasoning != null && !reasoning.isBlank()) {
+                    if (result != null && !result.isBlank()) {
+                        prettyAnswer = result;
+                        prettyAnswer = prettyAnswer + "\n\nReasoning: " + reasoning;
+                    } else {
+                        prettyAnswer = reasoning;
+                    }
+                } else if (result != null && !result.isBlank()) {
+                    prettyAnswer = result;
+                } else if (reasoning != null && !reasoning.isBlank()) {
+                    prettyAnswer = reasoning;
+                } else {
+                    throw new IllegalStateException("AI indicated completion but did not provide reasoning or result.");
+                }
             } else if (status.equalsIgnoreCase(Constants.AI_STATUS_ESCALATE)) {
-                finalAnswer = "ESCALATION REQUIRED: " + reasoning;
+                prettyAnswer = "I need authorization to proceed.";
+                if (showReasoning && reasoning != null && !reasoning.isBlank()) {
+                    prettyAnswer = prettyAnswer + "\n\nReasoning: " + reasoning;
+                }
             } else if (status.equalsIgnoreCase(Constants.AI_STATUS_FAILED)) {
-                finalAnswer = "FAILED: " + reasoning;
+                if (reasoning != null && !reasoning.isBlank()) {
+                    prettyAnswer = reasoning;
+                } else {
+                    throw new IllegalStateException("The AI indicated failure but did not provide reasoning.");
+                }
             } else if (status.equalsIgnoreCase(Constants.AI_STATUS_TOOL_CALL)) {
-                finalAnswer = "TOOL CALL: " + reasoning;
+                prettyAnswer = "Performing background actions...";
+                if (showReasoning && reasoning != null && !reasoning.isBlank()) {
+                    prettyAnswer = prettyAnswer + "\n\nReasoning: " + reasoning;
+                }
             } else {
-                finalAnswer = !result.isBlank() ? result : (!reasoning.isBlank() ? reasoning : jsonResponse.toString());
+                throw new IllegalStateException("Unexpected status from AI response: " + String.valueOf(status));
             }
         } catch (Exception e) {
-            finalAnswer = jsonResponse.toString();
+            prettyAnswer = e.getClass().getName() + e.getMessage() == null ? "" : ": " + e.getMessage();
+            prettyAnswer = prettyAnswer + "\n\nOriginal AI response: ";
+            prettyAnswer = prettyAnswer + jsonResponse.toString();
         }
-        
-        JSONObject resultWrapper = new JSONObject();
-        resultWrapper.put("answer", finalAnswer);
-        resultWrapper.put("sessionId", session.getSessionId());
-        return resultWrapper;
+
+        return prettyAnswer;
     }
 
     /**
@@ -163,23 +203,27 @@ public class AgenticFabric extends SystemComponent {
     public String summarizeSession(String sessionId) {
         try {
             AgentSession session = orchestrationService.getSession(sessionId);
-            if (session == null) return "";
-            
+            if (session == null)
+                return "";
+
             LlmProvider worker = llmFactory.getActiveProvider();
-            if (worker == null) return "";
+            if (worker == null)
+                return "";
 
             String historyDump = session.getChatMemory().messages().stream()
-                .map(m -> m.role().name() + ": " + m.content())
-                .collect(java.util.stream.Collectors.joining("\n"));
+                    .map(m -> m.role().name() + ": " + m.content())
+                    .collect(java.util.stream.Collectors.joining("\n"));
 
             LlmRequest request = LlmRequest.builder()
-                    .addMessage(ReveilaMessage.system("Summarize the following chat history briefly for context preservation in a new session."))
+                    .addMessage(ReveilaMessage.system(
+                            "Summarize the following chat history briefly for context preservation in a new session."))
                     .addMessage(ReveilaMessage.user(historyDump))
                     .build();
 
             return worker.invoke(request).getContent();
         } catch (Exception e) {
-            if (logger != null) logger.warning("Failed to summarize session: " + e.getMessage());
+            if (logger != null)
+                logger.warning("Failed to summarize session: " + e.getMessage());
             return "";
         }
     }
@@ -231,7 +275,7 @@ public class AgenticFabric extends SystemComponent {
             if (p instanceof RolePrincipal rp) {
                 String roleName = rp.getName();
                 if ("ui-client".equalsIgnoreCase(roleName)
-                    || "admin".equalsIgnoreCase(roleName)) {
+                        || "admin".equalsIgnoreCase(roleName)) {
                     authorized = true;
                     break;
                 }
@@ -265,8 +309,8 @@ public class AgenticFabric extends SystemComponent {
         // the Prompt.
         response = JsonUtil.clean(response);
         AiResponseValidator validator = new AiResponseValidator();
-        
-        for (int loopCount = 0;loopCount < aiLoopLimit; loopCount++) {
+
+        for (int loopCount = 0; loopCount < aiLoopLimit; loopCount++) {
             if (validator.getMessage(response) == null) {
                 intentBuffer = "Invalid response from AI: " + response;
                 try {
@@ -288,7 +332,7 @@ public class AgenticFabric extends SystemComponent {
                 String reasoning = jsonResponse.optString("reasoning", "");
                 // String result = jsonResponse.optString("result", "");
                 // double confidenceScore = jsonResponse.optDouble("confidence-score", 0.0);
-                JSONObject toolCall = jsonResponse.optJSONObject("tool-call");
+                // JSONObject toolCall = jsonResponse.optJSONObject("tool-call");
 
                 if (status.equalsIgnoreCase(Constants.AI_STATUS_COMPLETED)) {
                     recordAuditLog("TASK_COMPLETED", reasoning);
@@ -304,30 +348,43 @@ public class AgenticFabric extends SystemComponent {
                     return jsonResponse;
                 } else if (status.equalsIgnoreCase(Constants.AI_STATUS_TOOL_CALL)) {
                     try {
-                        if (toolCall == null) {
+                        Object toolCallObj = jsonResponse.opt("tool-call");
+                        if (toolCallObj == null) {
                             intentBuffer = "The AI indicated a tool call is needed but did not specify the tool or arguments. Reasoning provided: "
                                     + reasoning
-                                    + ". Please clarify the tool to call and its arguments.";
+                                    + " | Please clarify the tool to call and its arguments.";
                             recordAuditLog("TOOL_CALL_FAILED", "Missing tool/arguments.");
                         } else {
-                            String toolCallResult = handleToolCall(session, toolCall, response);
-                            intentBuffer = "The AI has requested to call a tool with the following details: "
-                                    + toolCall.toString()
-                                    + ". Reasoning provided: " + reasoning
-                                    + ". Here are the results from the tool execution: " + toolCallResult
-                                    + ". Please analyze this information and provide the next step or final answer.";
-                            recordAuditLog("TOOL_CALLED", "Called: " + toolCall.optString("method"));
+                            StringBuilder toolResults = new StringBuilder();
+                            if (toolCallObj instanceof org.json.JSONArray toolCallArray) {
+                                for (int i = 0; i < toolCallArray.length(); i++) {
+                                    JSONObject singleToolCall = toolCallArray.getJSONObject(i);
+                                    String result = handleToolCall(session, singleToolCall, response);
+                                    toolResults.append("\n- Tool: ").append(singleToolCall.optString("method"))
+                                            .append("\n  Result: ").append(result);
+                                }
+                            } else if (toolCallObj instanceof JSONObject singleToolCall) {
+                                String result = handleToolCall(session, singleToolCall, response);
+                                toolResults.append(result);
+                            }
+
+                            intentBuffer = "The AI has requested to call tools with the following details: "
+                                    + toolCallObj.toString()
+                                    + " | Reasoning provided: " + reasoning
+                                    + " | Here are the results from the tool execution: " + toolResults.toString()
+                                    + " | Please analyze this information and provide the next step or final answer.";
+                            recordAuditLog("TOOL_CALLED", "Called tools: " + toolCallObj.toString());
                         }
                     } catch (Exception e) {
                         intentBuffer = "The AI requested a tool call, but the call could not be completed: "
                                 + e.getMessage()
-                                + ". Reasoning provided: " + reasoning
-                                + ". Please clarify the tool to call and its arguments.";
+                                + " | Reasoning provided: " + reasoning
+                                + " | Please clarify the tool to call and its arguments.";
                     }
                 } else {
                     intentBuffer = "The AI provided an unexpected status: " + status
-                            + ". Reasoning provided: " + reasoning
-                            + ". Please analyze this information and provide the next step or final answer.";
+                            + " | Reasoning provided: " + reasoning
+                            + " | Please analyze this information and provide the next step or final answer.";
                 }
 
                 try {
@@ -340,9 +397,10 @@ public class AgenticFabric extends SystemComponent {
                     return buildErrorResponse(response);
                 }
             } catch (Throwable t) {
-                intentBuffer = "Exception occurred while processing response: " + (t.getMessage() != null && !t.getMessage().isBlank() ? t.getMessage() : t.toString())
-                            + "\nPlease analyze this information and provide the next step or final answer."
-                            + "\nOriginal response: " + response;
+                intentBuffer = "Exception occurred while processing response: "
+                        + (t.getMessage() != null && !t.getMessage().isBlank() ? t.getMessage() : t.toString())
+                        + "\nPlease analyze this information and provide the next step or final answer."
+                        + "\nOriginal response: " + response;
                 recordAuditLog("EXCEPTION", t.getMessage());
                 try {
                     response = askAi(session, intentBuffer);
@@ -356,31 +414,37 @@ public class AgenticFabric extends SystemComponent {
             }
         }
 
-        return buildErrorResponse("AI_LOOP_LIMIT_REACHED: The task could not be completed within the execution limit of " + aiLoopLimit
-                + " iteration(s).");
+        return buildErrorResponse(
+                "AI_LOOP_LIMIT_REACHED: The task could not be completed within the execution limit of " + aiLoopLimit
+                        + " iteration(s).");
     }
 
     private String handleToolCall(AgentSession session, JSONObject toolCall, String response) throws Exception {
 
         Map<String, Object> bridgeArgs = new HashMap<>();
-        bridgeArgs.put("_session_id", session.getSessionId());
-        bridgeArgs.put("_thought", toolCall);
+        bridgeArgs.put(AgentSession.ID, session.getSessionId());
+        bridgeArgs.put(AgentSession.THOUGHT, toolCall);
 
         String pluginId = toolCall.optString("plugin", "");
         String methodName = toolCall.optString("method", "");
 
-        Plugin plugin = new Plugin(
-                java.util.UUID.fromString(session.getSessionId()),
+        InvocationTarget plugin = new InvocationTarget(
+                UUID.fromString(session.getSessionId()),
                 pluginId,
                 "default",
-                session.getParentTraceId() != null ? session.getParentTraceId()
-                        : java.util.UUID.randomUUID().toString());
+                session.getParentTraceId() != null ? session.getParentTraceId() : UUID.randomUUID().toString());
 
         bridgeArgs.put("arguments", toolCall.optJSONObject("arguments"));
 
         // Invoke the tool via the bridge and capture the output
         // The bridge performs parsing, security audit, and tool execution
-        InvocationResult result = bridge.invoke(plugin, null, methodName.isEmpty() ? response : methodName, bridgeArgs);
+        SecurityPerimeter activePerimeter = null;
+        MetadataRegistry.PluginManifest manifest = metadataRegistry.getManifest(pluginId);
+        if (manifest != null) {
+            activePerimeter = manifest.defaultPerimeter();
+        }
+
+        InvocationResult result = bridge.invoke(plugin, activePerimeter, methodName.isEmpty() ? response : methodName, bridgeArgs);
 
         if (result.status() == InvocationResult.Status.SUCCESS) {
             // Step 4: Capture tool output and feed it back for the next reasoning iteration
@@ -566,8 +630,8 @@ public class AgenticFabric extends SystemComponent {
      * @param taskArguments The task-specific arguments.
      * @return The result of the delegated task.
      */
-    public Object delegate(Plugin parent, String targetIntent, Map<String, Object> taskArguments) {
-        Plugin child = parent
+    public Object delegate(InvocationTarget parent, String targetIntent, Map<String, Object> taskArguments) {
+        InvocationTarget child = parent
                 .deriveChild("plugin-" + java.util.UUID.randomUUID().toString().substring(0, 4));
 
         // Maintain episodic memory by passing context from the parent trace
@@ -575,7 +639,14 @@ public class AgenticFabric extends SystemComponent {
         sessionManager.saveContext(child.getTraceId(), parentContext);
 
         // Recursive call back into the bridge
-        InvocationResult result = bridge.invoke(child, null, targetIntent, taskArguments);
+        SecurityPerimeter activePerimeter = null;
+        String pluginId = child.getTargetName();
+        MetadataRegistry.PluginManifest manifest = metadataRegistry.getManifest(pluginId);
+        if (manifest != null) {
+            activePerimeter = manifest.defaultPerimeter();
+        }
+
+        InvocationResult result = bridge.invoke(child, activePerimeter, targetIntent, taskArguments);
 
         if (result.status() == InvocationResult.Status.PENDING_APPROVAL) {
             return "DELEGATION_PAUSED: " + result.message() + " Approval required at: " + result.callbackUrl();

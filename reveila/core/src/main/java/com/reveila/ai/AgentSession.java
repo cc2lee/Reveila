@@ -10,6 +10,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author CL
  */
 public class AgentSession {
+
+    public static final String ID = "_session_id";
+    public static final String THOUGHT = "_thought";
+    
     private final String sessionId;
     private final String parentTraceId;
     private final ReveilaChatMemory chatMemory;

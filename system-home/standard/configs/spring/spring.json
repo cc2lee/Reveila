@@ -1,0 +1,18 @@
+[
+  {
+    "component": {
+      "name": "FlightRecorder",
+      "class": "com.reveila.spring.service.PostgresFlightRecorder",
+      "description": "Records reasoning traces and tool outputs.",
+      "thread-safe": true
+    }
+  },
+  {
+    "component": {
+      "name": "GuardedRuntime",
+      "class": "com.reveila.ai.DockerGuardedRuntime",
+      "description": "Secure execution layer for plugins.",
+      "thread-safe": true
+    }
+  }
+]

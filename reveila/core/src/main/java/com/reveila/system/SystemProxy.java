@@ -100,7 +100,7 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 	}
 
 	@SuppressWarnings("unchecked")
-	private com.reveila.ai.AgencyPerimeter buildAgencyPerimeter() {
+	private com.reveila.ai.SecurityPerimeter buildAgencyPerimeter() {
 		Object perimeterObj = this.metaObject.getDataMap().get("agency_perimeter");
 		if (perimeterObj instanceof Map) {
 			Map<String, Object> pMap = (Map<String, Object>) perimeterObj;
@@ -134,13 +134,13 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 					? Boolean.TRUE.equals(pMap.get("delegationAllowed"))
 					: false;
 
-			return new com.reveila.ai.AgencyPerimeter(
+			return new com.reveila.ai.SecurityPerimeter(
 					accessScopes, allowedDomains, internetAccessBlocked,
 					maxMemoryMb, maxCpuCores, maxExecutionSec, delegationAllowed);
 		}
 
 		// Return a highly restrictive default perimeter if none is configured
-		return new com.reveila.ai.AgencyPerimeter(
+		return new com.reveila.ai.SecurityPerimeter(
 				Collections.emptySet(), Collections.emptySet(), true, 128L, 1, 5, false);
 	}
 
@@ -318,7 +318,7 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 								}
 							}
 
-							com.reveila.ai.AgencyPerimeter perimeter = buildAgencyPerimeter();
+							com.reveila.ai.SecurityPerimeter perimeter = buildAgencyPerimeter();
 
 							com.reveila.ai.MetadataRegistry.PluginManifest pManifest = new com.reveila.ai.MetadataRegistry.PluginManifest(
 									getName(),

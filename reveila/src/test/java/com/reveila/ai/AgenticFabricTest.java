@@ -31,8 +31,8 @@ class AgenticFabricTest {
     private OrchestrationService orchestrationService;
     private ManagedInvocation bridge;
     private AgentPrincipal principal;
-    private AgencyPerimeter managerPerimeter;
-    private AgencyPerimeter workerPerimeter;
+    private SecurityPerimeter managerPerimeter;
+    private SecurityPerimeter workerPerimeter;
     @Mock private com.reveila.system.SystemContext systemContext;
     @Mock private com.reveila.system.SystemProxy proxy;
 
@@ -66,10 +66,10 @@ class AgenticFabricTest {
         principal = AgentPrincipal.create("manager-agent", "tenant-1");
         
         // Manager allowed to delegate
-        managerPerimeter = new AgencyPerimeter(Set.of("manage"), Set.of(), false, 2048, 2, 60, true);
+        managerPerimeter = new SecurityPerimeter(Set.of("manage"), Set.of(), false, 2048, 2, 60, true);
         
         // Worker NOT allowed to delegate
-        workerPerimeter = new AgencyPerimeter(Set.of("work"), Set.of(), false, 1024, 1, 30, false);
+        workerPerimeter = new SecurityPerimeter(Set.of("work"), Set.of(), false, 1024, 1, 30, false);
     }
 
     @Test
@@ -77,7 +77,7 @@ class AgenticFabricTest {
         String managerIntent = "delegate:worker.task";
         Map<String, Object> managerArgs = new HashMap<>();
         managerArgs.put("input", "data");
-        managerArgs.put("_thought", "Delegating to worker...");
+        managerArgs.put(AgentSession.THOUGHT, "Delegating to worker...");
 
         MetadataRegistry.PluginManifest managerManifest = new MetadataRegistry.PluginManifest(
             "manager", "Manager Plugin", "1.0", Map.of(), managerPerimeter, Set.of(), Set.of()
@@ -91,7 +91,7 @@ class AgenticFabricTest {
         // Mock the manager plugin's execution which in turn calls the bridge again (simulated here)
         // Setup worker expectations OUTSIDE the nested thenAnswer to avoid issues with Mockito's state
         String workerIntent = "worker.task";
-        Map<String, Object> workerArgs = Map.of("task_id", "123", "_thought", "Working...");
+        Map<String, Object> workerArgs = Map.of("task_id", "123", AgentSession.THOUGHT, "Working...");
         MetadataRegistry.PluginManifest workerManifest = new MetadataRegistry.PluginManifest(
             "worker", "Worker Plugin", "1.0", Map.of(), workerPerimeter, Set.of(), Set.of()
         );
@@ -122,7 +122,7 @@ class AgenticFabricTest {
     @Test
     void testDelegationBlockedWhenNotAllowed() {
         String delegationIntent = "delegate:restricted.task";
-        Map<String, Object> args = Map.of("_thought", "Attempting unauthorized delegation...");
+        Map<String, Object> args = Map.of(AgentSession.THOUGHT, "Attempting unauthorized delegation...");
 
         MetadataRegistry.PluginManifest workerManifest = new MetadataRegistry.PluginManifest(
             "worker", "Worker Plugin", "1.0", Map.of(), workerPerimeter, Set.of(), Set.of()
@@ -147,8 +147,8 @@ class AgenticFabricTest {
         session.put("shared_key", "shared_value");
 
         Map<String, Object> args = new HashMap<>();
-        args.put("_session_id", session.sessionId());
-        args.put("_thought", "Using session context...");
+        args.put(AgentSession.ID_NAME, session.sessionId());
+        args.put(AgentSession.THOUGHT, "Using session context...");
 
         MetadataRegistry.PluginManifest manifest = new MetadataRegistry.PluginManifest(
             "p1", "Plugin 1", "1.0", Map.of(), workerPerimeter, Set.of(), Set.of()

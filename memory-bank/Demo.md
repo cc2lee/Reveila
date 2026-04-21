@@ -152,13 +152,13 @@ After the execution, show the results in the permanent ledger. This proves the s
 ### 1. The Intervention Proof
 Show that the request was captured and assigned a high risk score:
 ```powershell
-docker exec -it reveila-db-prod psql -U admin -d reveila_db -c "SELECT agent_id, proposed_action, status, risk_score FROM governance_audit ORDER BY timestamp DESC LIMIT 1;"
+docker exec -it reveila-db-prod psql -U admin -d reveila_db -c "SELECT target_id, proposed_action, status, risk_score FROM governance_audit ORDER BY timestamp DESC LIMIT 1;"
 ```
 
 ### 2. High-Impact Dashboard Query
 Show only high-risk interventions sorted by severity:
 ```powershell
-docker exec -it reveila-db-prod psql -U admin -d reveila_db -c "SELECT timestamp, agent_id, proposed_action, risk_score FROM governance_audit WHERE risk_score > 0.80 ORDER BY risk_score DESC;"
+docker exec -it reveila-db-prod psql -U admin -d reveila_db -c "SELECT timestamp, target_id, proposed_action, risk_score FROM governance_audit WHERE risk_score > 0.80 ORDER BY risk_score DESC;"
 ```
 
 ---

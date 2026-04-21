@@ -69,7 +69,7 @@ public class NotificationService {
                 "Proposed Action: %s\n" +
                 "Inner Monologue: %s\n\n" +
                 "Timestamp: %s\n",
-                log.getAgentId(),
+                log.getTargetName(),
                 log.getSessionId(),
                 log.getPolicyTriggered(),
                 log.getRiskScore(),

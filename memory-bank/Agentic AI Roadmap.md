@@ -44,7 +44,7 @@ Ensuring every autonomous action is identified, authorized, and audited.
 ### Implementation Specs
 *   **Isolation Layer:** Deploy plugins within gVisor or Firecracker micro-VMs.
 *   **ClassLoader Shadowing:** Isolate plugin dependencies using a custom `Parent-Last ClassLoader`.
-*   **Resource Quotas:** Map `cpuQuotaUs` and `maxMemoryBytes` from the `AgencyPerimeter` directly to container constraints.
+*   **Resource Quotas:** Map `cpuQuotaUs` and `maxMemoryBytes` from the `SecurityPerimeter` directly to container constraints.
 
 ---
 
@@ -154,7 +154,7 @@ The implementation of the OrchestrationService is the primary "Force Multiplier"
 
 Hierarchical Execution: It allows a "Manager" plugin to delegate sub-tasks to specialized worker plugins via the delegateTask method.
 
-Sovereign Control: The logic respects the delegation_allowed flag in the AgencyPerimeter, ensuring that only authorized agents can trigger nested tool calls.
+Sovereign Control: The logic respects the delegation_allowed flag in the SecurityPerimeter, ensuring that only authorized agents can trigger nested tool calls.
 
 2. Contextual Persistence (AgentSessionManager.java)
 By moving away from stateless calls, you have solved the "Memory Gap" in autonomous agents.

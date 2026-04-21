@@ -3,14 +3,14 @@ package com.reveila.ai;
 import java.util.Set;
 
 /**
- * The AgencyPerimeter record defines the physical and logical boundaries for
+ * The SecurityPerimeter record defines the physical and logical boundaries for
  * the Guarded Runtime, that is, what a plugin is authorized to do.
  * 
  * Reconciled to a standardized snake_case naming convention for JSON parity.
  * 
  * @author CL
  */
-public record AgencyPerimeter(
+public record SecurityPerimeter(
         Set<String> accessScopes,
         Set<String> allowedDomains,
         boolean internetAccessBlocked,
@@ -35,9 +35,9 @@ public record AgencyPerimeter(
      * It always selects the most restrictive resource limits.
      *
      * @param other The other perimeter to intersect with.
-     * @return A new, intersected AgencyPerimeter.
+     * @return A new, intersected SecurityPerimeter.
      */
-    public AgencyPerimeter intersect(AgencyPerimeter other) {
+    public SecurityPerimeter intersect(SecurityPerimeter other) {
         if (other == null)
             return this;
 
@@ -47,7 +47,7 @@ public record AgencyPerimeter(
         java.util.Set<String> intersectedDomains = new java.util.HashSet<>(this.allowedDomains);
         intersectedDomains.retainAll(other.allowedDomains);
 
-        return new AgencyPerimeter(
+        return new SecurityPerimeter(
                 java.util.Collections.unmodifiableSet(intersectedScopes),
                 java.util.Collections.unmodifiableSet(intersectedDomains),
                 this.internetAccessBlocked || other.internetAccessBlocked, // Most restrictive

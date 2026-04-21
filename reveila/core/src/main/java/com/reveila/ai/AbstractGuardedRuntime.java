@@ -2,7 +2,7 @@ package com.reveila.ai;
 
 import java.util.Map;
 
-import com.reveila.system.Plugin;
+import com.reveila.system.InvocationTarget;
 import com.reveila.system.SystemComponent;
 
 /**
@@ -16,11 +16,11 @@ public abstract class AbstractGuardedRuntime extends SystemComponent implements 
     /**
      * Common validation logic for perimeters and principals.
      */
-    protected void validateRequest(Plugin plugin, AgencyPerimeter perimeter) {
-        if (plugin == null) throw new IllegalArgumentException("AgentPrincipal cannot be null");
-        if (perimeter == null) throw new IllegalArgumentException("AgencyPerimeter cannot be null");
+    protected void validateRequest(InvocationTarget plugin, SecurityPerimeter perimeter) {
+        if (plugin == null) throw new IllegalArgumentException("InvocationTarget cannot be null");
+        if (perimeter == null) throw new IllegalArgumentException("SecurityPerimeter cannot be null");
     }
 
     @Override
-    public abstract Object execute(Plugin plugin, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials);
+    public abstract Object execute(InvocationTarget plugin, SecurityPerimeter perimeter, Map<String, Object> arguments, Map<String, String> jitCredentials);
 }

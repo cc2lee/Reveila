@@ -2,7 +2,7 @@ package com.reveila.ai;
 
 import java.util.Map;
 
-import com.reveila.system.Plugin;
+import com.reveila.system.InvocationTarget;
 
 /**
  * Phase 3: Governance & Security.
@@ -22,7 +22,7 @@ public interface PolicyEnforcementEngine {
      * @param arguments The validated arguments.
      * @return The authorization status.
      */
-    AuthorizationStatus authorize(Plugin plugin, AgencyPerimeter perimeter, String toolName, Map<String, Object> arguments);
+    AuthorizationStatus authorize(InvocationTarget plugin, SecurityPerimeter perimeter, String toolName, Map<String, Object> arguments);
 
     /**
      * Injects short-lived credentials into the execution context (JIT).
@@ -31,7 +31,7 @@ public interface PolicyEnforcementEngine {
      * @param scope The requested access scope.
      * @return A map of temporary credentials.
      */
-    Map<String, String> getJitCredentials(Plugin plugin, String scope);
+    Map<String, String> getJitCredentials(InvocationTarget plugin, String scope);
 
     enum AuthorizationStatus {
         AUTHORIZED,

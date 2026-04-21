@@ -20,7 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.reveila.spring.model.jpa.AuditLog;
 import com.reveila.spring.repository.jpa.JdbcAuditLogRepository;
 import com.reveila.spring.service.PostgresFlightRecorder;
-import com.reveila.system.Plugin;
+import com.reveila.system.InvocationTarget;
 import com.reveila.system.SystemContext;
 import com.reveila.system.SystemProxy;
 
@@ -31,7 +31,7 @@ class PostgresFlightRecorderTest {
     @Mock private SystemContext systemContext;
     @Mock private SystemProxy dataServiceProxy;
     private PostgresFlightRecorder flightRecorder;
-    private Plugin plugin;
+    private InvocationTarget plugin;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -42,7 +42,7 @@ class PostgresFlightRecorderTest {
         flightRecorder.setContext(systemContext);
         flightRecorder.start();
         
-        plugin = Plugin.create("audit-agent", "tenant-1");
+        plugin = InvocationTarget.create("audit-agent", "tenant-1");
     }
 
     @Test

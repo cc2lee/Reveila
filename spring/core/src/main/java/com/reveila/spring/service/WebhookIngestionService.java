@@ -11,7 +11,7 @@ import com.reveila.ai.LlmProvider;
 import com.reveila.ai.LlmProviderFactory;
 import com.reveila.ai.ManagedInvocation;
 import com.reveila.ai.OrchestrationService;
-import com.reveila.system.Plugin;
+import com.reveila.system.InvocationTarget;
 import com.reveila.system.Reveila;
 import com.reveila.system.SystemProxy;
 
@@ -62,7 +62,7 @@ public class WebhookIngestionService {
         String perimeter = (String) payload.getOrDefault("agency_perimeter", "default");
         
         // Initiate AgentSession and record ingestion early to capture worker trace
-        Plugin plugin = Plugin.create("webhook-agent-" + source, "external-ingestion");
+        InvocationTarget plugin = InvocationTarget.create("webhook-agent-" + source, "external-ingestion");
         AgentSession session = orchestrationService.createSession(plugin.getTraceId());
         session.put("ingestion_source", source);
         session.put("filo_task_id", payload.get("task_id"));
@@ -107,8 +107,8 @@ public class WebhookIngestionService {
         }
 
         Map<String, Object> args = new java.util.HashMap<>();
-        args.put("_session_id", session.getSessionId());
-        args.put("_thought", "Worker processing Filo task: " + payload.get("task_id"));
+        args.put(AgentSession.ID, session.getSessionId());
+        args.put(AgentSession.THOUGHT, "Worker processing Filo task: " + payload.get("task_id"));
         args.put("context", context);
 
         return bridge.invoke(plugin, null, mappedIntent, args);

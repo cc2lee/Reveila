@@ -13,11 +13,11 @@ import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
-import com.reveila.system.Plugin;
+import com.reveila.system.InvocationTarget;
 
 /**
  * Docker-based implementation of GuardedRuntime using gVisor (runsc).
- * Maps AgencyPerimeter resource records to Docker HostConfig settings.
+ * Maps SecurityPerimeter resource records to Docker HostConfig settings.
  * 
  * Registered as "GuardedRuntime" in standard server environments.
  * 
@@ -53,8 +53,9 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
     }
 
     @Override
-    public Object execute(Plugin plugin, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials) {
+    public Object execute(InvocationTarget plugin, SecurityPerimeter perimeter, Map<String, Object> arguments, Map<String, String> jitCredentials) {
         validateRequest(plugin, perimeter);
+        String pluginId = plugin.getTargetName();
         long startTime = System.currentTimeMillis();
         logger.info("Executing via DockerGuardedRuntime for " + pluginId + " [Trace: " + plugin.getTraceId() + "] Started at: " + startTime);
 
@@ -62,7 +63,7 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
         String pluginJarPath = "/opt/reveila/plugins/" + pluginId + ".jar";
         Volume pluginVolume = new Volume("/app/plugin.jar");
 
-        // RESOURCE MAPPING: AgencyPerimeter -> Docker HostConfig (cgroups)
+        // RESOURCE MAPPING: SecurityPerimeter -> Docker HostConfig (cgroups)
         HostConfig hostConfig = HostConfig.newHostConfig()
                 .withRuntime("runsc") // Force gVisor kernel isolation
                 .withMemory(perimeter.maxMemoryMb() * 1024 * 1024) // RAM Limit

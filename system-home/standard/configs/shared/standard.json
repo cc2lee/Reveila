@@ -1,0 +1,188 @@
+[
+    {
+        "component": {
+            "name": "UsageTracker",
+            "class": "com.reveila.ai.UsageTracker",
+            "thread-safe": true,
+            "dependencies": [
+                "DataService"
+            ]
+        }
+    },
+    {
+        "component": {
+            "name": "InboundWebhookService",
+            "class": "com.reveila.ai.InboundWebhookService",
+            "thread-safe": true,
+            "dependencies": [
+                "ManagedInvocation",
+                "OrchestrationService",
+                "FlightRecorder",
+                "LlmProviderFactory"
+            ]
+        }
+    },
+    {
+        "component": {
+            "name": "DataService",
+            "class": "com.reveila.service.DataService",
+            "description": "Bridges the Reveila API and the platform dependent repositories.",
+            "thread-safe": true
+        }
+    },
+    {
+        "component": {
+            "name": "AutonomousAgent",
+            "class": "com.reveila.ai.AutonomousAgent",
+            "description": "Performs autonomous agent tasks.",
+            "thread-safe": true,
+            "runnable": {
+                "delay.seconds": 60,
+                "interval.seconds": 30,
+                "method.name": "doTask"
+            }
+        }
+    },
+    {
+        "component": {
+            "name": "MetadataRegistry",
+            "class": "com.reveila.ai.MetadataRegistry",
+            "description": "Registry for all plugin manifests and capabilities.",
+            "thread-safe": true
+        }
+    },
+    {
+        "component": {
+            "name": "SecretManager",
+            "class": "com.reveila.ai.SecretManager",
+            "description": "Manages JIT credentials for plugins.",
+            "thread-safe": true,
+            "dependencies": [
+                "DataService"
+            ]
+        }
+    },
+    {
+        "component": {
+            "name": "AgentSessionManager",
+            "class": "com.reveila.ai.AgentSessionManager",
+            "description": "Manages agentic sessions and context persistence.",
+            "thread-safe": true
+        }
+    },
+    {
+        "component": {
+            "name": "OrchestrationService",
+            "class": "com.reveila.ai.OrchestrationService",
+            "description": "Orchestrates multi-agent workflows.",
+            "thread-safe": true
+        }
+    },
+    {
+        "component": {
+            "name": "LlmProviderFactory",
+            "class": "com.reveila.ai.LlmProviderFactory",
+            "description": "Factory for LLM providers.",
+            "thread-safe": true,
+            "dependencies": [],
+            "methods": [
+                {
+                    "name": "loadProviders",
+                    "description": "Reloads LLM providers from configuration."
+                }
+            ]
+        }
+    },
+    {
+        "component": {
+            "name": "IntentValidator",
+            "class": "com.reveila.ai.DefaultIntentValidator",
+            "description": "Validates agent intents using Gemini.",
+            "thread-safe": true,
+            "dependencies": []
+        }
+    },
+    {
+        "component": {
+            "name": "SchemaEnforcer",
+            "class": "com.reveila.ai.JsonSchemaEnforcer",
+            "description": "Enforces JSON schemas for tool calls.",
+            "thread-safe": true,
+            "dependencies": [
+                "MetadataRegistry"
+            ]
+        }
+    },
+    {
+        "component": {
+            "name": "ManagedInvocation",
+            "class": "com.reveila.ai.ManagedInvocation",
+            "description": "The sovereign entry point for all tool calls.",
+            "thread-safe": true,
+            "dependencies": [
+                "IntentValidator",
+                "SchemaEnforcer",
+                "GuardedRuntime",
+                "FlightRecorder",
+                "MetadataRegistry",
+                "SecretManager",
+                "OrchestrationService",
+                "LlmProviderFactory"
+            ]
+        }
+    },
+    {
+        "component": {
+            "name": "AgenticFabric",
+            "class": "com.reveila.ai.AgenticFabric",
+            "description": "Orchestrates complex multi-agent workflows.",
+            "thread-safe": true,
+            "dependencies": [
+                "ManagedInvocation",
+                "AgentSessionManager"
+            ],
+            "arguments": [
+                {
+                    "name": "aiLoopLimit",
+                    "type": "int",
+                    "value": 5
+                }
+            ]
+        }
+    },
+    {
+        "component": {
+            "name": "ConfigurationManager",
+            "class": "com.reveila.system.ConfigurationManager",
+            "description": "Manages configuration settings dynamically.",
+            "thread-safe": true
+        }
+    },
+    {
+        "component": {
+            "name": "HttpClientService",
+            "version": "1",
+            "displayName": "Http Client Service",
+            "description": "Provides HTTP client capabilities for making web requests.",
+            "author": "Charles Lee",
+            "class": "com.reveila.service.HttpClientService",
+            "arguments": [
+                {
+                    "name": "connectTimeout",
+                    "type": "long",
+                    "value": 10
+                },
+                {
+                    "name": "writeTimeout",
+                    "type": "long",
+                    "value": 10
+                },
+                {
+                    "name": "readTimeout",
+                    "type": "long",
+                    "value": 30
+                }
+            ]
+        }
+    }
+]

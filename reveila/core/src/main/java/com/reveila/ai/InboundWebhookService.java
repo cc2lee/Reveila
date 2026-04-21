@@ -3,7 +3,7 @@ package com.reveila.ai;
 import java.util.HashMap;
 import java.util.Map;
 
-import com.reveila.system.Plugin;
+import com.reveila.system.InvocationTarget;
 import com.reveila.system.SystemComponent;
 import com.reveila.system.SystemProxy;
 
@@ -52,7 +52,7 @@ public class InboundWebhookService extends SystemComponent {
             // Ignore for now
         }
 
-        Plugin plugin = Plugin.create("webhook-agent-" + source, "external-ingestion");
+        InvocationTarget plugin = InvocationTarget.create("webhook-agent-" + source, "external-ingestion");
         AgentSession session = orchestrationService.createSession(plugin.getTraceId());
         session.put("ingestion_source", source);
         session.put("filo_task_id", payload.get("task_id"));
@@ -72,8 +72,8 @@ public class InboundWebhookService extends SystemComponent {
         }
 
         Map<String, Object> args = new HashMap<>();
-        args.put("_session_id", session.getSessionId());
-        args.put("_thought", "Worker processing Filo task: " + payload.get("task_id"));
+        args.put(AgentSession.ID, session.getSessionId());
+        args.put(AgentSession.THOUGHT, "Worker processing Filo task: " + payload.get("task_id"));
         args.put("context", context);
 
         return bridge.invoke(plugin, null, mappedIntent, args);

@@ -1,7 +1,7 @@
 package com.reveila.android.service;
 
-import com.reveila.ai.AgencyPerimeter;
-import com.reveila.system.Plugin;
+import com.reveila.ai.SecurityPerimeter;
+import com.reveila.system.InvocationTarget;
 import com.reveila.ai.AbstractGuardedRuntime;
 import com.reveila.system.SystemProxy;
 import java.util.Map;
@@ -31,8 +31,9 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
     }
 
     @Override
-    public Object execute(Plugin plugin, AgencyPerimeter perimeter, String pluginId, Map<String, Object> arguments, Map<String, String> jitCredentials) {
+    public Object execute(InvocationTarget plugin, SecurityPerimeter perimeter, Map<String, Object> arguments, Map<String, String> jitCredentials) {
         validateRequest(plugin, perimeter);
+        String pluginId = plugin.getTargetName();
         
         long startTime = System.currentTimeMillis();
         logger.info("Executing via AndroidGuardedRuntime for " + pluginId + " [Trace: " + plugin.getTraceId() + "] Started at: " + startTime);
@@ -50,7 +51,7 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
                 throw new RuntimeException("Failed to locate proxy for plugin: " + pluginId);
             }
 
-            // Load Plugin library if exists
+            // Load InvocationTarget library if exists
             String pluginFileName = pluginId + ".jar";
             File pluginDir = new File(androidContext.getFilesDir(), "plugins/" + pluginId);
             File pluginFile = new File(pluginDir, pluginFileName);
@@ -73,7 +74,7 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
             return proxy.invoke(methodName, argsArray);
         } catch (Exception e) {
             logger.severe("Execution failed in AndroidGuardedRuntime: " + e.getMessage());
-            throw new RuntimeException("Plugin execution failed", e);
+            throw new RuntimeException("InvocationTarget execution failed", e);
         }
     }
 

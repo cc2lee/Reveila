@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.reveila.crypto.Cryptographer;
 import com.reveila.data.Entity;
 import com.reveila.data.Repository;
-import com.reveila.system.Plugin;
+import com.reveila.system.InvocationTarget;
 import com.reveila.system.SystemComponent;
 
 /**
@@ -143,7 +143,7 @@ public class SecretManager extends SystemComponent {
      * @param scope     The requested access scope.
      * @return A map containing the temporary token.
      */
-    public Map<String, String> generateJitToken(Plugin plugin, String scope) {
+    public Map<String, String> generateJitToken(InvocationTarget plugin, String scope) {
         String token = "jit_" + UUID.randomUUID().toString().substring(0, 8);
         jitTokens.put(token, plugin.getTraceId() + ":" + scope);
         return Map.of("REVEILA_JIT_TOKEN", token);
