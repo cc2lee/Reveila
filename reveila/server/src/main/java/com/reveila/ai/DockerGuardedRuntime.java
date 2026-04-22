@@ -154,4 +154,22 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
             throw new com.reveila.error.SystemException("Docker daemon not reachable", e);
         }
     }
+
+    @Override
+    public boolean pause(Map<String, String> jitCredentials) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'pause'");
+    }
+
+    @Override
+    public boolean resume(Map<String, String> jitCredentials) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'resume'");
+    }
+
+    @Override
+    public boolean kill(Map<String, String> jitCredentials) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'stop'");
+    }
 }

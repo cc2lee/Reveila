@@ -88,4 +88,22 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
     protected void onStop() throws Exception {
         logger.info("AndroidGuardedRuntime stopped.");
     }
+
+    @Override
+    public boolean pause(Map<String, String> jitCredentials) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'pause'");
+    }
+
+    @Override
+    public boolean resume(Map<String, String> jitCredentials) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'resume'");
+    }
+
+    @Override
+    public boolean kill(Map<String, String> jitCredentials) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'stop'");
+    }
 }

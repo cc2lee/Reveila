@@ -41,10 +41,7 @@ export default function SettingsScreen() {
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [editData, setEditData] = useState<any>({});
   
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [selectedTask, setSelectedTask] = useState<any>(null);
-
-  const tabs = ['General', 'Security', 'Tasks', 'Advanced'];
+  const tabs = ['General', 'Security', 'Advanced'];
 
   const [isRunning, setIsRunning] = useState(false);
 
@@ -59,12 +56,6 @@ export default function SettingsScreen() {
     const interval = setInterval(checkRunning, 3000);
     return () => clearInterval(interval);
   }, []);
-
-  useEffect(() => {
-    if (activeTab === 'Tasks') {
-      fetchTasks();
-    }
-  }, [activeTab]);
 
   useEffect(() => {
     AsyncStorage.getItem('use_biometrics').then(val => {
@@ -120,14 +111,6 @@ export default function SettingsScreen() {
     await AsyncStorage.setItem('use_biometrics', value ? 'true' : 'false');
   };
 
-  const fetchTasks = async () => {
-    try {
-      const result = await fetch('/api/tasks');
-      const data = await result.json();
-      setTasks(data);
-    } catch (e) {}
-  };
-
   const handleKill = async () => {
     Alert.alert(
       'Confirm Kill',
@@ -135,7 +118,7 @@ export default function SettingsScreen() {
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'OK', onPress: () => {
-            alert('Kill Switch Activated. All processes stopped.');
+            Alert.alert('Kill Switch Activated. All processes stopped.');
           }
         }
       ]
@@ -478,55 +461,6 @@ export default function SettingsScreen() {
           </View>
         )}
 
-        {activeTab === 'Tasks' && (
-          <View style={styles.section}>
-            <View style={[styles.row, {marginBottom: 12}]}>
-              <ThemedText type="subtitle">Recurring Tasks</ThemedText>
-              <TouchableOpacity style={styles.addBtnSmall} onPress={() => {
-                setSelectedTask({
-                  filename: 'new-task.json',
-                  content: JSON.stringify({
-                    taskId: 'new-task-id',
-                    intent: 'general.task',
-                    prompt: 'Enter instructions here...',
-                    frequency: 'daily'
-                  }, null, 2)
-                });
-              }}>
-                <ThemedText style={{color: '#fff', fontSize: 12, fontWeight: '700'}}>+ New Task</ThemedText>
-              </TouchableOpacity>
-            </View>
-
-            {tasks.length === 0 && !selectedTask ? (
-              <ThemedText style={styles.description}>No recurring tasks found.</ThemedText>
-            ) : (
-              tasks.map(task => (
-                <ThemedView key={task.filename} style={styles.taskCard}>
-                  <ThemedText type="defaultSemiBold">{task.filename}</ThemedText>
-                  <TouchableOpacity onPress={() => setSelectedTask(task)}>
-                    <ThemedText type="link">Edit</ThemedText>
-                  </TouchableOpacity>
-                </ThemedView>
-              ))
-            )}
-            
-            {selectedTask && (
-              <ThemedView style={styles.editorCard}>
-                <TextInput 
-                  style={styles.monoInput} 
-                  multiline 
-                  value={selectedTask.content}
-                  onChangeText={(text) => setSelectedTask({...selectedTask, content: text})}
-                />
-                <View style={styles.row}>
-                  <TouchableOpacity style={styles.button} onPress={() => setSelectedTask(null)}><ThemedText style={styles.buttonText}>Save</ThemedText></TouchableOpacity>
-                  <TouchableOpacity style={styles.outlineButton} onPress={() => setSelectedTask(null)}><ThemedText style={styles.outlineButtonText}>Cancel</ThemedText></TouchableOpacity>
-                </View>
-              </ThemedView>
-            )}
-          </View>
-        )}
-
         {activeTab === 'Advanced' && (
           <View style={styles.section}>
             <ThemedText type="subtitle">Advanced</ThemedText>
@@ -541,9 +475,9 @@ export default function SettingsScreen() {
               <TouchableOpacity style={[styles.button, {marginTop: 16}]} onPress={async () => {
                 try {
                   await ReveilaModule.triggerVaultScan();
-                  alert('Vault scan initiated in the background.');
+                  Alert.alert('Vault scan initiated in the background.');
                 } catch (e: any) {
-                  alert('Scan Failed: ' + e.message);
+                  Alert.alert('Scan Failed: ' + e.message);
                 }
               }}>
                 <ThemedText style={styles.buttonText}>FORCE RE-SCAN NOW</ThemedText>
@@ -560,7 +494,7 @@ export default function SettingsScreen() {
                   [
                     { text: 'Cancel', style: 'cancel' },
                     { text: 'Reset', style: 'destructive', onPress: () => {
-                        ReveilaModule.resetApplication().then(() => alert('Application Reset Successfully. Please restart the app.'));
+                        ReveilaModule.resetApplication().then(() => Alert.alert('Application Reset Successfully. Please restart the app.'));
                       }
                     }
                   ]
@@ -598,14 +532,11 @@ const styles = StyleSheet.create({
   button: { padding: 12, borderRadius: 8, alignItems: 'center', backgroundColor: '#0f172a' },
   buttonText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   editButton: { backgroundColor: '#0ea5e9', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 8, marginLeft: 10 },
-  addBtnSmall: { backgroundColor: '#0f172a', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
   outlineButton: { padding: 12, borderRadius: 8, alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1' },
   outlineButtonText: { color: '#475569', fontWeight: '700', fontSize: 13 },
   cautionBox: { marginTop: 12, padding: 10, backgroundColor: '#fff7ed', borderRadius: 6, borderWidth: 1, borderColor: '#ffedd5' },
   cautionText: { color: '#9a3412', fontSize: 12, fontWeight: '600' },
   monoText: { fontFamily: 'monospace', fontSize: 11, color: '#64748b', marginTop: 8 },
-  taskCard: { flexDirection: 'row', justifyContent: 'space-between', padding: 12, backgroundColor: '#fff', borderRadius: 8 },
-  editorCard: { marginTop: 12, gap: 10 },
   monoInput: { fontFamily: 'monospace', fontSize: 12, backgroundColor: '#fff', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', minHeight: 40 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   modalContent: { backgroundColor: '#fff', width: '100%', borderRadius: 12, padding: 20, maxHeight: '80%' },

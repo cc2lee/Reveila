@@ -558,6 +558,10 @@ public class AgenticFabric extends SystemComponent {
         // (We don't save it to chat memory to avoid duplicating it on every loop)
         requestBuilder.addMessage(ReveilaMessage.system(systemInstructions));
 
+        if (debug && logger != null) {
+            logger.info("System Prompt used for request: " + systemInstructions);
+        }
+
         for (ReveilaMessage msg : session.getChatMemory().messages()) {
             requestBuilder.addMessage(msg);
         }
@@ -609,10 +613,16 @@ public class AgenticFabric extends SystemComponent {
             if (p != null) {
                 // KnowledgeVault component exists and has a search method
                 Object result = p.invoke("search", new Object[] { query, 3 });
-                return result != null ? result.toString() : "No relevant internal documents found.";
+                String snippets = result != null ? result.toString() : "No relevant internal documents found.";
+                if (debug && logger != null) {
+                    logger.info("Knowledge Vault search result for [" + query + "]: " + snippets);
+                }
+                return snippets;
             }
         } catch (Exception e) {
-            // Silently fail if Vault is not available
+            if (logger != null) {
+                logger.warning("Knowledge Vault search failed: " + e.getMessage());
+            }
         }
         return "No relevant internal documents found.";
     }

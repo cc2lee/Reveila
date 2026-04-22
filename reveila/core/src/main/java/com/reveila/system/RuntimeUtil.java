@@ -41,7 +41,7 @@ public final class RuntimeUtil {
 		return cmdArgs;
 	}
 
-	public static ClassLoader createPluginClassLoader(String dir, ClassLoader parentClassLoader) throws Exception {
+	public static ClassLoader createPluginClassLoader(String dir, ClassLoader parent) throws Exception {
 		Path root = Paths.get(dir);
 		List<URL> urls = Files.list(root)
 				.filter(path -> {
@@ -79,13 +79,13 @@ public final class RuntimeUtil {
 			// On Android, we need to handle DEX files.
 			// This assumes the jars in the directory are actually DEX-optimized or contain classes.dex
 			// For a true core-shared implementation, we'd use a PlatformAdapter-provided loader.
-			return createAndroidClassLoader(dir, parentClassLoader);
+			return createAndroidPluginClassLoader(dir, parent);
 		}
 
-		return new ChildFirstURLClassLoader(urlArray, parentClassLoader);
+		return new ChildFirstURLClassLoader(urlArray, parent);
 	}
 
-	private static ClassLoader createAndroidClassLoader(String dir, ClassLoader parent) {
+	private static ClassLoader createAndroidPluginClassLoader(String dir, ClassLoader parent) {
 		try {
 			// Reflection used here to avoid hard dependency on Android SDK in the core Java project
 			Class<?> dexClass;

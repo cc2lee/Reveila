@@ -12,15 +12,25 @@ import com.reveila.system.SystemComponent;
  * @author CL
  */
 public abstract class AbstractGuardedRuntime extends SystemComponent implements GuardedRuntime {
-    
-    /**
-     * Common validation logic for perimeters and principals.
-     */
+
     protected void validateRequest(InvocationTarget plugin, SecurityPerimeter perimeter) {
-        if (plugin == null) throw new IllegalArgumentException("InvocationTarget cannot be null");
-        if (perimeter == null) throw new IllegalArgumentException("SecurityPerimeter cannot be null");
+        if (plugin == null)
+            throw new IllegalArgumentException("InvocationTarget cannot be null");
+        if (perimeter == null)
+            throw new IllegalArgumentException("SecurityPerimeter cannot be null");
     }
 
     @Override
-    public abstract Object execute(InvocationTarget plugin, SecurityPerimeter perimeter, Map<String, Object> arguments, Map<String, String> jitCredentials);
+    public abstract Object execute(InvocationTarget plugin, SecurityPerimeter perimeter, Map<String, Object> arguments,
+            Map<String, String> jitCredentials);
+
+    @Override
+    public abstract boolean pause(Map<String, String> jitCredentials);
+
+    @Override
+    public abstract boolean resume(Map<String, String> jitCredentials);
+
+    @Override
+    public abstract boolean kill(Map<String, String> jitCredentials);
+
 }
