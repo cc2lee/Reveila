@@ -8,8 +8,10 @@ import java.util.Map;
 import java.util.Objects;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * A utility class for JSON serialization and deserialization.
@@ -31,6 +33,35 @@ public final class JsonUtil {
      * Private constructor to prevent instantiation of this utility class.
      */
     private JsonUtil() {
+    }
+
+    public static String removeRoot(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+
+            // List of common "hallucinated" wrapper keys from local models
+            String[] potentialWrappers = { "call", "command", "tool_call", "function" };
+
+            for (String wrapper : potentialWrappers) {
+                if (root.has(wrapper) && root.get(wrapper).isObject()) {
+                    ObjectNode flatNode = MAPPER.createObjectNode();
+                    JsonNode nested = root.get(wrapper);
+
+                    // Hoist all fields from the nested object to the new root
+                    nested.fields().forEachRemaining(entry -> {
+                        flatNode.set(entry.getKey(), entry.getValue());
+                    });
+
+                    // Return the flattened JSON string
+                    return flatNode.toString();
+                }
+            }
+        } catch (Exception e) {
+            // If parsing fails here, return original and let the main MAPPER handle the
+            // error
+            return json;
+        }
+        return json;
     }
 
     public static String clean(String json) {

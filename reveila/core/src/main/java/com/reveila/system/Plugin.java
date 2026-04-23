@@ -8,7 +8,7 @@ import java.util.UUID;
  * 
  * @author CL
  */
-public class InvocationTarget {
+public class Plugin {
 
     private String sessionId;
 
@@ -34,7 +34,7 @@ public class InvocationTarget {
         return traceId;
     }
 
-    public InvocationTarget(UUID sessionId, String targetName, String tenantId, String traceId) {
+    public Plugin(UUID sessionId, String targetName, String tenantId, String traceId) {
         super();
         this.sessionId = sessionId.toString();
         this.targetName = targetName;
@@ -49,8 +49,8 @@ public class InvocationTarget {
      * @param tenantId The tenant associated with the agent.
      * @return A new AgentPrincipal instance.
      */
-    public static InvocationTarget create(String targetName, String tenantId) {
-        return new InvocationTarget(UUID.randomUUID(), targetName, tenantId, UUID.randomUUID().toString());
+    public static Plugin create(String targetName, String tenantId) {
+        return new Plugin(UUID.randomUUID(), targetName, tenantId, UUID.randomUUID().toString());
     }
 
     /**
@@ -60,7 +60,7 @@ public class InvocationTarget {
      * @param targetName The unique identifier for the child agent.
      * @return A new AgentPrincipal instance linked by traceId.
      */
-    public InvocationTarget deriveChild(String targetName) {
-        return new InvocationTarget(UUID.randomUUID(), targetName, this.tenantId, this.traceId);
+    public Plugin deriveChild(String targetName) {
+        return new Plugin(UUID.randomUUID(), targetName, this.tenantId, this.traceId);
     }
 }

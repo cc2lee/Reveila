@@ -1,14 +1,17 @@
 package com.reveila.android.service;
 
+import com.reveila.ai.InvocationResult;
 import com.reveila.ai.SecurityPerimeter;
-import com.reveila.system.InvocationTarget;
+import com.reveila.system.Plugin;
 import com.reveila.ai.AbstractGuardedRuntime;
 import com.reveila.system.SystemProxy;
+import com.reveila.system.Proxy;
 import java.util.Map;
 import android.content.Context;
 import java.io.File;
 
 import com.reveila.android.AndroidPlugins;
+import com.reveila.android.AndroidPlatformAdapter;
 
 /**
  * Android-specific implementation of GuardedRuntime.
@@ -31,8 +34,7 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
     }
 
     @Override
-    public Object execute(InvocationTarget plugin, SecurityPerimeter perimeter, Map<String, Object> arguments, Map<String, String> jitCredentials) {
-        validateRequest(plugin, perimeter);
+    protected InvocationResult onExecute(Plugin plugin, SecurityPerimeter perimeter, Map<String, Object> arguments, Map<String, String> jitCredentials) {
         String pluginId = plugin.getTargetName();
         
         long startTime = System.currentTimeMillis();
@@ -42,68 +44,38 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
             throw new IllegalArgumentException("Invocation arguments must specify the target 'method' name.");
         }
         
-        String methodName = String.valueOf(arguments.get("method"));
-        Object[] argsArray = arguments.containsKey("args") ? (Object[]) arguments.get("args") : new Object[0];
+        String methodName = (String) arguments.get("method");
+        
+        // The remaining arguments are passed to the plugin method
+        // Typically as a single Map, or as an array if specified
+        Object[] argsArray;
+        if (arguments.containsKey("args") && arguments.get("args") instanceof Object[]) {
+            argsArray = (Object[]) arguments.get("args");
+        } else {
+            argsArray = new Object[]{ arguments };
+        }
         
         try {
-            com.reveila.system.Proxy proxy = this.context.getProxy(pluginId);
+            Proxy proxy = this.context.getProxy(pluginId);
             if (proxy == null) {
                 throw new RuntimeException("Failed to locate proxy for plugin: " + pluginId);
             }
 
-            // Load InvocationTarget library if exists
-            String pluginFileName = pluginId + ".jar";
-            File pluginDir = new File(androidContext.getFilesDir(), "plugins/" + pluginId);
-            File pluginFile = new File(pluginDir, pluginFileName);
-
-            if (pluginFile.exists() && proxy instanceof SystemProxy) {
-                // Add the child first android dex class loader here
-                ClassLoader currentLoader = ((SystemProxy) proxy).getClass().getClassLoader();
-                ClassLoader pluginLoader = new com.reveila.android.ChildFirstDexClassLoader(
-                    pluginFile.getAbsolutePath(),
-                    pluginDir.getAbsolutePath(),
-                    null,
-                    currentLoader != null ? currentLoader : this.getClass().getClassLoader()
-                );
-                
-                java.lang.reflect.Method setClassLoaderMethod = SystemProxy.class.getDeclaredMethod("setClassLoader", ClassLoader.class);
-                setClassLoaderMethod.setAccessible(true);
-                setClassLoaderMethod.invoke(proxy, pluginLoader);
-            }
-            
-            return proxy.invoke(methodName, argsArray);
+            Object result = proxy.invoke(methodName, argsArray);
+            return InvocationResult.success(result);
         } catch (Exception e) {
-            logger.severe("Execution failed in AndroidGuardedRuntime: " + e.getMessage());
-            throw new RuntimeException("InvocationTarget execution failed", e);
+            return InvocationResult.error("Execution failed: " + e.getMessage());
         }
     }
 
     @Override
     protected void onStart() throws Exception {
-        this.androidContext = ((com.reveila.android.AndroidPlatformAdapter) this.context.getPlatformAdapter()).getAndroidContext();
-        logger.info("AndroidGuardedRuntime started: Native Android isolation active.");
+        this.androidContext = ((AndroidPlatformAdapter) this.context.getPlatformAdapter()).getAndroidContext();
+        logger.info(this.getClass().getSimpleName() + " started.");
     }
 
     @Override
     protected void onStop() throws Exception {
-        logger.info("AndroidGuardedRuntime stopped.");
-    }
-
-    @Override
-    public boolean pause(Map<String, String> jitCredentials) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'pause'");
-    }
-
-    @Override
-    public boolean resume(Map<String, String> jitCredentials) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'resume'");
-    }
-
-    @Override
-    public boolean kill(Map<String, String> jitCredentials) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'stop'");
+        logger.info(this.getClass().getSimpleName() + " stopped.");
     }
 }

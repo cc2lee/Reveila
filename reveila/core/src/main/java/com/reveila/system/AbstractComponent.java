@@ -7,6 +7,15 @@ import java.util.logging.Logger;
 public abstract class AbstractComponent implements Startable, Stoppable {
 
     protected Logger logger = Logger.getLogger("reveila." + this.getClass().getName());
+    protected boolean isManaged = false;
+
+    public boolean isManaged() {
+        return isManaged;
+    }
+
+    public void setManaged(boolean managed) {
+        this.isManaged = managed;
+    }
 
     protected boolean debug = false;
     public boolean isDebug() {

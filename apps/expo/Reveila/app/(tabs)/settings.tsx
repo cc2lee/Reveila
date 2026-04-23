@@ -44,12 +44,17 @@ export default function SettingsScreen() {
   const tabs = ['General', 'Security', 'Advanced'];
 
   const [isRunning, setIsRunning] = useState(false);
+  const [isSuspended, setIsSuspended] = useState(false);
 
   useEffect(() => {
     const checkRunning = async () => {
       try {
         const running = await ReveilaModule.isRunning();
         setIsRunning(running);
+        if (running) {
+          const suspended = await ReveilaModule.isSuspended();
+          setIsSuspended(suspended);
+        }
       } catch (e) {}
     };
     checkRunning();
@@ -111,18 +116,16 @@ export default function SettingsScreen() {
     await AsyncStorage.setItem('use_biometrics', value ? 'true' : 'false');
   };
 
-  const handleKill = async () => {
-    Alert.alert(
-      'Confirm Kill',
-      'EMERGENCY: Terminate all running AI processes and revoke access?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'OK', onPress: () => {
-            Alert.alert('Kill Switch Activated. All processes stopped.');
-          }
-        }
-      ]
-    );
+  const handleToggleSuspend = async (value: boolean) => {
+    try {
+      const success = await ReveilaModule.toggleSuspend(value);
+      if (success) {
+        setIsSuspended(value);
+        Alert.alert(value ? 'System Suspended' : 'System Resumed', value ? 'All background AI tasks are paused.' : 'System restored to normal operation.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', 'Failed to toggle suspend state: ' + e.message);
+    }
   };
 
   const openEditModal = (providerName: string) => {
@@ -436,12 +439,19 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </ThemedView>
 
-            <ThemedView style={[styles.card, {borderColor: '#ef4444', borderWidth: 1}]}>
-              <ThemedText type="defaultSemiBold" style={{color: '#ef4444'}}>Emergency Kill Switch</ThemedText>
-              <ThemedText style={styles.description}>Immediately revoke all JIT tokens and terminate the AI system process.</ThemedText>
-              <TouchableOpacity style={[styles.button, {backgroundColor: '#ef4444', marginTop: 16}]} onPress={handleKill}>
-                <ThemedText style={styles.buttonText}>KILL ALL PROCESSES</ThemedText>
-              </TouchableOpacity>
+            <ThemedView style={[styles.card, {borderColor: '#f59e0b', borderWidth: 1}]}>
+              <View style={styles.row}>
+                <View style={{flex: 1}}>
+                  <ThemedText type="defaultSemiBold" style={{color: '#f59e0b'}}>Suspend System</ThemedText>
+                  <ThemedText style={styles.description}>Pause all background processes and plugin executions.</ThemedText>
+                </View>
+                <Switch 
+                  value={isSuspended} 
+                  onValueChange={handleToggleSuspend}
+                  trackColor={{ false: "#cbd5e1", true: "#f59e0b" }}
+                  thumbColor={isSuspended ? "#fff" : "#f4f3f4"}
+                />
+              </View>
             </ThemedView>
 
             <ThemedView style={styles.card}>

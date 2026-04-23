@@ -11,7 +11,7 @@ import com.reveila.ai.LlmProvider;
 import com.reveila.ai.LlmProviderFactory;
 import com.reveila.ai.ManagedInvocation;
 import com.reveila.ai.OrchestrationService;
-import com.reveila.system.InvocationTarget;
+import com.reveila.system.Plugin;
 import com.reveila.system.Reveila;
 import com.reveila.system.SystemProxy;
 
@@ -61,8 +61,25 @@ public class WebhookIngestionService {
         String source = (String) payload.getOrDefault("trigger_source", "unknown");
         String perimeter = (String) payload.getOrDefault("agency_perimeter", "default");
         
-        // Initiate AgentSession and record ingestion early to capture worker trace
-        InvocationTarget plugin = InvocationTarget.create("webhook-agent-" + source, "external-ingestion");
+        com.reveila.ai.ToolCall toolCall = new com.reveila.ai.ToolCall();
+        toolCall.setFunctionName("webhook-agent-" + source);
+        
+        @SuppressWarnings("unchecked")
+        Map<String, Object> context = (Map<String, Object>) payload.getOrDefault("context", Map.of());
+        
+        Map<String, Object> toolArgs = new java.util.HashMap<>();
+        toolArgs.put("method", "external-ingestion");
+        toolArgs.putAll(context);
+        toolCall.setArguments(toolArgs);
+
+        String tenantId = reveila != null && reveila.getSystemContext().getProperties() != null ? reveila.getSystemContext().getProperties().getProperty("tenant-id", "default-tenant") : "default-tenant";
+
+        Plugin plugin = new Plugin(
+            java.util.UUID.randomUUID(),
+            toolCall.getFunctionName(),
+            tenantId,
+            java.util.UUID.randomUUID().toString()
+        );
         AgentSession session = orchestrationService.createSession(plugin.getTraceId());
         session.put("ingestion_source", source);
         session.put("filo_task_id", payload.get("task_id"));
@@ -97,8 +114,6 @@ public class WebhookIngestionService {
         ));
 
         // 4. Trigger Dual-Model Governance Audit via the Bridge
-        @SuppressWarnings("unchecked")
-        Map<String, Object> context = (Map<String, Object>) payload.getOrDefault("context", Map.of());
         String action = (String) context.getOrDefault("required_action", "generic_task");
         
         String mappedIntent = action;
@@ -108,9 +123,10 @@ public class WebhookIngestionService {
 
         Map<String, Object> args = new java.util.HashMap<>();
         args.put(AgentSession.ID, session.getSessionId());
+        args.put("traceId", plugin.getTraceId());
         args.put(AgentSession.THOUGHT, "Worker processing Filo task: " + payload.get("task_id"));
-        args.put("context", context);
+        args.put("arguments", toolCall.getArguments());
 
-        return bridge.invoke(plugin, null, mappedIntent, args);
+        return bridge.invoke(toolCall, null, mappedIntent, args);
     }
 }

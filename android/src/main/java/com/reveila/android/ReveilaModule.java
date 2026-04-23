@@ -109,6 +109,56 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
+    public void toggleSuspend(boolean suspend, Promise promise) {
+        executorService.execute(() -> {
+            try {
+                Reveila reveilaInstance = ReveilaService.getReveilaInstance();
+                if (reveilaInstance == null) {
+                    promise.reject("E_NOT_READY", "Engine not initialized");
+                    return;
+                }
+                com.reveila.system.Proxy proxy = reveilaInstance.getSystemContext().getProxy("GuardedRuntime");
+                com.reveila.system.SystemProxy sp = (com.reveila.system.SystemProxy) proxy;
+                com.reveila.ai.GuardedRuntime runtime = (com.reveila.ai.GuardedRuntime) sp.getInstance();
+                
+                boolean result;
+                if (suspend) {
+                    result = runtime.suspend(null);
+                } else {
+                    result = runtime.resume(null);
+                }
+                promise.resolve(result);
+            } catch (Exception e) {
+                promise.reject("E_TOGGLE_SUSPEND_FAILED", e.getMessage(), e);
+            }
+        });
+    }
+
+    @ReactMethod
+    public void isSuspended(Promise promise) {
+        executorService.execute(() -> {
+            try {
+                Reveila reveilaInstance = ReveilaService.getReveilaInstance();
+                if (reveilaInstance == null) {
+                    promise.resolve(false);
+                    return;
+                }
+                com.reveila.system.Proxy proxy = reveilaInstance.getSystemContext().getProxy("GuardedRuntime");
+                com.reveila.system.SystemProxy sp = (com.reveila.system.SystemProxy) proxy;
+                com.reveila.ai.GuardedRuntime runtime = (com.reveila.ai.GuardedRuntime) sp.getInstance();
+                
+                if (runtime instanceof com.reveila.ai.AbstractGuardedRuntime) {
+                    promise.resolve(((com.reveila.ai.AbstractGuardedRuntime) runtime).isSuspended());
+                } else {
+                    promise.resolve(false);
+                }
+            } catch (Exception e) {
+                promise.resolve(false);
+            }
+        });
+    }
+
+    @ReactMethod
     public void triggerEmergencyStop(Promise promise) {
         FragmentActivity activity = (FragmentActivity) getCurrentActivity();
         if (activity == null) {

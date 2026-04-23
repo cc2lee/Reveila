@@ -13,7 +13,7 @@ import org.json.JSONObject;
 
 import com.reveila.error.LlmException;
 import com.reveila.system.Constants;
-import com.reveila.system.InvocationTarget;
+import com.reveila.system.Plugin;
 import com.reveila.system.Proxy;
 import com.reveila.system.RolePrincipal;
 import com.reveila.system.SystemComponent;
@@ -419,22 +419,35 @@ public class AgenticFabric extends SystemComponent {
                         + " iteration(s).");
     }
 
-    private String handleToolCall(AgentSession session, JSONObject toolCall, String response) throws Exception {
+    private String handleToolCall(AgentSession session, JSONObject toolCallObj, String intent) throws Exception {
 
         Map<String, Object> bridgeArgs = new HashMap<>();
         bridgeArgs.put(AgentSession.ID, session.getSessionId());
-        bridgeArgs.put(AgentSession.THOUGHT, toolCall);
+        bridgeArgs.put(AgentSession.THOUGHT, toolCallObj);
+        bridgeArgs.put("traceId", session.getParentTraceId() != null ? session.getParentTraceId() : UUID.randomUUID().toString());
 
-        String pluginId = toolCall.optString("plugin", "");
-        String methodName = toolCall.optString("method", "");
+        String pluginId = toolCallObj.optString("plugin", "");
+        if (pluginId.isEmpty()) {
+            pluginId = toolCallObj.optString("name", "");
+        }
+        
+        ToolCall toolCall = new ToolCall();
+        toolCall.setFunctionName(pluginId);
+        
+        // MCP Support: Methods might be in the arguments directly
+        JSONObject argsJson = toolCallObj.optJSONObject("arguments");
+        if (argsJson != null) {
+            Map<String, Object> argsMap = argsJson.toMap();
+            // Fallback for custom prompt: if 'method' is in root, inject it into args
+            if (toolCallObj.has("method") && !argsMap.containsKey("method")) {
+                argsMap.put("method", toolCallObj.optString("method"));
+            }
+            toolCall.setArguments(argsMap);
+        } else {
+            toolCall.setArguments(new HashMap<>());
+        }
 
-        InvocationTarget plugin = new InvocationTarget(
-                UUID.fromString(session.getSessionId()),
-                pluginId,
-                "default",
-                session.getParentTraceId() != null ? session.getParentTraceId() : UUID.randomUUID().toString());
-
-        bridgeArgs.put("arguments", toolCall.optJSONObject("arguments"));
+        bridgeArgs.put("arguments", toolCall.getArguments());
 
         // Invoke the tool via the bridge and capture the output
         // The bridge performs parsing, security audit, and tool execution
@@ -444,7 +457,7 @@ public class AgenticFabric extends SystemComponent {
             activePerimeter = manifest.defaultPerimeter();
         }
 
-        InvocationResult result = bridge.invoke(plugin, activePerimeter, methodName.isEmpty() ? response : methodName, bridgeArgs);
+        InvocationResult result = bridge.invoke(toolCall, activePerimeter, intent, bridgeArgs);
 
         if (result.status() == InvocationResult.Status.SUCCESS) {
             // Step 4: Capture tool output and feed it back for the next reasoning iteration
@@ -640,9 +653,9 @@ public class AgenticFabric extends SystemComponent {
      * @param taskArguments The task-specific arguments.
      * @return The result of the delegated task.
      */
-    public Object delegate(InvocationTarget parent, String targetIntent, Map<String, Object> taskArguments) {
-        InvocationTarget child = parent
-                .deriveChild("plugin-" + java.util.UUID.randomUUID().toString().substring(0, 4));
+    public Object delegate(Plugin parent, String targetIntent, Map<String, Object> taskArguments) {
+        String childPluginId = "plugin-" + java.util.UUID.randomUUID().toString().substring(0, 4);
+        Plugin child = parent.deriveChild(childPluginId);
 
         // Maintain episodic memory by passing context from the parent trace
         Map<String, Object> parentContext = sessionManager.getContext(parent.getTraceId());
@@ -650,13 +663,20 @@ public class AgenticFabric extends SystemComponent {
 
         // Recursive call back into the bridge
         SecurityPerimeter activePerimeter = null;
-        String pluginId = child.getTargetName();
-        MetadataRegistry.PluginManifest manifest = metadataRegistry.getManifest(pluginId);
+        MetadataRegistry.PluginManifest manifest = metadataRegistry.getManifest(childPluginId);
         if (manifest != null) {
             activePerimeter = manifest.defaultPerimeter();
         }
 
-        InvocationResult result = bridge.invoke(child, activePerimeter, targetIntent, taskArguments);
+        ToolCall delegateCall = new ToolCall();
+        delegateCall.setFunctionName(childPluginId);
+        delegateCall.setArguments(taskArguments);
+
+        Map<String, Object> metaInfo = new HashMap<>();
+        metaInfo.put("traceId", child.getTraceId());
+        metaInfo.put(AgentSession.ID, parent.getSessionId().toString());
+
+        InvocationResult result = bridge.invoke(delegateCall, activePerimeter, targetIntent, metaInfo);
 
         if (result.status() == InvocationResult.Status.PENDING_APPROVAL) {
             return "DELEGATION_PAUSED: " + result.message() + " Approval required at: " + result.callbackUrl();

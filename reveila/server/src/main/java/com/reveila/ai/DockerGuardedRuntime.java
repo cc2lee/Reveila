@@ -13,7 +13,7 @@ import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
-import com.reveila.system.InvocationTarget;
+import com.reveila.system.Plugin;
 
 /**
  * Docker-based implementation of GuardedRuntime using gVisor (runsc).
@@ -53,7 +53,7 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
     }
 
     @Override
-    public Object execute(InvocationTarget plugin, SecurityPerimeter perimeter, Map<String, Object> arguments, Map<String, String> jitCredentials) {
+    protected InvocationResult onExecute(Plugin plugin, SecurityPerimeter perimeter, Map<String, Object> arguments, Map<String, String> jitCredentials) {
         validateRequest(plugin, perimeter);
         String pluginId = plugin.getTargetName();
         long startTime = System.currentTimeMillis();
@@ -101,8 +101,7 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
             jitCredentials.forEach((k, v) -> envVars.add(k + "=" + v));
         }
 
-        // ADR 0006: Pass method name and network policy to the worker agent
-        String methodName = arguments != null ? String.valueOf(arguments.getOrDefault("method", "execute")) : "execute";
+        String methodName = arguments != null && arguments.containsKey("method") ? (String) arguments.get("method") : "defaultMethod";
         envVars.add("METHOD_NAME=" + methodName);
 
         // Serialize Arguments to JSON
@@ -128,7 +127,7 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
 
         dockerClient.startContainerCmd(container.getId()).exec();
 
-        return "Execution started in Docker container " + container.getId() + " (gVisor)";
+        return InvocationResult.success(null, "Execution started in Docker container " + container.getId() + " (gVisor)");
     }
 
     @Override
@@ -153,23 +152,5 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
             logger.severe("Failed to initialize DockerGuardedRuntime: " + e.getMessage());
             throw new com.reveila.error.SystemException("Docker daemon not reachable", e);
         }
-    }
-
-    @Override
-    public boolean pause(Map<String, String> jitCredentials) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'pause'");
-    }
-
-    @Override
-    public boolean resume(Map<String, String> jitCredentials) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'resume'");
-    }
-
-    @Override
-    public boolean kill(Map<String, String> jitCredentials) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'stop'");
     }
 }

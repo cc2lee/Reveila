@@ -2,7 +2,7 @@ package com.reveila.ai;
 
 import java.util.Map;
 
-import com.reveila.system.InvocationTarget;
+import com.reveila.system.Plugin;
 
 /**
  * The Execution Layer (Guarded Runtime).
@@ -11,8 +11,7 @@ import com.reveila.system.InvocationTarget;
  * @author CL
  */
 public interface GuardedRuntime {
-    Object execute(InvocationTarget plugin, SecurityPerimeter perimeter, Map<String, Object> arguments, Map<String, String> jitCredentials);
-    boolean pause(Map<String, String> jitCredentials);
+    InvocationResult execute(Plugin plugin, SecurityPerimeter perimeter, Map<String, Object> arguments, Map<String, String> jitCredentials);
+    boolean suspend(Map<String, String> jitCredentials);
     boolean resume(Map<String, String> jitCredentials);
-    boolean kill(Map<String, String> jitCredentials);
 }

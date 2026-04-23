@@ -8,7 +8,7 @@ import java.time.Instant;
 import com.reveila.data.Entity;
 import com.reveila.data.Repository;
 import com.reveila.system.SystemComponent;
-import com.reveila.system.InvocationTarget;
+import com.reveila.system.Plugin;
 import com.reveila.ai.FlightRecorder;
 
 /**
@@ -39,7 +39,7 @@ public class AndroidFlightRecorder extends SystemComponent implements FlightReco
     protected void onStop() throws Exception {
     }
 
-    public void recordStep(InvocationTarget plugin, String stepName, Map<String, Object> data) {
+    public void recordStep(Plugin plugin, String stepName, Map<String, Object> data) {
         Entity log = createBaseLog(plugin, stepName);
         if (data != null) {
             log.getAttributes().put("metadata", data.toString());
@@ -47,13 +47,13 @@ public class AndroidFlightRecorder extends SystemComponent implements FlightReco
         store(log);
     }
 
-    public void recordReasoning(InvocationTarget plugin, String reasoning) {
+    public void recordReasoning(Plugin plugin, String reasoning) {
         Entity log = createBaseLog(plugin, "REASONING_TRACE");
         log.getAttributes().put("inner_monologue", reasoning);
         store(log);
     }
 
-    public void recordToolOutput(InvocationTarget plugin, String toolName, Object output) {
+    public void recordToolOutput(Plugin plugin, String toolName, Object output) {
         Entity log = createBaseLog(plugin, "TOOL_OUTPUT: " + toolName);
         if (output != null) {
             log.getAttributes().put("metadata", output.toString());
@@ -61,7 +61,7 @@ public class AndroidFlightRecorder extends SystemComponent implements FlightReco
         store(log);
     }
 
-    public void recordForensicMetadata(InvocationTarget plugin, Map<String, Object> metadata) {
+    public void recordForensicMetadata(Plugin plugin, Map<String, Object> metadata) {
         Entity log = createBaseLog(plugin, "FORENSIC_METRICS");
         if (metadata != null) {
             log.getAttributes().put("metadata", metadata.toString());
@@ -69,7 +69,7 @@ public class AndroidFlightRecorder extends SystemComponent implements FlightReco
         store(log);
     }
 
-    private Entity createBaseLog(InvocationTarget plugin, String action) {
+    private Entity createBaseLog(Plugin plugin, String action) {
         Map<String, Object> attributes = new HashMap<>();
         attributes.put("target_id", plugin.getTraceId());
         attributes.put("proposed_action", action);

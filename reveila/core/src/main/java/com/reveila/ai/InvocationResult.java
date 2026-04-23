@@ -23,6 +23,10 @@ public record InvocationResult(
         return new InvocationResult(Status.SUCCESS, data, null, null);
     }
 
+    public static InvocationResult success(Object data, String message) {
+        return new InvocationResult(Status.SUCCESS, data, message, null);
+    }
+
     public static InvocationResult error(String message) {
         return new InvocationResult(Status.ERROR, null, message, null);
     }
@@ -40,9 +44,9 @@ public record InvocationResult(
             data.put("approval_data", approvalData);
         }
         return new InvocationResult(
-            Status.PENDING_APPROVAL, 
-            data, 
-            "Action '" + intent + "' requires human approval.", 
+            Status.PENDING_APPROVAL,
+            data,
+            "Action '" + intent + "' requires human approval.",
             callbackUrl
         );
     }
