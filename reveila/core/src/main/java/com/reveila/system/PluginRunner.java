@@ -36,10 +36,9 @@ public class PluginRunner {
             if (argsJson != null && !argsJson.isEmpty()) {
                 try {
                     Map<String, Object> argsMap = JsonUtil.parseJsonStringToMap(argsJson);
-                    // Standardizing: if method args are passed as a map, we might need 
-                    // to convert them to an array if the target method expects positional args.
-                    // For now, assume the method takes a single Map argument for flexibility.
-                    methodArgs = new Object[] { argsMap };
+                    // Standardizing: method arguments are mapped positionally 
+                    // as we removed the "method" key upstream
+                    methodArgs = argsMap.values().toArray();
                 } catch (Exception e) {
                     System.err.println("Warning: Failed to parse PLUGIN_ARGS_JSON. Using empty arguments.");
                 }

@@ -37,6 +37,8 @@ android {
     // it includes the resources from your prepareAndroidHome task
     sourceSets {
         getByName("main") {
+            java.srcDirs("src/main/java")
+            kotlin.srcDirs("src/main/kotlin")
             resources.srcDirs("src/main/resources")
             assets.srcDirs("src/main/assets")
         }

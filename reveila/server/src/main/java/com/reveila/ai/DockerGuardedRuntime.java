@@ -54,8 +54,7 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
 
     @Override
     protected InvocationResult onExecute(Plugin plugin, SecurityPerimeter perimeter, Map<String, Object> arguments, Map<String, String> jitCredentials) {
-        validateRequest(plugin, perimeter);
-        String pluginId = plugin.getTargetName();
+        String pluginId = plugin.getName();
         long startTime = System.currentTimeMillis();
         logger.info("Executing via DockerGuardedRuntime for " + pluginId + " [Trace: " + plugin.getTraceId() + "] Started at: " + startTime);
 
@@ -101,13 +100,20 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
             jitCredentials.forEach((k, v) -> envVars.add(k + "=" + v));
         }
 
-        String methodName = arguments != null && arguments.containsKey("method") ? (String) arguments.get("method") : "defaultMethod";
+        String methodName = "defaultMethod";
+        Map<String, Object> argsMap = null;
+        if (arguments != null) {
+            argsMap = new java.util.LinkedHashMap<>(arguments);
+            if (argsMap.containsKey("method")) {
+                methodName = (String) argsMap.remove("method");
+            }
+        }
         envVars.add("METHOD_NAME=" + methodName);
 
         // Serialize Arguments to JSON
-        if (arguments != null) {
+        if (argsMap != null) {
             try {
-                String argsJson = com.reveila.util.json.JsonUtil.toJsonString(arguments);
+                String argsJson = com.reveila.util.json.JsonUtil.toJsonString(argsMap);
                 envVars.add("PLUGIN_ARGS_JSON=" + argsJson);
             } catch (Exception e) {
                 logger.warning("Failed to serialize plugin arguments for " + pluginId);

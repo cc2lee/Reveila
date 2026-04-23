@@ -35,7 +35,7 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
 
     @Override
     protected InvocationResult onExecute(Plugin plugin, SecurityPerimeter perimeter, Map<String, Object> arguments, Map<String, String> jitCredentials) {
-        String pluginId = plugin.getTargetName();
+        String pluginId = plugin.getName();
         
         long startTime = System.currentTimeMillis();
         logger.info("Executing via AndroidGuardedRuntime for " + pluginId + " [Trace: " + plugin.getTraceId() + "] Started at: " + startTime);
@@ -44,16 +44,11 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
             throw new IllegalArgumentException("Invocation arguments must specify the target 'method' name.");
         }
         
-        String methodName = (String) arguments.get("method");
+        Map<String, Object> argsMap = new java.util.LinkedHashMap<>(arguments);
+        String methodName = (String) argsMap.remove("method");
         
         // The remaining arguments are passed to the plugin method
-        // Typically as a single Map, or as an array if specified
-        Object[] argsArray;
-        if (arguments.containsKey("args") && arguments.get("args") instanceof Object[]) {
-            argsArray = (Object[]) arguments.get("args");
-        } else {
-            argsArray = new Object[]{ arguments };
-        }
+        Object[] argsArray = argsMap.values().toArray();
         
         try {
             Proxy proxy = this.context.getProxy(pluginId);

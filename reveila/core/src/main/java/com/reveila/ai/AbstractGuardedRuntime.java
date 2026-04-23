@@ -19,25 +19,22 @@ public abstract class AbstractGuardedRuntime extends SystemComponent implements 
         return isSuspended;
     }
 
-    protected void validateRequest(Plugin target, SecurityPerimeter perimeter) {
-        if (target == null)
+    protected void validateRequest(Plugin plugin, SecurityPerimeter perimeter) {
+        if (plugin == null)
             throw new IllegalArgumentException("Plugin cannot be null");
         if (perimeter == null)
             throw new IllegalArgumentException("SecurityPerimeter cannot be null");
-
-        // TODO Check if target is allowed by perimeter
     }
 
     @Override
     public final InvocationResult execute(Plugin plugin, SecurityPerimeter perimeter, Map<String, Object> arguments,
             Map<String, String> jitCredentials) {
+        
         if (isSuspended) {
             return InvocationResult.error("Runtime is currently suspended.");
         }
-        validateRequest(plugin, perimeter);
-
-        // TODO Implement execution logic
         
+        validateRequest(plugin, perimeter);
         return onExecute(plugin, perimeter, arguments, jitCredentials);
     }
 

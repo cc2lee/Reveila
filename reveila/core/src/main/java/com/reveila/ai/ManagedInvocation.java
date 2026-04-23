@@ -2,8 +2,6 @@ package com.reveila.ai;
 
 import java.util.Map;
 
-import org.json.JSONObject;
-
 import com.reveila.system.Plugin;
 import com.reveila.system.Proxy;
 import com.reveila.system.SystemComponent;
@@ -17,8 +15,7 @@ public class ManagedInvocation extends SystemComponent {
     private FlightRecorder flightRecorder;
     private MetadataRegistry metadataRegistry;
     private SecretManager secretManager;
-    private OrchestrationService orchestrationService;
-
+    
     public ManagedInvocation() {
         // Dependencies will be wired via the SystemContext in onStart
     }
@@ -31,7 +28,6 @@ public class ManagedInvocation extends SystemComponent {
         this.flightRecorder = getComponent("FlightRecorder", FlightRecorder.class);
         this.metadataRegistry = getComponent("MetadataRegistry", MetadataRegistry.class);
         this.secretManager = getComponent("SecretManager", SecretManager.class);
-        this.orchestrationService = getComponent("OrchestrationService", OrchestrationService.class);
     }
 
     @Override
@@ -80,9 +76,12 @@ public class ManagedInvocation extends SystemComponent {
         String methodName = null;
         if (toolCall.getArguments() instanceof Map) {
             @SuppressWarnings("unchecked")
-            Map<String, Object> argsMap = (Map<String, Object>) toolCall.getArguments();
-            methodArgs = new Object[]{ argsMap };
-            methodName = (String) argsMap.getOrDefault("method", "defaultMethod");
+            Map<String, Object> argsMap = new java.util.LinkedHashMap<>((Map<String, Object>) toolCall.getArguments());
+            methodName = (String) argsMap.remove("method");
+            if (methodName == null) {
+                methodName = "defaultMethod";
+            }
+            methodArgs = argsMap.values().toArray();
         } else if (toolCall.getArguments() instanceof Object[]) {
             methodArgs = (Object[]) toolCall.getArguments();
             methodName = "defaultMethod";
@@ -101,9 +100,6 @@ public class ManagedInvocation extends SystemComponent {
 
     private InvocationResult invokeManaged(ToolCall toolCall, SecurityPerimeter perimeter, String intent, Map<String, Object> metaInfo) {
 
-        // TODO: needs rewrite to fit the new design of ManagedInvocation as the central orchestrator for plugin execution with governance, JIT creds, and HITL.
-        // The current signature and parameters are placeholders and may not fit the final design.
-        
         if (toolCall == null) {
             throw new IllegalArgumentException("ToolCall cannot be null");
         }
@@ -119,13 +115,6 @@ public class ManagedInvocation extends SystemComponent {
 
         // Build an internal Plugin for routing/telemetry components
         String pluginId = toolCall.getFunctionName();
-        String methodName = "defaultMethod";
-        if (toolCall.getArguments() instanceof Map) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> argsMap = (Map<String, Object>) toolCall.getArguments();
-            methodName = (String) argsMap.getOrDefault("method", "defaultMethod");
-        }
-
         String sessionId = metaInfo.containsKey(AgentSession.ID) ? (String) metaInfo.get(AgentSession.ID) : null;
         String traceId = metaInfo.containsKey("traceId") ? (String) metaInfo.get("traceId") : java.util.UUID.randomUUID().toString();
         String tenantId = context != null && context.getProperties() != null ? context.getProperties().getProperty("tenant-id", "default-tenant") : "default-tenant";
