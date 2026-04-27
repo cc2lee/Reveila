@@ -92,7 +92,7 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
     public boolean isLocal() {
         if (name == null) return false;
         String lowerName = name.toLowerCase();
-        return lowerName.contains("(local)") || lowerName.contains("ollama") || lowerName.contains("local-");
+        return lowerName.contains("on-device");
     }
 
     @Override

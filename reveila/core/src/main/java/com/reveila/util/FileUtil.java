@@ -1,7 +1,12 @@
 package com.reveila.util;
 
+import java.io.BufferedInputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -222,4 +227,59 @@ public final class FileUtil {
 	public static String toJavaFilePath(String path) {
 		return path.replace('\\', '/');
 	}
+
+	public static void download(URL sourceUrl, File saveAsFile, boolean overwrite, DownloadCallback callback) {
+        if (callback == null) {
+            throw new IllegalArgumentException("DownloadCallback cannot be null.");
+        }
+
+        if ((sourceUrl == null) || (saveAsFile == null)) {
+            callback.onError(new IllegalArgumentException("Source URL and destination file must be provided."));
+            return;
+        }
+
+        if (saveAsFile.exists() && !overwrite) {
+            callback.onError(new java.io.WriteAbortedException("File already exists",
+                    new IOException(saveAsFile.getAbsolutePath())));
+            return;
+        }
+
+        if (saveAsFile.getParentFile() != null && !saveAsFile.getParentFile().exists()) {
+            saveAsFile.getParentFile().mkdirs();
+        }
+
+        try {
+            URLConnection connection = sourceUrl.openConnection();
+            connection.connect();
+
+            int fileLength = connection.getContentLength();
+            if (fileLength <= 0) {
+                callback.onError(new IOException("Source file length is 0 bytes, or unknown."));
+                return;
+            }
+
+            try (InputStream input = new BufferedInputStream(sourceUrl.openStream());
+                    FileOutputStream output = new FileOutputStream(saveAsFile)) {
+
+                byte[] data = new byte[8192];
+                long total = 0;
+                int count;
+                while ((count = input.read(data)) != -1) {
+                    total += count;
+                    callback.onProgress((int) (total * 100 / fileLength));
+                    output.write(data, 0, count);
+                }
+
+                callback.onComplete(saveAsFile);
+
+            }
+        } catch (Exception e) {
+            callback.onError(e);
+        }
+    }
+	public interface DownloadCallback {
+        void onComplete(File modelFile);
+        void onError(Exception e);
+        void onProgress(int progress);
+    }
 }
