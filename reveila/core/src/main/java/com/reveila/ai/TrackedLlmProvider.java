@@ -45,11 +45,6 @@ public class TrackedLlmProvider implements LlmProvider {
     }
 
     @Override
-    public LlmProvider getInstance() {
-        return delegate.getInstance();
-    }
-
-    @Override
     public boolean isEnabled() {
         return delegate.isEnabled();
     }

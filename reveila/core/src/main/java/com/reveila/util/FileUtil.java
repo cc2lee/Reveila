@@ -5,6 +5,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.BufferedOutputStream;
 import java.net.URL;
 import java.net.URLConnection;
 import java.nio.file.Files;
@@ -18,20 +20,24 @@ import java.util.stream.Stream;
 /**
  * @author Charles Lee
  *
- * This utility class provides convenience methods for file system operations.
+ *         This utility class provides convenience methods for file system
+ *         operations.
  */
 public final class FileUtil {
 
 	/**
 	 * Private constructor to prevent instantiation of this utility class.
 	 */
-	private FileUtil() {}
+	private FileUtil() {
+	}
 
 	/**
-	 * Deletes a file or directory. If the file is a directory, it will be deleted recursively.
+	 * Deletes a file or directory. If the file is a directory, it will be deleted
+	 * recursively.
 	 *
-	 * @param file the file or directory to delete.
-	 * @param throwException if true, throws a {@link IOException} if any file could not be deleted.
+	 * @param file           the file or directory to delete.
+	 * @param throwException if true, throws a {@link IOException} if any file could
+	 *                       not be deleted.
 	 * @throws IOException if deletion fails and throwException is true.
 	 */
 	public static void delete(File file, boolean throwException) throws IOException {
@@ -65,9 +71,10 @@ public final class FileUtil {
 	/**
 	 * Lists all files in a given directory that end with a specific extension.
 	 *
-	 * @param dirPath the path to the directory.
+	 * @param dirPath   the path to the directory.
 	 * @param extension the file extension to filter by (without the dot).
-	 * @return an array of {@link File} objects, or an empty array if the directory does not exist or is not a directory.
+	 * @return an array of {@link File} objects, or an empty array if the directory
+	 *         does not exist or is not a directory.
 	 */
 	public static String[] listRelativePaths(String directory, String fileExt) throws IOException {
 		Path root = Paths.get(directory);
@@ -105,8 +112,8 @@ public final class FileUtil {
 	/**
 	 * Copies a source file to a target file or directory.
 	 *
-	 * @param source the source file.
-	 * @param target the target file or directory.
+	 * @param source    the source file.
+	 * @param target    the target file or directory.
 	 * @param overwrite if true, existing target file will be overwritten.
 	 * @return the number of bytes copied.
 	 * @throws IOException if the copy operation fails.
@@ -128,7 +135,8 @@ public final class FileUtil {
 		Path sourcePath = source.toPath();
 		Path targetPath = target.toPath();
 
-		// Determine the final destination path. If target is a directory, resolve a file with the same name inside it.
+		// Determine the final destination path. If target is a directory, resolve a
+		// file with the same name inside it.
 		Path finalTargetPath = Files.isDirectory(targetPath) ? targetPath.resolve(source.getName()) : targetPath;
 
 		// Ensure parent directories of the final target file exist.
@@ -140,7 +148,8 @@ public final class FileUtil {
 		if (overwrite) {
 			Files.copy(sourcePath, finalTargetPath, StandardCopyOption.REPLACE_EXISTING);
 		} else {
-			// Throws FileAlreadyExistsException (which is a subclass of IOException) if the file exists.
+			// Throws FileAlreadyExistsException (which is a subclass of IOException) if the
+			// file exists.
 			Files.copy(sourcePath, finalTargetPath);
 		}
 		return Files.size(finalTargetPath);
@@ -149,8 +158,8 @@ public final class FileUtil {
 	/**
 	 * Copies a source directory and its contents to a target directory.
 	 *
-	 * @param source the source directory.
-	 * @param target the target directory.
+	 * @param source    the source directory.
+	 * @param target    the target directory.
 	 * @param overwrite if true, existing files will be overwritten.
 	 * @return the total bytes copied.
 	 * @throws IOException if the operation fails.
@@ -198,6 +207,7 @@ public final class FileUtil {
 
 	/**
 	 * Gets the name of a file from a full path, without the extension.
+	 * 
 	 * @param filename the full path or name of the file.
 	 * @return the file name without its extension.
 	 */
@@ -229,57 +239,64 @@ public final class FileUtil {
 	}
 
 	public static void download(URL sourceUrl, File saveAsFile, boolean overwrite, DownloadCallback callback) {
-        if (callback == null) {
-            throw new IllegalArgumentException("DownloadCallback cannot be null.");
-        }
+		if (callback == null) {
+			throw new IllegalArgumentException("DownloadCallback cannot be null.");
+		}
 
-        if ((sourceUrl == null) || (saveAsFile == null)) {
-            callback.onError(new IllegalArgumentException("Source URL and destination file must be provided."));
-            return;
-        }
+		if ((sourceUrl == null) || (saveAsFile == null)) {
+			callback.onError(new IllegalArgumentException("Source URL and destination file must be provided."));
+			return;
+		}
 
-        if (saveAsFile.exists() && !overwrite) {
-            callback.onError(new java.io.WriteAbortedException("File already exists",
-                    new IOException(saveAsFile.getAbsolutePath())));
-            return;
-        }
+		if (saveAsFile.exists() && !overwrite) {
+			callback.onError(new java.io.WriteAbortedException("File already exists",
+					new IOException(saveAsFile.getAbsolutePath())));
+			return;
+		}
 
-        if (saveAsFile.getParentFile() != null && !saveAsFile.getParentFile().exists()) {
-            saveAsFile.getParentFile().mkdirs();
-        }
+		if (saveAsFile.getParentFile() != null && !saveAsFile.getParentFile().exists()) {
+			saveAsFile.getParentFile().mkdirs();
+		}
 
-        try {
-            URLConnection connection = sourceUrl.openConnection();
-            connection.connect();
+		try {
+			URLConnection connection = sourceUrl.openConnection();
 
-            int fileLength = connection.getContentLength();
-            if (fileLength <= 0) {
-                callback.onError(new IOException("Source file length is 0 bytes, or unknown."));
-                return;
-            }
+			// Connect Timeout: Finding your PC across the house
+			connection.setConnectTimeout(15000); // 15 seconds
 
-            try (InputStream input = new BufferedInputStream(sourceUrl.openStream());
-                    FileOutputStream output = new FileOutputStream(saveAsFile)) {
+			// Read Timeout: Waiting for the data stream
+			connection.setReadTimeout(60000); // 60 seconds
 
-                byte[] data = new byte[8192];
-                long total = 0;
-                int count;
-                while ((count = input.read(data)) != -1) {
-                    total += count;
-                    callback.onProgress((int) (total * 100 / fileLength));
-                    output.write(data, 0, count);
-                }
+			connection.connect();
 
-                callback.onComplete(saveAsFile);
+			int fileLength = connection.getContentLength();
+			if (fileLength <= 0) {
+				callback.onError(new IOException("Source file length is 0 bytes, or unknown."));
+				return;
+			}
 
-            }
-        } catch (Exception e) {
-            callback.onError(e);
-        }
-    }
+			try (InputStream input = new BufferedInputStream(connection.getInputStream());
+					OutputStream output = new BufferedOutputStream(new FileOutputStream(saveAsFile))) {
+
+				byte[] buffer = new byte[8192];
+				long total = 0;
+				int bytesRead;
+				while ((bytesRead = input.read(buffer)) != -1) {
+					total += bytesRead;
+					callback.onProgress((int) (total * 100 / fileLength));
+					output.write(buffer, 0, bytesRead);
+				}
+				output.flush(); // Ensure everything is pushed to the disk
+				callback.onComplete(saveAsFile);
+			}
+		} catch (Exception e) {
+			callback.onError(e);
+		}
+	}
+
 	public interface DownloadCallback {
-        void onComplete(File modelFile);
-        void onError(Exception e);
-        void onProgress(int progress);
-    }
+		void onComplete(File modelFile);
+		void onError(Exception e);
+		void onProgress(int progress);
+	}
 }

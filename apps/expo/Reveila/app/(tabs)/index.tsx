@@ -21,7 +21,7 @@ export default function HomeScreen() {
   const [promptText, setPromptText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [startingTimestamp, setStartingTimestamp] = useState<number | null>(null);
-  const [selectedModel, setSelectedModel] = useState('Ollama (Local)');
+  const [selectedModel, setSelectedModel] = useState('On-Device Model');
   const [activeMessages, setActiveMessages] = useState<any[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [isCloudMode, setIsCloudMode] = useState(false);
@@ -40,7 +40,7 @@ export default function HomeScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
 
   const isConfigured = (p: any) => {
-    const isLocal = p.name.includes('Local') || (p.endpoint && p.endpoint.includes('localhost'));
+    const isLocal = p.name.includes('On-Device') || p.name.includes('Local') || (p.endpoint && p.endpoint.includes('localhost'));
     if (isLocal) return !!p.endpoint;
     return !!p['api.key'] && p['api.key'].trim().length > 0;
   };
@@ -48,7 +48,7 @@ export default function HomeScreen() {
   const availableModels = providersList.filter(p => {
     // Local vs Cloud filtering logic based on name or endpoint
     const ep = p.endpoint || p.defaultEndpoint;
-    const isLocal = p.name.includes('Local') || (ep && ep.includes('localhost'));
+    const isLocal = p.name.includes('On-Device') || p.name.includes('Local') || (ep && ep.includes('localhost'));
     return isCloudMode ? !isLocal : isLocal;
   });
 
@@ -70,14 +70,14 @@ export default function HomeScreen() {
                 { name: 'OpenAI', endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o', 'api.key': '' },
                 { name: 'Anthropic', endpoint: 'https://api.anthropic.com/v1/messages', model: 'claude-3-5-sonnet-latest', 'api.key': '' },
                 { name: 'Google Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-3-flash', 'api.key': '' },
-                { name: 'Ollama (Local)', endpoint: 'http://localhost:11434/v1/chat/completions', model: 'qwen2.5-coder:1.5b', 'api.key': '' },
+                { name: 'On-Device Model', endpoint: 'http://localhost:8888/completion', model: 'gemma-2-2b-it-Q4_K_M', 'api.key': '' },
                 { name: 'Custom', endpoint: '', model: '', 'api.key': '' }
               ]);
             }
           } catch (e) {
             // Fallback if parsing fails
             setProvidersList([
-              { name: 'Ollama (Local)', endpoint: 'http://localhost:11434/v1/chat/completions', model: 'qwen2.5-coder:1.5b', 'api.key': '' }
+              { name: 'On-Device Model', endpoint: 'http://localhost:8888/completion', model: 'gemma-2-2b-it-Q4_K_M', 'api.key': '' }
             ]);
           }
         }
@@ -88,7 +88,7 @@ export default function HomeScreen() {
           { name: 'OpenAI', endpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o', 'api.key': '' },
           { name: 'Anthropic', endpoint: 'https://api.anthropic.com/v1/messages', model: 'claude-3-5-sonnet-latest', 'api.key': '' },
           { name: 'Google Gemini', endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-3-flash', 'api.key': '' },
-          { name: 'Ollama (Local)', endpoint: 'http://localhost:11434/v1/chat/completions', model: 'qwen2.5-coder:1.5b', 'api.key': '' },
+          { name: 'On-Device Model', endpoint: 'http://localhost:8888/completion', model: 'gemma-2-2b-it-Q4_K_M', 'api.key': '' },
           { name: 'Custom', endpoint: '', model: '', 'api.key': '' }
         ]);
       });

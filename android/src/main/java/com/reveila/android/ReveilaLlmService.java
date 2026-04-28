@@ -22,29 +22,40 @@ public class ReveilaLlmService extends Service {
 
     private static final String TAG = "ReveilaLlmService";
     private static final Object lock = new Object();
-    
+
     private static volatile boolean isRunning = false;
     private static volatile boolean isStarting = false;
-    
+
     private Process serverProcess;
     private ServiceManager serviceManager;
     private ExecutorService executor;
 
     // Static configuration passed from the main ReveilaService
     private static URL llmDownloadUrl = null;
-    private static String modelName = "gemma-2b.gguf";
+    private static String modelName = null; // with file extension, e.g., "gemma-2-2b-it-Q4_K_M.gguf"
     private static volatile int downloadProgress = 0;
 
-    public static boolean isRunning() { return isRunning; }
-    public static int getDownloadProgress() { return downloadProgress; }
-    public static void setModelName(String name) { modelName = name; }
-    public static void setDownloadUrl(URL url) { llmDownloadUrl = url; }
+    public static boolean isRunning() {
+        return isRunning;
+    }
+
+    public static int getDownloadProgress() {
+        return downloadProgress;
+    }
+
+    public static void setModelName(String name) {
+        modelName = name;
+    }
+
+    public static void setDownloadUrl(URL url) {
+        llmDownloadUrl = url;
+    }
 
     @Override
     public void onCreate() {
         super.onCreate();
         executor = Executors.newSingleThreadExecutor();
-        serviceManager = new ServiceManager(this);
+        serviceManager = new ServiceManager(this, "reveila_llm", 1002, "Reveila LLM Service");
         // Ensure this peer service is also promoted to Foreground to prevent LMK kills
         serviceManager.startForeground(this, "Reveila LLM Service");
     }
@@ -66,20 +77,26 @@ public class ReveilaLlmService extends Service {
 
     private void initializeAndRunServer() {
         try {
-            File dir = new File(getFilesDir(), "reveila/system/downloads/llms");
-            if (!dir.exists() && !dir.mkdirs()) {
-                throw new Exception("Could not create model directory.");
-            }
+            File modelDir = getExternalFilesDir("llms");
+            if (modelDir == null) {
+                Log.w(TAG, "External storage unavailable. Falling back to internal storage.");
+                modelDir = new File(getFilesDir(), "reveila/system/downloads/llms");
 
-            File modelFile = new File(dir, modelName);
+                if (!modelDir.exists() && !modelDir.mkdirs()) {
+                    serviceManager.updateNotification("Error: Storage Initialization Failed.");
+                    return; // Absolute failure
+                }
+            }
+            purgeOldModels(modelDir);
+            File modelFile = new File(modelDir, modelName);
             if (!modelFile.exists()) {
-                Log.i(TAG, "Model not found. Initiating Sovereign download...");
+                Log.i(TAG, "On-Device LLM Model not found. Initiating download...");
                 syncDownloadModel(modelFile);
             }
 
             String binaryPath = getFilesDir().getAbsolutePath() + "/reveila/system/bin/android/llama-server";
             File binFile = new File(binaryPath);
-            
+
             if (!binFile.exists()) {
                 throw new Exception("Native binary missing at: " + binaryPath);
             }
@@ -100,7 +117,7 @@ public class ReveilaLlmService extends Service {
 
             Log.i(TAG, "Executing native llama-server...");
             serverProcess = pb.start();
-            
+
             synchronized (lock) {
                 isStarting = false;
                 isRunning = true;
@@ -118,13 +135,26 @@ public class ReveilaLlmService extends Service {
     }
 
     private void syncDownloadModel(File destination) throws Exception {
-        if (llmDownloadUrl == null) throw new Exception("Download URL not set.");
-        
-        // Using a synchronous wrapper around your FileUtil to keep the executor logic linear
+        if (llmDownloadUrl == null)
+            throw new Exception("Download URL not set.");
+
+        // Indeterminate (Before first byte)
+        serviceManager.updateNotification(this, "Connecting...", 0, 0, true);
         FileUtil.download(llmDownloadUrl, destination, true, new FileUtil.DownloadCallback() {
-            @Override public void onProgress(int progress) { downloadProgress = progress; }
-            @Override public void onError(Exception e) { Log.e(TAG, "Download failed", e); }
-            @Override public void onComplete(File downloaded) { Log.i(TAG, "Model download verified."); }
+            @Override
+            public void onProgress(int progress) {
+                serviceManager.updateNotification(this, "Downloading model: " + progress + "%", 100, progress, false);
+            }
+
+            @Override
+            public void onError(Exception e) {
+                Log.e(TAG, "Download failed", e);
+            }
+
+            @Override
+            public void onComplete(File downloaded) {
+                serviceManager.updateNotification(this, "On-device LLM active");
+            }
         });
 
         // Simple poll for completion if FileUtil is internally async
@@ -150,7 +180,7 @@ public class ReveilaLlmService extends Service {
     public void onDestroy() {
         super.onDestroy();
         Log.i(TAG, "Shutting down LLM Service...");
-        
+
         if (executor != null) {
             executor.execute(this::cleanup);
             executor.shutdown();
@@ -165,5 +195,25 @@ public class ReveilaLlmService extends Service {
     }
 
     @Override
-    public IBinder onBind(Intent intent) { return null; }
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    private void purgeOldModels(File directory) {
+        File[] files = directory.listFiles();
+        if (files == null)
+            return;
+
+        for (File file : files) {
+            // If it's a model file but NOT the one we are currently configured to use
+            if (file.isFile() && file.getName().endsWith(".gguf") && !file.getName().equals(modelName)) {
+                boolean deleted = file.delete();
+                if (deleted) {
+                    Log.i(TAG, "Purged legacy model: " + file.getName());
+                } else {
+                    Log.w(TAG, "Failed to purge legacy model: " + file.getName());
+                }
+            }
+        }
+    }
 }

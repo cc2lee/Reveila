@@ -167,7 +167,7 @@ This allows you to set breakpoints in the Java/Kotlin code.
 ## Setting Up Local LLM with Roo Code
 
 - Install Ollama: https://ollama.com/download
-- `ollama pull qwen2.5-coder:1.5b`
+- `ollama pull gemma-2-2b-it-Q4_K_M`
 - `ollama list` to verify the model is in the local library
 - Optimize for Roo Code: num_ctx 16384 / 8192 minimum
 
@@ -308,4 +308,20 @@ If you are running on a Windows PC (x86_64), running an ARM64 AVD will be **extr
 | **Cores** | 2 | **4-6** |
 | **Graphics** | Automatic | **Hardware** |
 
+
+## Setting Up Local Download Server:
+
+On your Windows PC, open a terminal in C:\DEV\Downloads.
+
+Run this command:
+
+```Bash
+# If you have Python
+python -m http.server 8000
+```
+Find your PC's local IP address (run ipconfig—it's usually something like 192.168.1.XX).
+Now, update your reveila.properties to point to your PC's IP and the port you just opened. Android will treat this as a standard web download.
+
+In reveila.properties:
+download.base.url=http://192.168.1.219:8000
 

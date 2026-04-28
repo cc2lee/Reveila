@@ -16,13 +16,6 @@ public interface LlmProvider {
     LlmResponse invoke(LlmRequest request) throws LlmException;
     
     /**
-     * Required by LlmProviderFactory to retrieve the instance via Proxy.
-     * 
-     * @return The provider instance.
-     */
-    LlmProvider getInstance();
-
-    /**
      * Checks if the provider is enabled by the user.
      * 
      * @return true if enabled, false otherwise.

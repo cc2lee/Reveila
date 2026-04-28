@@ -132,19 +132,6 @@ public class LlmProviderFactory extends SystemComponent {
         manifest.setName(name);
         manifest.setImplementationClass(GenericLlmProvider.class.getName());
 
-        /*
-         * 
-         * "name": "Ollama (Local)",
-         * "endpoint": "http://localhost:11434",
-         * "model": "Gemma-3-1b",
-         * "temperature": 0.7,
-         * "quantization": "Q4_K_M",
-         * "quantization.options": [
-         * "Q4_K_M",
-         * "F16"
-         * ]
-         * 
-         */
         GenericLlmProvider fallbackOllama = new GenericLlmProvider();
         fallbackOllama.setContext(new PluginContext(context, manifest, new Properties()));
         fallbackOllama.setName(name);
@@ -167,7 +154,7 @@ public class LlmProviderFactory extends SystemComponent {
             fallbackOllama.setTemperature(0.7);
             
         } else {
-            fallbackOllama.setEndpoint("http://localhost:11434/v1/chat/completions");
+            fallbackOllama.setEndpoint("http://localhost:8888/completion");
             fallbackOllama.setModel("llama3");
             fallbackOllama.setTemperature(0.7);
             

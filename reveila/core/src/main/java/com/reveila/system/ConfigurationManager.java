@@ -103,7 +103,7 @@ public class ConfigurationManager extends SystemComponent {
                     // Expose specific legacy properties to DI container
                     if (pName != null && pEndpoint != null) {
                         if (pName.startsWith("Gemma") || pName.equalsIgnoreCase("Ollama")) {
-                            configMap.put("plugin.OllamaProvider.apiUrl", pEndpoint);
+                            configMap.put("plugin.OnDeviceProvider.apiUrl", pEndpoint);
                         }
                     }
                 }

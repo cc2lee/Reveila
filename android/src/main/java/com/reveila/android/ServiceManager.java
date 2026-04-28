@@ -12,86 +12,119 @@ import android.util.Log;
 import android.content.pm.ServiceInfo;
 import androidx.core.app.NotificationCompat;
 
-import com.reveila.android.RestartReceiver;
-
 /**
- * Manages the foreground service notification for the Reveila service.
+ * Manages unique foreground service notifications for Reveila components.
  */
 public class ServiceManager {
 
-    public static final String CHANNEL_ID = "ReveilaServiceChannel";
-    public static final int NOTIFICATION_ID = 1;
     public static final String ACTION_RESTART = "reveila.action.RESTART_SERVICE";
+    private static final String TAG = "ServiceManager";
 
     private final Context context;
     private final NotificationManager notificationManager;
 
-    public ServiceManager(Context context) {
+    // Configurable via constructor
+    private final String channelId;
+    private final int notificationId;
+    private final String channelName;
+
+    private NotificationCompat.Builder builder;
+    private int lastProgress = -1;
+
+    /**
+     * @param context        The service context
+     * @param channelId      Unique string ID for the notification channel (e.g.,
+     *                       "reveila_core_channel")
+     * @param notificationId Unique integer for the notification (e.g., 1001)
+     * @param channelName    User-visible name for the channel (e.g., "Reveila Core
+     *                       Engine")
+     */
+    public ServiceManager(Context context, String channelId, int notificationId, String channelName) {
         this.context = context.getApplicationContext();
         this.notificationManager = (NotificationManager) this.context.getSystemService(Context.NOTIFICATION_SERVICE);
+        this.channelId = channelId;
+        this.notificationId = notificationId;
+        this.channelName = channelName;
     }
 
     public void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel serviceChannel = new NotificationChannel(
-                    CHANNEL_ID,
-                    "Reveila Service Channel",
-                    NotificationManager.IMPORTANCE_DEFAULT);
-            notificationManager.createNotificationChannel(serviceChannel);
+                    channelId,
+                    channelName,
+                    NotificationManager.IMPORTANCE_LOW);
+
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(serviceChannel);
+            }
         }
     }
 
-    public Notification buildNotification(String contentText, Class<?> serviceClass) {
-        // Intent to open the app when the notification is tapped
+    private void ensureBuilder(Class<?> serviceClass) {
+        if (builder != null)
+            return;
+
         Intent notificationIntent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
         PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, notificationIntent,
                 PendingIntent.FLAG_IMMUTABLE);
 
-        // Intent for the "Restart" action, targeting the RestartReceiver
         Intent restartIntent = new Intent(context, RestartReceiver.class);
         restartIntent.setAction(ACTION_RESTART);
         restartIntent.putExtra("serviceClass", serviceClass.getName());
         PendingIntent restartPendingIntent = PendingIntent.getBroadcast(context, 1, restartIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-        // Find the app's launcher icon
         int smallIconResId = context.getResources().getIdentifier("ic_launcher", "mipmap", context.getPackageName());
         if (smallIconResId == 0) {
-            smallIconResId = android.R.drawable.ic_dialog_info; // Fallback icon
+            smallIconResId = android.R.drawable.ic_dialog_info;
         }
 
-        return new NotificationCompat.Builder(context, CHANNEL_ID)
-                .setContentTitle("Reveila Service")
-                .setContentText(contentText)
+        builder = new NotificationCompat.Builder(context, channelId)
+                .setContentTitle(channelName) // Use channelName as the title for clarity
                 .setSmallIcon(smallIconResId)
                 .setContentIntent(pendingIntent)
                 .addAction(android.R.drawable.ic_menu_rotate, "Restart", restartPendingIntent)
                 .setOngoing(true)
-                .build();
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setOnlyAlertOnce(true);
     }
 
     public void startForeground(Service service, String contentText) {
         try {
-            Log.i("ServiceManager", "Attempting to start foreground service...");
             createNotificationChannel();
-            Notification notification = buildNotification(contentText, service.getClass());
-            
+            ensureBuilder(service.getClass());
+
+            builder.setContentText(contentText);
+            Notification notification = builder.build();
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                Log.i("ServiceManager", "Using foregroundServiceType: specialUse");
-                service.startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+                service.startForeground(notificationId, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                Log.i("ServiceManager", "Using foregroundServiceType: dataSync");
-                service.startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                service.startForeground(notificationId, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
             } else {
-                service.startForeground(NOTIFICATION_ID, notification);
+                service.startForeground(notificationId, notification);
             }
-            Log.i("ServiceManager", "Successfully called startForeground");
         } catch (Exception e) {
-            Log.e("ServiceManager", "CRITICAL ERROR: Failed to call startForeground", e);
-            // Re-throw if it's a SecurityException as it indicates missing manifest entries
-            if (e instanceof SecurityException) {
-                throw e;
-            }
+            Log.e(TAG, "Failure in startForeground for " + channelName, e);
         }
+    }
+
+    public void updateNotification(Service service, String message, int max, int progress, boolean indeterminate) {
+        if (!indeterminate && progress == lastProgress)
+            return;
+        lastProgress = progress;
+
+        ensureBuilder(service.getClass());
+
+        builder.setContentText(message)
+                .setProgress(max, progress, indeterminate);
+
+        if (notificationManager != null) {
+            notificationManager.notify(notificationId, builder.build());
+        }
+    }
+
+    public void updateNotification(Service service, String message) {
+        updateNotification(service, message, 0, 0, false);
     }
 }

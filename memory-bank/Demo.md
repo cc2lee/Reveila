@@ -97,7 +97,7 @@ To see exactly what is happening during startup, run the command without any fil
 ```powershell
 docker logs reveila-fabric-standalone 2>&1 | Select-String "Ollama"
 ```
-*Success: `Started component: OllamaProvider`*
+*Success: `Started component: OnDeviceProvider`*
 
 ---
 

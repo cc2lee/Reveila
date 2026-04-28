@@ -55,7 +55,7 @@ public class ReveilaService extends Service {
     public void onCreate() {
         super.onCreate();
         executor = Executors.newSingleThreadExecutor();
-        serviceManager = new ServiceManager(this);
+        serviceManager = new ServiceManager(this, "reveila_core", 1001, "Reveila Core Engine");
         serviceManager.startForeground(this, "Reveila service is initializing...");
         reveila = new Reveila();
         isReveilaRunning = false;
@@ -143,6 +143,7 @@ public class ReveilaService extends Service {
                 PlatformAdapter platformAdapter = new AndroidPlatformAdapter(this, props);
                 reveila.start(platformAdapter);
                 ReveilaService.isReveilaRunning = true;
+                serviceManager.updateNotification(this, "Reveila is running");
                 Log.i("ReveilaService", "Reveila service started successfully.");
 
                 startLlmService(platformAdapter.getProperties());
@@ -262,13 +263,10 @@ public class ReveilaService extends Service {
 
         try {
             String baseUrl = p.getProperty("download.base.url");
-            String llmUrlString = baseUrl + "/llms/gemma-2-2b-it-Q4_K_M.gguf";
             String modelName = p.getProperty("ai.llm.model.name");
-            if (modelName != null && !modelName.isEmpty()) {
-                ReveilaLlmService.setModelName(modelName);
-            }
-            URL llmUrl = new URI(llmUrlString).toURL();
-            ReveilaLlmService.setDownloadUrl(llmUrl);
+            URL url = new URI(baseUrl + "/llms/" + modelName).toURL();
+            ReveilaLlmService.setModelName(modelName);
+            ReveilaLlmService.setDownloadUrl(url);
 
             Intent intent = new Intent(this, ReveilaLlmService.class);
             // Ensure the LLM service is running in the background

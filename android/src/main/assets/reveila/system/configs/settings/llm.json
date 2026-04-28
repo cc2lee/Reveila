@@ -22,9 +22,9 @@
             "api.key": ""
         },
         {
-            "name": "Ollama (Local)",
-            "endpoint": "http://localhost:11434/v1/chat/completions",
-            "model": "qwen2.5-coder:1.5b",
+            "name": "On-Device Model",
+            "endpoint": "http://localhost:8888/completion",
+            "model": "gemma-2-2b-it-Q4_K_M",
             "temperature": 0.7,
             "quantization": "Q4_K_M",
             "quantization.options": [
@@ -33,6 +33,6 @@
             ]
         }
     ],
-    "ai.worker.llm": "Ollama (Local)",
-    "ai.governance.llm": "Ollama (Local)"
+    "ai.worker.llm": "On-Device Model",
+    "ai.governance.llm": "On-Device Model"
 }

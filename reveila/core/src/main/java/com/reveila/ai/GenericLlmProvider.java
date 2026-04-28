@@ -39,16 +39,11 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
         super();
     }
 
-    @Override
-    public LlmProvider getInstance() {
-        return this;
-    }
-
     public void setName(String name) {
         this.name = name;
         // Pre-configure defaults for local providers to ensure isConfigured() returns true immediately
         if (isLocal() && (endpoint == null || endpoint.isBlank())) {
-            endpoint = "http://localhost:11434/v1/chat/completions";
+            endpoint = "http://localhost:8888/completion";
         }
     }
 
@@ -92,7 +87,7 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
     public boolean isLocal() {
         if (name == null) return false;
         String lowerName = name.toLowerCase();
-        return lowerName.contains("on-device");
+        return lowerName.contains("on-device") || lowerName.contains("local");
     }
 
     @Override
@@ -168,7 +163,7 @@ public class GenericLlmProvider extends PluginComponent implements LlmProvider {
             }
             
             String url = endpoint;
-            if (url == null || url.isBlank()) url = "http://localhost:11434/v1/chat/completions";
+            if (url == null || url.isBlank()) url = "http://localhost:8888/completion";
 
             boolean isInteractionApi = url.contains("interactions");
 
