@@ -1,40 +1,14 @@
 package com.reveila.ai;
 
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.reveila.error.SystemException;
-import com.reveila.system.Manifest;
-import com.reveila.system.PluginContext;
-import com.reveila.system.SystemComponent;
-import com.reveila.system.SystemProxy;
+import com.reveila.system.*;
+import java.util.*;
 
-/**
- * Factory to resolve LLM providers by name.
- * 
- * @author CL
- */
 public class LlmProviderFactory extends SystemComponent {
 
-    private final Map<String, LlmProvider> providers = new LinkedHashMap<>(); // Use LinkedHashMap to preserve order
-    private int currentProviderIndex = 0;
-    private LlmProvider backupProvider = null;
+    private final Map<String, LlmProvider> providers = new LinkedHashMap<>();
     private LlmProvider activeProvider = null;
-
-    public LlmProviderFactory() {
-    }
-
-    public LlmProvider nextProvider() {
-        currentProviderIndex = currentProviderIndex + 1;
-        if (currentProviderIndex >= providers.size()) {
-            currentProviderIndex = 0;
-        }
-        return getProvider(providers.keySet().toArray(new String[0])[currentProviderIndex]);
-    }
 
     @Override
     public void onStart() throws Exception {
@@ -42,224 +16,106 @@ public class LlmProviderFactory extends SystemComponent {
     }
 
     public synchronized void loadProviders() {
-        activeProvider = null; 
         providers.clear();
-        // Dynamically load LLM providers from llm.json using GenericLlmProvider
+        activeProvider = null;
+
         try {
-            String jsonConfig = (String) context.getProxy("ConfigurationManager").invoke("getSettings",
-                    new Object[] { "llm.json" });
-            Map<String, Object> configMap = new ObjectMapper().readValue(jsonConfig,
-                    new TypeReference<Map<String, Object>>() {
-                    });
-            Object onboardedObj = configMap.get("onboarded.providers");
-            if (onboardedObj instanceof List) {
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> onboarded = (List<Map<String, Object>>) onboardedObj;
-                for (Map<String, Object> p : onboarded) {
-                    String name = (String) p.get("name");
-                    String endpoint = (String) p.get("endpoint");
-                    String model = (String) p.get("model");
-                    Double temperature;
-                    try {
-                        temperature = Double.valueOf((String.valueOf(p.get("temperature"))));
-                    } catch (Exception e) {
-                        temperature = 0.7;
-                    }
-                    String quantization = (String) p.get("quantization");
-                    String apiKey = (String) p.get("api.key");
+            String jsonConfig = (String) context.getProxy("ConfigurationManager")
+                    .invoke("getSettings", new Object[] { "llm.json" });
+            
+            Map<String, Object> configMap = new ObjectMapper().readValue(jsonConfig, 
+                    new TypeReference<Map<String, Object>>() {});
+            
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> onboarded = (List<Map<String, Object>>) configMap.get("onboarded.providers");
 
-                    if (name != null) {
-                        Manifest manifest = new Manifest();
-                        manifest.setComponentType("plugin");
-                        manifest.setName(name);
-                        
-                        GenericLlmProvider generic;
-                        if (name.toLowerCase().contains("gemini")) {
-                            generic = new GeminiLlmProvider();
-                            manifest.setImplementationClass(GeminiLlmProvider.class.getName());
-                        } else {
-                            generic = new GenericLlmProvider();
-                            manifest.setImplementationClass(GenericLlmProvider.class.getName());
-                        }
+            for (Map<String, Object> p : onboarded) {
+                String type = (String) p.getOrDefault("type", "openai");
+                String name = (String) p.get("name");
+                
+                BaseLlmProvider provider = createProviderInstance(type);
+                configureProvider(provider, p);
 
-                        generic.setContext(new PluginContext(context, manifest, new Properties()));
-                        generic.setName(name);
-                        
-                        // Fix for Android emulator networking
-                        if (endpoint != null && (endpoint.contains("localhost") || endpoint.contains("127.0.0.1"))) {
-                            String platform = context.getProperties().getProperty(com.reveila.system.Constants.PLATFORM);
-                            if ("android".equalsIgnoreCase(platform) || "mobile".equalsIgnoreCase(platform)) {
-                                endpoint = endpoint.replace("localhost", "10.0.2.2").replace("127.0.0.1", "10.0.2.2");
-                            }
-                        }
-                        
-                        generic.setEndpoint(endpoint);
-                        generic.setModel(model);
-                        generic.setTemperature(temperature);
-                        generic.setQuantization(quantization);
-                        generic.setApiKey(apiKey);
-
-                        try {
-                            generic.start();
-
-                            LlmProvider provider;
-                            try {
-                                SystemProxy sp = (SystemProxy) context.getProxy("UsageTracker");
-                                UsageTracker tracker = (UsageTracker) sp.getInstance();
-                                provider = new TrackedLlmProvider(generic, tracker);
-                            } catch (Exception e) {
-                                provider = generic;
-                                if (logger != null)
-                                    logger.warning("Usage Tracker not found, skipping tracking for " + name);
-                            }
-
-                            providers.put(name.toLowerCase(), provider);
-                        } catch (Exception e) {
-                            logger.warning("Failed to start LLM provider '" + name + "': " + e.getMessage());
-                        }
-                    }
+                try {
+                    provider.start();
+                    // Wrap with UsageTracker if available
+                    providers.put(name.toLowerCase(), wrapWithTracker(provider));
+                } catch (Exception e) {
+                    logger.warning("Failed to start provider [" + name + "]: " + e.getMessage());
                 }
             }
         } catch (Exception e) {
-            logger.warning("Failed to parse LLM providers from " + "llm.json: " + e.getMessage());
+            logger.severe("Critical error loading llm.json: " + e.getMessage());
         }
     }
 
-    private LlmProvider instanciateBackupProvider() throws SystemException {
-        String name = "Backup LLM Provider";
-        Manifest manifest = new Manifest();
-        manifest.setComponentType("plugin");
-        manifest.setName(name);
-        manifest.setImplementationClass(GenericLlmProvider.class.getName());
-
-        GenericLlmProvider fallbackOllama = new GenericLlmProvider();
-        fallbackOllama.setContext(new PluginContext(context, manifest, new Properties()));
-        fallbackOllama.setName(name);
-
-        String platform = context.getProperties().getProperty(com.reveila.system.Constants.PLATFORM);
-        if (platform == null || platform.isBlank()) {
-            throw new SystemException("Unknown platform. Please set " + com.reveila.system.Constants.PLATFORM + " property in reveila.properties.");
+    private BaseLlmProvider createProviderInstance(String type) {
+        switch (type.toLowerCase()) {
+            case "local":  return new LocalLlamaProvider();
+            case "gemini": return new GeminiLlmProvider();
+            case "openai": return new OpenAiLlmProvider();
+            default:       return new OpenAiLlmProvider();
         }
-        if ("android".equalsIgnoreCase(platform) || "mobile".equalsIgnoreCase(platform)
-                || "ios".equalsIgnoreCase(platform)) {
-            fallbackOllama.setEndpoint("http://10.0.2.2:11434/v1/chat/completions");
-            fallbackOllama.setModel("llama3");
-            fallbackOllama.setTemperature(0.7);
-            fallbackOllama.setQuantization("Q4_K_M");
+    }
 
-        } else if ("server".equalsIgnoreCase(platform) || "docker".equalsIgnoreCase(platform)
-                || "spring".equalsIgnoreCase(platform)) {
-            fallbackOllama.setEndpoint("http://ollama-service:11434/v1/chat/completions");
-            fallbackOllama.setModel("llama3");
-            fallbackOllama.setTemperature(0.7);
-            
-        } else {
-            fallbackOllama.setEndpoint("http://localhost:8888/completion");
-            fallbackOllama.setModel("llama3");
-            fallbackOllama.setTemperature(0.7);
-            
+    private void configureProvider(BaseLlmProvider provider, Map<String, Object> params) {
+        String name = (String) params.get("name");
+        String endpoint = (String) params.get("endpoint");
+        
+        // Handle Android Emulator Loopback
+        if (endpoint != null && (endpoint.contains("localhost") || endpoint.contains("127.0.0.1"))) {
+            if (isAndroid()) {
+                endpoint = endpoint.replace("localhost", "10.0.2.2").replace("127.0.0.1", "10.0.2.2");
+            }
         }
 
+        provider.setName(name);
+        provider.setEndpoint(endpoint);
+        provider.setModel((String) params.get("model"));
+        provider.setApiKey((String) params.get("api.key"));
+        provider.setTemperature(Double.parseDouble(String.valueOf(params.getOrDefault("temperature", 0.7))));
+        
+        // Boilerplate context injection
+        Manifest m = new Manifest();
+        m.setName(name);
+        provider.setContext(new PluginContext(context, m, new Properties()));
+    }
+
+    private LlmProvider wrapWithTracker(LlmProvider provider) {
         try {
-            fallbackOllama.start();
-            return fallbackOllama;
+            SystemProxy sp = (SystemProxy) context.getProxy("UsageTracker");
+            UsageTracker tracker = (UsageTracker) sp.getInstance();
+            return new TrackedLlmProvider(provider, tracker);
         } catch (Exception e) {
-            throw new SystemException("Failed to start fallback LLM provider.", e);
+            return provider; 
         }
     }
 
-    @Override
-    protected void onStop() throws Exception {
-    }
-
-    /**
-     * Alias for getBestProvider(). Returns the user chosen active provider.
-     * 
-     * @return The active LLM provider.
-     */
     public LlmProvider getActiveProvider() {
-        if (activeProvider == null) {
-            activeProvider = getBestProvider();
+        if (activeProvider != null) return activeProvider;
+
+        String selected = context.getProperties().getProperty("ai.worker.llm");
+        activeProvider = getProvider(selected);
+        
+        // Fallback to first available if selection is invalid
+        if (activeProvider == null && !providers.isEmpty()) {
+            activeProvider = providers.values().iterator().next();
         }
         return activeProvider;
     }
 
-    /**
-     * Dynamically sets the active LLM provider based on user selection.
-     * 
-     * @param slug The provider slug/name to set as active.
-     */
-    public void setActiveProvider(String slug) {
-        if (slug != null && !slug.trim().isEmpty()) {
-            context.getProperties().setProperty("ai.worker.llm", slug);
-        }
-        
-        // Clear the current active provider cache so it re-evaluates
-        this.activeProvider = null;
-        
-        // Force evaluation right now to ensure a valid provider is ready
-        this.activeProvider = getBestProvider();
-        
-        if (this.activeProvider != null && logger != null) {
-            logger.info("Active LLM provider is now dynamically set to: " + this.activeProvider.getName());
-        }
+    public LlmProvider getProvider(String name) {
+        return (name == null) ? null : providers.get(name.toLowerCase());
     }
 
-    private LlmProvider getBestProvider() {
-        // 1. Try user selected provider
-        String selected = context.getProperties().getProperty("ai.worker.llm");
-        if (selected != null && !selected.isBlank()) {
-            LlmProvider provider = getProvider(selected);
-            if (provider != null) {
-                if (provider.isEnabled() && provider.isConfigured()) {
-                    return provider;
-                } else {
-                    throw new IllegalStateException("The selected LLM Provider (" + selected + ") is either disabled or missing required configuration. Please check your settings.");
-                }
-            } else {
-                throw new IllegalStateException("The selected LLM Provider (" + selected + ") could not be found in the system.");
-            }
-        }
-
-        // 2. Fallback to the backup provider (only if no explicit selection was made)
-        if (backupProvider != null) {
-            return backupProvider;
-        } else {
-            synchronized (this) {
-                if (backupProvider == null) {
-                    try {
-                        backupProvider = instanciateBackupProvider();
-                        return backupProvider;
-                    } catch (Exception e) {
-                        logger.warning("Failed to instanciate backup LLM provider: " + e.getMessage());
-                    }
-                }
-            }
-        }
-
-        // 3. Fallback to any enabled and configured provider
-        for (LlmProvider p : providers.values()) {
-            if (p.isEnabled() && p.isConfigured()) {
-                return p;
-            }
-        }
-
-        // 4. No providers available
-        return null;
+    private boolean isAndroid() {
+        String p = context.getProperties().getProperty("platform");
+        return "android".equalsIgnoreCase(p) || "mobile".equalsIgnoreCase(p);
     }
 
-    /**
-     * Retrieves a provider by its unique slug or name.
-     *
-     * @param slug The provider slug (e.g., "openai", "gemini", or "My Mistral").
-     * @return The provider instance.
-     * @throws IllegalArgumentException If the provider is not found.
-     */
-    public LlmProvider getProvider(String slug) {
-        if (slug == null || slug.trim().isEmpty()) {
-            throw new IllegalArgumentException("Provider slug cannot be null or blank.");
-        }
-        String key = slug.toLowerCase();
-        return providers.get(key);
+    @Override
+    protected void onStop() throws Exception {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'onStop'");
     }
 }

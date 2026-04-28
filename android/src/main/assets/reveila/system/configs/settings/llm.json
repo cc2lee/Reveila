@@ -22,9 +22,13 @@
             "api.key": ""
         },
         {
-            "name": "On-Device Model",
-            "endpoint": "http://localhost:8888/completion",
-            "model": "gemma-2-2b-it-Q4_K_M",
+            "name": "On-Device AI Model",
+            "endpoint": "http://127.0.0.1:8888/completion",
+            "model": "gemma-2-2b",
+            "model.options": [
+                "gemma-2-2b-it-Q4_K_M",
+                "gemma-2-2b"
+            ],
             "temperature": 0.7,
             "quantization": "Q4_K_M",
             "quantization.options": [
@@ -33,6 +37,6 @@
             ]
         }
     ],
-    "ai.worker.llm": "On-Device Model",
-    "ai.governance.llm": "On-Device Model"
+    "ai.worker.llm": "On-Device AI Model",
+    "ai.governance.llm": "On-Device AI Model"
 }
