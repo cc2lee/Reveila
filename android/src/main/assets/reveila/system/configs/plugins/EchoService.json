@@ -1,71 +1,43 @@
 {
-  "plugin": {
-    "name": "EchoService",
-    "displayName": "Echo Service",
-    "version": "1.0.0",
-    "description": "A simple service that echoes back input messages after an optional delay.",
-    "author": "Charles",
-    "class": "com.reveila.service.EchoService",
-    "hot-deploy": true,
-    "required-roles": [
-      "user"
-    ],
-    "arguments": [
-      {
-        "name": "reverse",
-        "type": "boolean",
-        "value": false
-      },
-      {
-        "name": "repeat",
-        "type": "int",
-        "value": 2
-      }
-    ],
-    "methods": [
-      {
-        "name": "echo",
-        "description": "Returns the input string, optionally reversed and repeated",
-        "parameters": [
-          {
-            "name": "InputString",
-            "description": "Your input string",
-            "type": "java.lang.String",
-            "isRequired": true,
-            "isSecret": false
-          }
-        ],
-        "return": "java.lang.String",
-        "required-roles": [
-          "user"
-        ]
-      }
-    ],
-    "agency_perimeter": {
-      "tier": "Tier 2 (Sensitive)",
-      "access_scopes": [
-        "db.read",
-        "fs.read:/reports/tmp"
-      ],
-      "network_egress": {
-        "allowed_domains": [
-          "api.internal-analytics.com"
-        ],
-        "protocols": [
-          "https"
-        ]
-      },
-      "human_in_the_loop": {
-        "trigger_on": [
-          "db.delete",
-          "db.drop"
-        ],
-        "escalation_policy": "admin_approval_required"
-      },
-      "resource_limits": {
-        "max_memory_mb": 512,
-        "max_execution_sec": 30
-      }
+  "plugin" : {
+    "name" : "EchoService",
+    "displayName" : "Echo Service",
+    "version" : "1.0.0",
+    "description" : "A simple service that echoes back input messages after an optional delay.",
+    "author" : "Charles",
+    "class" : "com.reveila.service.EchoService",
+    "hot-deploy" : true,
+    "required-roles" : [ "user" ],
+    "arguments" : [ {
+      "name" : "reverse",
+      "type" : "boolean",
+      "value" : false
+    }, {
+      "name" : "repeat",
+      "type" : "int",
+      "value" : 2
+    } ],
+    "methods" : [ {
+      "name" : "echo",
+      "description" : "Returns the input string, optionally reversed and repeated",
+      "parameters" : [ {
+        "name" : "InputString",
+        "description" : "Your input string",
+        "type" : "java.lang.String",
+        "isRequired" : true,
+        "isSecret" : false
+      } ],
+      "return" : "java.lang.String",
+      "required-roles" : [ "user" ]
+    } ],
+    "agency_perimeter" : {
+      "accessScopes" : [ ],
+      "allowedDomains" : [ ],
+      "internetAccessBlocked" : false,
+      "maxMemoryMb" : 512,
+      "maxCpuCores" : 1,
+      "maxExecutionSec" : 30,
+      "delegationAllowed" : false
     }
   }
 }

@@ -2,6 +2,7 @@ package com.reveila.ai;
 
 import com.reveila.ai.util.GemmaPromptFormatter;
 import com.reveila.ai.util.Llama3PromptFormatter;
+import com.reveila.error.LlmException;
 
 import org.json.JSONObject;
 import java.util.HashMap;
@@ -16,7 +17,7 @@ public class LocalLlamaProvider extends BaseLlmProvider {
     }
 
     @Override
-    protected String buildRequestBody(LlmRequest request) throws Exception {
+    protected String buildRequestBody(LlmRequest request) throws LlmException {
         JSONObject body = new JSONObject();
 
         String formattedPrompt;
@@ -42,14 +43,14 @@ public class LocalLlamaProvider extends BaseLlmProvider {
     }
 
     @Override
-    protected Map<String, String> getHeaders() throws Exception {
+    protected Map<String, String> getHeaders() throws LlmException {
         Map<String, String> headers = new HashMap<>();
         headers.put("Content-Type", "application/json");
         return headers;
     }
 
     @Override
-    protected LlmResponse parseResponse(String json) throws Exception {
+    protected LlmResponse parseResponse(String json) throws LlmException {
         JSONObject resp = new JSONObject(json);
         LlmResponse llmResponse = new LlmResponse();
 

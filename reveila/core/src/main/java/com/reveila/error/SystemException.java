@@ -2,14 +2,16 @@ package com.reveila.error;
 
 public class SystemException extends Exception implements ErrorCode {
 
-    private String errorCode = "400";
+    private final String errorCode;
 
     public SystemException(String message) {
         super(message);
+        this.errorCode = null;
     }
 
     public SystemException(String message, Throwable cause) {
         super(message, cause);
+        this.errorCode = null;
     }
 
     public SystemException(String message, Throwable cause, String errorCode) {

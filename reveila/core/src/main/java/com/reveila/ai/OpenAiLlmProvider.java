@@ -1,9 +1,12 @@
 package com.reveila.ai;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
 import java.util.HashMap;
 import java.util.Map;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import com.reveila.error.LlmException;
 
 public class OpenAiLlmProvider extends BaseLlmProvider {
 
@@ -13,7 +16,7 @@ public class OpenAiLlmProvider extends BaseLlmProvider {
     }
 
     @Override
-    protected String buildRequestBody(LlmRequest request) throws Exception {
+    protected String buildRequestBody(LlmRequest request) throws LlmException {
         JSONObject body = new JSONObject();
         String activeModel = (model != null && !model.isBlank()) ? model : request.getModelId();
         
@@ -33,7 +36,11 @@ public class OpenAiLlmProvider extends BaseLlmProvider {
         if (request.getTools() != null && !request.getTools().isEmpty()) {
             JSONArray toolsJson = new JSONArray();
             for (LlmTool tool : request.getTools()) {
-                toolsJson.put(new JSONObject(tool.toJsonString()));
+                try {
+                    toolsJson.put(new JSONObject(tool.toJsonString()));
+                } catch (Exception e) {
+                    throw new LlmException("Failed to serialize tool: " + e.getMessage(), e);
+                }
             }
             body.put("tools", toolsJson);
         }
@@ -41,15 +48,19 @@ public class OpenAiLlmProvider extends BaseLlmProvider {
     }
 
     @Override
-    protected Map<String, String> getHeaders() throws Exception {
+    protected Map<String, String> getHeaders() throws LlmException {
         Map<String, String> headers = new HashMap<>();
-        headers.put("Authorization", "Bearer " + resolveApiKey());
+        try {
+            headers.put("Authorization", "Bearer " + resolveApiKey());
+        } catch (Exception e) {
+            throw new LlmException("Failed to resolve API key for OpenAI provider: " + e.getMessage(), e);
+        }
         headers.put("Content-Type", "application/json");
         return headers;
     }
 
     @Override
-    protected LlmResponse parseResponse(String json) throws Exception {
+    protected LlmResponse parseResponse(String json) throws LlmException {
         JSONObject resp = new JSONObject(json);
         LlmResponse response = new LlmResponse();
         

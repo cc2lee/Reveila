@@ -26,3 +26,4 @@
 # Prevents R8 from merging interfaces, which can break dynamic plugin loading.
 -nointerfacecompression
 -dontmergeinterfaces
+-printusage

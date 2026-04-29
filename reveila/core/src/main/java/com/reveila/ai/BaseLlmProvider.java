@@ -2,6 +2,7 @@ package com.reveila.ai;
 
 import java.util.Map;
 
+import com.reveila.error.LlmException;
 import com.reveila.service.HttpClientService;
 import com.reveila.system.PluginComponent;
 import com.reveila.system.SystemProxy;
@@ -16,9 +17,9 @@ public abstract class BaseLlmProvider extends PluginComponent implements LlmProv
     protected boolean enabled = true;
 
     // Abstract methods to be implemented by specific providers
-    protected abstract String buildRequestBody(LlmRequest request) throws Exception;
-    protected abstract LlmResponse parseResponse(String json) throws Exception;
-    protected abstract Map<String, String> getHeaders() throws Exception;
+    protected abstract String buildRequestBody(LlmRequest request) throws LlmException;
+    protected abstract LlmResponse parseResponse(String json) throws LlmException;
+    protected abstract Map<String, String> getHeaders() throws LlmException;
 
     @Override
     protected void onStop() throws Exception {}
@@ -26,7 +27,6 @@ public abstract class BaseLlmProvider extends PluginComponent implements LlmProv
     @Override
     protected void onStart() throws Exception {}
 
-    @Override
     public LlmResponse invoke(LlmRequest request) throws com.reveila.error.LlmException {
         try {
             HttpClientService httpService = getHttpClientService();
@@ -66,13 +66,13 @@ public abstract class BaseLlmProvider extends PluginComponent implements LlmProv
     }
 
     // Common Getters/Setters
-    @Override public String getName() { return name; }
+    public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public void setEndpoint(String endpoint) { this.endpoint = endpoint; }
     public String getEndpoint() { return endpoint; }
     public void setApiKey(String apiKey) { this.apiKey = apiKey; }
     public void setModel(String model) { this.model = model; }
     public void setTemperature(double temp) { this.temperature = temp; }
-    @Override public boolean isEnabled() { return enabled; }
+    public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
 }

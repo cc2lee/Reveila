@@ -10,6 +10,12 @@ public class LlmProviderFactory extends SystemComponent {
     private final Map<String, LlmProvider> providers = new LinkedHashMap<>();
     private LlmProvider activeProvider = null;
 
+    public synchronized void setActiveProvider(String name) {
+        if (name == null || name.isBlank()) throw new IllegalArgumentException("LLMProvider name cannot be null or blank.");
+        if (!providers.containsKey(name.toLowerCase())) throw new IllegalArgumentException("No such LLMProvider: " + name);
+        this.activeProvider = providers.get(name.toLowerCase());
+    }
+
     @Override
     public void onStart() throws Exception {
         loadProviders();
@@ -83,7 +89,7 @@ public class LlmProviderFactory extends SystemComponent {
 
     private LlmProvider wrapWithTracker(LlmProvider provider) {
         try {
-            SystemProxy sp = (SystemProxy) context.getProxy("UsageTracker");
+            SystemProxy sp = context.getProxy("UsageTracker");
             UsageTracker tracker = (UsageTracker) sp.getInstance();
             return new TrackedLlmProvider(provider, tracker);
         } catch (Exception e) {
@@ -91,7 +97,7 @@ public class LlmProviderFactory extends SystemComponent {
         }
     }
 
-    public LlmProvider getActiveProvider() {
+    public synchronized LlmProvider getActiveProvider() {
         if (activeProvider != null) return activeProvider;
 
         String selected = context.getProperties().getProperty("ai.worker.llm");
@@ -115,7 +121,6 @@ public class LlmProviderFactory extends SystemComponent {
 
     @Override
     protected void onStop() throws Exception {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'onStop'");
+        // No long-running resources to clean up in this factory, but we could stop providers if needed
     }
 }

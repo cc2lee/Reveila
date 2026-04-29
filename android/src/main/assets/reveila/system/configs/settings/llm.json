@@ -2,39 +2,29 @@
     "onboarded.providers": [
         {
             "name": "OpenAI",
+            "type": "openai",
             "endpoint": "https://api.openai.com/v1/chat/completions",
-            "model": "gpt-4",
+            "model": "gpt-4o",
             "temperature": 0.7,
-            "api.key": ""
-        },
-        {
-            "name": "Anthropic",
-            "endpoint": "https://api.anthropic.com/v1/messages",
-            "model": "claude-2",
-            "temperature": 0.7,
-            "api.key": ""
+            "api.key": "REF:OPENAI_KEY"
         },
         {
             "name": "Google Gemini",
+            "type": "gemini",
             "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
-            "model": "gemini-3-flash-preview",
+            "model": "gemini-3-flash",
             "temperature": 0.1,
-            "api.key": ""
+            "api.key": "REF:GEMINI_KEY"
         },
         {
             "name": "On-Device AI Model",
+            "type": "local",
             "endpoint": "http://127.0.0.1:8888/completion",
-            "model": "gemma-2-2b",
-            "model.options": [
-                "gemma-2-2b-it-Q4_K_M",
-                "gemma-2-2b"
-            ],
+            "model": "gemma-2-2b-it-Q4_K_M.gguf",
             "temperature": 0.7,
             "quantization": "Q4_K_M",
-            "quantization.options": [
-                "Q4_K_M",
-                "F16"
-            ]
+            "model.options": ["gemma-2-2b-it-Q4_K_M.gguf", "llama-3-8b-instruct.gguf"],
+            "quantization.options": ["Q4_K_M", "Q8_0", "F16"]
         }
     ],
     "ai.worker.llm": "On-Device AI Model",

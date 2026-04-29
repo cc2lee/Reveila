@@ -27,19 +27,22 @@ import java.util.concurrent.TimeUnit;
 
 public class ReveilaService extends Service {
 
-    private static Reveila reveila;
     private ServiceManager serviceManager;
-    private static volatile boolean isReveilaRunning = false;
-    private static volatile boolean isReveilaStarting = false;
-    private static final String LOCK_FILE_NAME = "running.lock";
     private ExecutorService executor;
     private File lockFile;
-    private static File systemHome;
-    private static boolean isLocalProperties = true;
-    private static Object lock = new Object();
-    private static final int maxRetries = 3;
+    private File systemHome;
+    private boolean isLocalProperties = true;
+    private Object lock = new Object();
 
-    public static boolean isLocalProperties() {
+    private static volatile boolean isReveilaRunning = false;
+    private static volatile boolean isReveilaStarting = false;
+    
+    private static final int MAX_RETRIES = 3;
+    private static final String TAG = "ReveilaService";
+    private static final String LOCK_FILE_NAME = "running.lock";
+    private static final Reveila reveila = new Reveila();
+    
+    public boolean isLocalProperties() {
         return isLocalProperties;
     }
 
@@ -57,8 +60,10 @@ public class ReveilaService extends Service {
         executor = Executors.newSingleThreadExecutor();
         serviceManager = new ServiceManager(this, "reveila_core", 1001, "Reveila Core Engine");
         serviceManager.startForeground(this, "Reveila service is initializing...");
-        reveila = new Reveila();
-        isReveilaRunning = false;
+    }
+
+    public void setGlobalHome(String homePath) {
+        this.systemHome = new File(homePath);
     }
 
     @Override
@@ -69,10 +74,10 @@ public class ReveilaService extends Service {
 
         // Prevent starting the engine logic multiple times
         synchronized (lock) {
-            if (ReveilaService.isReveilaRunning || ReveilaService.isReveilaStarting) {
+            if (isReveilaRunning || isReveilaStarting) {
                 return START_STICKY;
             } else {
-                ReveilaService.isReveilaStarting = true;
+                isReveilaStarting = true;
             }
         }
 
@@ -83,43 +88,40 @@ public class ReveilaService extends Service {
 
         executor.execute(() -> {
             try {
-                Log.i("ReveilaService", "Starting background initialization...");
+                Log.i(TAG, "Starting background initialization...");
 
                 // Resolve SYSTEM_HOME
                 String homePath;
                 if (customSystemHome != null && !customSystemHome.isBlank()) {
                     homePath = customSystemHome;
-                    Log.i("ReveilaService", "Using custom system home: " + homePath);
+                    Log.i(TAG, "Using custom system home: " + homePath);
                 } else {
                     homePath = new File(getFilesDir(), "reveila/system").getAbsolutePath();
-                    Log.i("ReveilaService", "Using default system home: " + homePath);
+                    Log.i(TAG, "Using default system home: " + homePath);
                 }
 
-                ReveilaService.systemHome = new File(homePath);
+                setGlobalHome(homePath);
                 if (!systemHome.exists() && !systemHome.mkdirs()) {
-                    Log.e("ReveilaService", "Failed to create system home directory: " + homePath);
+                    Log.e(TAG, "Failed to create system home directory: " + homePath);
                     return; // cannot continue without a valid system home
                 }
 
                 // Continue if 'systemHome' is not null
-                lockFile = new File(ReveilaService.systemHome, LOCK_FILE_NAME);
+                lockFile = new File(systemHome, LOCK_FILE_NAME);
 
                 // Check for the lock file to determine if the last shutdown was clean.
-                final boolean wasUncleanShutdown = lockFile.exists();
+                final boolean wasUncleanShutdown = !lockFile.createNewFile();
                 if (wasUncleanShutdown) {
-                    Log.w("ReveilaService", "Unclean shutdown detected. Assets will be overwritten.");
+                    Log.w(TAG, "Unclean shutdown detected. Assets will be overwritten.");
                 } else {
-                    Log.i("ReveilaService", "Clean startup detected. Assets will not be overwritten.");
+                    Log.i(TAG, "Clean startup detected. Assets will not be overwritten.");
                 }
-
-                // Create the lock file to indicate the service is now running.
-                lockFile.createNewFile();
 
                 // ADR 0003: In Debug mode, we always overwrite assets to ensure
                 // IDE changes (like priority fixes) are applied immediately.
                 boolean shouldOverwrite = wasUncleanShutdown || BuildConfig.DEBUG;
                 if (BuildConfig.DEBUG) {
-                    Log.i("ReveilaService", "Debug mode detected. Forcing asset overwrite.");
+                    Log.i(TAG, "Debug mode detected. Forcing asset overwrite.");
                     // Delete the configs directory to prevent zombie config files from lingering
                     File configsDir = new File(systemHome, "configs");
                     if (configsDir.exists()) {
@@ -142,16 +144,16 @@ public class ReveilaService extends Service {
 
                 PlatformAdapter platformAdapter = new AndroidPlatformAdapter(this, props);
                 reveila.start(platformAdapter);
-                ReveilaService.isReveilaRunning = true;
+                isReveilaRunning = true;
                 serviceManager.updateNotification(this, "Reveila is running");
-                Log.i("ReveilaService", "Reveila service started successfully.");
+                Log.i(TAG, "Reveila service started successfully.");
 
                 startLlmService(platformAdapter.getProperties());
 
             } catch (Throwable e) {
-                Log.e("ReveilaService", "CRITICAL: Failed to start Reveila engine", e);
+                Log.e(TAG, "CRITICAL: Failed to start Reveila engine", e);
             } finally {
-                ReveilaService.isReveilaStarting = false;
+                isReveilaStarting = false;
             }
         });
 
@@ -181,7 +183,7 @@ public class ReveilaService extends Service {
 
         try {
             URL url = new URI(urlString).toURL();
-            for (int i = 0; i < maxRetries; i++) {
+            for (int i = 0; i < MAX_RETRIES; i++) {
                 try {
                     urlConnection = (HttpURLConnection) url.openConnection();
                     urlConnection.setConnectTimeout(5000);
@@ -196,20 +198,22 @@ public class ReveilaService extends Service {
                                 out.write(buffer, 0, len);
                             }
                             isLocalProperties = false;
-                            Log.i("ReveilaService", "Successfully updated properties from: " + urlString);
+                            Log.i(TAG, "Successfully updated properties from: " + urlString);
                             return; // SUCCESS EXIT
                         }
                     }
                 } catch (Exception e) {
-                    Log.w("ReveilaService", "Attempt " + (i + 1) + " failed: " + e.getMessage());
+                    Log.w(TAG, "Attempt " + (i + 1) + " failed: " + e.getMessage());
                     Thread.sleep(1000);
                 } finally {
                     if (urlConnection != null)
                         urlConnection.disconnect();
                 }
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
-            Log.e("ReveilaService", "Configuration fetch error; using local configuration.", e);
+            Log.e(TAG, "Configuration fetch error; using local configuration.", e);
         }
     }
 
@@ -229,7 +233,7 @@ public class ReveilaService extends Service {
                         if (lockFile != null && lockFile.exists())
                             lockFile.delete();
                     } catch (Exception e) {
-                        Log.e("ReveilaService", "Cleanup task failed", e);
+                        Log.e(TAG, "Cleanup task failed", e);
                     }
                 });
                 executor.shutdown();
@@ -245,7 +249,7 @@ public class ReveilaService extends Service {
             // Resetting global state must happen last
             isReveilaRunning = false;
             isReveilaStarting = false;
-            Log.i("ReveilaService", "Reveila service stopped.");
+            Log.i(TAG, "Reveila service stopped.");
         }
     }
 
@@ -276,7 +280,7 @@ public class ReveilaService extends Service {
                 startService(intent);
             }
         } catch (Exception e) {
-            Log.e("ReveilaService", "Failed to start Reveila LLM Service", e);
+            Log.e(TAG, "Failed to start Reveila LLM Service", e);
         }
     }
 }

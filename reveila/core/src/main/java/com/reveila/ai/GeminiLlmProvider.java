@@ -3,6 +3,8 @@ package com.reveila.ai;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.reveila.error.LlmException;
+
 public class GeminiLlmProvider extends OpenAiLlmProvider {
 
     public GeminiLlmProvider() {
@@ -11,7 +13,7 @@ public class GeminiLlmProvider extends OpenAiLlmProvider {
     }
 
     @Override
-    protected String buildRequestBody(LlmRequest request) throws Exception {
+    protected String buildRequestBody(LlmRequest request) throws LlmException {
         // We can leverage most of OpenAI's logic, but we need to intercept the model ID
         String originalModel = model;
         
@@ -32,9 +34,14 @@ public class GeminiLlmProvider extends OpenAiLlmProvider {
     }
 
     @Override
-    protected Map<String, String> getHeaders() throws Exception {
+    protected Map<String, String> getHeaders() throws LlmException {
         Map<String, String> headers = new HashMap<>();
-        String key = resolveApiKey();
+        String key;
+        try {
+            key = resolveApiKey();
+        } catch (Exception e) {
+            throw new LlmException("Failed to resolve API key for Gemini provider: " + e.getMessage(), e);
+        }
         
         // Google supports both Bearer and a custom header, 
         // but your legacy code used Bearer for the OpenAI-compatible endpoint.

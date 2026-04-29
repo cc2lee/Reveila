@@ -1,4 +1,4 @@
-package com.reveila.android.services;
+package com.reveila.android;
 
 import android.app.Service;
 import android.content.Intent;
@@ -6,7 +6,7 @@ import android.os.IBinder;
 import android.util.Log;
 
 import com.reveila.android.ServiceManager;
-import com.reveila.android.lib.FileUtil; // Assuming this utility exists based on your snippet
+import com.reveila.util.FileUtil;
 
 import java.io.File;
 import java.net.URL;
@@ -83,7 +83,7 @@ public class ReveilaLlmService extends Service {
                 modelDir = new File(getFilesDir(), "reveila/system/downloads/llms");
 
                 if (!modelDir.exists() && !modelDir.mkdirs()) {
-                    serviceManager.updateNotification("Error: Storage Initialization Failed.");
+                    serviceManager.updateNotification(this,"Error: Storage Initialization Failed.");
                     return; // Absolute failure
                 }
             }
@@ -143,7 +143,7 @@ public class ReveilaLlmService extends Service {
         FileUtil.download(llmDownloadUrl, destination, true, new FileUtil.DownloadCallback() {
             @Override
             public void onProgress(int progress) {
-                serviceManager.updateNotification(this, "Downloading model: " + progress + "%", 100, progress, false);
+                serviceManager.updateNotification(ReveilaLlmService.this, "Downloading model: " + progress + "%", 100, progress, false);
             }
 
             @Override
@@ -153,7 +153,7 @@ public class ReveilaLlmService extends Service {
 
             @Override
             public void onComplete(File downloaded) {
-                serviceManager.updateNotification(this, "On-device LLM active");
+                serviceManager.updateNotification(ReveilaLlmService.this, "On-device LLM active");
             }
         });
 
