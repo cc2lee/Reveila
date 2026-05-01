@@ -19,18 +19,15 @@ public class DefaultIntentValidator extends SystemComponent implements IntentVal
     private LlmProvider llmProvider;
     private String promptTemplate;
 
-    public DefaultIntentValidator() {
-    }
-
     @Override
     public void onStart() throws Exception {
-        String provider = context.getProperties().getProperty("ai.governance.llm");
-        if (provider != null && !provider.trim().isEmpty()) {
+        String providerName = context.getProperties().getProperty("ai.governance.llm");
+        if (providerName != null && !providerName.trim().isEmpty()) {
             LlmProviderFactory factory = (LlmProviderFactory) context.getProxy("LlmProviderFactory").getInstance();
-            this.llmProvider = factory.getProvider(provider);
+            this.llmProvider = factory.getProvider(providerName);
             if (llmProvider == null) {
                 logger.warning(
-                        "Could not find LLM provider with name '" + provider + "'. Intent validation is disabled.");
+                        "Could not find LLM provider with name '" + providerName + "'. Intent validation is disabled.");
             } else {
                 String home = context.getProperties().getProperty("system.home");
                 Path path = Paths.get(home).resolve("configs/templates").resolve("intent_validation_prompt.md");

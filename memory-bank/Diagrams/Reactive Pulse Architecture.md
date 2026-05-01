@@ -17,8 +17,8 @@ sequenceDiagram
     Trigger-->>Montgomery: 4. REACTIVE PULSE (reveila_config_updates)
     Trigger-->>Georgia: 4. REACTIVE PULSE (reveila_config_updates)
     
-    Note over Montgomery: 5. platformAdapter.reloadProperties()
-    Note over Georgia: 5. platformAdapter.reloadProperties()
+    Note over Montgomery: 5. platformAdapter.loadProperties(Properties overrides)
+    Note over Georgia: 5. platformAdapter.loadProperties(Properties overrides)
     
     Montgomery-->>Admin: 6. Acknowledgment (UI Success Toast)
 ```

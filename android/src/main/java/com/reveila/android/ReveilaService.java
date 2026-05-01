@@ -4,183 +4,222 @@ import android.app.Service;
 import android.content.Intent;
 import android.os.IBinder;
 import android.util.Log;
-import android.os.Build;
 import androidx.annotation.Nullable;
 
 import com.reveila.system.Reveila;
 import com.reveila.system.PlatformAdapter;
 import com.reveila.android.lib.BuildConfig;
-import com.reveila.android.AndroidPlatformAdapter;
-import com.reveila.android.ServiceManager;
+import com.reveila.ai.LocalLlmServer;
+import com.reveila.util.FileUtil;
 
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
-import java.io.InputStream;
-import java.io.FileOutputStream;
-import java.io.BufferedInputStream;
-import java.io.File;
+import java.nio.file.Files;
 import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ReveilaService extends Service {
-
-    private ServiceManager serviceManager;
-    private ExecutorService executor;
-    private File lockFile;
-    private File systemHome;
-    private boolean isLocalProperties = true;
-    private Object lock = new Object();
-
-    private static volatile boolean isReveilaRunning = false;
-    private static volatile boolean isReveilaStarting = false;
-    
-    private static final int MAX_RETRIES = 3;
     private static final String TAG = "ReveilaService";
     private static final String LOCK_FILE_NAME = "running.lock";
+    private static final int MAX_RETRIES = 3;
+
+    private ServiceManager serviceManager;
+    private ExecutorService mainExecutor;
+    private File lockFile;
+    private File systemHome;
+    private LocalLlmServer localLlmServer;
+
+    private final AtomicBoolean isRunning = new AtomicBoolean(false);
+    private final AtomicBoolean isStarting = new AtomicBoolean(false);
     private static final Reveila reveila = new Reveila();
-    
-    public boolean isLocalProperties() {
-        return isLocalProperties;
-    }
 
     public static Reveila getReveilaInstance() {
         return reveila;
     }
 
-    public static boolean isRunning() {
-        return isReveilaRunning;
-    }
-
     @Override
     public void onCreate() {
         super.onCreate();
-        executor = Executors.newSingleThreadExecutor();
+        // Unified thread pool for all background service tasks
+        mainExecutor = Executors.newFixedThreadPool(3);
         serviceManager = new ServiceManager(this, "reveila_core", 1001, "Reveila Core Engine");
-        serviceManager.startForeground(this, "Reveila service is initializing...");
-    }
-
-    public void setGlobalHome(String homePath) {
-        this.systemHome = new File(homePath);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        // ALWAYS call startForeground immediately on every onStartCommand call
-        // to satisfy Android's foreground service requirements and prevent crashes.
-        serviceManager.startForeground(this, "Reveila is running.");
+        // Essential for Android 14+ foreground compliance
+        serviceManager.startForeground(this, "Reveila service is starting...");
 
-        // Prevent starting the engine logic multiple times
-        synchronized (lock) {
-            if (isReveilaRunning || isReveilaStarting) {
-                return START_STICKY;
-            } else {
-                isReveilaStarting = true;
-            }
+        // Atomic guard to prevent multiple initialization threads
+        if (isRunning.get() || !isStarting.compareAndSet(false, true)) {
+            Log.i(TAG, "Service already running or starting. Ignoring request.");
+            return START_STICKY;
         }
 
         final String customSystemHome = intent != null ? intent.getStringExtra("systemHome") : null;
 
-        // Offload all initialization, including file I/O, to a background thread
-        // to prevent blocking the main thread and causing ANRs.
-
-        executor.execute(() -> {
+        mainExecutor.execute(() -> {
             try {
                 Log.i(TAG, "Starting background initialization...");
-
-                // Resolve SYSTEM_HOME
-                String homePath;
-                if (customSystemHome != null && !customSystemHome.isBlank()) {
-                    homePath = customSystemHome;
-                    Log.i(TAG, "Using custom system home: " + homePath);
-                } else {
-                    homePath = new File(getFilesDir(), "reveila/system").getAbsolutePath();
-                    Log.i(TAG, "Using default system home: " + homePath);
-                }
-
-                setGlobalHome(homePath);
-                if (!systemHome.exists() && !systemHome.mkdirs()) {
-                    Log.e(TAG, "Failed to create system home directory: " + homePath);
-                    return; // cannot continue without a valid system home
-                }
-
-                // Continue if 'systemHome' is not null
-                lockFile = new File(systemHome, LOCK_FILE_NAME);
-
-                // Check for the lock file to determine if the last shutdown was clean.
-                final boolean wasUncleanShutdown = !lockFile.createNewFile();
-                if (wasUncleanShutdown) {
-                    Log.w(TAG, "Unclean shutdown detected. Assets will be overwritten.");
-                } else {
-                    Log.i(TAG, "Clean startup detected. Assets will not be overwritten.");
-                }
-
-                // ADR 0003: In Debug mode, we always overwrite assets to ensure
-                // IDE changes (like priority fixes) are applied immediately.
-                boolean shouldOverwrite = wasUncleanShutdown || BuildConfig.DEBUG;
-                if (BuildConfig.DEBUG) {
-                    Log.i(TAG, "Debug mode detected. Forcing asset overwrite.");
-                    // Delete the configs directory to prevent zombie config files from lingering
-                    File configsDir = new File(systemHome, "configs");
-                    if (configsDir.exists()) {
-                        deleteRecursively(configsDir);
-                    }
-                }
-
-                // Copy assets, overwriting only if the last shutdown was unclean or in debug
-                // mode.
-                new ReveilaSetup(this, homePath, shouldOverwrite);
-
-                // Attempt to fetch remote properties if configured
-                fetchRemoteProperties();
+                initializeEnvironment(customSystemHome);
 
                 Properties props = new Properties();
                 props.setProperty("platform", "android");
-                if (customSystemHome != null) {
-                    props.setProperty(com.reveila.system.Constants.SYSTEM_HOME, customSystemHome);
+                if (systemHome != null) {
+                    props.setProperty("reveila.system.home", systemHome.getAbsolutePath());
                 }
 
                 PlatformAdapter platformAdapter = new AndroidPlatformAdapter(this, props);
                 reveila.start(platformAdapter);
-                isReveilaRunning = true;
-                serviceManager.updateNotification(this, "Reveila is running");
-                Log.i(TAG, "Reveila service started successfully.");
 
-                startLlmService(platformAdapter.getProperties());
+                isRunning.set(true);
+                serviceManager.updateNotification(this, "Reveila is active");
+                Log.i(TAG, "Reveila engine started successfully.");
+
+                // Automatically attempt to start LLM server if binary exists
+                startLocalLlmServer();
 
             } catch (Throwable e) {
                 Log.e(TAG, "CRITICAL: Failed to start Reveila engine", e);
+                stopSelf();
             } finally {
-                isReveilaStarting = false;
+                isStarting.set(false);
             }
         });
 
-        // If the system kills the service, it will be automatically restarted.
         return START_STICKY;
     }
 
-    private void deleteRecursively(File fileOrDirectory) {
-        if (fileOrDirectory.isDirectory()) {
-            File[] children = fileOrDirectory.listFiles();
-            if (children != null) {
-                for (File child : children) {
-                    deleteRecursively(child);
-                }
-            }
+    private void initializeEnvironment(String customPath) throws IOException {
+        String homePath = (customPath != null && !customPath.isBlank())
+                ? customPath
+                : new File(getFilesDir(), "reveila/system").getAbsolutePath();
+
+        systemHome = new File(homePath);
+        if (!systemHome.exists() && !systemHome.mkdirs()) {
+            throw new IOException("Failed to create system home: " + homePath);
         }
-        fileOrDirectory.delete();
+
+        lockFile = new File(systemHome, LOCK_FILE_NAME);
+        boolean uncleanShutdown = !lockFile.createNewFile();
+        boolean shouldOverwrite = uncleanShutdown || BuildConfig.DEBUG;
+
+        if (BuildConfig.DEBUG && uncleanShutdown) {
+            deleteRecursively(new File(systemHome, "configs"));
+        }
+
+        new ReveilaSetup(this, homePath, shouldOverwrite);
+        fetchRemoteProperties();
+    }
+
+    public void startLocalLlmServer() {
+        mainExecutor.execute(() -> {
+            try {
+                File exeFile = new File(systemHome, "bin/android/llama-server");
+                if (!exeFile.exists())
+                    return;
+
+                File modelDir = getExternalFilesDir("llms");
+                if (modelDir == null)
+                    modelDir = new File(systemHome, "downloads/llms");
+                if (!modelDir.exists() && !modelDir.mkdirs())
+                    return;
+
+                Properties p = reveila.getSystemContext().getProperties();
+                String modelName = p.getProperty("ai.llm.model.name", "default.gguf");
+                File modelFile = new File(modelDir, modelName);
+
+                // Housekeeping: delete old .gguf files to save storage
+                File[] existingModels = modelDir.listFiles((d, name) -> name.endsWith(".gguf"));
+                if (existingModels != null) {
+                    for (File f : existingModels) {
+                        if (!f.getAbsolutePath().equals(modelFile.getAbsolutePath())) {
+                            f.delete();
+                        }
+                    }
+                }
+
+                if (!modelFile.exists()) {
+                    Log.i(TAG, "Downloading model: " + modelName);
+                    String baseUrl = p.getProperty("download.base.url");
+                    downloadModel(new URI(baseUrl + "/llms/" + modelName).toURL(), modelFile);
+                }
+
+                synchronized (this) {
+                    if (localLlmServer == null || !localLlmServer.isRunning()) {
+                        localLlmServer = new LocalLlmServer(exeFile, modelFile);
+                        localLlmServer.start();
+                    }
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Local LLM startup sequence failed", e);
+            }
+        });
+    }
+
+    private void downloadModel(URL url, File modelFile) {
+        FileUtil.download(url, modelFile, true, new FileUtil.DownloadCallback() {
+            @Override
+            public void onProgress(int progress) {
+                serviceManager.updateNotification(ReveilaService.this, "Downloading model: " + progress + "%", 100,
+                        progress, false);
+            }
+
+            @Override
+            public void onError(Exception e) {
+                Log.e(TAG, "Download error", e);
+            }
+
+            @Override
+            public void onComplete(File downloaded) {
+                serviceManager.updateNotification(ReveilaService.this, "Local LLM Ready");
+            }
+        });
+    }
+
+    @Override
+    public void onDestroy() {
+        isRunning.set(false);
+        // Offload cleanup to ensure process handles are closed before service dies
+        mainExecutor.execute(() -> {
+            if (localLlmServer != null)
+                localLlmServer.stop();
+            reveila.shutdown();
+            if (lockFile != null && lockFile.exists())
+                lockFile.delete();
+        });
+
+        terminateExecutor(mainExecutor);
+        Log.i(TAG, "Reveila Service Destroyed.");
+        super.onDestroy();
+    }
+
+    private void terminateExecutor(ExecutorService pool) {
+        pool.shutdown();
+        try {
+            if (!pool.awaitTermination(5, TimeUnit.SECONDS))
+                pool.shutdownNow();
+        } catch (InterruptedException e) {
+            pool.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     private void fetchRemoteProperties() {
         String urlString = BuildConfig.REVEILA_PROPERTIES_URL;
-        if (urlString == null || urlString.isEmpty())
+        if (urlString == null || urlString.isBlank())
             return;
-
         File configFile = new File(systemHome, "configs/reveila.properties");
         HttpURLConnection urlConnection = null;
-
         try {
             URL url = new URI(urlString).toURL();
             for (int i = 0; i < MAX_RETRIES; i++) {
@@ -188,7 +227,6 @@ public class ReveilaService extends Service {
                     urlConnection = (HttpURLConnection) url.openConnection();
                     urlConnection.setConnectTimeout(5000);
                     urlConnection.setReadTimeout(5000);
-
                     if (urlConnection.getResponseCode() == HttpURLConnection.HTTP_OK) {
                         try (InputStream in = new BufferedInputStream(urlConnection.getInputStream());
                                 FileOutputStream out = new FileOutputStream(configFile)) {
@@ -197,9 +235,8 @@ public class ReveilaService extends Service {
                             while ((len = in.read(buffer)) != -1) {
                                 out.write(buffer, 0, len);
                             }
-                            isLocalProperties = false;
                             Log.i(TAG, "Successfully updated properties from: " + urlString);
-                            return; // SUCCESS EXIT
+                            break;
                         }
                     }
                 } catch (Exception e) {
@@ -217,70 +254,20 @@ public class ReveilaService extends Service {
         }
     }
 
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        try {
-            // Peer shutdown remains on main thread for speed
-            Intent stopLlmIntent = new Intent(this, ReveilaLlmService.class);
-            stopService(stopLlmIntent);
-
-            if (executor != null) {
-                executor.execute(() -> {
-                    try {
-                        if (reveila != null)
-                            reveila.shutdown();
-                        if (lockFile != null && lockFile.exists())
-                            lockFile.delete();
-                    } catch (Exception e) {
-                        Log.e(TAG, "Cleanup task failed", e);
-                    }
-                });
-                executor.shutdown();
-                if (!executor.awaitTermination(3, TimeUnit.SECONDS)) {
-                    executor.shutdownNow();
-                }
+    private void deleteRecursively(File file) {
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children)
+                    deleteRecursively(child);
             }
-        } catch (InterruptedException e) {
-            if (executor != null)
-                executor.shutdownNow();
-            Thread.currentThread().interrupt();
-        } finally {
-            // Resetting global state must happen last
-            isReveilaRunning = false;
-            isReveilaStarting = false;
-            Log.i(TAG, "Reveila service stopped.");
         }
+        file.delete();
     }
 
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
-        // We don't provide binding, so return null
         return null;
-    }
-
-    private void startLlmService(Properties p) {
-        if (ReveilaLlmService.isRunning()) {
-            return;
-        }
-
-        try {
-            String baseUrl = p.getProperty("download.base.url");
-            String modelName = p.getProperty("ai.llm.model.name");
-            URL url = new URI(baseUrl + "/llms/" + modelName).toURL();
-            ReveilaLlmService.setModelName(modelName);
-            ReveilaLlmService.setDownloadUrl(url);
-
-            Intent intent = new Intent(this, ReveilaLlmService.class);
-            // Ensure the LLM service is running in the background
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent);
-            } else {
-                startService(intent);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to start Reveila LLM Service", e);
-        }
     }
 }

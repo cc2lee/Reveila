@@ -22,6 +22,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -48,7 +49,11 @@ public class Reveila implements AutoCloseable, EventConsumer {
 	private Logger logger;
 	private URL localUrl;
 	private boolean standalone = true;
-	private boolean shutdown = false;
+	private final AtomicBoolean isRunning = new AtomicBoolean(false);
+
+	public boolean isRunning() {
+		return isRunning.get();
+	}
 
 	public SystemContext getSystemContext() {
 		return systemContext;
@@ -61,15 +66,14 @@ public class Reveila implements AutoCloseable, EventConsumer {
 
 	public synchronized void shutdown() {
 
-		if (shutdown) {
+		if (!isRunning.get()) {
 			return;
 		}
 
-		shutdown = true;
+		isRunning.set(false);
 		boolean error = false;
 
 		String message = "Shutting down Reveila...";
-		System.out.println(message);
 		if (logger != null) {
 			logger.info(message);
 		}
@@ -87,25 +91,22 @@ public class Reveila implements AutoCloseable, EventConsumer {
 				platformAdapter.unplug();
 			} catch (Throwable t) {
 				error = true;
-				message = "Failed to unplug platform adapter, cause: " + t.getMessage();
 				if (logger != null) {
-					logger.log(Level.WARNING, message, t);
+					logger.log(Level.WARNING, t, () -> "Failed to unplug platform adapter, cause: " + t.getMessage());
 				}
-				System.out.println();
-				System.out.println(message);
-				t.printStackTrace();
+				logger.info("\n");
+				logger.info(() -> "Failed to unplug platform adapter, cause: " + t.getMessage());
+				// t.printStackTrace(); // Redundant as it's logged
 			}
 		}
 
 		if (!error) {
 			message = "Reveila shut down successfully.";
-			System.out.println(message);
 			if (logger != null) {
 				logger.info(message);
 			}
 		} else {
 			message = "Reveila shut down with errors. Check logs for details.";
-			System.out.println(message);
 			if (logger != null) {
 				logger.warning(message);
 			}
@@ -125,8 +126,8 @@ public class Reveila implements AutoCloseable, EventConsumer {
 			for (Handler handler : logger.getHandlers()) {
 				try {
 					handler.close();
-				} catch (Throwable t) {
-					System.err.println("Failed to close logger handler: " + handler);
+				} catch (Exception t) {
+					logger.info(() -> "Failed to close logger handler: " + handler);
 					t.printStackTrace();
 				}
 			}
@@ -163,7 +164,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		try {
 			timeoutSeconds = Long.parseLong(this.properties.getProperty(Constants.COMPONENT_START_TIMEOUT, "60"));
 		} catch (NumberFormatException e) {
-			logger.warning("Invalid value for " + Constants.COMPONENT_START_TIMEOUT + ". Using default: 60");
+			logger.warning(() -> "Invalid value for " + Constants.COMPONENT_START_TIMEOUT + ". Using default: 60");
 		}
 
 		String platform = properties.getProperty("platform");
@@ -219,21 +220,21 @@ public class Reveila implements AutoCloseable, EventConsumer {
 
 		List<MetaObject> sortedPlugins = sortMetaObjects(pluginMetaObjects);
 		startComponents(Constants.PLUGIN, sortedPlugins, timeoutSeconds);
-
+		isRunning.set(true);
 		logStartupCompletion(beginTime);
 
-		System.out.println(getDisplayName(this.properties) + " is running...");
+		logger.info(() -> getDisplayName(this.properties) + " is running...");
 	}
 
 	private void printLogo() {
 		String logoContent = loadLogoContent();
 		String version = this.properties.getProperty(Constants.SYSTEM_VERSION);
 
-		System.out.println("\n" + logoContent);
+		logger.info(() -> "\n" + logoContent);
 		if (version != null && !version.isBlank()) {
-			System.out.println("Version: " + version);
+			logger.info(() -> "Version: " + version);
 		}
-		System.out.println();
+		logger.info("\n");
 	}
 
 	private String loadLogoContent() {
@@ -274,14 +275,17 @@ public class Reveila implements AutoCloseable, EventConsumer {
 
 	private void logStartupBanner() {
 		String displayName = getDisplayName(this.properties);
-		logger.info("Starting " + displayName + "...");
+		if (logger != null) {
+			logger.info(() -> "Starting " + displayName + "...");
+		}
 	}
 
 	private void logStartupCompletion(long beginTime) {
 		String displayName = getDisplayName(this.properties);
 		long msecs = System.currentTimeMillis() - beginTime;
-		String timeUsed = TimeFormat.getInstance().format(msecs);
-		logger.info(displayName + " started successfully. Time taken = " + timeUsed);
+		if (logger != null) {
+			logger.info(() -> displayName + " started successfully. Time taken = " + TimeFormat.getInstance().format(msecs));
+		}
 	}
 
 	private String getDisplayName(Properties props) {
@@ -295,11 +299,6 @@ public class Reveila implements AutoCloseable, EventConsumer {
 	private void createSystemContext(Properties props) throws Exception {
 		EventManager eventManager = new EventManager();
 		eventManager.setLogger(this.logger);
-
-		String charset = props.getProperty(Constants.CHARACTER_ENCODING);
-		if (charset == null || charset.isBlank()) {
-			charset = StandardCharsets.UTF_8.name();
-		}
 
 		Cryptographer encrypter = this.platformAdapter.getCryptographer();
 		if (encrypter == null) {
@@ -359,7 +358,9 @@ public class Reveila implements AutoCloseable, EventConsumer {
 					}
 					list.add(mObj);
 				}
-				logger.info("Processed configuration file: " + file);
+				if (logger != null) {
+					logger.info(() -> "Processed configuration file: " + file);
+				}
 			} catch (Exception e) {
 				handleStartError("Failed to parse configuration file: " + file, e);
 			}
@@ -380,8 +381,13 @@ public class Reveila implements AutoCloseable, EventConsumer {
 			stopComponents();
 			throw new SystemException(message, t);
 		} else {
-			logger.log(Level.SEVERE, message + (message.endsWith(".") ? " " : ". ")
-					+ "Continuing in non-strict mode.", t);
+			if (logger != null) {
+				final String finalMessage = message;
+				logger.log(Level.SEVERE, t, () -> {
+					String suffix = (finalMessage.endsWith(".") || finalMessage.endsWith("!") || finalMessage.endsWith("?")) ? " " : ". ";
+					return finalMessage + suffix + "Continuing in non-strict mode.";
+				});
+			}
 		}
 	}
 
@@ -535,13 +541,13 @@ public class Reveila implements AutoCloseable, EventConsumer {
 						proxy.setClassLoader(loader);
 					}
 				} catch (Exception e) {
-					logger.warning("Failed to initialize plugin ClassLoader for " + mObj.getName() + ": " + e.getMessage());
+					logger.warning(() -> "Failed to initialize plugin ClassLoader for " + mObj.getName() + ": " + e.getMessage());
 				}
 			}
 			systemContext.add(proxy);
 			try {
 				if (!mObj.isAutoStart()) {
-					logger.info("ℹ️ Skipping auto-start for " + tag + ": " + mObj.getName());
+					logger.info(() -> "ℹ️ Skipping auto-start for " + tag + ": " + mObj.getName());
 					continue;
 				}
 
@@ -559,7 +565,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 				// Wait for completion or timeout
 				startFuture.get(timeoutSeconds, TimeUnit.SECONDS);
 
-				logger.info("✅ Started " + tag + ": " + mObj.getName());
+				logger.info(() -> "✅ Started " + tag + ": " + mObj.getName());
 				startedProxies.add(proxy); // Track successful starts
 			} catch (TimeoutException e) {
 				String msg = "⏱️ Timeout: Component [" + mObj.getName() + "] failed to start within "
@@ -575,7 +581,10 @@ public class Reveila implements AutoCloseable, EventConsumer {
 				platformAdapter.unregisterAutoCall(proxy.getName());
 
 				handleStartError(msg, e);
-			} catch (Throwable t) {
+			} catch (Exception t) {
+				if (t instanceof InterruptedException) {
+					Thread.currentThread().interrupt();
+				}
 				String msg = "❌ Failed to start " + tag + " [" + mObj.getName() + "].";
 				try {
 					proxy.stop(); // Attempt to stop the proxy if start timed out
@@ -605,7 +614,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 				p.stop();
 			} catch (Exception e) {
 				success = false;
-				logger.log(Level.WARNING, "⚠️ Failed to stop " + p.toString(), e);
+				logger.log(Level.WARNING, e, () -> "⚠️ Failed to stop " + p.toString());
 			}
 		}
 
@@ -630,7 +639,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 	 * Non-blocking retrieval:
 	 * 
 	 * future.thenAccept(result -> {
-	 * System.out.println("Received result: " + result);
+	 * logger.info("Received result: " + result);
 	 * });
 	 * 
 	 * @param componentName The name of the component to invoke.
@@ -662,7 +671,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		}
 
 		if (callerIp != null && !callerIp.isBlank()) {
-			logger.info("Received invocation request from " + callerIp + " for target: " + componentName + ", method: "
+			logger.info(() -> "Received invocation request from " + callerIp + " for target: " + componentName + ", method: "
 					+ methodName);
 		}
 
@@ -685,8 +694,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 					// Penalize the failed remote node
 					PerformanceTracker.getInstance()
 							.track(Long.valueOf(PerformanceTracker.DEFAULT_PENALTY_MS), url);
-					logger.severe(
-							"Remote invocation failed. Falling back to local invocation. Error: " + e.getMessage());
+					logger.severe(() -> "Remote invocation failed. Falling back to local invocation. Error: " + e.getMessage());
 					e.printStackTrace();
 				}
 			}
@@ -727,7 +735,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 				visit(m, map, sorted, visited, stack);
 			} catch (Exception e) {
 				// Log or handle sort error (cycles are handled in Linter, but just in case)
-				System.err.println("Sort error: " + e.getMessage());
+				logger.info(() -> "Sort error: " + e.getMessage());
 			}
 		}
 		return sorted;

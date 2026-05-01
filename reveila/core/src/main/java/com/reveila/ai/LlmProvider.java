@@ -1,10 +1,8 @@
 package com.reveila.ai;
 
 import com.reveila.error.LlmException;
-import com.reveila.system.Startable;
-import com.reveila.system.Stoppable;
 
-public interface LlmProvider extends Startable, Stoppable{
+public interface LlmProvider {
 
     LlmResponse invoke(LlmRequest request) throws LlmException;
 

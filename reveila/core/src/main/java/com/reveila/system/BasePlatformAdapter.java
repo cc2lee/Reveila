@@ -52,7 +52,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     private String platformName;
     private Reveila reveila;
     private Properties properties = new Properties();
-    private Logger logger;
+    protected Logger logger;
     private int jobThreadPoolSize = 4; // Allow concurrent execution to prevent startup deadlocks
     private ScheduledExecutorService scheduler;
     private final Map<String, ScheduledFuture<?>> autoCallTasks = new ConcurrentHashMap<>();
@@ -150,17 +150,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     }
 
     @Override
-    public void reloadProperties() throws Exception {
-        logger.info("Reloading system properties...");
-        try {
-            loadProperties(null);
-        } catch (Exception e) {
-            throw new Exception("Failed to reload system properties!", e);
-        }
-        logger.info("System properties reloaded.");
-    }
-
-    private void loadProperties(Properties jvmArgs) throws IOException, ConfigurationException {
+    public void loadProperties(Properties jvmArgs) throws IOException {
 
         String filename = "reveila.properties";
         Properties rawProps = new Properties();

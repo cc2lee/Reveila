@@ -58,14 +58,4 @@ public class TrackedLlmProvider implements LlmProvider {
     public String getName() {
         return delegate.getName();
     }
-
-    @Override
-    public void start() throws Exception {
-        // No-op: lifecycle is managed by the factory
-    }
-
-    @Override
-    public void stop() throws Exception {
-        // No-op: lifecycle is managed by the factory
-    }
 }

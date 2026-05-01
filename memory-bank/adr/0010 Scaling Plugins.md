@@ -25,7 +25,7 @@ Instead of local files, authorized plugins and global settings are stored in the
 To ensure sub-second consistency across the cluster, we utilized the PostgreSQL **NOTIFY/LISTEN** mechanism.
 - **The Trigger:** Database-level triggers broadcast a "Pulse" on the `reveila_config_updates` channel whenever a registry or setting table is modified.
 - **The Listener:** [`ClusterSyncService.java`](../../spring/core/src/main/java/com/reveila/spring/service/ClusterSyncService.java) maintains a persistent connection and listens for these pulses.
-- **The Action:** Upon receiving a pulse, every node in the cluster automatically triggers a `reloadProperties()` event, pulling the latest state from the database.
+- **The Action:** Upon receiving a pulse, every node in the cluster automatically triggers a `loadProperties(Properties overrides)` event, pulling the latest state from the database.
 
 #### 4. Targeted Cluster Roles (Elastic Agent Orchestration)
 To prevent overwhelming single nodes with thousands of plugins, the system utilizes a sharding mechanism based on **Targeted Cluster Roles**.

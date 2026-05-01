@@ -101,4 +101,8 @@ public class ExceptionCollection extends Exception {
 		}
 	}
 
+    public boolean isEmpty() {
+        return exceptions.isEmpty();
+    }
+
 }

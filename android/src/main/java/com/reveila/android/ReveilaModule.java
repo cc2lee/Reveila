@@ -50,6 +50,7 @@ import android.net.Uri;
 public class ReveilaModule extends ReactContextBaseJavaModule {
 
     private static final String NAME = "ReveilaModule";
+    private Reveila reveila;
     private MobileKillSwitch killSwitch;
     private Subject currentSubject;
     private long lastActivityTimestamp;
@@ -112,12 +113,11 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
     public void toggleSuspend(boolean suspend, Promise promise) {
         executorService.execute(() -> {
             try {
-                Reveila reveilaInstance = ReveilaService.getReveilaInstance();
-                if (reveilaInstance == null) {
+                if (reveila == null || !reveila.isRunning()) {
                     promise.reject("E_NOT_READY", "Engine not initialized");
                     return;
                 }
-                com.reveila.system.Proxy proxy = reveilaInstance.getSystemContext().getProxy("GuardedRuntime");
+                com.reveila.system.Proxy proxy = reveila.getSystemContext().getProxy("GuardedRuntime");
                 com.reveila.system.SystemProxy sp = (com.reveila.system.SystemProxy) proxy;
                 com.reveila.ai.GuardedRuntime runtime = (com.reveila.ai.GuardedRuntime) sp.getInstance();
                 
@@ -138,12 +138,11 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
     public void isSuspended(Promise promise) {
         executorService.execute(() -> {
             try {
-                Reveila reveilaInstance = ReveilaService.getReveilaInstance();
-                if (reveilaInstance == null) {
+                if (reveila == null || !reveila.isRunning()) {
                     promise.resolve(false);
                     return;
                 }
-                com.reveila.system.Proxy proxy = reveilaInstance.getSystemContext().getProxy("GuardedRuntime");
+                com.reveila.system.Proxy proxy = reveila.getSystemContext().getProxy("GuardedRuntime");
                 com.reveila.system.SystemProxy sp = (com.reveila.system.SystemProxy) proxy;
                 com.reveila.ai.GuardedRuntime runtime = (com.reveila.ai.GuardedRuntime) sp.getInstance();
                 
@@ -193,7 +192,7 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
     }
 
     /**
-     * Starts the Reveila background service.
+     * Starts the Android background service.
      * @param systemHome Optional path to the system home directory.
      * @param promise Promise to resolve when the service is starting.
      */
@@ -202,7 +201,7 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
         try {
             ReactApplicationContext context = getReactApplicationContext();
             Intent intent = new Intent(context, ReveilaService.class);
-            if (systemHome != null && !systemHome.isEmpty()) {
+            if (systemHome != null && !systemHome.isBlank()) {
                 intent.putExtra("systemHome", systemHome);
             }
 
@@ -211,6 +210,7 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
             } else {
                 context.startService(intent);
             }
+            reveila = ReveilaService.getReveilaInstance();
             promise.resolve(true);
         } catch (Exception e) {
             promise.reject("E_START_FAILED", e.getMessage(), e);
@@ -244,10 +244,10 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
     public void isRunning(Promise promise) {
         // This method allows the UI to check if the backend service is fully initialized.
         WritableMap status = Arguments.createMap();
-        status.putBoolean("running", ReveilaService.isRunning());
+        status.putBoolean("running", reveila.isRunning());
         // Since we can't easily add isStarting to ReveilaService without changing it more,
         // let's just keep it simple for now or check if we should add it.
-        promise.resolve(ReveilaService.isRunning());
+        promise.resolve(reveila.isRunning());
     }
 
     /**
@@ -414,13 +414,12 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
      */
     private void unlockAfterSetup(String password, Promise promise) {
         try {
-            Reveila reveilaInstance = ReveilaService.getReveilaInstance();
-            if (reveilaInstance == null) {
+            if (reveila == null || !reveila.isRunning()) {
                 promise.reject("E_NOT_READY", "Engine not initialized");
                 return;
             }
 
-            AndroidPlatformAdapter adapter = (AndroidPlatformAdapter) reveilaInstance.getSystemContext().getPlatformAdapter();
+            AndroidPlatformAdapter adapter = (AndroidPlatformAdapter) reveila.getSystemContext().getPlatformAdapter();
             AndroidCryptographer crypto = (AndroidCryptographer) adapter.getCryptographer();
             ModelSettings settings = new ModelSettings(getReactApplicationContext());
             
@@ -462,14 +461,13 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
         
         executorService.execute(() -> {
             try {
-                Reveila reveilaInstance = ReveilaService.getReveilaInstance();
-                if (reveilaInstance == null) {
+                if (reveila == null || !reveila.isRunning()) {
                     Log.e(NAME, "unlockWithMasterPassword: Engine not initialized");
                     promise.reject("E_NOT_READY", "Engine not initialized");
                     return;
                 }
 
-                AndroidPlatformAdapter adapter = (AndroidPlatformAdapter) reveilaInstance.getSystemContext().getPlatformAdapter();
+                AndroidPlatformAdapter adapter = (AndroidPlatformAdapter) reveila.getSystemContext().getPlatformAdapter();
                 AndroidCryptographer crypto = (AndroidCryptographer) adapter.getCryptographer();
                 ModelSettings settings = new ModelSettings(getReactApplicationContext());
                 
@@ -600,9 +598,8 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
         
         if (!valid) {
             currentSubject = null; // Wipe session on timeout
-            Reveila reveilaInstance = ReveilaService.getReveilaInstance();
-            if (reveilaInstance != null) {
-                AndroidPlatformAdapter adapter = (AndroidPlatformAdapter) reveilaInstance.getSystemContext().getPlatformAdapter();
+            if (reveila != null && reveila.isRunning()) {
+                AndroidPlatformAdapter adapter = (AndroidPlatformAdapter) reveila.getSystemContext().getPlatformAdapter();
                 AndroidCryptographer crypto = (AndroidCryptographer) adapter.getCryptographer();
                 crypto.lock(); // Wipe encryption key
             }
@@ -646,8 +643,7 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
         executorService.execute(() -> {
             try {
                 // First, check if the service is fully initialized and running.
-                Reveila reveilaInstance = ReveilaService.getReveilaInstance();
-                if (!ReveilaService.isRunning() || reveilaInstance == null) {
+                if (reveila == null || !reveila.isRunning()) {
                     Log.e(NAME, "invoke: Reveila service not running");
                     promise.reject("E_NOT_READY", "The Reveila service is not yet available.");
                     return;
@@ -660,7 +656,7 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
                 }
                 
                 // Check if cryptographer is unlocked
-                AndroidPlatformAdapter adapter = (AndroidPlatformAdapter) reveilaInstance.getSystemContext().getPlatformAdapter();
+                AndroidPlatformAdapter adapter = (AndroidPlatformAdapter) reveila.getSystemContext().getPlatformAdapter();
                 AndroidCryptographer crypto = (AndroidCryptographer) adapter.getCryptographer();
                 // Check if cryptographer is unlocked
                 if (!crypto.isUnlocked()) {
@@ -675,7 +671,7 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
                 Log.d(NAME, "invoke: All checks passed, proceeding with invocation");
 
                 Object[] javaParams = ReactNativeJsonConverter.toArray(params);
-                Object result = reveilaInstance.invoke(componentName, methodName, javaParams, "127.0.0.1", currentSubject);
+                Object result = reveila.invoke(componentName, methodName, javaParams, "127.0.0.1", currentSubject);
 
                 // Convert the Java result to a React Native Writable type (Map, Array, etc.)
                 Object writableResult = ReactNativeJsonConverter.convertObjectToWritable(result);

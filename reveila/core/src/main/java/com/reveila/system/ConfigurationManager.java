@@ -1,6 +1,7 @@
 package com.reveila.system;
 
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
@@ -11,6 +12,7 @@ import java.util.Properties;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.reveila.error.ConfigurationException;
 
 public class ConfigurationManager extends SystemComponent {
 
@@ -25,7 +27,7 @@ public class ConfigurationManager extends SystemComponent {
     protected void onStop() throws Exception {
     }
 
-    public String getSettings(String tab) throws Exception {
+    public String getSettings(String tab) throws ConfigurationException, IOException {
         String home = context.getProperties().getProperty("system.home");
         if (home == null) home = ".";
         
@@ -140,7 +142,7 @@ public class ConfigurationManager extends SystemComponent {
         }
 
         // Reload properties
-        context.getPlatformAdapter().reloadProperties();
+        context.getPlatformAdapter().loadProperties(null);
         
         // If llm.json changed, reload the providers factory
         if ("llm.json".equals(tab)) {

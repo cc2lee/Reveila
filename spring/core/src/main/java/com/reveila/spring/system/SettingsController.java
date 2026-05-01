@@ -184,7 +184,7 @@ public class SettingsController {
         });
 
         // 4. Trigger Hot Reload in the engine locally
-        reveila.getSystemContext().getPlatformAdapter().reloadProperties();
+        reveila.getSystemContext().getPlatformAdapter().loadProperties(null);
 
         return ResponseEntity.ok().build();
     }

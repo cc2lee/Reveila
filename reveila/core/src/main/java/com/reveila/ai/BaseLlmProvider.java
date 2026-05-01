@@ -22,11 +22,12 @@ public abstract class BaseLlmProvider extends PluginComponent implements LlmProv
     protected abstract Map<String, String> getHeaders() throws LlmException;
 
     @Override
+    protected void onStart() throws Exception {}
+
+    @Override
     protected void onStop() throws Exception {}
 
     @Override
-    protected void onStart() throws Exception {}
-
     public LlmResponse invoke(LlmRequest request) throws com.reveila.error.LlmException {
         try {
             HttpClientService httpService = getHttpClientService();

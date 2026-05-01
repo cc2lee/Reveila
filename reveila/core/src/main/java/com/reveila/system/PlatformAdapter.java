@@ -31,7 +31,7 @@ public interface PlatformAdapter {
     public void unregisterAutoCall(String componentName);
     public void plug(Reveila reveila);
     public void unplug();
-    public void reloadProperties() throws Exception;
+    public void loadProperties(Properties overrides) throws IOException;
     public Repository<Entity, Map<String, Map<String, Object>>> getRepository(String entityType);
     public com.reveila.crypto.Cryptographer getCryptographer();
     public ExecutorService getExecutor();

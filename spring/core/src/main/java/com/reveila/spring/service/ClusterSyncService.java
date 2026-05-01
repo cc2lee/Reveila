@@ -54,7 +54,7 @@ public class ClusterSyncService implements CommandLineRunner {
                             System.out.println("🔔 [CLUSTER] RECEIVED PULSE: " + notification.getName() + " -> " + notification.getParameter());
                             
                             // Trigger the hot-reload logic implemented in the platform adapter
-                            reveila.getSystemContext().getPlatformAdapter().reloadProperties();
+                            reveila.getSystemContext().getPlatformAdapter().loadProperties(null);
                             System.out.println("✅ [CLUSTER] Hot Reload complete on this node.");
                         }
                     }

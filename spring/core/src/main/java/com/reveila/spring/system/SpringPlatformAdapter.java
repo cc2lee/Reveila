@@ -1,5 +1,6 @@
 package com.reveila.spring.system;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -39,7 +40,7 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
             DataSource ds = springContext.getBean(DataSource.class);
             try (Connection conn = ds.getConnection()) {
                 databaseAvailable = !conn.isClosed();
-                System.out.println("Reveila DB check: Database is available.");
+                logger.info("Reveila DB check: Database is available.");
             }
         } catch (Exception e) {
             databaseAvailable = false;
@@ -70,7 +71,7 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
 
         // 3. Fallback to JSON files if DB is not available or for missing repos
         if (!databaseAvailable) {
-            System.out.println("Reveila Fallback: Using JSON file storage in " + getSystemHome().resolve("data"));
+            logger.info("Reveila Fallback: Using JSON file storage in " + getSystemHome().resolve("data"));
             setupJsonFallbacks();
         }
     }
@@ -91,7 +92,7 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(springContext.getBean(DataSource.class));
         jdbcTemplate.execute(content);
 
-        System.out.println("Reveila SQL Executor: Successfully applied " + relativePath);
+        logger.info("Reveila SQL Executor: Successfully applied " + relativePath);
     }
 
     private void setupJsonFallbacks() {
@@ -104,7 +105,7 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
             @SuppressWarnings("unchecked")
             Repository<Entity, Map<String, Map<String, Object>>> repository = (Repository<Entity, Map<String, Map<String, Object>>>)(Object) createGenericRepoFromGeneric(auditRepo);
             registerRepository("auditlog", repository);
-            System.out.println("Reveila Fallback: AuditLog repository registered (JSON).");
+            logger.info("Reveila Fallback: AuditLog repository registered (JSON).");
         } catch (Exception e) {
             System.err.println("Failed to setup AuditLog JSON fallback: " + e.getMessage());
         }
@@ -132,13 +133,13 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
     }
 
     @Override
-    public void reloadProperties() throws Exception {
+    public void loadProperties(Properties overrides) throws IOException {
         // 1. Reload from local file first (standard base behavior)
-        super.reloadProperties();
+        super.loadProperties(overrides);
 
         // 2. Override with values from Global Settings table (Sovereign Authority)
         if (databaseAvailable) {
-            System.out.println("Reveila: Syncing properties with Global Settings table...");
+            logger.info("Reveila: Syncing properties with Global Settings table...");
             try {
                 JdbcTemplate jdbcTemplate = new JdbcTemplate(springContext.getBean(DataSource.class));
                 List<Map<String, Object>> rows = jdbcTemplate.queryForList("SELECT key, value FROM global_settings");
@@ -150,9 +151,9 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
                         getProperties().setProperty(key, value);
                     }
                 }
-                System.out.println("Reveila: Sync complete. " + rows.size() + " properties updated from Database.");
+                logger.info("Reveila: Sync complete. " + rows.size() + " properties updated from Database.");
             } catch (Exception e) {
-                System.err.println("Reveila: Failed to sync with Global Settings table: " + e.getMessage());
+                logger.severe("Reveila: Failed to sync with Global Settings table: " + e.getMessage());
             }
         }
     }
