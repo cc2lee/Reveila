@@ -74,6 +74,6 @@ public class OpenAiLlmProvider extends BaseLlmProvider {
 
     @Override
     public boolean isConfigured() {
-        return name != null && endpoint != null && apiKey != null;
+        return endpoint != null && apiKey != null;
     }
 }

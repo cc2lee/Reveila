@@ -4,10 +4,10 @@ import java.util.Map;
 
 import com.reveila.error.LlmException;
 import com.reveila.service.HttpClientService;
-import com.reveila.system.PluginComponent;
+import com.reveila.system.SystemComponent;
 import com.reveila.system.SystemProxy;
 
-public abstract class BaseLlmProvider extends PluginComponent implements LlmProvider {
+public abstract class BaseLlmProvider extends SystemComponent implements LlmProvider {
     protected String name;
     protected String apiKey;
     protected String resolvedApiKey;
@@ -59,7 +59,7 @@ public abstract class BaseLlmProvider extends PluginComponent implements LlmProv
 
     protected HttpClientService getHttpClientService() {
         try {
-            SystemProxy sp = (SystemProxy) context.getProxy("HttpClientService");
+            SystemProxy sp = context.getProxy("HttpClientService");
             return (HttpClientService) sp.getInstance();
         } catch (Exception e) {
             return null; // Lifecycle will handle transient fallback if needed
@@ -68,12 +68,27 @@ public abstract class BaseLlmProvider extends PluginComponent implements LlmProv
 
     // Common Getters/Setters
     public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    public void setEndpoint(String endpoint) { this.endpoint = endpoint; }
+    public void setName(String name) {
+        if (name == null || name.trim().isEmpty()) throw new IllegalArgumentException("Argument 'name' cannot be null or empty.");
+        this.name = name;
+    }
     public String getEndpoint() { return endpoint; }
-    public void setApiKey(String apiKey) { this.apiKey = apiKey; }
-    public void setModel(String model) { this.model = model; }
-    public void setTemperature(double temp) { this.temperature = temp; }
-    public boolean isEnabled() { return enabled; }
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public void setEndpoint(String endpoint) {
+        if (endpoint == null || endpoint.trim().isEmpty()) throw new IllegalArgumentException("Argument 'endpoint' cannot be null or empty.");
+        this.endpoint = endpoint;
+    }
+    public void setApiKey(String apiKey) {
+        this.apiKey = apiKey;
+        this.resolvedApiKey = null; // Reset resolved key to allow re-resolution if API key changes
+    }
+    public void setModel(String model) {
+        if (model == null || model.trim().isEmpty()) throw new IllegalArgumentException("Argument 'model' cannot be null or empty.");
+        this.model = model;
+    }
+    public void setTemperature(double temp) {
+        if (temp < 0 || temp > 1) throw new IllegalArgumentException("Argument 'temp' must be between 0 and 1.");
+        this.temperature = temp;
+    }
+    public synchronized boolean isEnabled() { return enabled; }
+    public synchronized void setEnabled(boolean enabled) { this.enabled = enabled; }
 }

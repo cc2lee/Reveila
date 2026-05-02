@@ -11,13 +11,21 @@ import { ReveilaHeader } from '@/components/ReveilaHeader';
 import { ChangePasswordModal } from '@/components/ChangePasswordModal';
 import ReveilaModule from '@/modules/reveila';
 
-const LLM_PROVIDERS: any[] = [
-  { name: 'OpenAI', defaultEndpoint: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o', apiKey: '' },
-  { name: 'Anthropic', defaultEndpoint: 'https://api.anthropic.com/v1/messages', model: 'claude-3-5-sonnet-latest', apiKey: '' },
-  { name: 'Google Gemini', defaultEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-3-flash', apiKey: '' },
-  { name: 'On-Device Model', defaultEndpoint: 'http://localhost:8888/completion', model: 'gemma-2-2b-it-Q4_K_M', apiKey: '', quantization: 'Q4_K_M', quantization_options: ['Q4_K_M', 'F16'] },
-  { name: 'Custom', defaultEndpoint: '', model: '', apiKey: '' }
-];
+/**
+ * Transform LLM config from system-home format to app format
+ * Maps: api.key -> apiKey, model.options -> model_options
+ */
+function transformProviderConfig(providers: any[]): any[] {
+  return providers.map(p => ({
+    name: p.name,
+    type: p.type,
+    endpoint: p.endpoint,
+    model: p.model,
+    model_options: p['model.options'],
+    temperature: p.temperature,
+    apiKey: p['api.key'] || ''
+  }));
+}
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -25,12 +33,13 @@ export default function SettingsScreen() {
   
   const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
   const [isChangePasswordVisible, setIsChangePasswordVisible] = useState(false);
+  const [providersError, setProvidersError] = useState<string | null>(null);
   
   const [isLoadingProviders, setIsLoadingProviders] = useState(true);
-  const [providersList, setProvidersList] = useState<any[]>(LLM_PROVIDERS);
+  const [providersList, setProvidersList] = useState<any[]>([]);
 
   // Selection States
-  const [workerProvider, setWorkerProvider] = useState(LLM_PROVIDERS[0].name);
+  const [workerProvider, setWorkerProvider] = useState('');
   const [governanceProvider, setGovernanceProvider] = useState('Disable');
 
   // Modals
@@ -75,23 +84,42 @@ export default function SettingsScreen() {
       if (res) {
         try {
           const config = JSON.parse(res);
-          const onboarded = config['onboarded.providers'] || config.onboarded_providers || LLM_PROVIDERS;
-          setProvidersList(onboarded);
+          // Transform providers from system-home format to app format
+          const onboarded = config['onboarded.providers'] || config.onboarded_providers || [];
+          const transformedProviders = transformProviderConfig(onboarded);
+          // Add Custom option for user-defined providers
+          setProvidersList([...transformedProviders, { name: 'Custom', endpoint: '', model: '', apiKey: '' }]);
+          setProvidersError(null); // Clear any previous error
 
           const legacyWorkerMap: Record<string, string> = { 'OpenAiProvider': 'OpenAI', 'AnthropicProvider': 'Anthropic', 'GeminiProvider': 'Google Gemini', 'OnDeviceProvider': 'On-Device Model' };
           const legacyGovMap: Record<string, string> = { ...legacyWorkerMap, '': 'Disable' };
-          
-          let wProvider = config['ai.worker.llm'] || 'OpenAI';
+           
+          let wProvider = config['ai.worker.llm'] || '';
           if (legacyWorkerMap[wProvider]) wProvider = legacyWorkerMap[wProvider];
-          
+           
           let gProvider = config['ai.governance.llm'] || 'Disable';
           if (legacyGovMap[gProvider]) gProvider = legacyGovMap[gProvider];
 
-          setWorkerProvider(wProvider);
+          setWorkerProvider(wProvider || (transformedProviders.length > 0 ? transformedProviders[0].name : ''));
           setGovernanceProvider(gProvider);
-        } catch (e) {}
+        } catch (e) {
+          // Show error on parse failure
+          setProvidersError('Failed to parse LLM providers configuration');
+          setProvidersList([]);
+          setWorkerProvider('');
+        }
+      } else {
+        // Show error when no config returned
+        setProvidersError('Failed to retrieve LLM providers list from Configuration Manager');
+        setProvidersList([]);
+        setWorkerProvider('');
       }
     }).catch(() => {
+        // Show error on invocation failure
+        setProvidersError('Failed to retrieve LLM providers list from Configuration Manager');
+        setProvidersList([]);
+        setWorkerProvider('');
+        
         AsyncStorage.getItem('custom_providers').then(val => {
           if (val) {
             try {
@@ -106,7 +134,7 @@ export default function SettingsScreen() {
             } catch (e) {}
           }
         });
-    }).finally(() => {
+      }).finally(() => {
       setIsLoadingProviders(false);
     });
   }, [isRunning]);
@@ -130,7 +158,7 @@ export default function SettingsScreen() {
 
   const openEditModal = (providerName: string) => {
     if (providerName === 'Disable' || providerName === 'Custom') return;
-    const provider = providersList.find(p => p.name === providerName) || LLM_PROVIDERS.find(p => p.name === providerName);
+    const provider = providersList.find(p => p.name === providerName);
     if (provider) {
         setEditData({ ...provider });
         setIsEditModalVisible(true);
@@ -162,7 +190,7 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: () => {
             setProvidersList(prev => prev.filter(p => p.name !== editData.name));
-            if (workerProvider === editData.name) setWorkerProvider(LLM_PROVIDERS[0].name);
+            if (workerProvider === editData.name) setWorkerProvider(providersList[0]?.name || '');
             if (governanceProvider === editData.name) setGovernanceProvider('Disable');
             setIsEditModalVisible(false);
           }
@@ -173,7 +201,11 @@ export default function SettingsScreen() {
 
   const handleSaveLLM = async () => {
     try {
-      const customOnly = providersList.filter(p => !LLM_PROVIDERS.find(orig => orig.name === p.name));
+      const customOnly = providersList.filter(p => {
+        // Filter out known provider names to identify custom ones
+        const knownNames = ['OpenAI', 'Anthropic', 'Google Gemini', 'On-Device Model'];
+        return !knownNames.includes(p.name);
+      });
       await AsyncStorage.setItem('custom_providers', JSON.stringify(customOnly));
 
       const config = {
@@ -192,10 +224,10 @@ export default function SettingsScreen() {
   const isProviderConfigured = (pName: string) => {
     if (isLoadingProviders) return false; 
     if (pName === 'Disable' || pName === 'Custom') return false;
-    const p = providersList.find(x => x.name === pName) || LLM_PROVIDERS.find(x => x.name === pName);
+    const p = providersList.find(x => x.name === pName);
     if (!p) return false;
 
-    const endpoint = p.endpoint || p.defaultEndpoint;
+    const endpoint = p.endpoint;
     const apiKey = p['api.key'] || p.apiKey;
 
     if (p.name.startsWith('Gemma') || p.name.includes('Ollama')) {
@@ -364,19 +396,20 @@ export default function SettingsScreen() {
                       const options = editData[optionsKey] || editData[optionsKeyAlt];
                       
                       if (Array.isArray(options) && options.length > 0) {
+                          // Render as dropdown for key-name.options pairs
                           return (
                               <View key={key} style={{ marginTop: 8 }}>
                                 <ThemedText type="defaultSemiBold">{key.charAt(0).toUpperCase() + key.slice(1)}</ThemedText>
-                                <View style={styles.radioGroup}>
-                                  {options.map((opt: string) => (
-                                    <TouchableOpacity 
-                                      key={opt}
-                                      style={[styles.radioButton, editData[key] === opt && styles.radioActive]}
-                                      onPress={() => setEditData({...editData, [key]: opt})}
-                                    >
-                                      <ThemedText style={[styles.radioText, editData[key] === opt && styles.radioTextActive]}>{opt}</ThemedText>
-                                    </TouchableOpacity>
-                                  ))}
+                                <View style={[styles.monoInput, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
+                                  <ThemedText style={{ color: '#000' }}>{editData[key] || ''}</ThemedText>
+                                  <TouchableOpacity style={{ padding: 10 }} onPress={() => {
+                                    // Simple implementation: cycle through options for now
+                                    const currentIndex = options.indexOf(editData[key]);
+                                    const nextIndex = (currentIndex + 1) % options.length;
+                                    setEditData({...editData, [key]: options[nextIndex] || ''});
+                                  }}>
+                                    <IconSymbol name="chevron.down" size={16} color="#64748b" />
+                                  </TouchableOpacity>
                                 </View>
                               </View>
                           );
@@ -407,11 +440,9 @@ export default function SettingsScreen() {
                       </TouchableOpacity>
                   </View>
                   
-                  {!LLM_PROVIDERS.find(orig => orig.name === editData.name) && (
-                    <TouchableOpacity style={[styles.outlineButton, { marginTop: 12, borderColor: '#ef4444' }]} onPress={handleDeleteProvider}>
+                  <TouchableOpacity style={[styles.outlineButton, { marginTop: 12, borderColor: '#ef4444' }]} onPress={handleDeleteProvider}>
                       <ThemedText style={{ color: '#ef4444', fontWeight: '700', fontSize: 13 }}>Delete Custom Provider</ThemedText>
-                    </TouchableOpacity>
-                  )}
+                  </TouchableOpacity>
                 </View>
               </View>
             </Modal>

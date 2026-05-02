@@ -3,12 +3,9 @@ package com.reveila.ai;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.reveila.system.Manifest;
-import com.reveila.system.PluginContext;
 import com.reveila.system.SystemComponent;
 import com.reveila.system.SystemProxy;
 
@@ -45,30 +42,37 @@ public class LlmProviderFactory extends SystemComponent {
             for (Map<String, Object> p : onboarded) {
                 String type = (String) p.getOrDefault("type", "openai");
                 String name = (String) p.get("name");
-                
                 BaseLlmProvider provider = createProviderInstance(type);
                 configureProvider(provider, p);
-
-                try {
-                    provider.start();
-                    // Wrap with UsageTracker if available
-                    providers.put(name.toLowerCase(), wrapWithTracker(provider));
-                } catch (Exception e) {
-                    logger.warning("Failed to start provider [" + name + "]: " + e.getMessage());
-                }
+                startAndAddProvider(name, provider);
             }
         } catch (Exception e) {
             logger.severe("Critical error loading llm.json: " + e.getMessage());
         }
     }
 
-    private BaseLlmProvider createProviderInstance(String type) {
-        switch (type.toLowerCase()) {
-            case "local":  return new LocalLlamaProvider();
-            case "gemini": return new GeminiLlmProvider();
-            case "openai": return new OpenAiLlmProvider();
-            default:       return new OpenAiLlmProvider();
+    private void startAndAddProvider(String name, BaseLlmProvider provider) {
+        try {
+            provider.start();
+            providers.put(name.toLowerCase(), wrapWithTracker(provider));
+        } catch (Exception e) {
+            logger.warning("Failed to start provider [" + name + "]: " + e.getMessage());
         }
+    }
+
+    private BaseLlmProvider createProviderInstance(String type) {
+        BaseLlmProvider provider;
+        switch (type.toLowerCase()) {
+            case "local":  provider = new LocalLlamaProvider();
+                break;
+            case "gemini": provider = new GeminiLlmProvider();
+                break;
+            case "openai": provider = new OpenAiLlmProvider();
+                break;
+            default:       provider = new OpenAiLlmProvider();
+        }
+        provider.setContext(context); // Inject context for potential use in providers
+        return provider;
     }
 
     private void configureProvider(BaseLlmProvider provider, Map<String, Object> params) {
@@ -87,11 +91,6 @@ public class LlmProviderFactory extends SystemComponent {
         provider.setModel((String) params.get("model"));
         provider.setApiKey((String) params.get("api.key"));
         provider.setTemperature(Double.parseDouble(String.valueOf(params.getOrDefault("temperature", 0.7))));
-        
-        // Boilerplate context injection
-        Manifest m = new Manifest();
-        m.setName(name);
-        provider.setContext(new PluginContext(context, m, new Properties()));
     }
 
     private LlmProvider wrapWithTracker(LlmProvider provider) {
@@ -100,19 +99,15 @@ public class LlmProviderFactory extends SystemComponent {
             UsageTracker tracker = (UsageTracker) sp.getInstance();
             return new TrackedLlmProvider(provider, tracker);
         } catch (Exception e) {
-            return provider; 
+            logger.warning("Failed to create UsageTracker: " + e.getMessage());
+            return provider;
         }
     }
 
     public synchronized LlmProvider getActiveProvider() {
-        if (activeProvider != null) return activeProvider;
-
-        String selected = context.getProperties().getProperty("ai.worker.llm");
-        activeProvider = getProvider(selected);
-        
-        // Fallback to first available if selection is invalid
-        if (activeProvider == null && !providers.isEmpty()) {
-            activeProvider = providers.values().iterator().next();
+        if (activeProvider == null) {
+            String configured = context.getProperties().getProperty("ai.worker.llm");
+            activeProvider = getProvider(configured);
         }
         return activeProvider;
     }

@@ -81,6 +81,9 @@ public class LlmRequest {
         }
 
         public Builder addMetadata(String key, Object value) {
+            if (key == null || value == null) {
+                return this;
+            }
             this.metadata.put(key, value);
             return this;
         }

@@ -63,6 +63,6 @@ public class LocalLlamaProvider extends BaseLlmProvider {
 
     @Override
     public boolean isConfigured() {
-        return endpoint != null && !endpoint.isEmpty();
+        return endpoint != null;
     }
 }
