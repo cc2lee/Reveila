@@ -14,6 +14,7 @@ plugins {
     // This looks up 'android-library' in the [plugins] section of the TOML
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.ksp) apply false
 }
 
@@ -21,6 +22,11 @@ allprojects {
     configurations.all {
         resolutionStrategy {
             force("org.apache.commons:commons-compress:1.27.1")
+        }
+        resolutionStrategy.eachDependency {
+            if (requested.group == "org.jetbrains.kotlin") {
+                useVersion(libs.versions.kotlin.get())
+            }
         }
     }
 }

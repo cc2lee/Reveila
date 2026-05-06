@@ -1,8 +1,8 @@
 plugins {
     id("android-conventions")
-    id("maven-publish")
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
+    id("maven-publish")
 }
 
 android {

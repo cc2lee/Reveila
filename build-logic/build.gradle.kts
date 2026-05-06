@@ -18,9 +18,10 @@ dependencies {
     implementation(libs.shadow.gradle.plugin)
     implementation(libs.spring.boot.gradle.plugin)
     
-    // THIS is the replacement for the "asProvider" or manual file pathing.
-    // It allows your precompiled scripts (*.gradle.kts) to see the 'libs' catalog.
+    // This allows your precompiled scripts (*.gradle.kts) to see the 'libs' catalog.
     implementation(files(libs.javaClass.superclass.protectionDomain.codeSource.location))
+    // This allows your precompiled scripts to resolve 'org.jetbrains.kotlin.plugin.compose'
+    implementation("org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.1.20")
 
     implementation(libs.jakarta.persistence.api)
     implementation(libs.hibernate.core)

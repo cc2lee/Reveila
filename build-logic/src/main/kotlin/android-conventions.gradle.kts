@@ -1,3 +1,5 @@
+// build-logic\src\main\kotlin\android-conventions.gradle.kts
+
 import com.android.build.gradle.LibraryExtension
 import org.gradle.api.JavaVersion
 import org.gradle.api.artifacts.VersionCatalogsExtension
@@ -11,6 +13,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
     id("project-conventions")
 }
 
@@ -29,6 +32,17 @@ extensions.configure<LibraryExtension> {
         
         // Tells the consuming App to keep necessary Reveila classes
         consumerProguardFiles(layout.projectDirectory.file("consumer-rules.pro"))
+    }
+
+    buildFeatures {
+        // Ensure this is enabled if you are using Compose in the module
+        compose = true
+    }
+
+    // CRITICAL: Remove the old compiler extension version if it exists
+    @Suppress("UnstableApiUsage")
+    composeOptions {
+        // Leave this empty. The plugin handles the versioning now.
     }
 
     buildTypes {

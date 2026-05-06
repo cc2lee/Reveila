@@ -188,7 +188,7 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
     @Override
     public String getName() {
         // This is the name that will be used to access the module from JavaScript
-        return "ReveilaModule";
+        return NAME;
     }
 
     /**
