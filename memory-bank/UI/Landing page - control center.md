@@ -1,4 +1,4 @@
-Vanilla JavaScript Conversion: I've created interfaces/js/ReveilaTable.js, a framework-agnostic Web Component that replicates the dynamic fetching and paging logic from the original Vue component. It uses the ReveilaClient from interfaces/js/reveila-core.js to interact with the backend.
+Vanilla JavaScript Conversion: I've created ts/js/ReveilaTable.js, a framework-agnostic Web Component that replicates the dynamic fetching and paging logic from the original Vue component. It uses the ReveilaClient from ts/js/reveila-core.js to interact with the backend.
 Vite Configuration Update: Updated web/vue-project/vite.config.ts to recognize reveila-table as a custom element, preventing compiler warnings.
 Asset Management: Copied the requested logo brother.png from the runtime directory to the Vue project's public folder for reliable access.
 Landing Page Update: Refactored web/vue-project/src/views/HomeView.vue to include:

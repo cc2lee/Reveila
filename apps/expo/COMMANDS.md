@@ -1,5 +1,16 @@
 # Common Commands
 
+To create a new blank Expo project, in apps/expo/ directory, run:
+
+npx create-expo-app@latest Reveila --template blank
+
+To run your project, navigate to the directory and run one of the following npm commands.
+
+- cd Reveila
+- npm run android
+- npm run ios # you need to use macOS to build the iOS project - use the Expo app if you need to do iOS development without a Mac
+- npm run web
+
 These commands should be run in the expo/Reveila directory, the directory that contains package.json.
 
 - **npx expo install expo@latest --fix**  # Installs the latest SDK and automatically updates dependencies, including the `package.json` and `package-lock.json` files and installing the physical packages in `node_modules`. After this command completes, the project's dependencies are installed, aligned, and ready to use.

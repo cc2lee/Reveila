@@ -93,8 +93,7 @@ const withReveila = (config) => {
     let contents = config.modResults.contents;
     // Resolve the mono-repo root path (standardized for Windows)
     const rootDir = path.resolve(config.modRequest.projectRoot, "../../../").replaceAll('\\', '/');
-    // For older Node versions (< v16), use replace with regex:
-    // const rootDir = path.resolve(config.modRequest.projectRoot, "../../../").replace(/\\/g, '/');
+
     const projectInclusions = `
 // [Reveila Native Bridge - Sovereign Sidecar]
 include ':android'
