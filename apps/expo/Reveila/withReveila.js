@@ -1,32 +1,30 @@
 const { 
-  withSettingsGradle, 
   withAppBuildGradle, 
   withMainApplication, 
   withAndroidManifest 
 } = require('@expo/config-plugins');
-const path = require('node:path');
 
 /**
- * withReveila - Headless Engine Integration
- * This version treats the Java backend as a "Sidecar" and removes all 
- * aggressive Kotlin/Gradle customizations to ensure portability.
+ * withReveila - AAR Injection Model
+ * Decouples the Engine from the Shell. 
+ * Expects a pre-built AAR in: [root]/android/build/outputs/aar/android-release.aar
  */
 const withReveila = (config) => {
 
-  // 1. Register Native Module Package in MainApplication.kt
+  // 1. Register Native Module Package
   config = withMainApplication(config, (config) => {
     let contents = config.modResults.contents;
     if (!contents.includes('ReveilaPackage()')) {
       contents = contents.replace(
         /PackageList\(this\)\.packages\.apply\s?{/,
-        `PackageList(this).packages.apply {\n              add(com.reveila.android.ReveilaPackage())`
+        `PackageList(this).packages.apply {\n          add(com.reveila.android.ReveilaPackage())`
       );
     }
     config.modResults.contents = contents;
     return config;
   });
 
-  // 2. Manifest declarations (Service, Receiver, Permissions)
+  // 2. Manifest Declarations (Permissions & Services)
   config = withAndroidManifest(config, (config) => {
     const mainManifest = config.modResults;
     const permissions = [
@@ -35,10 +33,8 @@ const withReveila = (config) => {
       "android.permission.FOREGROUND_SERVICE_DATA_SYNC"
     ];
 
-    if (!mainManifest.manifest["uses-permission"]) {
-      mainManifest.manifest["uses-permission"] = [];
-    }
-
+    if (!mainManifest.manifest["uses-permission"]) mainManifest.manifest["uses-permission"] = [];
+    
     permissions.forEach(permission => {
       if (!mainManifest.manifest["uses-permission"].some(p => p.$["android:name"] === permission)) {
         mainManifest.manifest["uses-permission"].push({ $: { "android:name": permission } });
@@ -46,8 +42,6 @@ const withReveila = (config) => {
     });
 
     const application = mainManifest.manifest.application[0];
-    
-    // Background Service
     if (!application.service) application.service = [];
     if (!application.service.some(s => s.$["android:name"] === "com.reveila.android.ReveilaService")) {
       application.service.push({
@@ -59,68 +53,33 @@ const withReveila = (config) => {
       });
     }
 
-    // Restart Receiver (Sovereign Persistence)
-    if (!application.receiver) application.receiver = [];
-    if (!application.receiver.some(r => r.$["android:name"] === "com.reveila.android.RestartReceiver")) {
-      application.receiver.push({
-        $: {
-          "android:name": "com.reveila.android.RestartReceiver",
-          "android:exported": "false"
-        },
-        "intent-filter": [{
-          action: [{ $: { "android:name": "reveila.action.RESTART_SERVICE" } }]
-        }]
-      });
-    }
-
-    // Native Setup Activity
-    if (!application.activity) application.activity = [];
-    if (!application.activity.some(a => a.$["android:name"] === "com.reveila.android.SovereignSetupActivity")) {
-      application.activity.push({
-        $: {
-          "android:name": "com.reveila.android.SovereignSetupActivity",
-          "android:exported": "true",
-          "android:theme": "@style/Theme.AppCompat.Light.NoActionBar"
-        }
-      });
-    }
-
     return config;
   });
 
-  // 3. Project Structural Mapping (settings.gradle)
-  config = withSettingsGradle(config, (config) => {
-    let contents = config.modResults.contents;
-    // Resolve the mono-repo root path (standardized for Windows)
-    const rootDir = path.resolve(config.modRequest.projectRoot, "../../../").replaceAll('\\', '/');
-    // For older Node versions (< v16), use replace with regex:
-    // const rootDir = path.resolve(config.modRequest.projectRoot, "../../../").replace(/\\/g, '/');
-    const projectInclusions = `
-// [Reveila Native Bridge - Sovereign Sidecar]
-include ':android'
-project(':android').projectDir = new File('${rootDir}/android')
-`;
-
-    if (!contents.includes("include ':android'")) {
-      contents += projectInclusions;
-    }
-
-    config.modResults.contents = contents;
-    return config;
-  });
-
-  // 4. Link Implementation Dependency (app/build.gradle)
+  // 3. Inject AAR via Flat Directory (app/build.gradle)
   config = withAppBuildGradle(config, (config) => {
     let contents = config.modResults.contents;
 
-    // Clean up specific SDK conflicts
-    if (contents.includes("enableBundleCompression")) {
-      contents = contents.replace(/enableBundleCompression\s?=\s?.*?\n/, "// Property removed for SDK 54 stability\n");
+    // Use a relative path from the generated 'android/app' folder back to the engine build output
+    const aarPath = "../../../android/build/outputs/aar";
+
+    const repoBlock = `
+repositories {
+    flatDir {
+        dirs "${aarPath}"
+    }
+}
+`;
+
+    // Add FlatDir Repo if missing
+    if (!contents.includes('flatDir')) {
+      contents = contents.replace(/android\s?{/, `${repoBlock}\nandroid {`);
     }
 
-    // Standard Implementation Link
-    if (!contents.includes("project(':android')")) {
-      contents = contents.replace(/dependencies\s?{/, `dependencies {\n    implementation project(':android')`);
+    // Add the AAR dependency
+    // This looks for 'android-release.aar' in the flatDir specified above
+    if (!contents.includes("name: 'android-release'")) {
+      contents = contents.replace(/dependencies\s?{/, `dependencies {\n    implementation(name: 'android-release', ext: 'aar')`);
     }
 
     config.modResults.contents = contents;

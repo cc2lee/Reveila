@@ -72,7 +72,7 @@ public class AndroidPlatformAdapter extends BasePlatformAdapter {
             return existingRepo;
         }
 
-        ReveilaDatabase db = ReveilaDatabase.Companion.getDatabase(context);
+        ReveilaDatabase db = ReveilaDatabase.getDatabase(context);
         Repository repo = new RoomRepository(entityType, db.genericDao());
 
         registerRepository(entityType, repo);

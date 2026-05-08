@@ -190,10 +190,10 @@ public class ModelSettings {
             
             JSONObject json = new JSONObject();
             json.put("quantization", quant);
-            json.put("tier", profile.recommendedTier);
-            json.put("model", profile.recommendedModel);
-            json.put("has_npu", profile.hasHexagonNpu);
-            json.put("total_ram_gb", profile.totalMemoryBytes / (1024.0 * 1024.0 * 1024.0));
+            json.put("tier", profile.getRecommendedTier());
+            json.put("model", profile.getRecommendedModel());
+            json.put("has_npu", profile.hasHexagonNpu());
+            json.put("total_ram_gb", profile.getTotalMemoryBytes() / (1024.0 * 1024.0 * 1024.0));
 
             try (FileWriter writer = new FileWriter(configFile)) {
                 writer.write(json.toString(4)); // Pretty print
@@ -242,7 +242,7 @@ public class ModelSettings {
             profile = profiler.profileDevice(context);
         }
 
-        double totalGb = profile.totalMemoryBytes / (1024.0 * 1024.0 * 1024.0);
+        double totalGb = profile.getTotalMemoryBytes() / (1024.0 * 1024.0 * 1024.0);
 
         if (totalGb < 11.5) {
             return QUANT_Q4_K_M;
