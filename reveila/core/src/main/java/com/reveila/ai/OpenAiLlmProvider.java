@@ -6,8 +6,6 @@ import java.util.Map;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import com.reveila.error.LlmException;
-
 public class OpenAiLlmProvider extends BaseLlmProvider {
 
     public OpenAiLlmProvider() {

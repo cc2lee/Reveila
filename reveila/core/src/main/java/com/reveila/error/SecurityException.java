@@ -2,14 +2,16 @@ package com.reveila.error;
 
 public class SecurityException extends RuntimeException implements ErrorCode {
 
-    private String errorCode = "300";
+    private final String errorCode;
 
     public SecurityException(String message) {
         super(message);
+        this.errorCode = null;
     }
 
     public SecurityException(String message, Throwable cause) {
         super(message, cause);
+        this.errorCode = null;
     }
 
     public SecurityException(String message, Throwable cause, String errorCode) {
@@ -17,7 +19,8 @@ public class SecurityException extends RuntimeException implements ErrorCode {
         this.errorCode = errorCode;
     }
 
+    @Override
     public String getErrorCode() {
-        return errorCode;
+        return this.errorCode;
     }
 }

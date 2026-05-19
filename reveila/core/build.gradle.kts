@@ -1,5 +1,13 @@
+// reveila/core/build.gradle.kts
+
 plugins {
     id("reveila.shared-lib")
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(17))
+    }
 }
 
 dependencies {

@@ -2,7 +2,6 @@ package com.reveila.ai;
 
 import com.reveila.ai.util.GemmaPromptFormatter;
 import com.reveila.ai.util.Llama3PromptFormatter;
-import com.reveila.error.LlmException;
 
 import org.json.JSONObject;
 import java.util.HashMap;

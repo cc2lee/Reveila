@@ -9,6 +9,8 @@ import java.io.InputStream;
 import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.NoSuchAlgorithmException;
+import java.security.spec.InvalidKeySpecException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EventObject;
@@ -30,6 +32,7 @@ import java.util.stream.Collectors;
 
 import javax.security.auth.Subject;
 
+import com.reveila.crypto.CryptoException;
 import com.reveila.crypto.Cryptographer;
 import com.reveila.crypto.DefaultCryptographer;
 import com.reveila.error.ConfigurationException;
@@ -50,6 +53,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 	private URL localUrl;
 	private boolean standalone = true;
 	private final AtomicBoolean isRunning = new AtomicBoolean(false);
+	private String localhostUrlString = "http://localhost/";
 
 	public boolean isRunning() {
 		return isRunning.get();
@@ -89,13 +93,13 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		if (platformAdapter != null) {
 			try {
 				platformAdapter.unplug();
-			} catch (Throwable t) {
+			} catch (Exception e) {
 				error = true;
 				if (logger != null) {
-					logger.log(Level.WARNING, t, () -> "Failed to unplug platform adapter, cause: " + t.getMessage());
+					logger.log(Level.WARNING, e, () -> "Failed to unplug platform adapter, cause: " + e.getMessage());
 				}
 				logger.info("\n");
-				logger.info(() -> "Failed to unplug platform adapter, cause: " + t.getMessage());
+				logger.info(() -> "Failed to unplug platform adapter, cause: " + e.getMessage());
 				// t.printStackTrace(); // Redundant as it's logged
 			}
 		}
@@ -143,7 +147,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		this.startExecutor = platformAdapter.getExecutor();
 		this.properties.putAll(platformAdapter.getProperties());
 		this.logger = platformAdapter.getLogger();
-		this.localUrl = new URI("http://localhost/").toURL();
+		this.localUrl = new URI(localhostUrlString).toURL();
 
 		printLogo();
 
@@ -296,10 +300,8 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		return "Reveila"; // Default fallback
 	}
 
-	private void createSystemContext(Properties props) throws Exception {
+	private void createSystemContext(Properties props) throws CryptoException, IllegalStateException {
 		EventManager eventManager = new EventManager();
-		eventManager.setLogger(this.logger);
-
 		Cryptographer encrypter = this.platformAdapter.getCryptographer();
 		if (encrypter == null) {
 			// No platform-specific Cryptographer. Fallback to DefaultCryptographer
@@ -485,7 +487,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 					}
 
 					Object paramsObj = mMap.get("parameters");
-					if (paramsObj != null && paramsObj instanceof List) {
+					if (paramsObj instanceof List) {
 						List<?> paramsList = (List<?>) paramsObj;
 						for (Object pObj : paramsList) {
 							if (pObj instanceof Map) {

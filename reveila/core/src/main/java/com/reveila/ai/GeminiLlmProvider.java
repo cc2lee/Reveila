@@ -3,8 +3,6 @@ package com.reveila.ai;
 import java.util.HashMap;
 import java.util.Map;
 
-import com.reveila.error.LlmException;
-
 public class GeminiLlmProvider extends OpenAiLlmProvider {
 
     public GeminiLlmProvider() {

@@ -7,26 +7,31 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.reveila.system.SystemComponent;
 
 /**
- * OrchestrationService manages AgentSessions and coordinates multi-agent workflows.
- * Optimized to handle context windows based on system configuration.
+ * OrchestrationService manages AgentSessions and coordinates multi-agent
+ * workflows. Optimized to handle context windows based on system configuration.
  * 
  * @author CL
  */
 public class OrchestrationService extends SystemComponent {
-    
+
     private final Map<String, AgentSession> sessions = new ConcurrentHashMap<>();
     private String optimizationPriority = "cost";
+    private AgenticFabric agenticFabric;
 
     public OrchestrationService() {
+        // No-arg constructor for system instantiation
     }
 
     @Override
     public void onStart() throws Exception {
         this.optimizationPriority = context.getProperties().getProperty("ai.optimization.priority", "cost");
+        this.agenticFabric = (AgenticFabric) context.getProxy(AgenticFabric.COMPONENT_NAME).getInstance();
     }
 
     @Override
     protected void onStop() throws Exception {
+        sessions.clear();
+        agenticFabric = null;
     }
 
     /**
@@ -37,7 +42,8 @@ public class OrchestrationService extends SystemComponent {
         if (max != null && !max.isBlank()) {
             try {
                 return Integer.parseInt(max);
-            } catch (Exception e) {}
+            } catch (Exception e) {
+            }
         }
         // Default based on optimization priority
         return "cost".equalsIgnoreCase(optimizationPriority) ? 10 : 50;
@@ -46,7 +52,8 @@ public class OrchestrationService extends SystemComponent {
     /**
      * Creates a new AgentSession with settings derived from system properties.
      * 
-     * @param sessionId Optional preferred session ID. If null, a random UUID will be generated.
+     * @param sessionId     Optional preferred session ID. If null, a random UUID
+     *                      will be generated.
      * @param parentTraceId The trace_id of the parent task.
      * @return The newly created AgentSession.
      */
@@ -54,7 +61,7 @@ public class OrchestrationService extends SystemComponent {
         if (sessionId == null || sessionId.isBlank()) {
             sessionId = UUID.randomUUID().toString();
         }
-        
+
         AgentSession session = new AgentSession(sessionId, parentTraceId, getMaxMessages());
         sessions.put(sessionId, session);
         return session;
@@ -88,30 +95,31 @@ public class OrchestrationService extends SystemComponent {
     public void closeSession(String sessionId) {
         sessions.remove(sessionId);
     }
-    
+
     /**
      * Returns a list of active sessions for the dashboard.
      */
     public java.util.List<java.util.Map<String, Object>> getActiveSessions() {
         return sessions.values().stream()
-            .filter(session -> session.getChatMemory().messages().size() > 0)
-            .map(session -> {
-            java.util.Map<String, Object> map = new java.util.HashMap<>();
-            map.put("id", session.getSessionId());
-            
-            // find the first user message for title
-            String title = "Session";
-            for (com.reveila.ai.ReveilaMessage msg : session.getChatMemory().messages()) {
-                if (com.reveila.ai.LlmRole.USER.equals(msg.role())) {
-                    title = msg.content();
-                    if (title.length() > 30) title = title.substring(0, 30) + "...";
-                    break;
-                }
-            }
-            map.put("title", title);
-            map.put("messageCount", session.getChatMemory().messages().size());
-            return map;
-        }).collect(java.util.stream.Collectors.toList());
+                .filter(session -> !session.getChatMemory().messages().isEmpty())
+                .map(session -> {
+                    java.util.Map<String, Object> map = new java.util.HashMap<>();
+                    map.put("id", session.getSessionId());
+
+                    // find the first user message for title
+                    String title = "Session";
+                    for (com.reveila.ai.ReveilaMessage msg : session.getChatMemory().messages()) {
+                        if (com.reveila.ai.LlmRole.USER.equals(msg.role())) {
+                            title = msg.content();
+                            if (title.length() > 30)
+                                title = title.substring(0, 30) + "...";
+                            break;
+                        }
+                    }
+                    map.put("title", title);
+                    map.put("messageCount", session.getChatMemory().messages().size());
+                    return map;
+                }).toList();
     }
 
     /**
@@ -119,8 +127,9 @@ public class OrchestrationService extends SystemComponent {
      */
     public java.util.List<java.util.Map<String, String>> getSessionHistory(String sessionId) {
         AgentSession session = getSession(sessionId);
-        if (session == null) return java.util.Collections.emptyList();
-        
+        if (session == null)
+            return java.util.Collections.emptyList();
+
         return session.getChatMemory().messages().stream().map(msg -> {
             java.util.Map<String, String> map = new java.util.HashMap<>();
             map.put("role", msg.role().name());
@@ -129,7 +138,7 @@ public class OrchestrationService extends SystemComponent {
                 try {
                     String cleaned = com.reveila.util.json.JsonUtil.clean(content);
                     if (cleaned.startsWith("{")) {
-                        content = com.reveila.ai.AgenticFabric.interpretAiResponse(new org.json.JSONObject(cleaned));
+                        content = agenticFabric.interpretAiResponse(new org.json.JSONObject(cleaned));
                     }
                 } catch (Exception e) {
                     // Not JSON or parse failed, keep original content
@@ -137,9 +146,9 @@ public class OrchestrationService extends SystemComponent {
             }
             map.put("content", content);
             return map;
-        }).collect(java.util.stream.Collectors.toList());
+        }).toList();
     }
-    
+
     public String getOptimizationPriority() {
         return optimizationPriority;
     }

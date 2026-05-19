@@ -18,9 +18,6 @@ dependencyResolutionManagement {
         // Gradle will simply pick the first one.
         google()
         gradlePluginPortal()
-        maven {
-            url = uri("apps/expo/Reveila/node_modules/react-native/android")
-        }
         mavenCentral()
     }
 }

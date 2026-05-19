@@ -1,8 +1,6 @@
 package com.reveila.error;
 
-public class ConfigurationException extends Exception implements ErrorCode {
-
-    private String errorCode = "100";
+public class ConfigurationException extends SystemException {
 
     public ConfigurationException(String message) {
         super(message);
@@ -13,12 +11,7 @@ public class ConfigurationException extends Exception implements ErrorCode {
     }
 
     public ConfigurationException(String message, Throwable cause, String errorCode) {
-        super(message, cause);
-        this.errorCode = errorCode;
-    }
-
-    public String getErrorCode() {
-        return errorCode;
+        super(message, cause, errorCode);
     }
 
 }

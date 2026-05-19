@@ -19,7 +19,8 @@ public class SystemException extends Exception implements ErrorCode {
         this.errorCode = errorCode;
     }
 
+    @Override
     public String getErrorCode() {
-        return errorCode;
+        return this.errorCode;
     }
 }

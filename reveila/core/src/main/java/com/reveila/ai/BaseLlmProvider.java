@@ -2,7 +2,6 @@ package com.reveila.ai;
 
 import java.util.Map;
 
-import com.reveila.error.LlmException;
 import com.reveila.service.HttpClientService;
 import com.reveila.system.SystemComponent;
 import com.reveila.system.SystemProxy;
@@ -28,10 +27,10 @@ public abstract class BaseLlmProvider extends SystemComponent implements LlmProv
     protected void onStop() throws Exception {}
 
     @Override
-    public LlmResponse invoke(LlmRequest request) throws com.reveila.error.LlmException {
+    public LlmResponse invoke(LlmRequest request) throws com.reveila.ai.LlmException {
         try {
             HttpClientService httpService = getHttpClientService();
-            if (httpService == null) throw new com.reveila.error.LlmException("HttpClientService unavailable");
+            if (httpService == null) throw new com.reveila.ai.LlmException("HttpClientService unavailable");
 
             String url = getEndpoint();
             String body = buildRequestBody(request);
@@ -42,7 +41,7 @@ public abstract class BaseLlmProvider extends SystemComponent implements LlmProv
 
         } catch (Exception e) {
             logger.severe("Invoke failed for " + name + ": " + e.getMessage());
-            throw new com.reveila.error.LlmException(e.getMessage(), e);
+            throw new com.reveila.ai.LlmException(e.getMessage(), e);
         }
     }
 

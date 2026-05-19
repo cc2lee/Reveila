@@ -2,7 +2,6 @@ package com.reveila.ai;
 
 import org.json.JSONObject;
 
-import com.reveila.error.LlmException;
 import com.reveila.util.json.JsonUtil;
 
 public class TrackedLlmProvider implements LlmProvider {

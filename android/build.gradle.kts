@@ -2,9 +2,8 @@
 // Reveila-Suite/android> ./gradlew :android:assembleRelease
 
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.ksp)
-    id("maven-publish")
+    id("com.android.library")
+    id("com.google.devtools.ksp")
 }
 
 // Modern Gradle service injection for the 'exec' replacement
@@ -16,9 +15,12 @@ android {
     namespace = "com.reveila.android.lib"
     compileSdk = 35 
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+    // FIX: Natively attach the Java 17 Toolchain to the Android execution pipeline.
+    // This makes the outer 'java' block and the inner 'compileOptions' compatibility lines redundant.
+    java {
+        toolchain {
+            languageVersion.set(JavaLanguageVersion.of(17))
+        }
     }
 
     defaultConfig {
@@ -36,7 +38,7 @@ android {
 }
 
 dependencies {
-    api(project(":reveila:core"))
+    implementation(project(":reveila:core"))
 
     // This provides WritableMap, Promise, ReactPackage, etc.
     // Use 'compileOnly' because the Expo shell will provide the actual library at runtime.
@@ -62,6 +64,11 @@ dependencies {
 
     implementation("com.fasterxml.jackson.core:jackson-databind:2.17.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
+
+    testImplementation("junit:junit:4.13.2")
+    // Optional: Core Android instrumented test boundaries for writing device tests
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
 }
 
 /**
