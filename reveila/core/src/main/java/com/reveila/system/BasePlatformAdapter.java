@@ -38,7 +38,7 @@ import com.reveila.error.ConfigurationException;
 import com.reveila.error.SystemException;
 import com.reveila.event.AutoCallEvent;
 import com.reveila.event.EventConsumer;
-import com.reveila.util.FileUtil;
+import com.reveila.util.io.FileUtil;
 
 /**
  * An implementation of {@link PlatformAdapter} for the Windows platform.

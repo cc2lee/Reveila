@@ -1,4 +1,4 @@
-package com.reveila.util;
+package com.reveila.util.io;
 
 import java.io.BufferedInputStream;
 import java.io.File;

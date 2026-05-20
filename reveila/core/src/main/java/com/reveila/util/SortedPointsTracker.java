@@ -66,7 +66,7 @@ public class SortedPointsTracker {
 
     public synchronized void write(OutputStream output) throws Exception {
         try {
-            DataConversion.writeAsJsonArray(output, new Map[] { treeMap, reverseLookup });
+            JsonUtil.writeAsJsonArray(output, new Map[] { treeMap, reverseLookup });
         } catch (Exception e) {
             throw new Exception("Failed to write " + this.getClass().getSimpleName() + " to output stream: " + e.getMessage(), e);
         }
@@ -74,7 +74,7 @@ public class SortedPointsTracker {
 
     public synchronized void read(InputStream input) throws Exception {
         try {
-            Map<?, ?>[] mapArray = DataConversion.readJsonArray(input);
+            Map<?, ?>[] mapArray = JsonUtil.readJsonArray(input);
             if (mapArray.length == 2) {
                 treeMap = JsonUtil.MAPPER.convertValue(mapArray[0], new TypeReference<TreeMap<Long, String>>() {});
                 tracker = Collections.synchronizedNavigableMap(treeMap);
