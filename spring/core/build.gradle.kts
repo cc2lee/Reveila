@@ -36,7 +36,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-aop")
     implementation("org.springframework.boot:spring-boot-starter-mail")
-    implementation(project(":reveila:server")) {
+    implementation(project(":reveila:rt")) {
         // slf4j-simple is excluded to prevent conflicts with Spring Boot's logback-classic logging setup
         exclude(group = "org.slf4j", module = "slf4j-simple")
     }
