@@ -1,5 +1,5 @@
 plugins {
-	id("spring-conventions")
+	id("reveila-spring")
 }
 
 dependencies {

@@ -5,11 +5,11 @@ import java.util.List;
 import com.reveila.error.ConfigurationException;
 import com.reveila.system.Proxy;
 import com.reveila.system.SystemComponent;
-import com.reveila.util.SortedPointsTracker;
+import com.reveila.util.ScoreTracker;
 
 public class RatedService extends SystemComponent {
 
-    private SortedPointsTracker pointsTracker;
+    private ScoreTracker pointsTracker;
     
     public RatedService(String name) {
         super();
@@ -17,7 +17,7 @@ public class RatedService extends SystemComponent {
             throw new IllegalArgumentException("Argument 'name' must not be null or empty");
         }
         
-        this.pointsTracker = new SortedPointsTracker(name);
+        this.pointsTracker = new ScoreTracker(name);
     }
 
     public void setInitialPoints(List<String> providerNameAndPoints) throws ConfigurationException {

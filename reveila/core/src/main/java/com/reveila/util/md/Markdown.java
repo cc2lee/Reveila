@@ -1,6 +1,6 @@
 package com.reveila.util.md;
 
-import org.commonmark.node.*;
+import org.commonmark.node.Node;
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
 import org.jsoup.Jsoup;
@@ -22,7 +22,8 @@ public final class Markdown {
 
     /**
      * Shared HtmlRenderer instance.
-     * Commonmark Renderers are thread-safe and can be reused for better performance.
+     * Commonmark Renderers are thread-safe and can be reused for better
+     * performance.
      */
     private static final HtmlRenderer RENDERER_ESCAPE = HtmlRenderer.builder().escapeHtml(true).build();
     private static final HtmlRenderer RENDERER = HtmlRenderer.builder().escapeHtml(false).build();
@@ -38,7 +39,8 @@ public final class Markdown {
      * Converts a Markdown string to its HTML representation.
      *
      * @param markdown The Markdown source string.
-     * @return The rendered HTML string, or an empty string if input is null or blank.
+     * @return The rendered HTML string, or an empty string if input is null or
+     *         blank.
      */
     public static String toHtml(String markdown, boolean escapeHtml) {
         if (markdown == null || markdown.isBlank()) {

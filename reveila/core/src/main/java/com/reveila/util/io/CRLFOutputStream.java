@@ -7,24 +7,25 @@ import java.io.OutputStream;
 /**
  * @author Charles Lee
  *
- * Convert lines into the canonical MIME format, that is,
- * terminate lines with CRLF.
+ * Convert lines into the canonical MIME format,
+ * by terminating lines with CRLF (\r\n).
  */
 public class CRLFOutputStream extends FilterOutputStream {
-	
+
 	protected int lastb = -1;
 	protected static byte[] newline;
-	
+
 	static {
 		newline = new byte[2];
-		newline[0] = (byte)'\r';
-		newline[1] = (byte)'\n';
+		newline[0] = (byte) '\r';
+		newline[1] = (byte) '\n';
 	}
-	
+
 	public CRLFOutputStream(OutputStream os) {
 		super(os);
 	}
 
+	@Override
 	public void write(int b) throws IOException {
 		if (b == '\r') {
 			out.write(newline);
@@ -34,24 +35,25 @@ public class CRLFOutputStream extends FilterOutputStream {
 		} else {
 			out.write(b);
 		}
-		
+
 		lastb = b;
 	}
 
+	@Override
 	public void write(byte b[]) throws IOException {
 		write(b, 0, b.length);
 	}
 
+	@Override
 	public void write(byte b[], int off, int len) throws IOException {
 		int start = off;
 		len += off;
-		for (int i = start; i < len ; i++) {
+		for (int i = start; i < len; i++) {
 			if (b[i] == '\r') {
 				out.write(b, start, i - start);
 				out.write(newline);
 				start = i + 1;
-			}
-			else if (b[i] == '\n') {
+			} else if (b[i] == '\n') {
 				if (lastb != '\r') {
 					out.write(b, start, i - start);
 					out.write(newline);

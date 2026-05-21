@@ -1,5 +1,6 @@
 package com.reveila.system;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -12,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.text.MessageFormat;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
@@ -60,7 +62,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     private ClassLoader classLoader;
     private final Map<String, Repository<Entity, Map<String, Map<String, Object>>>> repositories = new ConcurrentHashMap<>();
 
-    public BasePlatformAdapter(Properties commandLineArgs) throws Exception {
+    protected BasePlatformAdapter(Properties commandLineArgs) throws Exception {
         super();
         setupSystemHome(commandLineArgs);
         loadProperties(commandLineArgs);
@@ -99,7 +101,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
                 .normalize();
 
         if (!Files.exists(dir)) {
-            logger.warning("Directory does not exist: " + dir + ". Returning empty file list.");
+            logger.warning(() -> "Directory does not exist: " + dir + ". Returning empty file list.");
             return new String[0];
         }
 
@@ -145,7 +147,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         ScheduledFuture<?> task = autoCallTasks.remove(componentName);
         if (task != null) {
             task.cancel(false); // Do not interrupt if running, just don't run again
-            logger.info("Unregistered auto-call for component: " + componentName);
+            logger.info(() -> "Unregistered auto-call for component: " + componentName);
         }
     }
 
@@ -174,7 +176,8 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         }
 
         // Apply command-line overwrites to raw properties before resolution
-        if (jvmArgs != null) rawProps.putAll(jvmArgs);
+        if (jvmArgs != null)
+            rawProps.putAll(jvmArgs);
 
         // Resolve placeholders in all properties
         this.properties.putAll(resolveAllPlaceholders(rawProps));
@@ -337,9 +340,14 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         // 4. Load the Shared API ClassLoader
         // We use the System ClassLoader as the parent for this Common Loader
         URL[] urls = scanJars(libsDir);
-        logger.info("Initializing Shared ClassLoader with " + urls.length + " JARs from " + libsDir);
-        for (URL url : urls) {
-            logger.info("  -> " + url);
+        if (urls != null && urls.length > 0) {
+            logger.info(() -> MessageFormat.format(
+                    "Initializing Shared ClassLoader with {0} JARs from {1}",
+                    urls.length,
+                    libsDir));
+            for (URL url : urls) {
+                logger.info(() -> "  -> " + url);
+            }
         }
 
         // 5. Create the Common ClassLoader
@@ -354,7 +362,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         try {
             return path.toUri().toURL();
         } catch (MalformedURLException e) {
-            logger.log(Level.SEVERE, "Invalid JAR path: " + path, e);
+            logger.log(Level.SEVERE, MessageFormat.format("Invalid JAR path: {0}", path), e);
             return null;
         }
     }
@@ -388,13 +396,15 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         // 3. Add Console Handler if enabled in properties
         String consoleEnabled = properties.getProperty(Constants.LOG_CONSOLE_ENABLED, "true");
         if (Boolean.parseBoolean(consoleEnabled)) {
-            // Use a custom StreamHandler pointing to System.out to prevent INFO logs going to System.err
+            // Custom StreamHandler pointing to System.out to prevent INFO logs going to System.err
+            @SuppressWarnings("squid:S106")
             Handler console = new java.util.logging.StreamHandler(System.out, new SimpleFormatter()) {
                 @Override
-                public synchronized void publish(java.util.logging.LogRecord record) {
-                    super.publish(record);
+                public synchronized void publish(java.util.logging.LogRecord log) {
+                    super.publish(log);
                     flush();
                 }
+
                 @Override
                 public synchronized void close() throws SecurityException {
                     flush();
@@ -438,8 +448,6 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
         } catch (NumberFormatException e) {
             if (logger != null) {
                 logger.warning("Invalid " + label + " value '" + value + "'. Using default: " + defaultValue);
-            } else {
-                System.err.println("Warning: Invalid " + label + " value '" + value + "'. Using default: " + defaultValue);
             }
             return defaultValue;
         }
@@ -479,9 +487,11 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
                         System.currentTimeMillis(), null);
                 notifyAutoCallEventListener(eventConsumer, event);
 
-            } catch (Throwable t) {
+            } catch (Exception t) {
                 logger.log(Level.SEVERE,
-                        "Auto-call task failed! Component: " + componentName + ", Method: " + methodName, t);
+                        MessageFormat.format("Auto-call task failed! Component: {0}, Method: {1}", componentName,
+                                methodName),
+                        t);
                 AutoCallEvent event = new AutoCallEvent(this, componentName, methodName, AutoCallEvent.FAILED,
                         System.currentTimeMillis(), t);
                 notifyAutoCallEventListener(eventConsumer, event);
@@ -500,7 +510,9 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
             listener.notifyEvent(event);
         } catch (Exception e) {
             logger.log(Level.SEVERE,
-                    "Failed to notify auto call event listener registered for component: " + event.getProxyName(), e);
+                    MessageFormat.format("Failed to notify auto call event listener registered for component: {0}",
+                            event.getProxyName()),
+                    e);
         }
     }
 
@@ -521,11 +533,20 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
             } catch (InterruptedException e) {
                 this.scheduler.shutdownNow();
                 Thread.currentThread().interrupt(); // Preserve interrupt status
-                System.out.println("Thread interrupted while waiting for Task Executor termination.");
+                logger.warning("Thread interrupted while waiting for Task Executor termination.");
             }
         }
         this.scheduler = null;
         this.reveila = null;
+        if (classLoader instanceof Closeable closeable) {
+            try {
+                closeable.close();
+            } catch (IOException e) {
+                logger.log(Level.SEVERE, MessageFormat.format("Failed to close platform adapter class loader {0}, {1}",
+                        classLoader.getClass().getName(), e.getMessage()));
+            }
+            classLoader = null;
+        }
         logger.info("Platform Adapter shutdown complete.");
     }
 
@@ -545,7 +566,7 @@ public abstract class BasePlatformAdapter implements PlatformAdapter {
     public void registerRepository(String entityType, Repository<Entity, Map<String, Map<String, Object>>> repository) {
         if (entityType != null && repository != null) {
             repositories.put(entityType.toLowerCase(), repository);
-            logger.info("Registered repository for entity: " + entityType);
+            logger.log(Level.INFO, () -> "Registered repository for entity type: " + entityType);
         }
     }
 

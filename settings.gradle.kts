@@ -34,7 +34,7 @@ includeBuild("build-logic")
 // Example 2: include("reveila"); project(":reveila").projectDir = file("spring/reveila")
 
 include(":reveila:core")
-include(":reveila:server")
+include(":reveila:rt")
 include(":spring:admin")
 include(":spring:core")
 include(":web:vue-project")

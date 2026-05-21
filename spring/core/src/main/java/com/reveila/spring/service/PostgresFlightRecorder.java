@@ -5,8 +5,8 @@ import java.util.Map;
 import org.springframework.lang.NonNull;
 import org.springframework.scheduling.annotation.Async;
 
-import com.reveila.ai.FlightRecorder;
 import com.reveila.data.Repository;
+import com.reveila.safety.FlightRecorder;
 import com.reveila.spring.model.jpa.AuditLog;
 import com.reveila.system.Plugin;
 import com.reveila.system.SystemComponent;

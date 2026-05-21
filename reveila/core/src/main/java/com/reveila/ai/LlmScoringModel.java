@@ -12,7 +12,7 @@ import java.util.regex.Pattern;
  * 
  * @author CL
  */
-public class LlmScoringModel implements ScoringModel {
+public class LlmScoringModel implements ToolScoringModel {
     
     private final LlmProvider provider;
     private static final Pattern SCORE_PATTERN = Pattern.compile("Score:\\s*(\\d+\\.?\\d*)");

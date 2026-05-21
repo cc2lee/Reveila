@@ -9,8 +9,6 @@ import java.io.InputStream;
 import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.security.NoSuchAlgorithmException;
-import java.security.spec.InvalidKeySpecException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EventObject;
@@ -91,17 +89,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		}
 
 		if (platformAdapter != null) {
-			try {
-				platformAdapter.unplug();
-			} catch (Exception e) {
-				error = true;
-				if (logger != null) {
-					logger.log(Level.WARNING, e, () -> "Failed to unplug platform adapter, cause: " + e.getMessage());
-				}
-				logger.info("\n");
-				logger.info(() -> "Failed to unplug platform adapter, cause: " + e.getMessage());
-				// t.printStackTrace(); // Redundant as it's logged
-			}
+			platformAdapter.unplug();
 		}
 
 		if (!error) {
@@ -230,6 +218,106 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		logger.info(() -> getDisplayName(this.properties) + " is running...");
 	}
 
+	/**
+	 * Asynchronous version of the invoke method, returning a CompletableFuture.
+	 * This allows non-blocking calls from the caller.
+	 * 
+	 * Blocking retrieval:
+	 * 
+	 * try {
+	 * Object result = future.get(); // This blocks the thread until the future is
+	 * complete.
+	 * // Or with a timeout: Object result = future.get(5, TimeUnit.SECONDS);
+	 * } catch (Exception e) {
+	 * // Handle exceptions
+	 * }
+	 * 
+	 * Non-blocking retrieval:
+	 * 
+	 * future.thenAccept(result -> {
+	 * logger.info("Received result: " + result);
+	 * });
+	 * 
+	 * @param componentName The name of the component to invoke.
+	 * @param methodName    The name of the method to invoke.
+	 * @param params        The parameters to pass to the method.
+	 * @return The CompletableFuture result of the method invocation.
+	 */
+	public CompletableFuture<Object> invokeAsync(String componentName, String methodName, Object[] params,
+			String callerIp, Subject subject) {
+		Objects.requireNonNull(subject, "Subject is mandatory for tracking execution.");
+		return CompletableFuture.supplyAsync(() -> {
+			try {
+				return invoke(componentName, methodName, params, callerIp, subject);
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		});
+	}
+
+	public Object invoke(String componentName, String methodName, Object[] params, String callerIp, Subject subject)
+			throws Exception {
+
+		// This method actually performs the invocation logic
+		Objects.requireNonNull(subject, "Subject is mandatory for tracking execution.");
+
+		long startTime = System.currentTimeMillis();
+		if (systemContext == null) {
+			throw new IllegalStateException("SystemContext is not initialized. Cannot invoke component.");
+		}
+
+		if (callerIp != null && !callerIp.isBlank()) {
+			logger.info(() -> "Received invocation request from " + callerIp + " for target: " + componentName + ", method: "
+					+ methodName);
+		}
+
+		if (standalone == false) {
+			// Use the fastest node in the cluster to handle the request
+			URL url = PerformanceTracker.getInstance().getBestNodeUrl();
+
+			if (!this.localUrl.equals(url)) {
+				try {
+					// Perform remote invocation
+					Proxy proxy = systemContext.getProxy(Constants.REMOTE_REVEILA, subject);
+					startTime = System.currentTimeMillis();
+					Object result = proxy.invoke("invoke", new Object[] { url, componentName, methodName, params });
+					Long timeUsed = System.currentTimeMillis() - startTime;
+					PerformanceTracker.getInstance().track(timeUsed, url); // Track remote invocation time
+					return result;
+				} catch (IllegalArgumentException e) {
+					// Ignore, Remote Reveila not configured
+				} catch (Exception e) {
+					// Penalize the failed remote node
+					PerformanceTracker.getInstance()
+							.track(Long.valueOf(PerformanceTracker.DEFAULT_PENALTY_MS), url);
+					logger.severe(() -> "Remote invocation failed. Falling back to local invocation. Error: " + e.getMessage());
+					e.printStackTrace();
+				}
+			}
+		}
+
+		// Use local invocation if in standalone mode.
+		// Also as backup for when there is no better remote option,
+		// or when remote invocation failed.
+
+		try {
+			Proxy proxy = systemContext.getProxy(componentName, subject);
+			startTime = System.currentTimeMillis();
+			Object result = proxy.invoke(methodName, params);
+			Long timeUsed = System.currentTimeMillis() - startTime;
+			PerformanceTracker.getInstance().track(timeUsed, this.localUrl); // Track local invocation time
+			return result;
+		} catch (IllegalArgumentException e) {
+			throw new ConfigurationException("Component '" + componentName + "' not found.", e);
+		}
+
+	}
+
+	@Override
+	public void notifyEvent(EventObject evtObj) throws Exception {
+		systemContext.notifyEvent(evtObj);
+	}
+
 	private void printLogo() {
 		String logoContent = loadLogoContent();
 		String version = this.properties.getProperty(Constants.SYSTEM_VERSION);
@@ -288,7 +376,7 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		String displayName = getDisplayName(this.properties);
 		long msecs = System.currentTimeMillis() - beginTime;
 		if (logger != null) {
-			logger.info(() -> displayName + " started successfully. Time taken = " + TimeFormat.getInstance().format(msecs));
+			logger.info(() -> displayName + " started successfully. Time taken = " + TimeFormat.timestamp(msecs));
 		}
 	}
 
@@ -625,101 +713,6 @@ public class Reveila implements AutoCloseable, EventConsumer {
 	}
 
 	/**
-	 * Asynchronous version of the invoke method, returning a CompletableFuture.
-	 * This allows non-blocking calls from the caller.
-	 * 
-	 * Blocking retrieval:
-	 * 
-	 * try {
-	 * Object result = future.get(); // This blocks the thread until the future is
-	 * complete.
-	 * // Or with a timeout: Object result = future.get(5, TimeUnit.SECONDS);
-	 * } catch (Exception e) {
-	 * // Handle exceptions
-	 * }
-	 * 
-	 * Non-blocking retrieval:
-	 * 
-	 * future.thenAccept(result -> {
-	 * logger.info("Received result: " + result);
-	 * });
-	 * 
-	 * @param componentName The name of the component to invoke.
-	 * @param methodName    The name of the method to invoke.
-	 * @param params        The parameters to pass to the method.
-	 * @return The CompletableFuture result of the method invocation.
-	 */
-	public CompletableFuture<Object> invokeAsync(String componentName, String methodName, Object[] params,
-			String callerIp, Subject subject) {
-		Objects.requireNonNull(subject, "Subject is mandatory for tracking execution.");
-		return CompletableFuture.supplyAsync(() -> {
-			try {
-				return invoke(componentName, methodName, params, callerIp, subject);
-			} catch (Exception e) {
-				throw new RuntimeException(e);
-			}
-		});
-	}
-
-	public Object invoke(String componentName, String methodName, Object[] params, String callerIp, Subject subject)
-			throws Exception {
-
-		// This method actually performs the invocation logic
-		Objects.requireNonNull(subject, "Subject is mandatory for tracking execution.");
-
-		long startTime = System.currentTimeMillis();
-		if (systemContext == null) {
-			throw new IllegalStateException("SystemContext is not initialized. Cannot invoke component.");
-		}
-
-		if (callerIp != null && !callerIp.isBlank()) {
-			logger.info(() -> "Received invocation request from " + callerIp + " for target: " + componentName + ", method: "
-					+ methodName);
-		}
-
-		if (standalone == false) {
-			// Use the fastest node in the cluster to handle the request
-			URL url = PerformanceTracker.getInstance().getBestNodeUrl();
-
-			if (!this.localUrl.equals(url)) {
-				try {
-					// Perform remote invocation
-					Proxy proxy = systemContext.getProxy(Constants.REMOTE_REVEILA, subject);
-					startTime = System.currentTimeMillis();
-					Object result = proxy.invoke("invoke", new Object[] { url, componentName, methodName, params });
-					Long timeUsed = System.currentTimeMillis() - startTime;
-					PerformanceTracker.getInstance().track(timeUsed, url); // Track remote invocation time
-					return result;
-				} catch (IllegalArgumentException e) {
-					// Ignore, Remote Reveila not configured
-				} catch (Exception e) {
-					// Penalize the failed remote node
-					PerformanceTracker.getInstance()
-							.track(Long.valueOf(PerformanceTracker.DEFAULT_PENALTY_MS), url);
-					logger.severe(() -> "Remote invocation failed. Falling back to local invocation. Error: " + e.getMessage());
-					e.printStackTrace();
-				}
-			}
-		}
-
-		// Use local invocation if in standalone mode.
-		// Also as backup for when there is no better remote option,
-		// or when remote invocation failed.
-
-		try {
-			Proxy proxy = systemContext.getProxy(componentName, subject);
-			startTime = System.currentTimeMillis();
-			Object result = proxy.invoke(methodName, params);
-			Long timeUsed = System.currentTimeMillis() - startTime;
-			PerformanceTracker.getInstance().track(timeUsed, this.localUrl); // Track local invocation time
-			return result;
-		} catch (IllegalArgumentException e) {
-			throw new ConfigurationException("Component '" + componentName + "' not found.", e);
-		}
-
-	}
-
-	/**
 	 * Performs a topological sort of MetaObjects based on their declared
 	 * dependencies.
 	 * 
@@ -763,10 +756,5 @@ public class Reveila implements AutoCloseable, EventConsumer {
 		stack.remove(m.getName());
 		visited.add(m.getName());
 		sorted.add(m);
-	}
-
-	@Override
-	public void notifyEvent(EventObject evtObj) throws Exception {
-		systemContext.notifyEvent(evtObj);
 	}
 }

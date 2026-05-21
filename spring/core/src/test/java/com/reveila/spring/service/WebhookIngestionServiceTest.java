@@ -1,6 +1,9 @@
 package com.reveila.spring.service;
 
 import com.reveila.ai.*;
+import com.reveila.safety.FlightRecorder;
+import com.reveila.safety.InvocationResult;
+import com.reveila.safety.ManagedInvocation;
 import com.reveila.system.SystemProxy;
 
 import org.junit.jupiter.api.BeforeEach;

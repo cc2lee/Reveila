@@ -18,9 +18,11 @@ import java.util.stream.Collectors;
 import javax.security.auth.Subject;
 
 import com.reveila.error.ConfigurationException;
+import com.reveila.error.ExceptionCollection;
 import com.reveila.error.SecurityException;
 import com.reveila.event.EventConsumer;
-import com.reveila.util.ExceptionCollection;
+import com.reveila.safety.MetadataRegistry;
+import com.reveila.safety.SecurityPerimeter;
 
 /**
  * @author Charles Lee
@@ -100,7 +102,7 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 	}
 
 	@SuppressWarnings("unchecked")
-	private com.reveila.ai.SecurityPerimeter buildAgencyPerimeter() {
+	private SecurityPerimeter buildAgencyPerimeter() {
 		Object perimeterObj = this.metaObject.getDataMap().get("agency_perimeter");
 		if (perimeterObj instanceof Map) {
 			Map<String, Object> pMap = (Map<String, Object>) perimeterObj;
@@ -134,13 +136,13 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 					? Boolean.TRUE.equals(pMap.get("delegationAllowed"))
 					: false;
 
-			return new com.reveila.ai.SecurityPerimeter(
+			return new SecurityPerimeter(
 					accessScopes, allowedDomains, internetAccessBlocked,
 					maxMemoryMb, maxCpuCores, maxExecutionSec, delegationAllowed);
 		}
 
 		// Return a highly restrictive default perimeter if none is configured
-		return new com.reveila.ai.SecurityPerimeter(
+		return new SecurityPerimeter(
 				Collections.emptySet(), Collections.emptySet(), true, 128L, 1, 5, false);
 	}
 
@@ -295,45 +297,45 @@ public final class SystemProxy extends SystemComponent implements Proxy {
 		if (Constants.PLUGIN.equalsIgnoreCase(manifest.getComponentType())) {
 			try {
 				if (context != null) {
-					Proxy registryProxy = context.getProxy("MetadataRegistry");
-					if (registryProxy instanceof SystemProxy) {
-						Object registryInstance = ((SystemProxy) registryProxy).getInstance();
-						if (registryInstance instanceof com.reveila.ai.MetadataRegistry) {
-							com.reveila.ai.MetadataRegistry registry = (com.reveila.ai.MetadataRegistry) registryInstance;
+					SystemProxy proxy = context.getProxy("MetadataRegistry");
 
-							Map<String, Object> tools = new java.util.HashMap<>();
-							Set<String> secrets = new java.util.HashSet<>();
-							Set<String> masked = new java.util.HashSet<>();
+					Object object = proxy.getInstance();
+					if (object instanceof MetadataRegistry) {
+						MetadataRegistry registry = (MetadataRegistry) object;
 
-							if (manifest.getExposedMethods() != null) {
-								for (Manifest.ExposedMethod m : manifest.getExposedMethods()) {
-									if (m.parameters != null) {
-										for (Manifest.Parameter p : m.parameters) {
-											if (p.isSecret) {
-												secrets.add(p.name);
-												masked.add(p.name);
-											}
+						Map<String, Object> tools = new java.util.HashMap<>();
+						Set<String> secrets = new java.util.HashSet<>();
+						Set<String> masked = new java.util.HashSet<>();
+
+						if (manifest.getExposedMethods() != null) {
+							for (Manifest.ExposedMethod m : manifest.getExposedMethods()) {
+								if (m.parameters != null) {
+									for (Manifest.Parameter p : m.parameters) {
+										if (p.isSecret) {
+											secrets.add(p.name);
+											masked.add(p.name);
 										}
 									}
 								}
 							}
-
-							com.reveila.ai.SecurityPerimeter perimeter = buildAgencyPerimeter();
-
-							com.reveila.ai.MetadataRegistry.PluginManifest pManifest = new com.reveila.ai.MetadataRegistry.PluginManifest(
-									getName(),
-									manifest.getDisplayName() != null ? manifest.getDisplayName() : getName(),
-									manifest.getVersion() != null ? manifest.getVersion() : "1.0",
-									tools,
-									"Tier 3", // Default to Tier 3 for discovered plugins
-									perimeter,
-									secrets,
-									masked);
-
-							registry.register(pManifest);
-							logger.info("Registered plugin manifest for: " + getName());
 						}
+
+						SecurityPerimeter perimeter = buildAgencyPerimeter();
+
+						MetadataRegistry.PluginManifest pManifest = new MetadataRegistry.PluginManifest(
+								getName(),
+								manifest.getDisplayName() != null ? manifest.getDisplayName() : getName(),
+								manifest.getVersion() != null ? manifest.getVersion() : "1.0",
+								tools,
+								"Tier 3", // Default to Tier 3 for discovered plugins
+								perimeter,
+								secrets,
+								masked);
+
+						registry.register(pManifest);
+						logger.info("Registered plugin manifest for: " + getName());
 					}
+
 				}
 			} catch (IllegalArgumentException e) {
 				// MetadataRegistry might not be loaded if AI features are not present

@@ -80,8 +80,8 @@ public class LocalLlmServer {
             try (BufferedReader readerIn = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
                 String line;
                 while ((line = readerIn.readLine()) != null) {
-                    // Optional: log specific LLM status updates here
-                    // logger.finest(line);
+                    // log specific LLM status updates here
+                    logger.finest(line);
                 }
             } catch (IOException e) {
                 // Stream closed

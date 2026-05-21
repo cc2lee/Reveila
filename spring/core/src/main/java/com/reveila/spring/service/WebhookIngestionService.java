@@ -5,12 +5,12 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 
 import com.reveila.ai.AgentSession;
-import com.reveila.ai.FlightRecorder;
-import com.reveila.ai.InvocationResult;
 import com.reveila.ai.LlmProvider;
 import com.reveila.ai.LlmProviderFactory;
-import com.reveila.ai.ManagedInvocation;
 import com.reveila.ai.OrchestrationService;
+import com.reveila.safety.FlightRecorder;
+import com.reveila.safety.InvocationResult;
+import com.reveila.safety.ManagedInvocation;
 import com.reveila.system.Plugin;
 import com.reveila.system.Reveila;
 import com.reveila.system.SystemProxy;
@@ -45,7 +45,7 @@ public class WebhookIngestionService {
     }
 
     /**
-     * Ingests a webhook payload, converts it to a ReveilaIntent,
+     * Ingests a webhook payload,
      * and initiates the governance audit.
      *
      * @param payload The raw webhook payload.

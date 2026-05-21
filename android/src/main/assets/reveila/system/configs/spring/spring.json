@@ -10,7 +10,7 @@
   {
     "component": {
       "name": "GuardedRuntime",
-      "class": "com.reveila.ai.DockerGuardedRuntime",
+      "class": "com.reveila.rt.DockerGuardedRuntime",
       "description": "Secure execution layer for plugins.",
       "thread-safe": true
     }

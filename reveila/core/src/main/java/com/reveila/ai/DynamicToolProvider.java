@@ -8,6 +8,7 @@ import java.util.Objects;
 
 import com.reveila.persistence.VectorMatch;
 import com.reveila.persistence.VectorStore;
+import com.reveila.safety.MetadataRegistry;
 
 /**
  * Semantic Tool Provider that dynamically discovers relevant tools based on the user's message.
@@ -20,7 +21,7 @@ import com.reveila.persistence.VectorStore;
 public class DynamicToolProvider {
     private final VectorStore toolVectorStore;
     private final MetadataRegistry registry;
-    private final ScoringModel reranker;
+    private final ToolScoringModel reranker;
     private final ReveilaEmbeddingModel embeddingModel;
     private final String securityTier;
     private int topK = 5;
@@ -28,7 +29,7 @@ public class DynamicToolProvider {
     public DynamicToolProvider(
             VectorStore toolVectorStore, 
             MetadataRegistry registry, 
-            ScoringModel reranker,
+            ToolScoringModel reranker,
             ReveilaEmbeddingModel embeddingModel,
             String securityTier) {
         this.toolVectorStore = Objects.requireNonNull(toolVectorStore, "toolVectorStore must not be null");

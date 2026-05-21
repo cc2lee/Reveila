@@ -12,10 +12,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.reveila.safety.ManagedInvocation;
 import com.reveila.system.Reveila;
 import com.reveila.system.RolePrincipal;
 import com.reveila.system.SystemProxy;
-import com.reveila.ai.ManagedInvocation;
+
 import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -89,8 +91,8 @@ public class ApiController {
 
         ManagedInvocation bridge;
         try {
-            bridge = (ManagedInvocation) ((SystemProxy) reveila.getSystemContext()
-                    .getProxy("ManagedInvocation"))
+            bridge = (ManagedInvocation) reveila.getSystemContext()
+                    .getProxy("ManagedInvocation")
                     .getInstance();
         } catch (IllegalArgumentException e) {
             throw new IllegalStateException("ManagedInvocation not found", e);

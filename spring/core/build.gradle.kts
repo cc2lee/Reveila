@@ -7,7 +7,7 @@ version = "1.0.0"
 description = "Spring Boot Services"
 
 plugins {
-    id("spring-conventions")
+    id("reveila-spring")
 }
 
 sourceSets {

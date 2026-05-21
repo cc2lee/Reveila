@@ -1,7 +1,7 @@
 // reveila/core/build.gradle.kts
 
 plugins {
-    id("reveila.shared-lib")
+    id("reveila-core")
 }
 
 java {

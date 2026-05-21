@@ -3,9 +3,11 @@ package com.reveila.ai;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.reveila.safety.FlightRecorder;
+import com.reveila.safety.InvocationResult;
+import com.reveila.safety.ManagedInvocation;
 import com.reveila.system.Plugin;
 import com.reveila.system.SystemComponent;
-import com.reveila.system.SystemProxy;
 
 /**
  * Sovereign Service for receiving external task management webhooks.
@@ -17,17 +19,20 @@ public class InboundWebhookService extends SystemComponent {
     private OrchestrationService orchestrationService;
     private FlightRecorder flightRecorder;
     private LlmProviderFactory llmFactory;
+    private static final String TASK_ID = "task_id";
 
     @Override
     protected void onStart() throws Exception {
-        this.bridge = (ManagedInvocation) ((SystemProxy) context.getProxy("ManagedInvocation")).getInstance();
-        this.orchestrationService = (OrchestrationService) ((SystemProxy) context.getProxy("OrchestrationService")).getInstance();
-        this.flightRecorder = (FlightRecorder) ((SystemProxy) context.getProxy("FlightRecorder")).getInstance();
-        this.llmFactory = (LlmProviderFactory) ((SystemProxy) context.getProxy("LlmProviderFactory")).getInstance();
+        this.bridge = (ManagedInvocation) context.getProxy("ManagedInvocation").getInstance();
+        this.orchestrationService = (OrchestrationService) context.getProxy("OrchestrationService").getInstance();
+        this.flightRecorder = (FlightRecorder) context.getProxy("FlightRecorder").getInstance();
+        this.llmFactory = (LlmProviderFactory) context.getProxy("LlmProviderFactory").getInstance();
     }
 
     @Override
-    protected void onStop() throws Exception {}
+    protected void onStop() throws Exception {
+        // No resources to clean up for now
+    }
 
     public InvocationResult ingest(Map<String, Object> payload) {
         String source = (String) payload.getOrDefault("trigger_source", "unknown");
@@ -73,10 +78,10 @@ public class InboundWebhookService extends SystemComponent {
         );
         AgentSession session = orchestrationService.createSession(plugin.getTraceId());
         session.put("ingestion_source", source);
-        session.put("filo_task_id", payload.get("task_id"));
+        session.put("filo_task_id", payload.get(TASK_ID));
 
         flightRecorder.recordStep(plugin, "filo_handshake_received", Map.of(
-            "task_id", payload.getOrDefault("task_id", "N/A"),
+            TASK_ID, payload.getOrDefault(TASK_ID, "N/A"),
             "perimeter", perimeter
         ));
 
@@ -90,7 +95,7 @@ public class InboundWebhookService extends SystemComponent {
         Map<String, Object> args = new HashMap<>();
         args.put(AgentSession.ID, session.getSessionId());
         args.put("traceId", plugin.getTraceId());
-        args.put(AgentSession.THOUGHT, "Worker processing Filo task: " + payload.get("task_id"));
+        args.put(AgentSession.THOUGHT, "Worker processing Filo task: " + payload.get(TASK_ID));
         args.put("arguments", toolCall.getArguments());
 
         return bridge.invoke(toolCall, null, mappedIntent, args);

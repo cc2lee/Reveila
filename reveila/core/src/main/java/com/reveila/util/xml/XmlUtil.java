@@ -17,11 +17,13 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Objects;
 
+import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.transform.OutputKeys;
 import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.TransformerException;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
@@ -33,63 +35,76 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
- 
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 
 /**
  * @author Charles Lee
  * 
- * Utility for manipulating XML files and org.w3c.dom.Document object.
+ *         Utility for manipulating XML files and org.w3c.dom.Document object.
  */
 public final class XmlUtil {
 
 	// XmlMapper is thread-safe, so we can reuse a single instance for performance.
 	private static final XmlMapper XML_MAPPER = new XmlMapper();
-	
+	private static final TransformerFactory TRANSFORMER_FACTORY = TransformerFactory.newInstance();
+	static {
+		try {
+			// Securely configure the TransformerFactory to prevent XXE vulnerabilities
+			TRANSFORMER_FACTORY.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+			TRANSFORMER_FACTORY.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+			TRANSFORMER_FACTORY.setAttribute(XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
+		} catch (Exception e) {
+			throw new ExceptionInInitializerError("Failed to securely configure TransformerFactory: " + e.getMessage());
+		}
+	}
+
+	private XmlUtil() {
+	}
+
 	/**
 	 * Returns an org.w3c.dom.Document object created from the specified XML file.
 	 */
-	public static Document getDocument(final InputStream inStream, final boolean isValidating, final boolean isNamespaceAware)
+	public static Document getDocument(final InputStream inStream, final boolean isValidating,
+			final boolean isNamespaceAware)
 			throws IOException, ParserConfigurationException, SAXException {
-		
+
 		DocumentBuilderFactory factory = createSecureDocumentBuilderFactory();
 		factory.setValidating(isValidating);
 		factory.setNamespaceAware(isNamespaceAware);
-		
+
 		DocumentBuilder builder = factory.newDocumentBuilder();
 		builder.setErrorHandler(new XmlErrorHandler());
-		Document doc = builder.parse(inStream);
-		return doc;
+		return builder.parse(inStream);
 	}
-	
+
 	public static Document getDocument(final InputStream in)
-		throws IOException, ParserConfigurationException, SAXException {
+			throws IOException, ParserConfigurationException, SAXException {
 		return getDocument(in, false, false);
 	}
-	
+
 	public static Document getDocument(final File file)
-		throws IOException, ParserConfigurationException, SAXException {
+			throws IOException, ParserConfigurationException, SAXException {
 		try (InputStream in = new FileInputStream(file)) {
 			return getDocument(in, false, false);
 		}
 	}
-	
+
 	public static Document getDocument(final URL url) throws IOException, ParserConfigurationException, SAXException {
 		try (InputStream in = url.openStream()) {
 			return getDocument(in, false, false);
 		}
 	}
-	
+
 	public static void write(final Node node, final OutputStream os)
-		throws TransformerException {
-		
-		TransformerFactory tFactory = TransformerFactory.newInstance();
-		Transformer transformer = tFactory.newTransformer();
+			throws TransformerException {
+
+		Transformer transformer = createTransformer();
 		DOMSource source = new DOMSource(node);
 		StreamResult result = new StreamResult(os);
-		if (node instanceof Document) {
-			DocumentType docType = ((Document)node).getDoctype();
+		if (node instanceof Document document) {
+			DocumentType docType = document.getDoctype();
 			if (docType != null) {
 				String sysID = docType.getSystemId();
 				if (sysID != null) {
@@ -102,39 +117,41 @@ public final class XmlUtil {
 		}
 		transformer.transform(source, result);
 	}
-	
+
 	public static void write(final Node node, final File file)
-		throws TransformerException, IOException {
+			throws TransformerException, IOException {
 		try (OutputStream out = new FileOutputStream(file)) {
 			write(node, out);
 		}
 	}
-	
-	public static void write(final Node node, final URL url) throws IOException, TransformerException, URISyntaxException {
+
+	public static void write(final Node node, final URL url)
+			throws IOException, TransformerException, URISyntaxException {
 		if (url == null) {
 			throw new IllegalArgumentException("null URL");
 		}
-		
+
 		String protocol = url.getProtocol();
 		if ("file".equalsIgnoreCase(protocol)) {
 			File file = new File(url.toURI());
 			write(node, file);
 			return;
 		}
-		
+
 		URLConnection urlConn = url.openConnection();
 		urlConn.setDoOutput(true);
 		try (OutputStream out = urlConn.getOutputStream()) {
 			write(node, out);
 		}
 	}
-	
+
 	/**
 	 * Performs a depth-first search to find the first child node of the specified
 	 * parent that is either a text node or a CDATA section node.
 	 *
 	 * @param parentNode the starting {@link Node} whose children will be searched
-	 * @return the first {@link Node} found that is a text node or CDATA section node,
+	 * @return the first {@link Node} found that is a text node or CDATA section
+	 *         node,
 	 *         or {@code null} if none is found
 	 */
 	public static Node getTextNode(final Node parentNode) {
@@ -142,9 +159,11 @@ public final class XmlUtil {
 			return null;
 		}
 
-		// Use an iterative approach with a stack to avoid StackOverflowError on deep trees.
+		// Use an iterative approach with a stack to avoid StackOverflowError on deep
+		// trees.
 		Deque<Node> stack = new ArrayDeque<>();
-		// Add children to the stack in reverse order to process them from left-to-right.
+		// Add children to the stack in reverse order to process them from
+		// left-to-right.
 		NodeList children = parentNode.getChildNodes();
 		for (int i = children.getLength() - 1; i >= 0; i--) {
 			stack.push(children.item(i));
@@ -168,16 +187,16 @@ public final class XmlUtil {
 
 		return null;
 	}
-	
+
 	public static String setText(final Node node, final String value) {
 		if (node == null) {
 			throw new IllegalArgumentException("null node argument");
 		}
-		
+
 		String text = Objects.toString(value, "");
 		String oldText = null;
 		Node txtNode = XmlUtil.getTextNode(node);
-		
+
 		if (txtNode == null) {
 			txtNode = node.getOwnerDocument().createTextNode(text);
 			node.appendChild(txtNode);
@@ -188,36 +207,37 @@ public final class XmlUtil {
 
 		return oldText;
 	}
-	
+
 	public static String getText(final Node node) {
 		if (node == null) {
 			throw new IllegalArgumentException("null node argument");
 		}
-		
+
 		Node textNode = getTextNode(node);
 		if (textNode == null) {
 			return null;
 		}
-		
+
 		return textNode.getNodeValue();
 	}
 
 	public static String nodeToString(final Node node) throws TransformerException {
 		StringWriter writer = new StringWriter();
-		Transformer transformer = TransformerFactory.newInstance().newTransformer();
-		transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
-		transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+
+		Transformer transformer = createTransformer();
 		transformer.transform(new DOMSource(node), new StreamResult(writer));
+
 		return writer.toString();
 	}
 
-	public static Element toXmlElement(final JsonNode jsonNode) throws IOException, ParserConfigurationException, SAXException {
+	public static Element toXmlElement(final JsonNode jsonNode)
+			throws IOException, ParserConfigurationException, SAXException {
 		// Convert JsonNode to XML string
-    	String xml = XML_MAPPER.writeValueAsString(jsonNode);
-    	DocumentBuilderFactory factory = createSecureDocumentBuilderFactory();
-    	DocumentBuilder builder = factory.newDocumentBuilder();
-    	Document doc = builder.parse(new java.io.ByteArrayInputStream(xml.getBytes()));
-    	return doc.getDocumentElement();
+		String xml = XML_MAPPER.writeValueAsString(jsonNode);
+		DocumentBuilderFactory factory = createSecureDocumentBuilderFactory();
+		DocumentBuilder builder = factory.newDocumentBuilder();
+		Document doc = builder.parse(new java.io.ByteArrayInputStream(xml.getBytes()));
+		return doc.getDocumentElement();
 	}
 
 	public static JsonNode toJsonNode(final Node xmlNode) throws TransformerException, IOException {
@@ -228,7 +248,8 @@ public final class XmlUtil {
 	}
 
 	/**
-	 * Creates a secure DocumentBuilderFactory to prevent XXE and other XML vulnerabilities.
+	 * Creates a secure DocumentBuilderFactory to prevent XXE and other XML
+	 * vulnerabilities.
 	 */
 	private static DocumentBuilderFactory createSecureDocumentBuilderFactory() throws ParserConfigurationException {
 		DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
@@ -239,6 +260,13 @@ public final class XmlUtil {
 		factory.setXIncludeAware(false);
 		factory.setExpandEntityReferences(false);
 		return factory;
+	}
+
+	private static Transformer createTransformer() throws TransformerConfigurationException {
+		Transformer transformer = TRANSFORMER_FACTORY.newTransformer();
+		transformer.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
+		transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+		return transformer;
 	}
 
 }

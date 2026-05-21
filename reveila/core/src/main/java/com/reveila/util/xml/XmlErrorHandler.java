@@ -21,21 +21,22 @@ public class XmlErrorHandler implements org.xml.sax.ErrorHandler {
 	public XmlErrorHandler() {
 		super();
 	}
-	
+
 	public void fatalError(SAXParseException exception)
-		throws SAXException {
+			throws SAXException {
 		// A fatal error should always be thrown to stop the parsing process.
 		throw exception;
 	}
-		
+
 	public void error(SAXParseException e)
-		throws SAXParseException {
+			throws SAXParseException {
 		throw e;
 	}
-		
+
 	public void warning(SAXParseException err)
-		throws SAXParseException {
-		log.warn("XML parsing warning at line {}, uri {}: {}", err.getLineNumber(), err.getSystemId(), err.getMessage());
+			throws SAXParseException {
+		log.warn("XML parsing warning at line {}, uri {}: {}", err.getLineNumber(), err.getSystemId(),
+				err.getMessage());
 	}
 
 }

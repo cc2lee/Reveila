@@ -1,12 +1,12 @@
 package com.reveila.util.io;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.BufferedOutputStream;
 import java.net.URL;
 import java.net.URLConnection;
 import java.nio.file.Files;
@@ -63,7 +63,9 @@ public final class FileUtil {
 			}
 		}
 
-		if (!file.delete()) {
+		try {
+			Files.deleteIfExists(file.toPath());
+		} catch (IOException e) {
 			failedFiles.add(file);
 		}
 	}
@@ -296,7 +298,9 @@ public final class FileUtil {
 
 	public interface DownloadCallback {
 		void onComplete(File modelFile);
+
 		void onError(Exception e);
+
 		void onProgress(int progress);
 	}
 }

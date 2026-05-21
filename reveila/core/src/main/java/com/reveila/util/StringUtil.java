@@ -5,189 +5,198 @@ import java.util.Properties;
 /**
  * @author Charles Lee
  *
- * This utility class provides convenience methods for manipulating Java strings.
+ *         This utility class provides convenience methods for manipulating Java
+ *         strings.
  */
 public class StringUtil {
-	
-	private static final int KEY_BEGIN_TAG = 0;
-	private static final int KEY_END_TAG = 1;
 
-	public static Properties splitCommandlineArguments(String[] strArray, String delimiter) {
-		Properties cmdArgs = new Properties();
-		if (strArray != null) {
-			for (String arg : strArray) {
-				String[] parts = arg.split(delimiter, 2);
-				if (parts.length == 2 && !parts[0].isEmpty()) {
-					cmdArgs.put(parts[0], parts[1]);
-				} else {
-					// It's good practice to warn about arguments that don't fit the expected format.
-					// Since the logger isn't configured yet, System.err is the best option.
-					System.err.println("Warning: Ignoring malformed command-line argument: " + arg);
-				}
-			}
-		}
-		return cmdArgs;
+	private StringUtil() {
+		// Private constructor to prevent instantiation
 	}
 
 	/**
-	 * Tests if a string is null or has the length of 0.
-	 * @param s string to be checked
-	 * @return true if the string is empty (null or 0 length), false otherwise
-	 */
-	public static boolean hasCharacters(String s) {
-		return s != null && s.length() > 0;
-	}
-	
-	/**
-	 * Tests if the character <code>c</code> is a space.
-	 * @param c character
-	 * @return true if the char is a space, or false if not
-	 */
-	public static boolean isSpace(char c) {
-		return (c == ' ' || c == '\r' || c == '\t' || c == '\n');
-	}
-	
-	/**
-	 * Truncates the source string to specified length, and appends the suffix if provided.
-	 * @param srcStr source string
+	 * Truncates the source string to specified length, and appends the suffix if
+	 * provided.
+	 * 
+	 * @param srcStr   source string
 	 * @param toLength length of characters after truncate
-	 * @param suffix suffix to append
+	 * @param suffix   suffix to append
 	 * @return new truncated string
 	 */
 	public static String truncate(String srcStr, int toLength, String suffix) {
-		if (srcStr == null) throw new IllegalArgumentException("null source string");
+		if (srcStr == null)
+			throw new IllegalArgumentException("null source string");
 		String s = srcStr.trim();
-        
+
 		if (s.length() > toLength) {
 			s = s.substring(0, toLength - 1);
 			if (suffix != null) {
 				s = s + suffix;
 			}
 		}
-        
+
 		return s;
 	}
-    
-    /**
-     * Replaces tagged placeholders in a given string. For example, if there is a placeholder
-     * like this one "{key-name}" in the source string, you can replace the whole tag with a
-     * String from the passed-in Hashtable whose key equals "key-name".
-     * @param source string to be parsed
-     * @param tagLeft begin tag
-     * @param tagRight close tag
-     * @param replacements Map containing the strings for replacement
-     * @param isTrimKey boolean indicating if the key should be trimmed first
-     * @param isKeyToLowerCase boolean specifying if converting all keys to lower case
-     * @param escChars escape character used in the source string
-     * @return new string with placeholders replaced
-     */
+
+	/**
+	 * Replaces tagged placeholders in a given string.
+	 * For example, if there is a placeholder like this one "{key-name}"
+	 * in the source string, you can replace the whole tag with a
+	 * string from the replacements Properties whose key equals "key-name".
+	 * 
+	 * @param source           string to be parsed
+	 * @param tagLeft          begin tag
+	 * @param tagRight         close tag
+	 * @param replacements     replacements properties
+	 * @param isTrimKey        if keys should be trimmed before lookup
+	 * @param isKeyToLowerCase if converting keys to lower case before lookup
+	 * @param escChars         escape character sequence used in the source string
+	 * @return new string with placeholders replaced
+	 */
 	public static String replace(String source, String tagLeft, String tagRight,
 			Properties replacements, boolean isTrimKey, boolean isKeyToLowerCase, String escChars) {
-		
-		if (source == null || source.length() == 0) {
+
+		// 1. Fail-fast boundary checks
+		if (source == null || source.isEmpty() || tagLeft == null || tagRight == null || replacements == null) {
 			return source;
 		}
-        
-		StringBuffer newStringBuffer = new StringBuffer();
-        
-		String[] tags = new String[2];
-		tags[KEY_BEGIN_TAG] = tagLeft;
-		tags[KEY_END_TAG] = tagRight;
-        
+
+		int sourceLen = source.length();
+		StringBuilder newString = new StringBuilder(sourceLen + 32);
+
 		int currentIndex = 0;
-		int i = 0;
-        
-		while (currentIndex < source.length()) {
-			for (int tag = 0; tag < 2 && currentIndex < source.length(); tag++) {
-				
-				i = source.indexOf(tags[tag], currentIndex);
-				boolean tagMarkerFound = i == -1 ? false : true;
-				
-				StringBuffer strToken;
-				if (tagMarkerFound) {
-					strToken = new StringBuffer(source.substring(currentIndex, i));
-					currentIndex = i + tags[tag].length();
-				}
-				else {
-					strToken = new StringBuffer(source.substring(currentIndex));
-					currentIndex = source.length();
-				}
-				
-				// Remove escChars from strToken
-				if (escChars != null && escChars.length() > 0) {
-					
-					int b = 0;
-					int e = 0;
-					String rawString = strToken.toString();
-					strToken.setLength(0);
-					
-					boolean escaped = false;
-					while (b < rawString.length()) {
-						e = rawString.indexOf(escChars, b);
-						if (e == -1) {
-							strToken.append(rawString.substring(b));
-							escaped = false;
-							break;
-						}
-						else {
-							strToken.append(rawString.substring(b, e));
-							b = e + escChars.length();
-							if (rawString.indexOf(escChars, b) == b) {
-								strToken.append(escChars);
-								b += escChars.length();
-								escaped = false;
-							} else {
-								escaped = true;
-							}
-						}
-					}
-					
-					// Check if the tag marker is escaped
-					if (tagMarkerFound) {
-						if (escaped) {
-							tagMarkerFound = false;
-							strToken.append(tags[tag]);
-						}
-						else if (currentIndex < source.length() && tags[tag].equals(escChars)) {
-							// Check if it is followed by the escChar.
-							// If yes, it is an escChar.
-							if (source.indexOf(tags[tag], currentIndex) == currentIndex) {
-								strToken.append(tags[tag]);
-								currentIndex += tags[tag].length();
-								tagMarkerFound = false;
-							}
-						}
-					}
-				}
-                
-				if (tagMarkerFound && tag == KEY_END_TAG) {
-					
-					// Substitute with replacement value
-					String key = strToken.toString();
-					if (isTrimKey) {
-						key = key.trim();
-					}
-					if (isKeyToLowerCase) {
-						key = key.toLowerCase();
-					}
-					
-					Object obj = replacements.get(key);
-					if (obj == null) {
-						String originKey = strToken.toString();
-						strToken.setLength(0);
-						strToken.append(tagLeft).append(originKey).append(tagRight);
-					}
-					else {
-						strToken.setLength(0);
-						strToken.append(obj.toString());
-					}
-				}
-                
-				newStringBuffer.append(strToken);
+		int escLen = (escChars != null && !escChars.isEmpty()) ? escChars.length() : 0;
+		boolean hasEsc = escLen > 0;
+
+		while (currentIndex < sourceLen) {
+			// 2. Delegate escape sequence tracking out of the main loop
+			if (hasEsc && source.startsWith(escChars, currentIndex)) {
+				currentIndex = handleEscapeSequence(source, currentIndex, escLen, tagLeft, escChars, newString);
+			} else {
+				// 3. Delegate placeholder scanning and token transformation
+				currentIndex = handleTagParsing(source, currentIndex, tagLeft, tagRight,
+						replacements, isTrimKey, isKeyToLowerCase, hasEsc, escChars, newString);
 			}
 		}
-        
-		return newStringBuffer.toString();
+
+		return newString.toString();
 	}
 
+	/**
+	 * Handles isolated escape sequences in the raw text stream.
+	 */
+	private static int handleEscapeSequence(
+			String source, int currentIndex, int escLen,
+			String tagLeft, String escChars, StringBuilder newString) {
+
+		int nextEscPos = currentIndex + escLen;
+		int sourceLen = source.length();
+
+		// Check for double escape sequence (e.g., \\)
+		if (nextEscPos < sourceLen && source.startsWith(escChars, nextEscPos)) {
+			newString.append(escChars);
+			return nextEscPos + escLen;
+		}
+
+		// Check if a single escape sequence targets the left tag boundary
+		int tagLeftPos = currentIndex + escLen;
+		if (source.startsWith(tagLeft, tagLeftPos)) {
+			newString.append(tagLeft);
+			return tagLeftPos + tagLeft.length();
+		}
+
+		// Standard literal fallback
+		newString.append(escChars);
+		return currentIndex + escLen;
+	}
+
+	/**
+	 * Locates, extracts, filters, and resolves matching template tags.
+	 */
+	@SuppressWarnings("squid:S107")
+	private static int handleTagParsing(
+			String source, int currentIndex, String tagLeft, String tagRight,
+			Properties replacements, boolean isTrimKey, boolean isKeyToLowerCase,
+			boolean hasEsc, String escChars, StringBuilder newString) {
+
+		int sourceLen = source.length();
+		int startTagIdx = source.indexOf(tagLeft, currentIndex);
+
+		if (startTagIdx == -1) {
+			newString.append(source, currentIndex, sourceLen);
+			return sourceLen; // Forces outer loop termination naturally
+		}
+
+		// Flush text accumulated leading up to the tag
+		newString.append(source, currentIndex, startTagIdx);
+		int keyStartIdx = startTagIdx + tagLeft.length();
+
+		int endTagIdx = source.indexOf(tagRight, keyStartIdx);
+		if (endTagIdx == -1) {
+			newString.append(source, startTagIdx, sourceLen);
+			return sourceLen; // Handles malformed trailing tags safely
+		}
+
+		// Transform token and resolve against properties map
+		String processedKey = extractAndFormatKey(
+				source, keyStartIdx, endTagIdx,
+				isTrimKey, isKeyToLowerCase, hasEsc, escChars);
+		String replacement = replacements.getProperty(processedKey);
+
+		if (replacement != null) {
+			newString.append(replacement);
+		} else {
+			newString.append(source, startTagIdx, endTagIdx + tagRight.length());
+		}
+
+		return endTagIdx + tagRight.length();
+	}
+
+	/**
+	 * Extracts token segments and cleans up internal escape chars or formatting
+	 * bounds.
+	 */
+	private static String extractAndFormatKey(String source, int start, int end,
+			boolean isTrimKey, boolean isKeyToLowerCase,
+			boolean hasEsc, String escChars) {
+		String key = source.substring(start, end);
+
+		if (hasEsc && key.contains(escChars)) {
+			key = removeEscapeChars(key, escChars); // Calls your underlying utility engine
+		}
+		if (isTrimKey) {
+			key = key.trim();
+		}
+		if (isKeyToLowerCase) {
+			key = key.toLowerCase();
+		}
+
+		return key;
+	}
+
+	/**
+	 * Helper to strip escape signatures out of extracted token keys
+	 */
+	private static String removeEscapeChars(String rawKey, String escChars) {
+		int escLen = escChars.length();
+		StringBuilder sb = new StringBuilder(rawKey.length());
+		int idx = 0;
+		int len = rawKey.length();
+
+		while (idx < len) {
+			if (rawKey.startsWith(escChars, idx)) {
+				int next = idx + escLen;
+				if (next < len && rawKey.startsWith(escChars, next)) {
+					sb.append(escChars);
+					idx = next + escLen;
+				} else {
+					idx += escLen; // Skip singular escape characters
+				}
+			} else {
+				sb.append(rawKey.charAt(idx));
+				idx++;
+			}
+		}
+		return sb.toString();
+	}
 }

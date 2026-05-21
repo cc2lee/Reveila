@@ -1,7 +1,5 @@
 package com.reveila.ai;
 
-import com.reveila.tools.SystemTool;
-import com.reveila.tools.VSCtool;
 import com.reveila.util.json.JsonUtil;
 
 // Simplified logic for a Reveila Tool Executor
@@ -12,9 +10,8 @@ public class ToolDispatcher {
 
         // 2. Execute based on the tool name
         return switch (call.getFunctionName()) {
-            case "check_health" -> SystemTool.runPowerShell("CheckHealth.ps1");
-            case "clear_cache" -> VSCtool.clearWorkspaceStorage();
-            default -> "Error: Unknown tool";
+            case "functionName" -> "TODO: Implement function logic";
+            default -> "Unknown tool: " + call.getFunctionName();
         };
     }
 

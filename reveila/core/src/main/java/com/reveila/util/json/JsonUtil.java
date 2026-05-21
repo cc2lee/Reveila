@@ -39,16 +39,16 @@ public final class JsonUtil {
     private JsonUtil() {
     }
 
-    public static void writeAsJsonArray(OutputStream output, Map<?, ?>[] mapArray) throws Exception {
+    public static void writeAsJsonArray(OutputStream output, Map<?, ?>[] mapArray) throws JsonException {
         try {
             ArrayNode jsonArray = JsonUtil.MAPPER.createArrayNode();
             for (Map<?, ?> map : mapArray) {
-                ObjectNode jsonObject = (ObjectNode)JsonUtil.MAPPER.convertValue(map, ObjectNode.class);
+                ObjectNode jsonObject = (ObjectNode) JsonUtil.MAPPER.convertValue(map, ObjectNode.class);
                 jsonArray.add(jsonObject);
             }
             JsonUtil.MAPPER.writerWithDefaultPrettyPrinter().writeValue(output, jsonArray);
         } catch (Exception e) {
-            throw new Exception("Failed to write JSON array to output stream: " + e.getMessage(), e);
+            throw new JsonException("Failed to write JSON array to output stream: " + e.getMessage(), e);
         } finally {
             try {
                 output.flush();
@@ -58,29 +58,25 @@ public final class JsonUtil {
         }
     }
 
-    public static Map<String, Object>[] readJsonArray(InputStream jsonArrayIS) throws Exception {
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object>[] readJsonArray(InputStream jsonArrayIS) throws JsonException {
         try {
-            // Read the JSON array from the input stream
             JsonNode rootNode = JsonUtil.MAPPER.readTree(jsonArrayIS);
 
-            // restore tracker from the first JsonNode
             if (rootNode.isArray()) {
+                List<Map<String, Object>> mapList = new ArrayList<>();
                 Iterator<JsonNode> elements = rootNode.elements();
-                if (elements == null) {
-                    return new Map[0];
-                }
-                Map<String, Object>[] maps = new Map[((ArrayNode) rootNode).size()];
-                int index = 0;
                 while (elements.hasNext()) {
                     JsonNode node = elements.next();
-                    maps[index++] = JsonUtil.MAPPER.convertValue(node, new TypeReference<Map<String, Object>>() {});
+                    mapList.add(JsonUtil.MAPPER.convertValue(node, new TypeReference<Map<String, Object>>() {
+                    }));
                 }
-                return maps;
+                return mapList.toArray(new Map[0]);
             } else {
-                throw new Exception("Malformed JSON array in the input stream");
+                throw new JsonException("Input stream does not contain a JSON array");
             }
         } catch (Exception e) {
-            throw new Exception("Failed to read JSON array from input stream: " + e.getMessage(), e);
+            throw new JsonException("Failed to read JSON array from input stream: " + e.getMessage(), e);
         }
     }
 

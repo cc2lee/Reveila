@@ -10,6 +10,8 @@ package com.reveila.ai;
 public class TraceContextHolder {
     private static final ThreadLocal<String> CURRENT_TRACE_ID = new ThreadLocal<>();
 
+    private TraceContextHolder() {}
+    
     /**
      * Sets the current trace_id for the thread.
      * 

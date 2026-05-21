@@ -9,7 +9,7 @@ import com.reveila.data.Entity;
 import com.reveila.data.Repository;
 import com.reveila.system.SystemComponent;
 import com.reveila.system.Plugin;
-import com.reveila.ai.FlightRecorder;
+import com.reveila.safety.FlightRecorder;
 
 /**
  * Platform-agnostic implementation of FlightRecorder.

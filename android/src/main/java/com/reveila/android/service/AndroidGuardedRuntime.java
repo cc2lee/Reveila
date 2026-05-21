@@ -1,9 +1,10 @@
 package com.reveila.android.service;
 
-import com.reveila.ai.InvocationResult;
-import com.reveila.ai.SecurityPerimeter;
+import com.reveila.safety.InvocationResult;
+import com.reveila.safety.SecurityPerimeter;
 import com.reveila.system.Plugin;
-import com.reveila.ai.AbstractGuardedRuntime;
+import com.reveila.safety.GuardedRuntime;
+import com.reveila.safety.AbstractGuardedRuntime;
 import com.reveila.system.SystemProxy;
 import com.reveila.system.Proxy;
 import java.util.Map;
@@ -29,7 +30,7 @@ public class AndroidGuardedRuntime extends AbstractGuardedRuntime {
     /**
      * Required for Proxy-based retrieval.
      */
-    public com.reveila.ai.GuardedRuntime getInstance() {
+    public GuardedRuntime getInstance() {
         return this;
     }
 
