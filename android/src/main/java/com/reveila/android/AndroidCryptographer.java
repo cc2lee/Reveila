@@ -2,11 +2,13 @@ package com.reveila.android;
 
 import com.reveila.crypto.Cryptographer;
 import com.reveila.crypto.DefaultCryptographer;
+import com.reveila.crypto.CryptoException;
 import java.util.Arrays;
 
 /**
  * Android implementation of Cryptographer.
- * Wraps the universal DefaultCryptographer with Android-specific session handling.
+ * Wraps the universal DefaultCryptographer with Android-specific session
+ * handling.
  * 
  * @author CL
  */
@@ -31,7 +33,7 @@ public class AndroidCryptographer implements Cryptographer {
     public void lock() {
         this.delegate = null;
     }
-    
+
     /**
      * Checks if the cryptographer is unlocked.
      */
@@ -46,20 +48,24 @@ public class AndroidCryptographer implements Cryptographer {
     }
 
     @Override
-    public byte[] encrypt(byte[] data) throws Exception {
+    public byte[] encrypt(byte[] data) throws CryptoException {
         ensureUnlocked();
         return delegate.encrypt(data);
     }
 
     @Override
-    public byte[] decrypt(byte[] encryptedData) throws Exception {
+    public byte[] decrypt(byte[] encryptedData) throws CryptoException {
         ensureUnlocked();
         return delegate.decrypt(encryptedData);
     }
 
     @Override
-    public byte[] hash(byte[] data) throws Exception {
-        java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
-        return digest.digest(data);
+    public byte[] hash(byte[] data) throws CryptoException {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            return digest.digest(data);
+        } catch (Exception e) {
+            throw new CryptoException("Hashing failed: " + e.getMessage(), e);
+        }
     }
 }

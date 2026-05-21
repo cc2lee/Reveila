@@ -8,9 +8,9 @@ import androidx.annotation.Nullable;
 
 import com.reveila.system.Reveila;
 import com.reveila.system.PlatformAdapter;
-import com.reveila.android.lib.BuildConfig;
+import com.reveila.android.BuildConfig;
 import com.reveila.ai.LocalLlmServer;
-import com.reveila.util.FileUtil;
+import com.reveila.util.io.FileUtil;
 
 import java.io.BufferedInputStream;
 import java.io.File;

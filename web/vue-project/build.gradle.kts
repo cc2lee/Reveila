@@ -35,3 +35,10 @@ tasks.named("build") {
 tasks.named("assemble") {
     dependsOn(copyToRuntime)
 }
+
+// Override the injected plugin task configuration
+tasks.named("npmInstall") {
+    // FIX: Prevents Gradle from trying to scan or fingerprint node_modules cache states,
+    // which completely bypasses the extension's local symlink tracking error.
+    doNotTrackState("Bypassing validation to prevent VS Code workspace symlink resolution failures.")
+}

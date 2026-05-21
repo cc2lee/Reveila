@@ -1,8 +1,8 @@
 package com.reveila.android.safety;
 
-import com.reveila.safety.ReveilaKillSwitch;
+import com.reveila.safety.KillSwitch;
 import com.reveila.safety.SafetyStatus;
-import com.reveila.safety.AgentSafetyCommand;
+import com.reveila.safety.SafetyCommand;
 import com.reveila.safety.SafetyAction;
 import androidx.fragment.app.FragmentActivity;
 import android.util.Log;
@@ -12,10 +12,10 @@ import java.nio.charset.StandardCharsets;
  * Android-side implementation of the Sovereign Kill Switch.
  * Acts as a local watchdog, prioritizing reliability and efficiency.
  */
-public class MobileKillSwitch implements ReveilaKillSwitch {
+public class MobileKillSwitch implements KillSwitch {
 
     public interface EmergencyStopListener {
-        void onEmergencyStopAuthorized(AgentSafetyCommand command);
+        void onEmergencyStopAuthorized(SafetyCommand command);
     }
 
     private final FragmentActivity activity;
@@ -47,7 +47,7 @@ public class MobileKillSwitch implements ReveilaKillSwitch {
                 public void onAuthenticationSucceeded(byte[] signature) {
                     Log.i("MobileKillSwitch", "Biometric authentication successful. Token signed.");
                     
-                    AgentSafetyCommand command = new AgentSafetyCommand(
+                    SafetyCommand command = new SafetyCommand(
                         "GLOBAL", 
                         SafetyAction.HALT,
                         signature,

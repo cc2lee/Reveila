@@ -12,7 +12,11 @@ interface InjectedExec {
 }
 
 android {
-    namespace = "com.reveila.android.lib"
+    // "namespace" must match the package of ReveilaService, 
+    // which is defined as a service in AndroidManifest.xml 
+    // using relative naming. If the package changes, 
+    // this value must be updated accordingly.
+    namespace = "com.reveila.android"
     compileSdk = 35 
 
     // FIX: Natively attach the Java 17 Toolchain to the Android execution pipeline.

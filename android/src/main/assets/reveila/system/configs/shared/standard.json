@@ -97,7 +97,7 @@
         "component": {
             "name": "IntentValidator",
             "class": "com.reveila.ai.AiIntentValidator",
-            "description": "Validates agent intents using AI providers.",
+            "description": "Validates agent intents using Gemini.",
             "thread-safe": true,
             "dependencies": []
         }
