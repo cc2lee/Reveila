@@ -51,7 +51,7 @@ androidxBiometric = "1.2.0-alpha05"
 androidxWork = "2.9.0"
 pdfbox = "2.0.27.0"
 room = "2.6.1"
-ksp = "2.1.20-2.0.1"
+ksp = "2.1.20-2.0.1" # Must align with the Kotlin version
 
 # AWS SDK:
 awsSdk = "2.40.13"

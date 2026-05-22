@@ -16,6 +16,7 @@ npm start
 npm run android
 npm run android -- --no-packager
 npm run android -- --port 8081
+npx expo run:android --no-build-cache
 cd android && ./gradlew installDebug
 
 # Set up native debugging

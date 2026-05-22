@@ -7,11 +7,11 @@ const {
 /**
  * withReveila - AAR Injection Model
  * Decouples the Engine from the Shell. 
- * Expects a pre-built AAR in: [root]/android/build/outputs/aar/android-release.aar
+ * Expects a pre-built AAR in the central suite repository: [root]/build/outputs/android/reveila-android-core.aar
  */
 const withReveila = (config) => {
 
-  // 1. Register Native Module Package
+  // 1. Register Native Module Package inside MainApplication
   config = withMainApplication(config, (config) => {
     let contents = config.modResults.contents;
     if (!contents.includes('ReveilaPackage()')) {
@@ -56,12 +56,13 @@ const withReveila = (config) => {
     return config;
   });
 
-  // 3. Inject AAR via Flat Directory (app/build.gradle)
+  // 3. Inject AAR via Flat Directory (app/build.gradle Groovy Injection)
   config = withAppBuildGradle(config, (config) => {
     let contents = config.modResults.contents;
 
-    // Use a relative path from the generated 'android/app' folder back to the engine build output
-    const aarPath = "../../../android/build/outputs/aar";
+    // Relative path calculation stepping up from: apps/expo/Reveila/android/app/
+    // 1: app -> 2: android -> 3: Reveila -> 4: expo -> 5: apps -> (now at Reveila-Suite root) -> down to build/outputs/android
+    const aarPath = "../../../../../build/outputs/android";
 
     const repoBlock = `
 repositories {
@@ -71,15 +72,17 @@ repositories {
 }
 `;
 
-    // Add FlatDir Repo if missing
+    // Add FlatDir Repo block directly above the main android configuration entry if missing
     if (!contents.includes('flatDir')) {
-      contents = contents.replace(/android\s?{/, `${repoBlock}\nandroid {`);
+      contents = contents.replace(/^android\s?{/m, `${repoBlock}\nandroid {`);
     }
 
-    // Add the AAR dependency
-    // This looks for 'android-release.aar' in the flatDir specified above
-    if (!contents.includes("name: 'android-release'")) {
-      contents = contents.replace(/dependencies\s?{/, `dependencies {\n    implementation(name: 'android-release', ext: 'aar')`);
+    // Use native Groovy syntax to bind the re-aligned archive target name
+    if (!contents.includes("name: 'reveila-android-core'")) {
+      contents = contents.replace(
+        /dependencies\s?{/, 
+        `dependencies {\n    implementation name: 'reveila-android-core', ext: 'aar'`
+      );
     }
 
     config.modResults.contents = contents;

@@ -10,14 +10,24 @@
   },
   "dependencies": {
     "expo": "~54.0.33",
+    "expo-build-properties": "^56.0.13",
     "expo-modules-core": "~3.0.30",
     "expo-status-bar": "~3.0.9",
+    "expo-system-ui": "^56.0.5",
     "react": "19.1.0",
     "react-native": "0.81.5"
+  },
+  "expo": {
+    "autolinking": {
+      "exclude": [
+        "build-logic"
+      ]
+    }
   },
   "private": true,
   "devDependencies": {
     "@types/react": "^19.2.14",
-    "@types/react-native": "^0.72.8"
+    "@types/react-native": "^0.72.8",
+    "typescript": "~5.9.2"
   }
 }
