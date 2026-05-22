@@ -1,6 +1,8 @@
 package com.reveila.spring.system;
 
 import java.util.Collection;
+import java.util.Map;
+
 import javax.security.auth.Subject;
 
 import org.springframework.http.ResponseEntity;
@@ -16,9 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 import com.reveila.safety.ManagedInvocation;
 import com.reveila.system.Reveila;
 import com.reveila.system.RolePrincipal;
-import com.reveila.system.SystemProxy;
-
-import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -33,7 +32,7 @@ public class ApiController {
     }
 
     @PostMapping("/components/{componentName}/invoke")
-    public ResponseEntity<?> invokeComponent(
+    public ResponseEntity<Object> invokeComponent(
             @PathVariable("componentName") String componentName,
             @RequestBody MethodDTO request,
             HttpServletRequest httpRequest) throws Exception {
@@ -69,7 +68,7 @@ public class ApiController {
      * Protected by OversightInterceptor via /api/v1/overwatch prefix.
      */
     @PostMapping("/v1/overwatch/components/{componentName}/invoke")
-    public ResponseEntity<?> invokeOversightComponent(
+    public ResponseEntity<Object> invokeOversightComponent(
             @PathVariable("componentName") String componentName,
             @RequestBody MethodDTO request,
             HttpServletRequest httpRequest) throws Exception {
@@ -81,7 +80,7 @@ public class ApiController {
      * ADR 0006: Routes calls from isolated workers back to the host system.
      */
     @PostMapping("/system/callback")
-    public ResponseEntity<?> handleCallback(@RequestBody Map<String, Object> payload) throws Exception {
+    public ResponseEntity<Object> handleCallback(@RequestBody Map<String, Object> payload) throws Exception {
         String jitToken = (String) payload.get("jit_token");
         String component = (String) payload.get("component");
         String method = (String) payload.get("method");

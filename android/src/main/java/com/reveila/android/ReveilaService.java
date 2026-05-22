@@ -8,6 +8,7 @@ import androidx.annotation.Nullable;
 
 import com.reveila.system.Reveila;
 import com.reveila.system.PlatformAdapter;
+import com.reveila.error.SystemException;
 import com.reveila.android.BuildConfig;
 import com.reveila.ai.LocalLlmServer;
 import com.reveila.util.io.FileUtil;
@@ -88,7 +89,7 @@ public class ReveilaService extends Service {
                 // Automatically attempt to start LLM server if binary exists
                 startLocalLlmServer();
 
-            } catch (Throwable e) {
+            } catch (Exception e) {
                 Log.e(TAG, "CRITICAL: Failed to start Reveila engine", e);
                 stopSelf();
             } finally {
@@ -99,59 +100,85 @@ public class ReveilaService extends Service {
         return START_STICKY;
     }
 
-    private void initializeEnvironment(String customPath) throws IOException {
-        String homePath = (customPath != null && !customPath.isBlank())
-                ? customPath
-                : new File(getFilesDir(), "reveila/system").getAbsolutePath();
+    private void initializeEnvironment(String customPath) throws SystemException {
+        try {
+            String homePath = (customPath != null && !customPath.isBlank())
+                    ? customPath
+                    : new File(getFilesDir(), "reveila/system").getAbsolutePath();
 
-        systemHome = new File(homePath);
-        if (!systemHome.exists() && !systemHome.mkdirs()) {
-            throw new IOException("Failed to create system home: " + homePath);
+            systemHome = new File(homePath);
+            if (!systemHome.exists() && !systemHome.mkdirs()) {
+                throw new IOException("Failed to create system home: " + homePath);
+            }
+
+            lockFile = new File(systemHome, LOCK_FILE_NAME);
+            boolean uncleanShutdown = !lockFile.createNewFile();
+            boolean shouldOverwrite = uncleanShutdown || BuildConfig.DEBUG;
+
+            if (shouldOverwrite) {
+                FileUtil.delete(new File(systemHome, "configs"), true);
+            }
+
+            new ReveilaSetup(this, homePath, shouldOverwrite);
+            fetchRemoteProperties();
+        } catch (Exception e) {
+            throw new SystemException("Environment initialization failed", e);
         }
+    }
 
-        lockFile = new File(systemHome, LOCK_FILE_NAME);
-        boolean uncleanShutdown = !lockFile.createNewFile();
-        boolean shouldOverwrite = uncleanShutdown || BuildConfig.DEBUG;
-
-        if (BuildConfig.DEBUG && uncleanShutdown) {
-            deleteRecursively(new File(systemHome, "configs"));
+    private void deleteSilently(File f) {
+        try {
+            FileUtil.delete(f, true);
+        } catch (IOException e) {
+            Log.e(TAG, "Failed to delete file: " + f.getAbsolutePath(), e);
         }
+    }
 
-        new ReveilaSetup(this, homePath, shouldOverwrite);
-        fetchRemoteProperties();
+    private File prepareLocalLlmEnvironment() throws IllegalStateException {
+        File modelDir = getExternalFilesDir("llms");
+        if (modelDir == null)
+            modelDir = new File(systemHome, "downloads/llms");
+        if (!modelDir.exists() && !modelDir.mkdirs())
+            throw new IllegalStateException("Failed to create model directory: " + modelDir.getAbsolutePath());
+        return modelDir;
+    }
+
+    private File getModelFile(File modelDir) {
+        Properties p = reveila.getSystemContext().getProperties();
+        String modelName = p.getProperty("ai.llm.model.name", "default.gguf");
+        return new File(modelDir, modelName);
+    }
+
+    private void deleteOldModels(File modelDir, File modelFile) {
+        File[] existingModels = modelDir.listFiles((d, name) -> name.endsWith(".gguf"));
+        if (existingModels != null) {
+            for (File f : existingModels) {
+                if (!f.getAbsolutePath().equals(modelFile.getAbsolutePath())) {
+                    deleteSilently(f);
+                }
+            }
+        }
     }
 
     public void startLocalLlmServer() {
         mainExecutor.execute(() -> {
+            File exeFile = new File(systemHome, "bin/android/llama-server");
+            if (!exeFile.exists()) {
+                serviceManager.updateNotification(ReveilaService.this, "LLM server binary not found");
+                Log.w(TAG, "LLM server binary not found at: " + exeFile.getAbsolutePath());
+                return;
+            }
             try {
-                File exeFile = new File(systemHome, "bin/android/llama-server");
-                if (!exeFile.exists())
-                    return;
+                File modelDir = prepareLocalLlmEnvironment();
+                File modelFile = getModelFile(modelDir);
 
-                File modelDir = getExternalFilesDir("llms");
-                if (modelDir == null)
-                    modelDir = new File(systemHome, "downloads/llms");
-                if (!modelDir.exists() && !modelDir.mkdirs())
-                    return;
-
-                Properties p = reveila.getSystemContext().getProperties();
-                String modelName = p.getProperty("ai.llm.model.name", "default.gguf");
-                File modelFile = new File(modelDir, modelName);
-
-                // Housekeeping: delete old .gguf files to save storage
-                File[] existingModels = modelDir.listFiles((d, name) -> name.endsWith(".gguf"));
-                if (existingModels != null) {
-                    for (File f : existingModels) {
-                        if (!f.getAbsolutePath().equals(modelFile.getAbsolutePath())) {
-                            f.delete();
-                        }
-                    }
-                }
+                deleteOldModels(modelDir, modelFile);
 
                 if (!modelFile.exists()) {
-                    Log.i(TAG, "Downloading model: " + modelName);
+                    Log.i(TAG, "Downloading model: " + modelFile.getName());
+                    Properties p = reveila.getSystemContext().getProperties();
                     String baseUrl = p.getProperty("download.base.url");
-                    downloadModel(new URI(baseUrl + "/llms/" + modelName).toURL(), modelFile);
+                    downloadModel(new URI(baseUrl + "/llms/" + modelFile.getName()).toURL(), modelFile);
                 }
 
                 synchronized (this) {
@@ -167,23 +194,28 @@ public class ReveilaService extends Service {
     }
 
     private void downloadModel(URL url, File modelFile) {
-        FileUtil.download(url, modelFile, true, new FileUtil.DownloadCallback() {
-            @Override
-            public void onProgress(int progress) {
-                serviceManager.updateNotification(ReveilaService.this, "Downloading model: " + progress + "%", 100,
-                        progress, false);
-            }
+        try {
+            FileUtil.download(url, modelFile, true, new FileUtil.DownloadCallback() {
+                @Override
+                public void onProgress(int progress) {
+                    serviceManager.updateNotification(ReveilaService.this, "Downloading model: " + progress + "%", 100,
+                            progress, false);
+                }
 
-            @Override
-            public void onError(Exception e) {
-                Log.e(TAG, "Download error", e);
-            }
+                @Override
+                public void onError(Exception e) {
+                    Log.e(TAG, "Download error", e);
+                }
 
-            @Override
-            public void onComplete(File downloaded) {
-                serviceManager.updateNotification(ReveilaService.this, "Local LLM Ready");
-            }
-        });
+                @Override
+                public void onComplete(File downloaded) {
+                    serviceManager.updateNotification(ReveilaService.this, "Local LLM Ready");
+                }
+            });
+        } catch (Exception e) {
+            serviceManager.updateNotification(ReveilaService.this, "Model download failed");
+            Log.e(TAG, "Model download error", e);
+        }
     }
 
     @Override
@@ -194,8 +226,13 @@ public class ReveilaService extends Service {
             if (localLlmServer != null)
                 localLlmServer.stop();
             reveila.shutdown();
-            if (lockFile != null && lockFile.exists())
-                lockFile.delete();
+            if (lockFile != null && lockFile.exists()) {
+                try {
+                    Files.deleteIfExists(lockFile.toPath());
+                } catch (IOException e) {
+                    Log.w(TAG, "Failed to delete lock file: " + lockFile.getAbsolutePath(), e);
+                }
+            }
         });
 
         terminateExecutor(mainExecutor);
@@ -252,17 +289,6 @@ public class ReveilaService extends Service {
         } catch (Exception e) {
             Log.e(TAG, "Configuration fetch error; using local configuration.", e);
         }
-    }
-
-    private void deleteRecursively(File file) {
-        if (file.isDirectory()) {
-            File[] children = file.listFiles();
-            if (children != null) {
-                for (File child : children)
-                    deleteRecursively(child);
-            }
-        }
-        file.delete();
     }
 
     @Nullable

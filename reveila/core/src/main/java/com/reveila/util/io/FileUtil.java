@@ -240,67 +240,108 @@ public final class FileUtil {
 		return path.replace('\\', '/');
 	}
 
-	public static void download(URL sourceUrl, File saveAsFile, boolean overwrite, DownloadCallback callback) {
-		if (callback == null) {
-			throw new IllegalArgumentException("DownloadCallback cannot be null.");
+	private static void prepareDownloadFile(File saveAsFile, boolean overwrite, DownloadCallback callback)
+			throws IOException, IllegalArgumentException {
+
+		if (saveAsFile == null) {
+			IllegalArgumentException e = new IllegalArgumentException("Destination file must be provided.");
+			if (callback != null)
+				callback.onError(e);
+			else
+				throw e;
+		} else if (saveAsFile.getParentFile() != null && !saveAsFile.getParentFile().exists()
+				&& !saveAsFile.getParentFile().mkdirs()) {
+			IOException e = new IOException("Could not create parent directories for: " + saveAsFile.getAbsolutePath());
+			if (callback != null)
+				callback.onError(e);
+			else
+				throw e;
+		} else if (saveAsFile.exists() && !overwrite) {
+			IOException e = new IOException(
+					"Destination file already exists and overwrite is false: " + saveAsFile.getAbsolutePath());
+			if (callback != null)
+				callback.onError(e);
+			else
+				throw e;
+		}
+	}
+
+	private static URLConnection openUrlConnection(
+			URL sourceUrl, File saveAsFile, boolean overwrite, DownloadCallback callback) throws IOException {
+
+		URLConnection connection = null;
+		prepareDownloadFile(saveAsFile, overwrite, callback);
+		if (sourceUrl == null) {
+			IllegalArgumentException e = new IllegalArgumentException("Source URL must be provided.");
+			if (callback != null)
+				callback.onError(e);
+			else
+				throw e;
+		} else {
+			connection = sourceUrl.openConnection();
+			if (connection == null) {
+				IOException e = new IOException("Could not open connection to URL: " + sourceUrl);
+				if (callback != null)
+					callback.onError(e);
+				else
+					throw e;
+			} else {
+				connection.setConnectTimeout(15000); // 15 seconds
+				connection.setReadTimeout(60000); // 60 seconds
+				connection.connect();
+			}
 		}
 
-		if ((sourceUrl == null) || (saveAsFile == null)) {
-			callback.onError(new IllegalArgumentException("Source URL and destination file must be provided."));
-			return;
-		}
+		return connection;
+	}
 
-		if (saveAsFile.exists() && !overwrite) {
-			callback.onError(new java.io.WriteAbortedException("File already exists",
-					new IOException(saveAsFile.getAbsolutePath())));
-			return;
-		}
+	private static void writeToFile(URLConnection connection, File saveAsFile, int fileLength,
+			DownloadCallback callback) throws IOException {
+		try (InputStream input = new BufferedInputStream(connection.getInputStream());
+				OutputStream output = new BufferedOutputStream(new FileOutputStream(saveAsFile))) {
 
-		if (saveAsFile.getParentFile() != null && !saveAsFile.getParentFile().exists()) {
-			saveAsFile.getParentFile().mkdirs();
+			byte[] buffer = new byte[8192];
+			long total = 0;
+			int bytesRead;
+			while ((bytesRead = input.read(buffer)) != -1) {
+				total += bytesRead;
+				if (callback != null)
+					callback.onProgress((int) (total * 100 / fileLength));
+				output.write(buffer, 0, bytesRead);
+			}
+			output.flush(); // Ensure everything is pushed to the disk
+			if (callback != null)
+				callback.onComplete(saveAsFile);
 		}
+	}
+
+	public static void download(
+			URL sourceUrl, File saveAsFile, boolean overwrite, DownloadCallback callback) throws IOException {
 
 		try {
-			URLConnection connection = sourceUrl.openConnection();
-
-			// Connect Timeout: Finding your PC across the house
-			connection.setConnectTimeout(15000); // 15 seconds
-
-			// Read Timeout: Waiting for the data stream
-			connection.setReadTimeout(60000); // 60 seconds
-
-			connection.connect();
-
-			int fileLength = connection.getContentLength();
-			if (fileLength <= 0) {
-				callback.onError(new IOException("Source file length is 0 bytes, or unknown."));
-				return;
-			}
-
-			try (InputStream input = new BufferedInputStream(connection.getInputStream());
-					OutputStream output = new BufferedOutputStream(new FileOutputStream(saveAsFile))) {
-
-				byte[] buffer = new byte[8192];
-				long total = 0;
-				int bytesRead;
-				while ((bytesRead = input.read(buffer)) != -1) {
-					total += bytesRead;
-					callback.onProgress((int) (total * 100 / fileLength));
-					output.write(buffer, 0, bytesRead);
+			URLConnection connection = openUrlConnection(sourceUrl, saveAsFile, overwrite, callback);
+			if (connection != null) {
+				int fileLength = connection.getContentLength();
+				if (fileLength <= 0) {
+					if (callback != null)
+						callback.onError(new IOException("Source file length is 0 bytes, or unknown."));
+					return;
 				}
-				output.flush(); // Ensure everything is pushed to the disk
-				callback.onComplete(saveAsFile);
+
+				writeToFile(connection, saveAsFile, fileLength, callback);
 			}
-		} catch (Exception e) {
-			callback.onError(e);
+		} catch (IOException e) {
+			if (callback != null) {
+				callback.onError(e);
+			} else {
+				throw e;
+			}
 		}
 	}
 
 	public interface DownloadCallback {
 		void onComplete(File modelFile);
-
 		void onError(Exception e);
-
 		void onProgress(int progress);
 	}
 }
