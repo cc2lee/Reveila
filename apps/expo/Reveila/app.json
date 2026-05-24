@@ -5,9 +5,11 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
+    "scheme": "reveila",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -19,24 +21,29 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "userInterfaceStyle": "automatic",
+      "edgeToEdgeEnabled": true,
       "package": "com.reveila.app"
     },
     "web": {
+      "bundler": "metro",
+      "output": "static",
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "./withReveila.js",
+      "expo-router",
+      "./withReveila",
       [
         "expo-build-properties",
         {
           "android": {
-            "minSdkVersion": 26,
-            "compileSdkVersion": 36,
-            "targetSdkVersion": 36
+            "kotlinVersion": "2.0.20",
+            "minSdkVersion": 26
           }
         }
       ]
-    ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
   }
 }

@@ -1,95 +1,105 @@
-const { 
-  withAppBuildGradle, 
-  withMainApplication, 
-  withAndroidManifest 
-} = require('@expo/config-plugins');
+// C:\IDE\Projects\Reveila-Suite\apps\expo\Reveila\withReveila.js
+const { withMainApplication, withAppBuildGradle, withSettingsGradle } = require('@expo/config-plugins');
 
-/**
- * withReveila - AAR Injection Model
- * Decouples the Engine from the Shell. 
- * Expects a pre-built AAR in the central suite repository: [root]/build/outputs/android/reveila-android-core.aar
- */
-const withReveila = (config) => {
+function withReveilaNative(config) {
 
-  // 1. Register Native Module Package inside MainApplication
-  config = withMainApplication(config, (config) => {
-    let contents = config.modResults.contents;
-    if (!contents.includes('ReveilaPackage()')) {
-      contents = contents.replace(
-        /PackageList\(this\)\.packages\.apply\s?{/,
-        `PackageList(this).packages.apply {\n          add(com.reveila.android.ReveilaPackage())`
-      );
+    // 1. Intercept Expo's settings layout to map convention engines, repositories, and the Version Catalog
+    config = withSettingsGradle(config, (config) => {
+        let contents = config.modResults.contents;
+
+        // A. Inject the composite build-logic hook directly inside the pre-existing top-level pluginManagement block
+        const buildLogicLine = `
+    includeBuild('C:/IDE/Projects/Reveila-Suite/build-logic')
+    repositories {
+        google()
+        mavenCentral()
     }
-    config.modResults.contents = contents;
-    return config;
-  });
-
-  // 2. Manifest Declarations (Permissions & Services)
-  config = withAndroidManifest(config, (config) => {
-    const mainManifest = config.modResults;
-    const permissions = [
-      "android.permission.FOREGROUND_SERVICE",
-      "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
-      "android.permission.FOREGROUND_SERVICE_DATA_SYNC"
-    ];
-
-    if (!mainManifest.manifest["uses-permission"]) mainManifest.manifest["uses-permission"] = [];
-    
-    permissions.forEach(permission => {
-      if (!mainManifest.manifest["uses-permission"].some(p => p.$["android:name"] === permission)) {
-        mainManifest.manifest["uses-permission"].push({ $: { "android:name": permission } });
-      }
-    });
-
-    const application = mainManifest.manifest.application[0];
-    if (!application.service) application.service = [];
-    if (!application.service.some(s => s.$["android:name"] === "com.reveila.android.ReveilaService")) {
-      application.service.push({
-        $: {
-          "android:name": "com.reveila.android.ReveilaService",
-          "android:exported": "false",
-          "android:foregroundServiceType": "specialUse|dataSync"
+`;
+        if (!contents.includes('build-logic')) {
+            contents = contents.replace(
+                /pluginManagement\s*\{/,
+                `pluginManagement {${buildLogicLine}`
+            );
         }
-      });
-    }
 
-    return config;
-  });
-
-  // 3. Inject AAR via Flat Directory (app/build.gradle Groovy Injection)
-  config = withAppBuildGradle(config, (config) => {
-    let contents = config.modResults.contents;
-
-    // Relative path calculation stepping up from: apps/expo/Reveila/android/app/
-    // 1: app -> 2: android -> 3: Reveila -> 4: expo -> 5: apps -> (now at Reveila-Suite root) -> down to build/outputs/android
-    const aarPath = "../../../../../build/outputs/android";
-
-    const repoBlock = `
-repositories {
-    flatDir {
-        dirs "${aarPath}"
+        // B. Inject the Version Catalog configuration block immediately AFTER the closed pluginManagement block
+        const versionCatalogInjection = `
+dependencyResolutionManagement {
+    versionCatalogs {
+        create("libs") {
+            from(files("C:/IDE/Projects/Reveila-Suite/gradle/libs.versions.toml"))
+        }
     }
 }
 `;
+        // We locate the start of the file structure to place dependency resolution safely below initialization blocks
+        if (!contents.includes('libs.versions.toml')) {
+            // Find the first occurrence of the root project assignment or an include statement to splice in safely
+            if (contents.includes("rootProject.name")) {
+                contents = contents.replace("rootProject.name", `${versionCatalogInjection}\nrootProject.name`);
+            } else {
+                // Fallback: Append it to the very end if structural positions are unmappable
+                contents += versionCatalogInjection;
+            }
+        }
 
-    // Add FlatDir Repo block directly above the main android configuration entry if missing
-    if (!contents.includes('flatDir')) {
-      contents = contents.replace(/^android\s?{/m, `${repoBlock}\nandroid {`);
-    }
+        // C. Define explicit absolute file paths for your business logic and native layer
+        const projectLinkageString = `
+include ':reveila-core'
+project(':reveila-core').projectDir = new File('C:/IDE/Projects/Reveila-Suite/reveila/core')
 
-    // Use native Groovy syntax to bind the re-aligned archive target name
-    if (!contents.includes("name: 'reveila-android-core'")) {
-      contents = contents.replace(
-        /dependencies\s?{/, 
-        `dependencies {\n    implementation name: 'reveila-android-core', ext: 'aar'`
-      );
-    }
+include ':reveila-android'
+project(':reveila-android').projectDir = new File('C:/IDE/Projects/Reveila-Suite/android')
+`;
 
-    config.modResults.contents = contents;
+        // Append project links to the end of the file if not present
+        if (!contents.includes("':reveila-android'")) {
+            contents += projectLinkageString;
+        }
+
+        config.modResults.contents = contents;
+        return config;
+    });
+
+    // 2. Inject the compiled native library into the master app/build.gradle
+    config = withAppBuildGradle(config, (config) => {
+        const dependencyTarget = "implementation project(':reveila-android')";
+        if (!config.modResults.contents.includes(dependencyTarget)) {
+            config.modResults.contents = config.modResults.contents.replace(
+                /dependencies\s*\{/,
+                `dependencies {\n    ${dependencyTarget}`
+            );
+        }
+        return config;
+    });
+
+    // 3. Import and map the package constructor inside MainApplication.kt
+    config = withMainApplication(config, (config) => {
+        let contents = config.modResults.contents;
+        
+        // A. Inject the exact package location header match
+        if (!contents.includes('import com.reveila.android.ReveilaPackage')) {
+            contents = contents.replace(
+                /package com\.reveila\.app/,
+                `package com.reveila.app\n\nimport com.reveila.android.ReveilaPackage`
+            );
+        }
+        
+        // B. FIXED: Safely target the apply-closure matching your actual MainApplication.kt format
+        // This targets "PackageList(this).packages.apply {" and adds your instantiation right below it
+        const packageApplyBlock = /PackageList\(this\)\.packages\.apply\s*\{/;
+        if (contents.match(packageApplyBlock) && !contents.includes('add(ReveilaPackage())')) {
+            contents = contents.replace(
+                packageApplyBlock,
+                `PackageList(this).packages.apply {\n              add(ReveilaPackage())`
+            );
+        }
+        
+        config.modResults.contents = contents;
+        return config;
+    });
+
     return config;
-  });
+}
 
-  return config;
-};
-
-module.exports = withReveila;
+module.exports = withReveilaNative;

@@ -49,7 +49,7 @@ public class AndroidPlatformAdapter extends BasePlatformAdapter {
 
     private static Properties prepareProperties(Context context, Properties overwrites) {
         Properties props = new Properties();
-        String defaultHome = new File(context.getFilesDir(), "reveila/system").getAbsolutePath();
+        String defaultHome = new File(context.getFilesDir(), ReveilaSetup.TARGET_HOME).getAbsolutePath();
         props.setProperty(Constants.SYSTEM_HOME, defaultHome);
         if (overwrites != null) {
             props.putAll(overwrites);

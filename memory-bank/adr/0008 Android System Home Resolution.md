@@ -4,7 +4,7 @@ In the Reveila Android application, system.home is passed and initialized in sev
 In AndroidPlatformAdapter.java, a static helper method defines the default location within the app's internal storage:
 
 public static String getSystemHome(Context context) {
-    return new File(context.getFilesDir(), "reveila/system").getAbsolutePath();
+    return new File(context.getFilesDir(), "reveila").getAbsolutePath();
 }
 
 2. Service Initialization (Intent Handling)

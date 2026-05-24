@@ -14,8 +14,7 @@ interface InjectedExec {
 
 android {
     // "namespace" must match the package of ReveilaService, 
-    // which is defined as a service in AndroidManifest.xml 
-    // using relative naming.
+    // which is defined as a service in AndroidManifest.xml using relative naming.
     namespace = "com.reveila.android"
     compileSdk = 35 
 
@@ -38,18 +37,35 @@ android {
         buildConfig = true
         compose = false 
     }
+
+    buildTypes {
+        debug {
+            // Modern Kotlin DSL syntax for extra build properties assignment
+            extra.set("alwaysUpdateBuildId", false)
+            
+            // Modern type-safe packaging optimization block targeting Kotlin metadata
+            packaging {
+                resources {
+                    excludes.add("/META-INF/{AL2.0,LGPL2.1}")
+                    excludes.add("**/kotlin-navigator.properties")
+                }
+            }
+        }
+    }
 }
 
 dependencies {
     // ---------------------------------------------------------------------------
     // EXPO WORKSPACE COMPATIBILITY LAYER:
     // If compiled from the root suite workspace, link directly to the live core project.
-    // If isolated by Expo, fall back to the pre-compiled staged asset libs.
+    // If isolated by Expo, fall back to the absolute-path plugin token.
     // ---------------------------------------------------------------------------
-    if (project.rootProject.name == "Reveila-Suite") {
+    if (project.rootProject.name == "Reveila-Suite" || project.rootProject.findProject(":reveila:core") != null) {
         implementation(project(":reveila:core"))
+    } else if (project.rootProject.findProject(":reveila-core") != null) {
+        implementation(project(":reveila-core"))
     } else {
-        implementation(fileTree(mapOf("dir" to "src/main/assets/reveila/system/libs", "include" to listOf("*.jar"))))
+        implementation(fileTree(mapOf("dir" to "src/main/assets/reveila/libs", "include" to listOf("*.jar"))))
     }
 
     // Use compileOnly because the React Native runtime is supplied by the host mobile shell container
@@ -83,9 +99,13 @@ dependencies {
 
 // ---------------------------------------------------------------------------
 // ADVANCED RUNTIME COMPILATION & STAGING TASKS
-// These operations only evaluate when executing within the core Suite environment.
+// Evaluates correctly across both raw gradle loops and detached Expo run scripts
 // ---------------------------------------------------------------------------
-if (project.rootProject.name == "Reveila-Suite") {
+val isSuiteWorkspace = project.rootProject.name == "Reveila-Suite" || 
+                       project.rootProject.findProject(":reveila:core") != null ||
+                       file("${project.projectDir}/../system-home/standard").exists()
+
+if (isSuiteWorkspace) {
 
     /**
      * Converts standard shared utility JARs into Android DEX format via the d8 compiler.
@@ -131,49 +151,36 @@ if (project.rootProject.name == "Reveila-Suite") {
         dependsOn(dexSharedLibs)
         group = "reveila"
         
+        // 1. Enforce structural cascading: later files with identical paths overwrite earlier ones cleanly
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+        
         var homeDir = file("${project.projectDir}/../system-home/standard")
         if (!homeDir.exists()) {
             homeDir = file("${project.projectDir}/../../../../system-home/standard")
         }
 
         if (homeDir.exists()) {
+            // 2. Safely capture the entire directory hierarchy intact
             from(homeDir) {
-                include("configs/**", "plugins/**", "resources/**")
-                exclude("libs/**", "logs/**", "data/**", "temp/**", "**/.gitignore", "**/running.lock", "bin/**")
+                // Include all configuration maps, assets, and markdown documents while maintaining nesting
+                include("**/*.properties", "**/*.json", "**/*.md", "**/*.txt", "**/*.png")
+                
+                // Exclude development logs and bulky, non-dexed fat jars
+                exclude("libs/reveila-suite-fat.jar", "libs/**", "logs/**", "data/**", "temp/**", "bin/**", "**/.gitignore", "**/running.lock")
             }
-            from(dexSharedLibs) { into("libs") }
+            
+            // 3. Map your companion dexed binary utilities straight into their isolated library path node
+            from(layout.buildDirectory.dir("reveila/dex-libs")) { 
+                into("libs") 
+            }
         }
-        into("src/main/assets/reveila/system")
-    }
-
-    /**
-     * Captures the compiled native Android Library archives (.aar) 
-     * and exports them into the centralized suite workspace outputs folder:
-     * Reveila-Suite/build/outputs/android
-     */
-    val exportAarToHome = tasks.register<Copy>("exportAarToHome") {
-        group = "reveila"
-        description = "Exports compiled debug and release AARS directly into the root workspace outputs directory"
         
-        from(layout.buildDirectory.dir("outputs/aar"))
-        into(file("${project.rootDir}/build/outputs/android"))
-        include("*.aar")
-        
-        rename { filename ->
-            if (filename.contains("release")) "reveila-android-core.aar"
-            else "reveila-android-core-debug.aar"
-        }
+        // Direct output targets your synchronized local asset directory wrapper
+        into("src/main/assets/reveila")
     }
 
     // Force asset synchronization to execute seamlessly prior to compiling code variations
     tasks.named("preBuild") {
         dependsOn(prepareAndroidHome)
-    }
-
-    // Wrap variant task bindings inside an afterEvaluate hook so they apply 
-    // AFTER the Android Gradle Plugin dynamically creates assembleDebug and assembleRelease
-    afterEvaluate {
-        tasks.findByName("assembleDebug")?.finalizedBy(exportAarToHome)
-        tasks.findByName("assembleRelease")?.finalizedBy(exportAarToHome)
     }
 }

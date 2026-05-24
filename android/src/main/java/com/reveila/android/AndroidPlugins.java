@@ -15,44 +15,51 @@ import com.reveila.system.Manifest;
 
 public class AndroidPlugins {
 
-    public static final String RELATIVE_ROOT_DIR = "reveila/system/plugins/";
+    public static final String DIR = ReveilaSetup.TARGET_HOME + "/plugins/";
+
+    private AndroidPlugins() {
+        // Private constructor to prevent instantiation
+    }
 
     public static ClassLoader createPluginClassLoader(String dir, ClassLoader parent) {
-		try {
-			// Reflection used here to avoid hard dependency on Android SDK in the core Java project
-			Class<?> dexClass;
-			try {
-				// Try to use our Child-First implementation if available on the classpath
-				dexClass = Class.forName("com.reveila.android.ChildFirstDexClassLoader");
-			} catch (ClassNotFoundException e) {
-				// Fallback to standard DexClassLoader (Parent-First)
-				dexClass = Class.forName("dalvik.system.DexClassLoader");
-			}
+        try {
+            // Reflection used here to avoid hard dependency on Android SDK in the core Java
+            // project
+            Class<?> dexClass;
+            try {
+                // Try to use our Child-First implementation if available on the classpath
+                dexClass = Class.forName("com.reveila.android.ChildFirstDexClassLoader");
+            } catch (ClassNotFoundException e) {
+                // Fallback to standard DexClassLoader (Parent-First)
+                dexClass = Class.forName("dalvik.system.DexClassLoader");
+            }
 
-			java.io.File fileDir = new java.io.File(dir);
-			java.io.File[] files = fileDir.listFiles((d, name) -> name.endsWith(".jar") || name.endsWith(".dex"));
-			if (files == null || files.length == 0) return parent;
+            java.io.File fileDir = new java.io.File(dir);
+            java.io.File[] files = fileDir.listFiles((d, name) -> name.endsWith(".jar") || name.endsWith(".dex"));
+            if (files == null || files.length == 0)
+                return parent;
 
-			StringBuilder pathBuilder = new StringBuilder();
-			for (java.io.File f : files) {
-				if (pathBuilder.length() > 0) pathBuilder.append(java.io.File.pathSeparator);
-				pathBuilder.append(f.getAbsolutePath());
-			}
+            StringBuilder pathBuilder = new StringBuilder();
+            for (java.io.File f : files) {
+                if (pathBuilder.length() > 0)
+                    pathBuilder.append(java.io.File.pathSeparator);
+                pathBuilder.append(f.getAbsolutePath());
+            }
 
-			return (ClassLoader) dexClass.getConstructor(String.class, String.class, String.class, ClassLoader.class)
-					.newInstance(pathBuilder.toString(), null, null, parent);
-		} catch (Exception e) {
-			return parent;
-		}
-	}
+            return (ClassLoader) dexClass.getConstructor(String.class, String.class, String.class, ClassLoader.class)
+                    .newInstance(pathBuilder.toString(), null, null, parent);
+        } catch (Exception e) {
+            return parent;
+        }
+    }
 
     public static SystemProxy createProxy(Context context, String pluginId, String className) {
         Map<String, Object> config = Map.of(
                 "name", pluginId,
                 "class", className,
                 "plugin",
-                Map.of("directory", new File(context.getFilesDir(), RELATIVE_ROOT_DIR + pluginId).getAbsolutePath()));
-        
+                Map.of("directory", new File(context.getFilesDir(), DIR + pluginId).getAbsolutePath()));
+
         Manifest manifest = new Manifest();
         manifest.setComponentType("plugin");
         manifest.setName(pluginId);
@@ -64,10 +71,11 @@ public class AndroidPlugins {
     /**
      * Loads a plugin and returns its SystemProxy.
      */
-    public static SystemProxy loadPlugin(Context context, SystemContext systemContext, String pluginFileName, String className) {
+    public static SystemProxy loadPlugin(Context context, SystemContext systemContext, String pluginFileName,
+            String className) {
         try {
             String pluginId = pluginFileName.replace(".jar", "").replace(".dex", "");
-            File pluginDir = new File(context.getFilesDir(), RELATIVE_ROOT_DIR + pluginId);
+            File pluginDir = new File(context.getFilesDir(), DIR + pluginId);
             if (!pluginDir.exists())
                 pluginDir.mkdirs();
 
@@ -77,8 +85,9 @@ public class AndroidPlugins {
 
             SystemProxy proxy = createProxy(context, pluginId, className);
             proxy.setContext(systemContext);
-            ClassLoader loader = createPluginClassLoader(pluginDir.getAbsolutePath(), AndroidPlugins.class.getClassLoader());
-            
+            ClassLoader loader = createPluginClassLoader(pluginDir.getAbsolutePath(),
+                    AndroidPlugins.class.getClassLoader());
+
             Method setClassLoaderMethod = SystemProxy.class.getDeclaredMethod("setClassLoader", ClassLoader.class);
             setClassLoaderMethod.setAccessible(true);
             setClassLoaderMethod.invoke(proxy, loader);

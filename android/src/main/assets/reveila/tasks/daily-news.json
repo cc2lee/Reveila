@@ -1,0 +1,6 @@
+{
+  "taskId": "daily-news-alert",
+  "intent": "news.search",
+  "prompt": "Find the latest news about AI security and provide a summary.",
+  "frequency": "daily"
+}

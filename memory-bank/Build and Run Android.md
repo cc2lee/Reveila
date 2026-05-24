@@ -16,7 +16,10 @@ npm start
 npm run android
 npm run android -- --no-packager
 npm run android -- --port 8081
+
+adb logcat -c && adb logcat | Select-String "Reveila"
 npx expo run:android --no-build-cache
+
 cd android && ./gradlew installDebug
 
 # Set up native debugging
