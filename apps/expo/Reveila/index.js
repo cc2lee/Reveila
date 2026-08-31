@@ -21,7 +21,7 @@ export function App() {
 
         console.log("[Reveila App] Requesting native background engine activation...");
         
-        // FIXED: Fired non-blocking as a traditional promise chain instead of top-level async await.
+        // Fired non-blocking as a traditional promise chain instead of top-level async await.
         // This lets the main Expo thread drop straight through to render the routing layout context.
         ReveilaModule.startService()
             .then((homePathHandshake) => {
