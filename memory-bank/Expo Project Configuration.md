@@ -888,7 +888,7 @@ export default function HomeScreen() {
     useCallback(() => {
       if (!isEngineReady) return;
       
-      ReveilaBridge.invoke('ConfigurationManager', 'getSettings', ['llm.json']).then((res: any) => {
+      ReveilaBridge.invoke('UiController', 'getSettings', ['llm.json']).then((res: any) => {
         if (res) {
           try {
             const config = typeof res === 'string' ? JSON.parse(res) : res;

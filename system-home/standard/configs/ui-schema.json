@@ -1,0 +1,56 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "ReveilaSuiteUISchema",
+    "type": "object",
+    "required": [
+        "screenId",
+        "version",
+        "layout"
+    ],
+    "properties": {
+        "screenId": {
+            "type": "string"
+        },
+        "version": {
+            "type": "string"
+        },
+        "layout": {
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/UIComponent"
+            }
+        }
+    },
+    "$defs": {
+        "UIComponent": {
+            "type": "object",
+            "required": [
+                "id",
+                "type",
+                "props"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "Container",
+                        "TextField",
+                        "Button",
+                        "Dropdown",
+                        "Text"
+                    ]
+                },
+                "props": {
+                    "type": "object"
+                },
+                "binding": {
+                    "type": "string"
+                }
+            },
+            "additionalProperties": false
+        }
+    }
+}

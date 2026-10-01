@@ -1,8 +1,8 @@
 // C:\IDE\Projects\Reveila-Suite\apps\expo\Reveila\app\(tabs)\settings.tsx
-import { StyleSheet, TouchableOpacity, ScrollView, View, Switch, TextInput, Alert, Modal, FlatList, Text, useColorScheme } from 'react-native';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Alert, FlatList, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useColorScheme, View } from 'react-native';
 
 // Injected Universal Client via your protocol-agnostic target bridge core
 class ReveilaClient {
@@ -108,7 +108,7 @@ export default function SettingsScreen() {
   useEffect(() => {
     if (!isRunning) return;
 
-    client.invoke('ConfigurationManager', 'getSettings', ['llm.json']).then((res: any) => {
+    client.invoke('UiController', 'getSettings', ['llm.json']).then((res: any) => {
       if (res) {
         try {
           const config = typeof res === 'string' ? JSON.parse(res) : res;
@@ -236,7 +236,7 @@ export default function SettingsScreen() {
         'onboarded.providers': providersList
       };
 
-      await client.invoke('ConfigurationManager', 'saveSettings', ['llm.json', JSON.stringify(config)]);
+      await client.invoke('UiController', 'saveSettings', ['llm.json', JSON.stringify(config)]);
       Alert.alert('Success', 'LLM Configuration saved successfully.');
     } catch (error: any) {
       Alert.alert('Error', 'Failed to save configuration: ' + error.message);

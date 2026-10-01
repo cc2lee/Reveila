@@ -22,6 +22,10 @@ java-shared = "17"
 java-server = "21"
 springBoot = "3.5.9"
 kotlin = "2.1.20"
+kotlinx-coroutines = "1.10.1"
+kotlinx-datetime = "0.6.2"
+kotlinx-serialization = "1.8.0"
+kotlinx-io = "0.7.0"
 
 # Common libs:
 jspecify = "1.0.0"
@@ -78,12 +82,20 @@ android-library = { id = "com.android.library", version.ref = "androidGradlePlug
 
 # Kotlin
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 
 # The Gradle Node Plugin allows Gradle to manage Node.js and NPM automatically
 node = { id = "com.github.node-gradle.node", version = "7.1.0" }
 
 [libraries]
+
+# Kotlin Multiplatform Foundation Libraries
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
 
 # AWS SDK
 # Define an alias for the BOM artifact

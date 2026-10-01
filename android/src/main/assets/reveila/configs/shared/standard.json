@@ -152,8 +152,8 @@
     },
     {
         "component": {
-            "name": "ConfigurationManager",
-            "class": "com.reveila.system.ConfigurationManager",
+            "name": "UiController",
+            "class": "com.reveila.system.UiController",
             "description": "Manages configuration settings dynamically.",
             "thread-safe": true
         }
