@@ -33,9 +33,21 @@ includeBuild("build-logic")
 // In a flat structure, if you want the project to be named :reveila but its files are physically inside spring/reveila/,
 // Example 2: include("reveila"); project(":reveila").projectDir = file("spring/reveila")
 
-include(":reveila:core")
-include(":reveila:rt")
-include(":spring:admin")
-include(":spring:core")
-include(":web:vue-project")
-include(":android")
+// Multi-Project Rules:
+// Dynamic inclusion ensures sparse checkouts (e.g. CI virtual Mac runners building only :reveila:core)
+// do not fail when unneeded subproject folders are omitted.
+
+val subprojects = listOf(
+    ":reveila:core" to "reveila/core",
+    ":reveila:rt" to "reveila/rt",
+    ":spring:admin" to "spring/admin",
+    ":spring:core" to "spring/core",
+    ":web:vue-project" to "web/vue-project",
+    ":android" to "android"
+)
+
+for ((name, dir) in subprojects) {
+    if (file(dir).isDirectory) {
+        include(name)
+    }
+}

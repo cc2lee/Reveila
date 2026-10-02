@@ -1,4 +1,5 @@
 // reveila/core/build.gradle.kts
+import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -20,8 +21,16 @@ android {
 }
 
 kotlin {
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
+
     // 1. JVM target (Spring Boot / Server / Shared JVM)
-    jvm()
+    jvm {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
+    }
 
     // 2. Android target
     androidTarget {
@@ -32,11 +41,25 @@ kotlin {
     }
 
     // 3. Apple Native targets (iOS & macOS)
-    iosX64()
-    iosArm64()
-    iosSimulatorArm64()
-    macosX64()
-    macosArm64()
+    val xcf = XCFramework("ReveilaCore")
+    listOf(
+        iosX64(),
+        iosArm64(),
+        iosSimulatorArm64()
+    ).forEach { target ->
+        target.binaries.framework {
+            baseName = "ReveilaCore"
+            xcf.add(this)
+        }
+    }
+    listOf(
+        macosX64(),
+        macosArm64()
+    ).forEach { target ->
+        target.binaries.framework {
+            baseName = "ReveilaCoreMac"
+        }
+    }
 
     // 4. Desktop Native targets (Windows & Linux)
     mingwX64 {
@@ -93,4 +116,44 @@ kotlin {
             implementation(libs.androidx.core.ktx)
         }
     }
+}
+
+// ===========================================================================
+// DISTRIBUTION / EXPORT TASKS
+// Packages and publishes pre-built multiplatform binaries into distribution/
+// ===========================================================================
+val distributionDir = file("${rootProject.projectDir}/distribution")
+
+val exportJvmJar by tasks.registering(Copy::class) {
+    group = "distribution"
+    description = "Exports the compiled JVM jar to distribution/jvm/reveila-core.jar"
+    dependsOn(tasks.named("jvmJar"))
+    from(tasks.named<Jar>("jvmJar").map { it.archiveFile })
+    into(file("${distributionDir}/jvm"))
+    rename { "reveila-core.jar" }
+}
+
+val exportAndroidAar by tasks.registering(Copy::class) {
+    group = "distribution"
+    description = "Exports the compiled Android AAR to distribution/android/reveila-core.aar"
+    dependsOn(tasks.named("bundleReleaseAar"))
+    from(layout.buildDirectory.file("outputs/aar/core-release.aar"))
+    into(file("${distributionDir}/android"))
+    rename { "reveila-core.aar" }
+}
+
+val exportWindowsBinaries by tasks.registering(Copy::class) {
+    group = "distribution"
+    description = "Exports the compiled Windows native DLL and C header to distribution/windows/"
+    dependsOn(tasks.named("linkReleaseSharedMingwX64"))
+    from(layout.buildDirectory.dir("bin/mingwX64/releaseShared")) {
+        include("reveila_core.dll", "reveila_core_api.h", "reveila_core.def")
+    }
+    into(file("${distributionDir}/windows"))
+}
+
+val exportBinaries by tasks.registering {
+    group = "distribution"
+    description = "Exports all pre-built multiplatform binaries to distribution/"
+    dependsOn(exportJvmJar, exportAndroidAar, exportWindowsBinaries)
 }

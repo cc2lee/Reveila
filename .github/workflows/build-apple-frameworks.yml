@@ -1,0 +1,113 @@
+name: Build Apple Frameworks (macOS & iOS)
+
+on:
+  push:
+    paths:
+      - 'reveila/core/**'
+      - 'build-logic/**'
+      - 'gradle/**'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/build-apple-frameworks.yml'
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'reveila/core/**'
+      - 'build-logic/**'
+      - 'gradle/**'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - 'gradle.properties'
+  workflow_dispatch:
+
+jobs:
+  build-apple-frameworks:
+    name: Assemble Apple Frameworks (Virtual Mac)
+    runs-on: macos-14 # Apple Silicon (M1) runner for speed and cost efficiency
+    timeout-minutes: 30
+
+    steps:
+      - name: Sparse Checkout reveila/core and build tools
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            reveila/core
+            build-logic
+            gradle
+            gradlew
+            settings.gradle.kts
+            build.gradle.kts
+            gradle.properties
+          sparse-checkout-cone-mode: false
+          depth: 1
+
+      - name: Validate Sparse Checkout Structure
+        run: |
+          echo "=== Checked out root directory ==="
+          ls -la
+          echo "=== Reveila Core directory ==="
+          ls -la reveila/core
+
+      - name: Set up Java Toolchain (JDK 21)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle Build Cache
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build Apple Frameworks (iOS XCFramework & macOS Frameworks)
+        run: |
+          ./gradlew :reveila:core:assembleReveilaCoreReleaseXCFramework \
+                    :reveila:core:linkReleaseFrameworkMacosArm64 \
+                    :reveila:core:linkReleaseFrameworkMacosX64 \
+                    --no-daemon --stacktrace
+
+      - name: Package Framework Artifacts
+        run: |
+          mkdir -p artifacts
+
+          # 1. Package iOS Universal XCFramework (device + simulator)
+          if [ -d "reveila/core/build/XCFrameworks/release/ReveilaCore.xcframework" ]; then
+            echo "Packaging iOS XCFramework..."
+            cd reveila/core/build/XCFrameworks/release
+            zip -r -9 ../../../../artifacts/ReveilaCore-iOS.xcframework.zip ReveilaCore.xcframework
+            cd ../../../../
+          fi
+
+          # 2. Package macOS Arm64 Framework (Apple Silicon)
+          if [ -d "reveila/core/build/bin/macosArm64/releaseFramework/ReveilaCoreMac.framework" ]; then
+            echo "Packaging macOS Arm64 Framework..."
+            cd reveila/core/build/bin/macosArm64/releaseFramework
+            zip -r -9 ../../../../artifacts/ReveilaCore-macOS-Arm64.framework.zip ReveilaCoreMac.framework
+            cd ../../../../
+          fi
+
+          # 3. Package macOS x64 Framework (Intel Mac)
+          if [ -d "reveila/core/build/bin/macosX64/releaseFramework/ReveilaCoreMac.framework" ]; then
+            echo "Packaging macOS x64 Framework..."
+            cd reveila/core/build/bin/macosX64/releaseFramework
+            zip -r -9 ../../../../artifacts/ReveilaCore-macOS-x64.framework.zip ReveilaCoreMac.framework
+            cd ../../../../
+          fi
+
+          # Generate SHA256 checksums for integrity verification
+          cd artifacts
+          shasum -a 256 *.zip > checksums.sha256
+          cat checksums.sha256
+          cd ..
+
+      - name: Upload Apple Framework Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: reveila-core-apple-frameworks
+          path: artifacts/*
+          retention-days: 14

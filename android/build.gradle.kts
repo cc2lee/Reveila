@@ -56,17 +56,17 @@ android {
 
 dependencies {
     // ---------------------------------------------------------------------------
-    // EXPO WORKSPACE COMPATIBILITY LAYER:
-    // If compiled from the root suite workspace, link directly to the live core project.
-    // If isolated by Expo, fall back to the absolute-path plugin token.
+    // DECOUPLED BINARY DISTRIBUTION LAYER:
+    // Consumes pre-built Kotlin Multiplatform binaries from distribution/
     // ---------------------------------------------------------------------------
-    if (project.rootProject.name == "Reveila-Suite" || project.rootProject.findProject(":reveila:core") != null) {
-        implementation(project(":reveila:core"))
-    } else if (project.rootProject.findProject(":reveila-core") != null) {
-        implementation(project(":reveila-core"))
-    } else {
-        implementation(fileTree(mapOf("dir" to "src/main/assets/reveila/libs", "include" to listOf("*.jar"))))
-    }
+    val distributionDir = file("${project.projectDir}/../distribution")
+    implementation(files("${distributionDir}/jvm/reveila-core.jar"))
+
+    // Kotlin Multiplatform runtime dependencies
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.datetime)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.io.core)
 
     // Use compileOnly because the React Native runtime is supplied by the host mobile shell container
     compileOnly("com.facebook.react:react-android:0.74.1")
@@ -182,5 +182,9 @@ if (isSuiteWorkspace) {
     // Force asset synchronization to execute seamlessly prior to compiling code variations
     tasks.named("preBuild") {
         dependsOn(prepareAndroidHome)
+    }
+
+    tasks.matching { it.name.startsWith("compile") }.configureEach {
+        dependsOn(":reveila:core:exportJvmJar")
     }
 }

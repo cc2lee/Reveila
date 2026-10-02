@@ -6,8 +6,8 @@ In [`reveila/core/build.gradle.kts`], the following native and platform targets 
 | :--- | :--- | :--- | :--- |
 | **`jvm`** | Java 17+ bytecode | `reveila-core-jvm.jar` | Enterprise server, Spring Boot ([`spring:core`](file:///c:/IDE/Projects/Reveila-Suite/spring/core)), and guarded runtime ([`reveila:rt`](file:///c:/IDE/Projects/Reveila-Suite/reveila/rt)) |
 | **`androidTarget`** | Android API 26–35 (AAR) | `reveila-core-debug.aar` | Android host service ([`android`](file:///c:/IDE/Projects/Reveila-Suite/android)) and React Native Expo shell |
-| **`iosArm64` / `iosSimulatorArm64` / `iosX64`** | Apple Cocoa / Darwin | Klib / `ReveilaCore.framework` | iPhone, iPad native offline execution (**Sovereign Mode**) |
-| **`macosArm64` / `macosX64`** | Apple Silicon & Intel Mac | Klib / macOS Native Framework | Mac desktop autonomous agents |
+| **`iosArm64` / `iosSimulatorArm64` / `iosX64`** | Apple Cocoa / Darwin | `ReveilaCore.xcframework` (Device + Simulator Universal) | iPhone, iPad native offline execution (**Sovereign Mode**) |
+| **`macosArm64` / `macosX64`** | Apple Silicon & Intel Mac | `ReveilaCoreMac.framework` | Mac desktop autonomous agents |
 | **`mingwX64`** | Windows x64 Native | `reveila_core.dll` (2.3 MB) + C header (`reveila_core_api.h`) | Windows edge devices and standalone sovereign desktop CLI |
 | **`linuxX64`** | Linux x64 Native | `libreveila_core.so` + Static Library | Linux edge gateways, servers, and minimal containers |
 
@@ -53,3 +53,26 @@ All multiplatform targets and downstream modules were verified using Gradle:
 .\gradlew.bat :android:compileDebugKotlin                     # SUCCESS (0 errors)
 .\gradlew.bat :spring:core:compileJava                        # SUCCESS (0 errors)
 ```
+
+---
+
+### 4. Virtual Mac (GitHub Actions) Isolated Build Pipeline
+
+To build Apple frameworks (`.xcframework` / `.framework`) without pulling down the entire Reveila Suite codebase, the pipeline uses **Git Sparse-Checkout**:
+
+- **Workflow File:** [`.github/workflows/build-apple-frameworks.yml`](file:///c:/IDE/Projects/Reveila-Suite/.github/workflows/build-apple-frameworks.yml)
+- **Runner Environment:** `macos-14` (Apple Silicon M1)
+- **Sparse Paths Downloaded:**
+  - `reveila/core`
+  - `build-logic`
+  - `gradle`
+  - `gradlew`
+  - `settings.gradle.kts` (configured with dynamic discovery so missing modules are skipped)
+  - `build.gradle.kts`
+  - `gradle.properties`
+- **Output Artifacts:**
+  - `ReveilaCore-iOS.xcframework.zip` (Universal XCFramework for physical iOS devices & simulator)
+  - `ReveilaCore-macOS-Arm64.framework.zip` (Apple Silicon M-series framework)
+  - `ReveilaCore-macOS-x64.framework.zip` (Intel x86_64 Mac framework)
+  - `checksums.sha256` (Integrity checksums)
+

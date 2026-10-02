@@ -36,10 +36,23 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-aop")
     implementation("org.springframework.boot:spring-boot-starter-mail")
-    implementation(project(":reveila:rt")) {
-        // slf4j-simple is excluded to prevent conflicts with Spring Boot's logback-classic logging setup
-        exclude(group = "org.slf4j", module = "slf4j-simple")
-    }
+    implementation(files("${rootProject.projectDir}/distribution/jvm/reveila-rt.jar"))
+    implementation(files("${rootProject.projectDir}/distribution/jvm/reveila-core.jar"))
+
+    // Dependencies required by pre-built Reveila Core & Runtime binaries
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.datetime)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.io.core)
+    implementation(libs.okhttp)
+    implementation(libs.commons.compress)
+    implementation(libs.commonmark)
+    implementation(libs.jsoup)
+    implementation(libs.jspecify)
+    implementation(libs.json.schema.validator)
+    implementation(libs.docker.java.api)
+    implementation(libs.docker.java.core)
+    implementation(libs.docker.java.transport.httpclient5)
     
     // Spring Boot Admin Client dependency
     implementation("de.codecentric:spring-boot-admin-starter-client:3.5.5")
@@ -70,6 +83,10 @@ tasks.withType<org.springframework.boot.gradle.tasks.bundling.BootJar> {
 
 tasks.withType<org.springframework.boot.gradle.tasks.run.BootRun> {
     jvmArgs = listOf("-Xmx2048m", "-Dspring.profiles.active=dev")
+}
+
+tasks.named<JavaCompile>("compileJava") {
+    dependsOn(":reveila:rt:exportRtJar")
 }
 
 

@@ -11,7 +11,7 @@ tasks.withType<Test>().configureEach {
 }
 
 dependencies {
-    api(project(":reveila:core"))
+    api(files("${rootProject.projectDir}/distribution/jvm/reveila-core.jar"))
     
     // AI / Security Runtime dependencies (Server-specific or high-performance)
     implementation(libs.docker.java.api)
@@ -21,4 +21,17 @@ dependencies {
     // AWS SDK (Managed via BOM in parent)
     implementation(platform(libs.aws.sdk.bom))
     implementation(libs.aws.sdk.s3)
+}
+
+tasks.named<JavaCompile>("compileJava") {
+    dependsOn(":reveila:core:exportJvmJar")
+}
+
+val exportRtJar by tasks.registering(Copy::class) {
+    group = "distribution"
+    description = "Exports the compiled runtime jar to distribution/jvm/reveila-rt.jar"
+    dependsOn(tasks.named("jar"))
+    from(tasks.named<Jar>("jar").map { it.archiveFile })
+    into(file("${rootProject.projectDir}/distribution/jvm"))
+    rename { "reveila-rt.jar" }
 }
