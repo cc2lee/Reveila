@@ -15,7 +15,6 @@ import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
 import java.text.MessageFormat
 import java.util.Objects
-import java.util.Properties
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -29,29 +28,36 @@ import java.util.logging.Handler
 import java.util.logging.Level
 import java.util.logging.Logger
 import java.util.logging.SimpleFormatter
-import javax.security.auth.Subject
+import com.reveila.crypto.Cryptographer
+import com.reveila.crypto.DefaultCryptographer
 import com.reveila.data.Entity
 import com.reveila.data.Repository
 import com.reveila.error.ConfigurationException
 import com.reveila.error.SystemException
 import com.reveila.event.AutoCallEvent
 import com.reveila.event.EventConsumer
+import com.reveila.system.concurrency.PlatformScheduler
+import com.reveila.system.io.PlatformFileSystem
+import com.reveila.system.logging.PlatformLogger
 import com.reveila.util.io.FileUtil
 
 /**
  * An implementation of PlatformAdapter for standard JVM platforms.
  */
 abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
-    commandLineArgs: Properties?
+    commandLineArgs: Properties? = null
 ) : PlatformAdapter {
 
     private var platformName: String? = null
-    private var reveila: Reveila? = null
+    private var reveila: ReveilaEngine? = null
     private val properties: Properties = Properties()
+    private val fs: PlatformFileSystem = PlatformFileSystem()
     @JvmField
     protected var logger: Logger = Logger.getLogger("")
+    private var platformLogger: PlatformLogger = PlatformLogger("reveila.platform")
     private var jobThreadPoolSize: Int = 4 // Allow concurrent execution to prevent startup deadlocks
     private var scheduler: ScheduledExecutorService? = null
+    private var platformScheduler: PlatformScheduler? = null
     private val autoCallTasks: ConcurrentHashMap<String, ScheduledFuture<*>> = ConcurrentHashMap()
     private var systemHome: SystemHome? = null
     private var classLoader: ClassLoader? = null
@@ -77,38 +83,66 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
             }
         }
         this.scheduler = Executors.newScheduledThreadPool(jobThreadPoolSize, threadFactory)
+        this.platformScheduler = PlatformScheduler(jobThreadPoolSize)
     }
 
     override fun getPlatformDescription(): String? {
         return properties.getProperty(Constants.PLATFORM_OS)
     }
 
-    @Throws(IOException::class)
     override fun listRelativePaths(relativeDirectory: String, ext: String): Array<String> {
         if (relativeDirectory.isBlank()) {
             throw IOException("Manifests directory name not specified.")
         }
         val homePath = this.systemHome?.systemHome ?: throw IOException("System home not set.")
-        val dir = homePath.resolve(relativeDirectory).toAbsolutePath().normalize()
+        val dir = fs.resolve(homePath, relativeDirectory)
 
-        if (!Files.exists(dir)) {
-            logger.warning("Directory does not exist: $dir. Returning empty file list.")
+        if (!fs.exists(dir)) {
+            platformLogger.warning("Directory does not exist: $dir. Returning empty file list.")
             return emptyArray()
         }
 
-        val files = FileUtil.listRelativePaths(dir.toString(), ext)
-        val home = homePath.toAbsolutePath().normalize()
-
+        val files = FileUtil.listRelativePaths(dir, ext)
         return files.map { file ->
-            val absoluteFilePath = dir.resolve(file).normalize()
-            home.relativize(absoluteFilePath).toString()
+            val fullPath = fs.resolve(dir, file)
+            val normalizedHome = fs.normalize(homePath).trimEnd('/', '\\')
+            val normalizedFull = fs.normalize(fullPath)
+            if (normalizedFull.startsWith(normalizedHome)) {
+                normalizedFull.substring(normalizedHome.length).trimStart('/', '\\')
+            } else {
+                normalizedFull
+            }
         }.toTypedArray()
     }
 
+    override fun readFileBytes(relativePath: String): ByteArray {
+        val home = this.systemHome?.systemHome ?: return byteArrayOf()
+        val safePath = fs.toSafePath(home, relativePath)
+        return fs.readBytes(safePath)
+    }
+
+    override fun readFileString(relativePath: String): String {
+        val home = this.systemHome?.systemHome ?: return ""
+        val safePath = fs.toSafePath(home, relativePath)
+        return fs.readText(safePath)
+    }
+
+    override fun writeFileBytes(relativePath: String, data: ByteArray, append: Boolean) {
+        val home = this.systemHome?.systemHome ?: return
+        val safePath = fs.toSafePath(home, relativePath)
+        fs.writeBytes(safePath, data, append)
+    }
+
+    override fun writeFileString(relativePath: String, text: String, append: Boolean) {
+        val home = this.systemHome?.systemHome ?: return
+        val safePath = fs.toSafePath(home, relativePath)
+        fs.writeText(safePath, text, append)
+    }
+
     @Throws(IOException::class)
-    override fun getFileInputStream(relativePath: String): InputStream {
+    fun getFileInputStream(relativePath: String): InputStream {
         val homePath = this.systemHome?.systemHome ?: throw IOException("System home not set.")
-        val absolutePath = FileUtil.toSafePath(homePath, relativePath)
+        val absolutePath = Paths.get(fs.toSafePath(homePath, relativePath))
         if (!Files.exists(absolutePath)) {
             throw IOException("File not found: $absolutePath")
         }
@@ -116,9 +150,9 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
     }
 
     @Throws(IOException::class)
-    override fun getFileOutputStream(relativePath: String, append: Boolean): OutputStream {
+    fun getFileOutputStream(relativePath: String, append: Boolean): OutputStream {
         val homePath = this.systemHome?.systemHome ?: throw IOException("System home not set.")
-        val absolutePath = FileUtil.toSafePath(homePath, relativePath)
+        val absolutePath = Paths.get(fs.toSafePath(homePath, relativePath))
         return if (append) {
             Files.newOutputStream(absolutePath, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
         } else {
@@ -130,7 +164,7 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
         val task = autoCallTasks.remove(componentName)
         if (task != null) {
             task.cancel(false)
-            logger.info("Unregistered auto-call for component: $componentName")
+            platformLogger.info("Unregistered auto-call for component: $componentName")
         }
     }
 
@@ -140,11 +174,10 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
         val rawProps = Properties()
 
         // 1. Load common properties
-        var path = Constants.CONFIGS_DIR_NAME + File.separator + filename
+        var path = Constants.CONFIGS_DIR_NAME + "/" + filename
         try {
-            getFileInputStream(path).use { `in` ->
-                rawProps.load(`in`)
-            }
+            val content = readFileString(path)
+            rawProps.load(content)
         } catch (e: Exception) {
             throw IOException("Failed to load system properties from $path", e)
         }
@@ -152,13 +185,12 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
         // 2. Load platform-specific properties
         val platName = getPlatformName()
         if (!platName.isNullOrBlank()) {
-            path = Constants.CONFIGS_DIR_NAME + File.separator + platName + File.separator + filename
+            path = Constants.CONFIGS_DIR_NAME + "/" + platName + "/" + filename
             val homePath = this.systemHome?.systemHome
-            if (homePath != null && Files.exists(FileUtil.toSafePath(homePath, path))) {
+            if (homePath != null && fs.exists(fs.toSafePath(homePath, path))) {
                 try {
-                    getFileInputStream(path).use { `in` ->
-                        rawProps.load(`in`)
-                    }
+                    val content = readFileString(path)
+                    rawProps.load(content)
                 } catch (e: Exception) {
                     throw IOException("Failed to load system properties from $path", e)
                 }
@@ -198,7 +230,7 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
         val resolved = Properties()
         for (key in props.stringPropertyNames()) {
             val value = props.getProperty(key)
-            resolved.setProperty(key, resolveValue(value, props))
+            resolved.setProperty(key, resolveValue(value, props) ?: "")
         }
         return resolved
     }
@@ -315,13 +347,13 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
 
     @Throws(Exception::class)
     protected open fun createClassLoader(): ClassLoader {
-        val home = this.systemHome ?: throw SystemException("System Home Path was not initialized.")
-        val libsDir = home.resolve(Constants.LIB_DIR_NAME)
+        val home = this.systemHome?.systemHome ?: throw SystemException("System Home Path was not initialized.")
+        val libsDir = Paths.get(home).resolve(Constants.LIB_DIR_NAME)
         Files.createDirectories(libsDir)
 
         val urls = scanJars(libsDir)
         if (urls.isNotEmpty()) {
-            logger.info(
+            platformLogger.info(
                 MessageFormat.format(
                     "Initializing Shared ClassLoader with {0} JARs from {1}",
                     urls.size,
@@ -329,12 +361,12 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
                 )
             )
             for (url in urls) {
-                logger.info("  -> $url")
+                platformLogger.info("  -> $url")
             }
         }
 
         if ("android".equals(this.properties.getProperty(Constants.PLATFORM), ignoreCase = true)) {
-            logger.info("Android platform detected. Creating DexClassLoader for shared libraries.")
+            platformLogger.info("Android platform detected. Creating DexClassLoader for shared libraries.")
             return RuntimeUtil.createPluginClassLoader(libsDir.toString(), this.javaClass.classLoader)
         }
         return URLClassLoader(urls, this.javaClass.classLoader)
@@ -350,12 +382,11 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
     }
 
     protected open fun getSystemHome(): Path? {
-        return this.systemHome?.systemHome
+        val home = this.systemHome?.systemHome ?: return null
+        return Paths.get(home)
     }
 
-    override fun getLogger(): Logger {
-        return this.logger
-    }
+    override fun getLogger(): PlatformLogger = this.platformLogger
 
     @Throws(IOException::class)
     private fun configureLogging() {
@@ -389,11 +420,12 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
 
         setLoggingLevel(rootLogger, properties)
         this.logger = rootLogger
+        this.platformLogger = PlatformLogger("reveila.platform")
     }
 
     @Throws(IOException::class)
     private fun createLogFileHandler(props: Properties): Handler {
-        val logDir = Paths.get(props.getProperty(Constants.SYSTEM_HOME)).resolve("logs")
+        val logDir = Paths.get(props.getProperty(Constants.SYSTEM_HOME) ?: ".").resolve("logs")
         Files.createDirectories(logDir)
         val logFile = logDir.resolve("reveila.log")
 
@@ -422,7 +454,7 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
     }
 
     private fun setLoggingLevel(logger: Logger, props: Properties) {
-        val level = props.getProperty(Constants.LOG_LEVEL, "INFO").trim().uppercase()
+        val level = props.getProperty(Constants.LOG_LEVEL, "INFO")?.trim()?.uppercase() ?: "INFO"
         try {
             logger.level = Level.parse(level)
         } catch (e: IllegalArgumentException) {
@@ -486,9 +518,12 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
 
     @Synchronized
     override fun unplug() {
-        logger.info("Platform Adapter shutting down...")
+        platformLogger.info("Platform Adapter shutting down...")
         autoCallTasks.values.forEach { task -> task.cancel(true) }
         autoCallTasks.clear()
+
+        platformScheduler?.shutdown()
+        platformScheduler = null
 
         scheduler?.let { sched ->
             sched.shutdown()
@@ -514,10 +549,14 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
             }
             classLoader = null
         }
-        logger.info("Platform Adapter shutdown complete.")
+        platformLogger.info("Platform Adapter shutdown complete.")
     }
 
-    override fun getExecutor(): ExecutorService? = scheduler
+    fun getExecutor(): ExecutorService? = scheduler
+
+    override fun getScheduler(): PlatformScheduler? = platformScheduler
+
+    override fun getCryptographer(): Cryptographer? = DefaultCryptographer()
 
     @Suppress("UNCHECKED_CAST")
     override fun getRepository(entityType: String): Repository<Entity, @JvmSuppressWildcards Map<String, Map<String, Any>>>? {
@@ -527,12 +566,12 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
     open fun registerRepository(entityType: String?, repository: Repository<Entity, Map<String, Map<String, Any>>>?) {
         if (entityType != null && repository != null) {
             repositories[entityType.lowercase()] = repository
-            logger.info("Registered repository for entity type: $entityType")
+            platformLogger.info("Registered repository for entity type: $entityType")
         }
     }
 
     @Synchronized
-    override fun plug(reveila: Reveila) {
+    override fun plug(reveila: ReveilaEngine) {
         this.reveila = reveila
     }
 }

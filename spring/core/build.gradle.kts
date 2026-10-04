@@ -40,6 +40,7 @@ dependencies {
     implementation(files("${rootProject.projectDir}/distribution/jvm/reveila-core.jar"))
 
     // Dependencies required by pre-built Reveila Core & Runtime binaries
+    implementation(libs.kotlin.stdlib)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.datetime)
     implementation(libs.kotlinx.serialization.json)

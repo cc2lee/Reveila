@@ -1,7 +1,6 @@
 package com.reveila.data
 
-interface JavaObjectRepository<T, ID> : Repository<T, ID> {
-
+interface JavaObjectRepository<T : Any, ID> : Repository<T, ID> {
     fun getEntityMapper(): EntityMapper<T>
     fun getEntityClass(): Class<T>
     fun getIdClass(): Class<ID>

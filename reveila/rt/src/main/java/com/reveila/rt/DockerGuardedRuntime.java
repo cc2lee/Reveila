@@ -59,7 +59,7 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
     protected InvocationResult onExecute(Plugin plugin, SecurityPerimeter perimeter, Map<String, Object> arguments, Map<String, String> jitCredentials) {
         String pluginId = plugin.getName();
         long startTime = System.currentTimeMillis();
-        logger.info("Executing via DockerGuardedRuntime for " + pluginId + " [Trace: " + plugin.getTraceId() + "] Started at: " + startTime);
+        getLogger().info("Executing via DockerGuardedRuntime for " + pluginId + " [Trace: " + plugin.getTraceId() + "] Started at: " + startTime);
 
         // Filesystem Isolation: Mount the plugin JAR as a read-only volume
         String pluginJarPath = "/opt/reveila/plugins/" + pluginId + ".jar";
@@ -76,7 +76,10 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
                 .withAutoRemove(true);
 
         // Environment Variables & JIT Credentials
-        String callbackUrl = context.getProperties().getProperty("system.callback.url", "http://host.docker.internal:8080");
+        com.reveila.system.Context ctx = getContext();
+        String callbackUrl = (ctx != null && ctx.getProperties() != null)
+                ? ctx.getProperties().getProperty("system.callback.url", "http://host.docker.internal:8080")
+                : "http://host.docker.internal:8080";
         String jitToken = "JIT-" + java.util.UUID.randomUUID().toString(); // Temporary token generation
         
         java.util.List<String> envVars = new java.util.ArrayList<>(java.util.List.of(
@@ -90,12 +93,14 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
         // ADR 0006: Get the actual implementation class from the system registry if available
         String pluginClass = pluginId; // Fallback
         try {
-            com.reveila.system.Proxy proxy = context.getProxy(pluginId);
-            if (proxy instanceof com.reveila.system.SystemProxy sp) {
-                pluginClass = sp.getInstance().getClass().getName();
+            if (ctx != null) {
+                com.reveila.system.Proxy proxy = ctx.getProxy(pluginId);
+                if (proxy instanceof com.reveila.system.SystemProxy sp) {
+                    pluginClass = sp.getInstance().getClass().getName();
+                }
             }
         } catch (Exception e) {
-            logger.warning("Could not resolve implementation class for plugin: " + pluginId);
+            getLogger().warning("Could not resolve implementation class for plugin: " + pluginId);
         }
         envVars.add("PLUGIN_CLASS=" + pluginClass);
 
@@ -116,10 +121,10 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
         // Serialize Arguments to JSON
         if (argsMap != null) {
             try {
-                String argsJson = com.reveila.util.json.JsonUtil.toJsonString(argsMap);
+                String argsJson = com.reveila.util.json.JsonUtil.Companion.toJsonString(argsMap);
                 envVars.add("PLUGIN_ARGS_JSON=" + argsJson);
             } catch (Exception e) {
-                logger.warning("Failed to serialize plugin arguments for " + pluginId);
+                getLogger().warning("Failed to serialize plugin arguments for " + pluginId);
             }
         }
 
@@ -144,9 +149,9 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
         if (dockerClient != null) {
             try {
                 dockerClient.close();
-                logger.info("DockerGuardedRuntime stopped: DockerClient connection closed.");
+                getLogger().info("DockerGuardedRuntime stopped: DockerClient connection closed.");
             } catch (Exception e) {
-                logger.warning("Error closing DockerClient: " + e.getMessage());
+                getLogger().warning("Error closing DockerClient: " + e.getMessage());
             }
         }
     }
@@ -156,9 +161,9 @@ public class DockerGuardedRuntime extends AbstractGuardedRuntime {
         // Ensure the Docker client is responsive during boot
         try {
             dockerClient.pingCmd().exec();
-            logger.info("DockerGuardedRuntime started: Successfully pinged Docker daemon.");
+            getLogger().info("DockerGuardedRuntime started: Successfully pinged Docker daemon.");
         } catch (Exception e) {
-            logger.severe("Failed to initialize DockerGuardedRuntime: " + e.getMessage());
+            getLogger().severe("Failed to initialize DockerGuardedRuntime: " + e.getMessage());
             throw new com.reveila.error.SystemException("Docker daemon not reachable", e);
         }
     }

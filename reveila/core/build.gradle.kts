@@ -98,18 +98,7 @@ kotlin {
         }
 
         jvmMain.dependencies {
-            implementation(libs.jackson.databind)
-            implementation(libs.jackson.xml)
-            implementation(libs.jackson.jsr310)
-            implementation(libs.jackson.jdk8)
-            implementation(libs.okhttp)
-            implementation(libs.slf4j.api)
-            implementation(libs.commons.compress)
-            implementation(libs.commonmark)
-            implementation(libs.jsoup)
-            implementation(libs.jspecify)
-            implementation(libs.json.schema.validator)
-            implementation(libs.org.json)
+            // Pure Multiplatform: zero third-party Java libraries
         }
 
         androidMain.dependencies {

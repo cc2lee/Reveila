@@ -5,7 +5,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Properties;
+import com.reveila.system.Properties;
 import java.util.UUID;
 
 import org.springframework.boot.ApplicationRunner;

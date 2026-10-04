@@ -7,8 +7,6 @@ import java.util.Collections
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantReadWriteLock
-import java.util.logging.Level
-import javax.security.auth.Subject
 import com.reveila.error.ConfigurationException
 import com.reveila.error.ExceptionCollection
 import com.reveila.error.SecurityException
@@ -62,7 +60,7 @@ class SystemProxy(
                 invoke(methodName, args, subject)
             } catch (t: Throwable) {
                 val msg = "Async invocation failed for " + this.toString() + "." + getMethodSignature(methodName, args)
-                logger.log(Level.SEVERE, msg, t)
+                logger.severe("$msg: ${t.message}")
                 throw RuntimeException(msg, t)
             }
         }
@@ -133,7 +131,7 @@ class SystemProxy(
             throw SecurityException("Subject must not be null")
         }
 
-        val roles = subject.getPrincipals(RolePrincipal::class.java)
+        val roles = subject.getPrincipals(RolePrincipal::class)
 
         var systemCall = false
         if (roles != null) {
@@ -179,7 +177,7 @@ class SystemProxy(
             ?: throw Exception("Failed to create instance of class: " + clazz.name)
 
         if (`object` is AbstractComponent) {
-            `object`.isDebug = debug
+            `object`.isDebug = isDebug
         }
         val arguments = this.metaObject.getArguments()
         setArguments(`object`, clazz, arguments)
@@ -187,16 +185,16 @@ class SystemProxy(
         val compType = manifest.componentType
         if (Constants.COMPONENT.equals(compType, ignoreCase = true)) {
             if (`object` is SystemComponent) {
-                `object`.setContext(context)
+                `object`.context = context
             }
         } else if (Constants.PLUGIN.equals(compType, ignoreCase = true)) {
             if (`object` is PluginComponent) {
-                val staticPluginProps = java.util.Properties()
+                val staticPluginProps = Properties()
 
-                if (context != null && context?.properties != null) {
+                val props = context?.properties
+                if (props != null) {
                     val prefix = "plugin." + (metaObject.getName() ?: "") + "."
-                    context?.properties?.forEach { k, v ->
-                        val keyStr = k.toString()
+                    props.forEach { keyStr, v ->
                         if (keyStr.startsWith(prefix)) {
                             staticPluginProps[keyStr.substring(prefix.length)] = v
                         } else if (keyStr.startsWith((metaObject.getName() ?: "") + ".")) {
@@ -204,15 +202,17 @@ class SystemProxy(
                         }
                     }
 
-                    if (context?.properties?.containsKey("system.home") == true) {
-                        staticPluginProps["system.home"] = context?.properties?.getProperty("system.home")
+                    val sysHome = props.getProperty("system.home")
+                    if (sysHome != null) {
+                        staticPluginProps["system.home"] = sysHome
                     }
-                    if (context?.properties?.containsKey("system.mode") == true) {
-                        staticPluginProps["system.mode"] = context?.properties?.getProperty("system.mode")
+                    val sysMode = props.getProperty("system.mode")
+                    if (sysMode != null) {
+                        staticPluginProps["system.mode"] = sysMode
                     }
                 }
 
-                `object`.setContext(PluginContext(context, manifest, staticPluginProps))
+                `object`.setContext(PluginContext(context as? SystemContext, manifest, staticPluginProps))
             }
         }
 
@@ -224,7 +224,7 @@ class SystemProxy(
     }
 
     @Throws(Exception::class)
-    fun getInstance(): Any {
+    override fun getInstance(): Any {
         return if (this.metaObject.isThreadSafe()) {
             if (this.singletonInstance == null) {
                 synchronized(this) {
@@ -444,7 +444,7 @@ class SystemProxy(
                 logger.warning("SecretManager not found while trying to resolve secret: $key")
             } catch (e: Exception) {
                 result.append("\${secret:").append(key).append("}")
-                logger.log(Level.SEVERE, "Error resolving secret key '$key'.", e)
+                logger.severe("Error resolving secret key '$key': ${e.message}")
             }
             cursor = end + 1
         }
@@ -563,5 +563,5 @@ class SystemProxy(
         }
     }
 
-    override fun getClassLoader(): ClassLoader? = this.loaderRef.get()
+    fun getClassLoader(): ClassLoader? = this.loaderRef.get()
 }

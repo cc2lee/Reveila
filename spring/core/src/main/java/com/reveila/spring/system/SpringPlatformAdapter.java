@@ -7,7 +7,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
+import com.reveila.system.Properties;
 
 import javax.sql.DataSource;
 
@@ -98,25 +98,14 @@ public class SpringPlatformAdapter extends BasePlatformAdapter {
     private void setupJsonFallbacks() {
         // Manually register the AuditLog fallback
         try {
-            Class<?> auditLogClass = Class.forName("com.reveila.spring.model.jpa.AuditLog");
-            com.reveila.data.JsonFileRepository<?, ?> auditRepo = new com.reveila.data.JsonFileRepository<>(
-                    "system-home/standard/data", "AuditLog", auditLogClass, java.util.UUID.class, this);
-
             @SuppressWarnings("unchecked")
-            Repository<Entity, Map<String, Map<String, Object>>> repository = (Repository<Entity, Map<String, Map<String, Object>>>)(Object) createGenericRepoFromGeneric(auditRepo);
+            Repository<Entity, Map<String, Map<String, Object>>> repository = (Repository<Entity, Map<String, Map<String, Object>>>)(Object) new com.reveila.data.JsonFileRepository(
+                    "system-home/standard/data", "AuditLog");
             registerRepository("auditlog", repository);
             logger.info("Reveila Fallback: AuditLog repository registered (JSON).");
         } catch (Exception e) {
             System.err.println("Failed to setup AuditLog JSON fallback: " + e.getMessage());
         }
-    }
-
-    private <T, ID> GenericRepository<T, ID> createGenericRepoFromGeneric(
-            com.reveila.data.JavaObjectRepository<T, ID> repo) {
-        EntityMapper<T> mapper = repo.getEntityMapper();
-        Class<T> entityClass = repo.getEntityClass();
-        Class<ID> idClass = repo.getIdClass();
-        return new GenericRepository<>(repo, mapper, entityClass, idClass);
     }
 
     // Wildcard Capture: Compiler internally infers the specific type of an unknown

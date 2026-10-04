@@ -31,7 +31,7 @@ public class WebhookIngestionService {
 
     private <T> T getComponent(String name, Class<T> type) {
         try {
-            SystemProxy p = reveila.getSystemContext().getProxy(name);
+            com.reveila.system.Proxy p = reveila.getSystemContext().getProxy(name);
             Object instance = p.getInstance();
             if (type.isInstance(instance)) {
                 return type.cast(instance);
@@ -75,7 +75,7 @@ public class WebhookIngestionService {
         String tenantId = reveila != null && reveila.getSystemContext().getProperties() != null ? reveila.getSystemContext().getProperties().getProperty("tenant-id", "default-tenant") : "default-tenant";
 
         Plugin plugin = new Plugin(
-            java.util.UUID.randomUUID(),
+            java.util.UUID.randomUUID().toString(),
             toolCall.getFunctionName(),
             tenantId,
             java.util.UUID.randomUUID().toString()

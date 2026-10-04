@@ -12,6 +12,8 @@ tasks.withType<Test>().configureEach {
 
 dependencies {
     api(files("${rootProject.projectDir}/distribution/jvm/reveila-core.jar"))
+    api(libs.kotlin.stdlib)
+    api(libs.kotlinx.serialization.json)
     
     // AI / Security Runtime dependencies (Server-specific or high-performance)
     implementation(libs.docker.java.api)

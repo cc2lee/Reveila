@@ -37,11 +37,11 @@ public class BaseRepository<T, ID>
     protected EntityMapper<T> entityMapper;
 
     @Override
-    public Optional<T> fetchById(ID id) {
+    public com.reveila.data.Optional<T> fetchById(ID id) {
         if (id == null) {
-            return Optional.empty();
+            return com.reveila.data.Optional.empty();
         }
-        return super.findById(id);
+        return com.reveila.data.Optional.ofNullable(super.findById(id).orElse(null));
     }
 
     public EntityManager getEntityManager() {

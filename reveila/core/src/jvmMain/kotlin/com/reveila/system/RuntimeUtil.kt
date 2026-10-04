@@ -5,19 +5,18 @@ import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
-import java.util.Properties
 import java.util.stream.Collectors
 
 object RuntimeUtil {
 
     @JvmStatic
-    fun getArgsAsProperties(args: Array<String>?): Properties {
-        val cmdArgs = Properties()
+    fun getArgsAsProperties(args: Array<String>?): com.reveila.system.Properties {
+        val cmdArgs = com.reveila.system.Properties()
         if (args != null) {
             for (arg in args) {
                 val parts = arg.split("=".toRegex(), limit = 2).toTypedArray()
                 if (parts.size == 2 && parts[0].isNotEmpty()) {
-                    cmdArgs[parts[0]] = parts[1]
+                    cmdArgs.setProperty(parts[0], parts[1])
                 } else {
                     System.err.println("Warning: Ignoring malformed command-line argument: $arg")
                 }

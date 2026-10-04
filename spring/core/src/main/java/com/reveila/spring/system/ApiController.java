@@ -3,7 +3,7 @@ package com.reveila.spring.system;
 import java.util.Collection;
 import java.util.Map;
 
-import javax.security.auth.Subject;
+import com.reveila.system.Subject;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;

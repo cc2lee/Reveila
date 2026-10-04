@@ -3,20 +3,15 @@ package com.reveila.system
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
-import java.io.InputStream
-import java.net.URI
-import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.util.Collections
-import java.util.Properties
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.logging.Level
-import java.util.logging.Logger
-import javax.security.auth.Subject
+import com.reveila.system.logging.PlatformLogger
 import com.reveila.crypto.CryptoException
 import com.reveila.crypto.Cryptographer
 import com.reveila.crypto.DefaultCryptographer
@@ -30,7 +25,7 @@ import com.reveila.util.TimeFormat
 /**
  * @author Charles Lee
  */
-open class Reveila : AutoCloseable, EventConsumer {
+open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
 
     private var startExecutor: ExecutorService? = null
     private var platformAdapter: PlatformAdapter? = null
@@ -39,20 +34,20 @@ open class Reveila : AutoCloseable, EventConsumer {
         private set
     private var strictMode: Boolean = true
     private var startedProxies: MutableList<SystemProxy>? = null
-    private var logger: Logger? = null
-    private var localUrl: URL? = null
+    private var logger: PlatformLogger? = null
+    private var localUrl: String = "http://localhost/"
     private var standalone: Boolean = true
     private val isRunningFlag: AtomicBoolean = AtomicBoolean(false)
     private val localhostUrlString: String = "http://localhost/"
 
-    open fun isRunning(): Boolean = isRunningFlag.get()
+    override fun isRunning(): Boolean = isRunningFlag.get()
 
     override fun close() {
         shutdown()
     }
 
     @Synchronized
-    open fun shutdown() {
+    override fun shutdown() {
         if (!isRunningFlag.get()) {
             return
         }
@@ -83,27 +78,16 @@ open class Reveila : AutoCloseable, EventConsumer {
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
         }
-
-        logger?.let { log ->
-            for (handler in log.handlers) {
-                try {
-                    handler.close()
-                } catch (t: Exception) {
-                    log.info("Failed to close logger handler: $handler")
-                    t.printStackTrace()
-                }
-            }
-        }
     }
 
     @Synchronized
     @Throws(Exception::class)
     open fun start(platformAdapter: PlatformAdapter) {
         this.platformAdapter = platformAdapter
-        this.startExecutor = platformAdapter.getExecutor()
+        this.startExecutor = (platformAdapter as? BasePlatformAdapter)?.getExecutor() ?: Executors.newFixedThreadPool(4)
         platformAdapter.getProperties()?.let { this.properties.putAll(it) }
         this.logger = platformAdapter.getLogger()
-        this.localUrl = URI(localhostUrlString).toURL()
+        this.localUrl = localhostUrlString
 
         printLogo()
         logStartupBanner()
@@ -120,7 +104,7 @@ open class Reveila : AutoCloseable, EventConsumer {
         strictMode = !"false".equals(this.properties.getProperty(Constants.LAUNCH_STRICT_MODE), ignoreCase = true)
         var timeoutSeconds = 60L
         try {
-            timeoutSeconds = this.properties.getProperty(Constants.COMPONENT_START_TIMEOUT, "60").toLong()
+            timeoutSeconds = this.properties.getProperty(Constants.COMPONENT_START_TIMEOUT, "60")!!.toLong()
         } catch (e: NumberFormatException) {
             logger?.warning("Invalid value for ${Constants.COMPONENT_START_TIMEOUT}. Using default: 60")
         }
@@ -196,7 +180,7 @@ open class Reveila : AutoCloseable, EventConsumer {
     }
 
     @Throws(Exception::class)
-    open fun invoke(
+    override fun invoke(
         componentName: String,
         methodName: String,
         params: Array<Any?>?,
@@ -264,14 +248,9 @@ open class Reveila : AutoCloseable, EventConsumer {
             val logoPath = Constants.CONFIGS_DIR_NAME + "/logo.txt"
             val adapter = this.platformAdapter
             if (adapter != null) {
-                adapter.getFileInputStream(logoPath).use { `is` ->
-                    val buffer = ByteArrayOutputStream()
-                    val data = ByteArray(1024)
-                    var nRead: Int
-                    while (`is`.read(data, 0, data.size).also { nRead = it } != -1) {
-                        buffer.write(data, 0, nRead)
-                    }
-                    return buffer.toString(StandardCharsets.UTF_8.name())
+                val content = adapter.readFileString(logoPath)
+                if (content.isNotBlank()) {
+                    return content
                 }
             }
         } catch (e: Exception) {
@@ -319,7 +298,7 @@ open class Reveila : AutoCloseable, EventConsumer {
         val eventManager = EventManager()
         val adapter = this.platformAdapter ?: throw IllegalStateException("PlatformAdapter not initialized")
         var encrypter = adapter.getCryptographer()
-        val log = this.logger ?: Logger.getLogger("reveila")
+        val log = this.logger ?: PlatformLogger("reveila")
 
         if (encrypter == null) {
             val cryptoKey = System.getenv("REVEILA_CRYPTO_KEY")
@@ -332,24 +311,13 @@ open class Reveila : AutoCloseable, EventConsumer {
                 if (saltHex.isNullOrBlank()) {
                     throw IllegalStateException("No Crypto Salt found. Please set REVEILA_CRYPTO_SALT environment variable.")
                 }
-                encrypter = DefaultCryptographer(cryptoKey, hexToBytes(saltHex))
+                encrypter = DefaultCryptographer(cryptoKey, DefaultCryptographer.hexToBytes(saltHex))
             } else {
                 throw IllegalStateException("No Cryptographer found. Please set REVEILA_CRYPTO_KEY environment variable.")
             }
         }
 
         this.systemContext = SystemContext(props, eventManager, log, encrypter, adapter)
-    }
-
-    private fun hexToBytes(s: String): ByteArray {
-        val len = s.length
-        val data = ByteArray(len / 2)
-        var i = 0
-        while (i < len) {
-            data[i / 2] = ((Character.digit(s[i], 16) shl 4) + Character.digit(s[i + 1], 16)).toByte()
-            i += 2
-        }
-        return data
     }
 
     @Throws(Exception::class)
@@ -364,16 +332,15 @@ open class Reveila : AutoCloseable, EventConsumer {
         val list = ArrayList<MetaObject>()
         for (file in fileList) {
             try {
-                adapter.getFileInputStream(file).use { `is` ->
-                    val config = Configuration(`is`)
-                    for (mObj in config.getMetaObjects()) {
-                        if (mObj.getName().isNullOrBlank()) {
-                            throw ConfigurationException("Component name is not set in configuration file: $file")
-                        }
-                        list.add(mObj)
+                val content = adapter.readFileString(file)
+                val config = Configuration(content)
+                for (mObj in config.getMetaObjects()) {
+                    if (mObj.getName().isNullOrBlank()) {
+                        throw ConfigurationException("Component name is not set in configuration file: $file")
                     }
-                    logger?.info("Processed configuration file: $file")
+                    list.add(mObj)
                 }
+                logger?.info("Processed configuration file: $file")
             } catch (e: Exception) {
                 handleStartError("Failed to parse configuration file: $file", e)
             }
@@ -391,7 +358,7 @@ open class Reveila : AutoCloseable, EventConsumer {
         } else {
             logger?.let { log ->
                 val suffix = if (msg.endsWith(".") || msg.endsWith("!") || msg.endsWith("?")) " " else ". "
-                log.log(Level.SEVERE, msg + suffix + "Continuing in non-strict mode.", t)
+                log.severe(msg + suffix + "Continuing in non-strict mode: ${t.message}")
             }
         }
     }
@@ -597,7 +564,7 @@ open class Reveila : AutoCloseable, EventConsumer {
                 p.stop()
             } catch (e: Exception) {
                 success = false
-                logger?.log(Level.WARNING, "⚠️ Failed to stop $p", e)
+                logger?.warning("⚠️ Failed to stop $p: ${e.message}")
             }
         }
 

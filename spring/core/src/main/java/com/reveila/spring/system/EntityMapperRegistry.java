@@ -17,8 +17,10 @@ public class EntityMapperRegistry {
     @Autowired
     public EntityMapperRegistry(List<EntityMapper<?>> allMappers) {
         for (EntityMapper<?> mapper : allMappers) {
-            // We assume your EntityMapper has a getEntityClass() method
-            mappers.put(mapper.getEntityClass(), mapper);
+            Object cls = mapper.getEntityClass();
+            if (cls instanceof Class<?> c) {
+                mappers.put(c, mapper);
+            }
         }
     }
 

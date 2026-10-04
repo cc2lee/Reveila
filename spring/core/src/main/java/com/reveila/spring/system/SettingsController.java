@@ -216,7 +216,7 @@ public class SettingsController {
         Map<String, Object> manifest = request.getManifest();
         if (manifest != null) {
             Path configPath = systemHome.resolve("configs/global-perimeter.json");
-            com.fasterxml.jackson.databind.JsonNode perimeterNode = com.reveila.system.PerimeterEnforcementMerger.getAgencyPerimeterNode(configPath);
+            com.fasterxml.jackson.databind.JsonNode perimeterNode = Files.exists(configPath) ? mapper.readTree(configPath.toFile()) : null;
             
             com.fasterxml.jackson.databind.node.ObjectNode root = mapper.valueToTree(manifest);
             if (perimeterNode != null) {
