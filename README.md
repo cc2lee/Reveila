@@ -1,6 +1,31 @@
 # Reveila-Suite
 
-Reveila-Suite is a cross-platform, multi-tenant **Agentic AI Execution Fabric** designed to autonomously discover, orchestrate, and execute complex business logic at scale. Built on a foundation of **Clean Hexagonal Architecture** and a framework-agnostic core runtime engine, it provides secure, observable, and platform-independent environments for deploying autonomous AI agents that seamlessly interface with core transactional enterprise backbones, edge nodes, and legacy distributed architectures.
+Reveila-Suite is a cross-platform, multi-tenant **Agentic AI Execution Fabric** and **Universal Cloud Operating System** designed to autonomously discover, orchestrate, and execute complex business logic at scale. Built on a foundation of **Clean Hexagonal Architecture** and a pure **Kotlin Multiplatform (KMP)** core runtime engine, it provides secure, observable, and platform-independent environments for deploying autonomous AI agents that seamlessly interface with core transactional enterprise backbones, elastic distributed cloud clusters, and sovereign edge nodes.
+
+---
+
+## 📑 Table of Contents
+
+- [🏛️ The "Sovereign Mode" Experience](#️-the-sovereign-mode-experience)
+- [🛡️ Trust-Boundaries Matrix](#️-trust-boundaries-matrix)
+- [🗺️ System Topology & Dual Execution Architecture](#️-system-topology--dual-execution-architecture)
+- [🛠️ Technology Stack & Runtime Ecosystem](#️-technology-stack--runtime-ecosystem)
+- [🧠 Agentic AI Architecture & Execution Fabric](#-agentic-ai-architecture--execution-fabric)
+  - [🔄 The "AI Loop" Stateful Session Management](#-the-ai-loop-stateful-session-management)
+  - [🌉 LangChain4j Translation & The Message Chain Pattern](#-langchain4j-translation--the-message-chain-pattern)
+  - [📊 Prompt Standardization & Structural Security](#-prompt-standardization--structural-security)
+  - [💾 Context Optimization & Memory Footprint Controls](#-context-optimization--memory-footprint-controls)
+  - [🚀 Execution Configurations: Personal vs. Enterprise](#-execution-configurations-personal-vs-enterprise)
+  - [⚡ High-Precision Context Pipelines (Tool RAG & Knowledge Vault)](#-high-precision-context-pipelines-tool-rag--knowledge-vault)
+  - [🔌 API Invocation Contracts](#-api-invocation-contracts)
+- [🏗️ Platform Architecture & Extensibility Specification (ADR-0001)](#️-platform-architecture--extensibility-specification-adr-0001)
+  - [Core Architectural Pillars & Pure KMP Engine](#2-core-architectural-pillars)
+  - [Dual Execution Paradigms: Server Mode vs. Local-First Mode](#23-hexagonal-platform-adapter-port-platformadapter)
+  - [Universal Cloud OS: Standalone vs. Clustered Mesh](#2311-the-universal-cloud-operating-system-standalone-vs-clustered-mode-systemstandalone)
+  - [Managed Invocation: Proxies and Service Bus](#3-managed-invocation-proxies-and-orchestration)
+  - [Third-Party Plugin Specification & Developer Guide](#4-extensibility-architecture-third-party-plugin-specification)
+  - [Monorepo Module Directory Structure](#6-monorepo-module-directory-structure)
+- [👨‍💻 Platform Author & Principle Executive Advisory](#-platform-author--principle-executive-advisory)
 
 ---
 
@@ -29,47 +54,211 @@ Most modern AI tools turn into high-latency dependencies or expensive paperweigh
 
 ---
 
-## 🗺️ System Topology & Interaction Flow
-
-
+## 🗺️ System Topology & Dual Execution Architecture
 
 ```mermaid
 graph TB
-    subgraph Clients ["Client Layer (Monorepo Workspace)"]
-        AndroidApp[Android App<br/>'Java / Kotlin Runtime']
-        WebApp[Web App<br/>'Vue.js / TypeScript']
+    subgraph Clients ["Client & Inbound Interaction Layer"]
+        WebApp["Web App & API Consumers<br/>(Vue.js / External REST Clients)"]
+        NativeApp["Sovereign Local Client Apps<br/>(Android App / Windows Native / Desktop UI)"]
     end
 
-    subgraph Backend ["Server Layer (Monorepo Base)"]
-        JavaAPI[Java Backend<br/>'Spring Boot 3.5+']
-        DB[(PostgreSQL / H2 / SQLite)]
+    subgraph ServerMode ["Mode A: Enterprise Java Server (Spring Boot 3.5+)"]
+        ApiController["ApiController (Driving Adapter)<br/>POST /api/components/{name}/invoke"]
+        BaseAdapter["BasePlatformAdapter<br/>(JVM ThreadPools, Files, Encryption)"]
+        ClusterMesh["Universal Cloud OS Mesh<br/>(system.standalone=false)<br/>PostgreSQL Central Registry & Peer Routing"]
     end
 
-    subgraph Plugins ["Extension Layer"]
-        PluginA[Plugin A<br/>'DEX JAR Module']
-        PluginB[Plugin B<br/>'DEX JAR Module']
+    subgraph LocalMode ["Mode B: Embedded / Local-First Multiplatform"]
+        InProcessBridge["In-Process Client Bridge<br/>reveila.invoke() / ctx.getProxy()"]
+        NativeAdapter["AndroidPlatformAdapter / Native Win32 Adapter<br/>(Private Filesystem, Hardware Storage)"]
     end
 
-    %% Interaction Paths
-    AndroidApp -- "Universal Invocation (/api/components/...)" --> JavaAPI
-    WebApp -- "Universal Invocation (/api/components/...)" --> JavaAPI
-    JavaAPI -- "JPA / JDBC Data Isolation" --> DB
+    subgraph CoreEngine ["Core Multiplatform Engine (reveila:core - Pure KMP)"]
+        InvocationBus["Universal Invocation Bus & Proxy Fabric<br/>(Reveila.invoke / SystemContext)"]
+        KMPCommon["commonMain Contracts & Metas<br/>(Startable, Stoppable, MetaObject, Manifest)"]
+        SafetyFabric["Agentic AI Safety Fabric & RBAC Enforcement<br/>(SecurityPerimeter, Subject, SecretMasker)"]
+    end
 
-    %% Dynamic Isolation Loading
-    AndroidApp -- "DexClassLoader Sandbox" --> PluginA
-    AndroidApp -- "DexClassLoader Sandbox" --> PluginB
+    subgraph Extensions ["Isolated Extensibility Layer"]
+        JvmPlugin["JVM Plugins<br/>(ChildFirstURLClassLoader)"]
+        AndroidPlugin["Android Plugins<br/>(D8 DEX / ChildFirstDexClassLoader)"]
+        SandboxPlugin["Containerized Plugins<br/>(Docker / Wasm Guarded Runtime)"]
+    end
 
-    %% Visual Profiles
-    style AndroidApp fill:#3DDC84,stroke:#333,stroke-width:2px
-    style WebApp fill:#42b883,stroke:#333,stroke-width:2px
-    style JavaAPI fill:#6DB33F,stroke:#333,stroke-width:2px
-    style DB fill:#336791,stroke:#333,stroke-width:2px
+    subgraph Storage ["Enterprise & Sovereign Storage Fabrics"]
+        CloudDB[("PostgreSQL / MongoDB<br/>(Central Registry, Ledger, Tenancy)")]
+        LocalDB[("SQLite / ChromaDB / Vector Store<br/>(Encrypted Sovereign Storage)")]
+    end
 
+    %% Wiring & Invocations
+    WebApp --> ApiController
+    ApiController --> BaseAdapter
+    BaseAdapter --> InvocationBus
+    ApiController -. "system.standalone=false" .-> ClusterMesh
+    ClusterMesh --> CloudDB
+
+    NativeApp --> InProcessBridge
+    InProcessBridge --> NativeAdapter
+    NativeAdapter --> InvocationBus
+
+    InvocationBus --> KMPCommon
+    InvocationBus --> SafetyFabric
+
+    InvocationBus -. "Isolated Classloading" .-> JvmPlugin
+    InvocationBus -. "DEX Sandbox" .-> AndroidPlugin
+    InvocationBus -. "Zero-Trust Bridge" .-> SandboxPlugin
+
+    ApiController --> CloudDB
+    NativeAdapter --> LocalDB
+
+    %% Visual Styling
+    style ServerMode fill:#f4fbf4,stroke:#6DB33F,stroke-width:2px
+    style LocalMode fill:#f0f8ff,stroke:#3DDC84,stroke-width:2px
+    style CoreEngine fill:#fdf6e2,stroke:#d33682,stroke-width:2px
+    style Extensions fill:#fdf2f8,stroke:#9333ea,stroke-width:2px
+    style Storage fill:#f1f5f9,stroke:#336791,stroke-width:2px
 ```
 
 ---
 
-## 🏗️ Architectural Core
+## 🛠️ Technology Stack & Runtime Ecosystem
+
+| Architectural Layer | Core Technologies & Frameworks | Target Environments |
+| :--- | :--- | :--- |
+| **Core Multiplatform Engine (`reveila:core`)** | **Kotlin Multiplatform (KMP)**, Kotlin 2.x, Java 17/21 Bytecode, Native C/C++ (`reveila_core.dll`, `.h`, Apple Frameworks), Gradle (Kotlin DSL) | Universal (JVM, Android, Windows, macOS, Linux) |
+| **Enterprise Server (Mode A)** | **Spring Boot 3.5.x**, Spring Security, Hibernate/JPA, HikariCP, PostgreSQL (NOTIFY/LISTEN Mesh), H2 | Cloud VMs, Containers, Elastic Kubernetes Clusters |
+| **Sovereign Client Runtimes (Mode B)** | **Android ART** (SDK 34+, Android 14+ Security), React Native (Expo SDK), Windows Native (Win32), Node.js | Flagship Mobile, Air-Gapped Workstations |
+| **Agentic AI & Inference Engine** | **LangChain4j**, Ollama (Local LLM), OpenAI / Gemini APIs, Prompt Firewalls (Markdown + XML) | Embedded Local Edge & Enterprise Server |
+| **Sandboxing & Tool Runtimes** | **Wasmtime** (WebAssembly), Docker Guarded Runtime, Playwright, Xterm.js / node-pty | Isolated Workspaces & Micro-VM Sandboxes |
+| **Enterprise & Local Storage Fabrics** | PostgreSQL (Central Registry Ledger), MongoDB, SQLite (Native Extensions), DuckDB, ChromaDB | Distributed Cloud DB & Sovereign Local Vector Stores |
+
+---
+
+## 🧠 Agentic AI Architecture & Execution Fabric
+
+### 🔄 The "AI Loop" Stateful Session Management
+
+Agent activities are grouped into isolated, stateful sessions. These sessions are fully persisted, allowing reasoning states to be suspended, terminated, or resumed at a later timestamp. During an active execution thread, the **Agentic Loop** runs via the following deterministic pattern:
+
+```
+[System Instruction + Tool Definitions + User Intent] 
+                        │
+                        ▼
+            [LLM Non-Deterministic Reasoning]
+                        │
+                        ▼
+          [Structured JSON Tool Call Output]
+                        │
+                        ▼
+        [Java Execution & Schema Validation (Host / OS)]
+                        │
+                        ▼
+        [Tool Output Result Matrix Recovers] ─── (Loops back to stabilize)
+```
+
+### 🌉 LangChain4j Translation & The Message Chain Pattern
+
+The engine integrates `LangChain4j` to act as an infrastructure abstraction driver layer between core domain interfaces and external inference models (e.g., cloud endpoints like OpenAI/Gemini vs. local targets like Ollama). It manages low-level API serialization, enforces structural Java object mappings from raw model outputs, and permits swapping providers by tweaking single application property definitions.
+
+To preserve accurate reasoning histories across multi-turn execution loops, the system maintains a chronologically ordered state array (`dev.langchain4j.memory.ChatMemory`). The `processLoop()` method in `AgenticFabric.java` explicitly pieces this array together on every turn, injecting four critical discrete roles:
+
+1. **SystemMessage:** Contains core operational instructions, perimeter rules, and tools structured via the Model Context Protocol (MCP).
+2. **UserMessage:** The raw incoming intent statement provided by the user.
+3. **AiMessage:** Captures the LLM's explicit reasoning steps and generated tool-call parameters.
+4. **ToolExecutionResultMessage:** Binds the execution result payload (e.g., PowerShell runtime output or REST data logs) back into the conversation context block.
+
+### 📊 Prompt Standardization & Structural Security
+
+All system instructions and user payloads are assembled utilizing structural **Markdown + XML** markup configurations managed through `Prompt.getBasePrompt()`.
+
+* **Markdown:** Provides macro-level system hierarchies, operational roles, and clear readability sections (`# ROLE`, `# CONTEXT`).
+* **XML Tags:** Act as structural "firewalls" surrounding dynamic external data blocks (e.g., `<context_boundary>`), effectively stopping prompt injection attempts from altering target instructions.
+
+#### Format Performance Evaluation
+
+| Architectural Strategy | Core Reasoning Capabilities | Token Asset Footprint | Injection Safety Profiles | Human Auditability |
+| :--- | :--- | :--- | :--- | :--- |
+| **Plain Text** | Basic Pattern Discovery | Lowest Footprint | Poor Context Isolation | High Clarity |
+| **JSON Specifications** | Moderate Logic Parsing | High Token Overhead | Good Structure Parsing | Low Auditing Clarity |
+| **Markdown + XML** | **Highest Capability (81.2%)** | **Optimized Efficiency** | **Excellent (Tag Firewalls)** | **High Structural Clarity** |
+
+### 💾 Context Optimization & Memory Footprint Controls
+
+#### Sliding Memory Windows
+To prevent memory inflation and escalating token processing latency during long-running tasks, the system implements a runtime truncation strategy. After an execution track passes 10–15 turns, the engine automatically commands a lightweight model tracking step to summarize preceding entries, capturing historical state indicators while freeing block overhead using a defined `MessageWindowChatMemory` configuration:
+
+```java
+// How Reveila-Suite maintains conversational state at runtime
+ChatMemory chatMemory = MessageWindowChatMemory.withMaxMessages(20);
+chatMemory.add(UserMessage.from("Yes, run the script."));
+
+// Execution step matches tool tracking pipelines
+String result = terminal.execute(script);
+chatMemory.add(ToolExecutionResultMessage.from(toolId, result));
+
+// Sequential forward invocations dynamically inherit the optimized context window
+String finalAnswer = model.generate(chatMemory.messages()).content();
+```
+
+#### Size-Aware Session Management
+Total operational session storage limits are defined inside `reveila.properties` via the `ai.optimization.history` property key (e.g., `10MB`).
+
+* `AgentSessionManager.estimateSessionSize()` calculates the explicit memory allocation of a target session by analyzing its active messages array and parameter payload maps.
+* When saving a tracking state via `saveSession()`, the engine sweeps the global workspace footprint; if the aggregated storage crosses your configured threshold boundary, an eviction step discards the oldest **Least Recently Used (LRU)** sessions to preserve memory safety.
+
+### 🚀 Execution Configurations: Personal vs. Enterprise
+
+#### 1. The Autonomous Agent (Personal Edition Standalone)
+Reveila Personal Edition allows the platform to run recurring tasks independently when authorized by the user.
+
+* **Task Ingestion:** Bounded task scripts are defined using structured JSON schemas inside the `system-home/standard/tasks` workspace directory (e.g., `daily-news.json`).
+* **Autonomous Worker Thread:** The `AutonomousAgent` tracking class invokes a `doTask()` sweep pattern on a 30-second loop interval (governed through `standard.json`). It automatically loads task definitions, spins up an isolated `AgentSession`, and triggers execution loops via the core `AgenticFabric`.
+* **Dynamic Script Execution:** If the agent calculates that a problem requires a custom operational script, it can dynamically assemble and run scripts natively through `ReveilaTerminal.executeDynamicScript()` using a biometrically validated authorization gate.
+
+```
+[User Intent Provided] ──> [LLM Realizes Tool Gap] ──> [LLM Synthesizes Script (PS1 / Bash)] 
+                                                                    │
+                                                                    ▼
+[LLM Summary Outputs Completed] <── [Result Matrix Captured] <── [Reveila Runs Script via HITL Gate]
+```
+
+#### 2. Pre-Defined Secure Tools (Enterprise Edition Fabric)
+To guarantee security across absolute corporate tiers, Reveila Enterprise Edition restricts execution parameters strictly to an authenticated list of predefined tools managed through `ReveilaTerminal.executeSafeScript()`.
+
+* **Platform Sandbox Engineering:** Enterprise operations run under low-privilege service configurations, hard-capping execution timeouts at 30 seconds to block infinite loops or runaway threads.
+* **Enterprise Tool Portfolio:**
+  * *Terminal Core Interface:* Implemented via stable `Xterm.js` and `node-pty` foundations.
+  * *Agentic Automation Layers:* Driven through structured browser engines using `Playwright` integration blocks.
+  * *Sandboxed Compute Execution:* Leverages isolated WebAssembly runtimes (`Wasmtime`) for near-native speed with complete memory encapsulation.
+  * *Localized Architecture Storage:* Managed via lightweight embedded analytical architectures (`DuckDB` / `ChromaDB`).
+
+### ⚡ High-Precision Context Pipelines (Tool RAG & Knowledge Vault)
+
+* **Two-Stage Tool RAG:** To prevent context bloating and eliminate model logic degradation ("Short Model Tax"), `DynamicToolProvider.java` runs a two-stage tool injection pipeline. It performs an initial semantic vector search across available system actions, then sorts candidates through a dedicated `ScoringModel` step to pass only high-relevance tool parameters into the operational prompt window.
+* **Knowledge Vault Injections:** For every incoming user intent, `AgenticFabric.java` triggers an internal document lookup. Relevant internal repository blocks (extracted from user guides, PDFs, or system specifications) are automatically parsed and wrapped safely inside the `<context_boundary>` block of the instruction matrix.
+
+### 🔌 API Invocation Contracts
+
+To trigger model tracking processes via remote REST configurations, target payloads are dispatched to the core `AgenticFabric.processIntent()` service engine, which returns unified JSON payload metadata schemas tracking execution status:
+
+```json
+{
+  "status": "completed",
+  "reasoning": "Determined system log inflation stems from unarchived output logs. Prepared file compression routines.",
+  "result": "Dispatched compression execution task across target directories successfully.",
+  "confidence-score": 1.0,
+  "tool-call": []
+}
+```
+
+---
+
+## 🏗️ Platform Architecture & Extensibility Specification (ADR-0001)
+
+> [!NOTE]
+> **Dynamic Synchronization Notice:**  
+> This entire section is dynamically embedded and automatically synchronized from [`memory-bank/ADR/0001 Architecture Principals.md`](Reveila-Suite/memory-bank/ADR/0001%20Architecture%20Principals.md) via the [`embed-architecture-principals-in-readme.yml`](Reveila-Suite/.github/workflows/embed-architecture-principals-in-readme.yml) GitHub Actions workflow. Direct edits to architecture principles should be made to the source ADR file rather than modifying this README block manually.
 
 <!-- START_EMBED -->
 
@@ -153,42 +342,42 @@ The Reveila architecture is founded on the following primary pillars:
 ```
 
 ### 2.1 The Core Engine (`reveila:core` - Pure KMP)
-The Core Engine is a self-contained [Kotlin Multiplatform](file:///c:/IDE/Projects/Reveila-Suite/reveila/core) runtime compiled into platform-specific native and bytecode binaries. All legacy Java source files in the core module have been migrated to Kotlin:
-* **[`commonMain`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain)**: Pure multiplatform contracts, lifecycle definitions ([`Startable`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Startable.kt), [`Stoppable`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Stoppable.kt)), component bases ([`AbstractComponent`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/AbstractComponent.kt), [`PluginComponent`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginComponent.kt), [`SystemComponent`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/SystemComponent.kt)), context abstractions ([`Context`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Context.kt), [`PluginContext`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginContext.kt), [`SystemContext`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/SystemContext.kt)), proxy contracts ([`Proxy`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Proxy.kt), [`PluginProxy`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginProxy.kt)), metadata parser ([`Manifest`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Manifest.kt), [`MetaObject`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/MetaObject.kt)), cryptographic interfaces, and the event notification fabric. Zero JVM/OS dependencies.
-* **[`jvmMain`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/jvmMain)**: JVM-specific implementations including reflection method dispatch, Child-First URL classloading ([`ChildFirstURLClassLoader`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/ChildFirstURLClassLoader.kt)), [`SystemProxy`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/SystemProxy.kt), [`Reveila`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/Reveila.kt) engine orchestration, and Spring Boot compatibility.
-* **[`androidMain`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/androidMain)**: Android ART platform actuals, Android lifecycle bindings, and DEX classloader adapters.
+The Core Engine is a self-contained [Kotlin Multiplatform](/Reveila-Suite/reveila/core) runtime compiled into platform-specific native and bytecode binaries. All legacy Java source files in the core module have been migrated to Kotlin:
+* **[`commonMain`](/Reveila-Suite/reveila/core/src/commonMain)**: Pure multiplatform contracts, lifecycle definitions ([`Startable`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Startable.kt), [`Stoppable`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Stoppable.kt)), component bases ([`AbstractComponent`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/AbstractComponent.kt), [`PluginComponent`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginComponent.kt), [`SystemComponent`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/SystemComponent.kt)), context abstractions ([`Context`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Context.kt), [`PluginContext`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginContext.kt), [`SystemContext`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/SystemContext.kt)), proxy contracts ([`Proxy`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Proxy.kt), [`PluginProxy`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginProxy.kt)), metadata parser ([`Manifest`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Manifest.kt), [`MetaObject`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/MetaObject.kt)), cryptographic interfaces, and the event notification fabric. Zero JVM/OS dependencies.
+* **[`jvmMain`](/Reveila-Suite/reveila/core/src/jvmMain)**: JVM-specific implementations including reflection method dispatch, Child-First URL classloading ([`ChildFirstURLClassLoader`](/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/ChildFirstURLClassLoader.kt)), [`SystemProxy`](/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/SystemProxy.kt), [`Reveila`](/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/Reveila.kt) engine orchestration, and Spring Boot compatibility.
+* **[`androidMain`](/Reveila-Suite/reveila/core/src/androidMain)**: Android ART platform actuals, Android lifecycle bindings, and DEX classloader adapters.
 * **Native Targets (`mingwMain`, `appleMain`, `linuxMain`)**: Native C/C++ dynamic libraries (e.g. `reveila_core.dll` and `reveila_core_api.h`) and POSIX bindings.
 
 ### 2.2 Decoupled Binary Distribution Architecture
 To preserve strict modular boundaries, downstream applications do not depend directly on the `:reveila:core` source project. Instead, the workspace relies on pre-built binary distributions exported via the Gradle distribution pipeline (`distribution/`):
 * **`distribution/jvm/reveila-core.jar`**: Compiled targeting Java 17 bytecode (class major version 61.0) for universal compatibility across Spring Boot 3.x and Android ART/Dalvik runtimes.
-* **`distribution/jvm/reveila-rt.jar`**: The Guarded Runtime library ([`DockerGuardedRuntime`](file:///c:/IDE/Projects/Reveila-Suite/reveila/rt/src/main/java/com/reveila/rt/DockerGuardedRuntime.java)) compiled against binary core artifacts.
+* **`distribution/jvm/reveila-rt.jar`**: The Guarded Runtime library ([`DockerGuardedRuntime`](/Reveila-Suite/reveila/rt/src/main/java/com/reveila/rt/DockerGuardedRuntime.java)) compiled against binary core artifacts.
 * **`distribution/android/reveila-core.aar`**: Android release archive containing platform actuals.
 * **`distribution/windows/reveila_core.dll` & `reveila_core_api.h`**: Native Windows release shared library and C headers.
 
-Downstream consumers—such as [`reveila:rt`](file:///c:/IDE/Projects/Reveila-Suite/reveila/rt), [`spring:core`](file:///c:/IDE/Projects/Reveila-Suite/spring/core), [`android`](file:///c:/IDE/Projects/Reveila-Suite/android), and [`apps/expo/Reveila`](file:///c:/IDE/Projects/Reveila-Suite/apps/expo/Reveila)—consume these pre-built binary artifacts directly, maintaining zero source coupling.
+Downstream consumers—such as [`reveila:rt`](/Reveila-Suite/reveila/rt), [`spring:core`](/Reveila-Suite/spring/core), [`android`](/Reveila-Suite/android), and [`apps/expo/Reveila`](/Reveila-Suite/apps/expo/Reveila)—consume these pre-built binary artifacts directly, maintaining zero source coupling.
 
-### 2.3 Hexagonal Platform Adapter Port ([`PlatformAdapter`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PlatformAdapter.kt))
+### 2.3 Hexagonal Platform Adapter Port ([`PlatformAdapter`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PlatformAdapter.kt))
 
-The [`PlatformAdapter`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PlatformAdapter.kt) interface forms the core **Hexagonal Port (Ports & Adapters pattern)** that isolates the engine's domain logic, proxy fabric, and security mechanisms from the host environment. Through this abstraction, the exact same core engine (`reveila:core`) operates across two distinct deployment paradigms without any code alterations:
+The [`PlatformAdapter`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PlatformAdapter.kt) interface forms the core **Hexagonal Port (Ports & Adapters pattern)** that isolates the engine's domain logic, proxy fabric, and security mechanisms from the host environment. Through this abstraction, the exact same core engine (`reveila:core`) operates across two distinct deployment paradigms without any code alterations:
 
 #### 2.3.1 Deployment Mode A: Enterprise Java Server (Spring Boot / Distributed REST Mode)
 In server deployments, the Reveila engine runs embedded within a host **Spring Boot** application (`spring:core`):
-* **Driving / Inbound Adapter ([`ApiController`](file:///c:/IDE/Projects/Reveila-Suite/spring/core/src/main/java/com/reveila/spring/system/ApiController.java))**:
+* **Driving / Inbound Adapter ([`ApiController`](/Reveila-Suite/spring/core/src/main/java/com/reveila/spring/system/ApiController.java))**:
   * External clients interact with Reveila via exposed REST endpoints:
     * Standard Invocation: `@PostMapping("/api/components/{componentName}/invoke")`
     * Dual-Key Overwatch Invocation: `@PostMapping("/api/v1/overwatch/components/{componentName}/invoke")`
-    * Container Callback Endpoint: `@PostMapping("/api/system/callback")` (routes callbacks from sandboxed Docker workers back to [`ManagedInvocation`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/safety/ManagedInvocation.kt))
-  * **Security Translation**: [`ApiController`](file:///c:/IDE/Projects/Reveila-Suite/spring/core/src/main/java/com/reveila/spring/system/ApiController.java) intercepts the incoming request, inspects Spring Security's `Authentication` context, extracts granted authorities (`GrantedAuthority`), strips the `ROLE_` prefix, and translates them into Reveila [`RolePrincipal`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Principal.kt) entries attached to a new [`Subject`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Subject.kt).
+    * Container Callback Endpoint: `@PostMapping("/api/system/callback")` (routes callbacks from sandboxed Docker workers back to [`ManagedInvocation`](/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/safety/ManagedInvocation.kt))
+  * **Security Translation**: [`ApiController`](/Reveila-Suite/spring/core/src/main/java/com/reveila/spring/system/ApiController.java) intercepts the incoming request, inspects Spring Security's `Authentication` context, extracts granted authorities (`GrantedAuthority`), strips the `ROLE_` prefix, and translates them into Reveila [`RolePrincipal`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Principal.kt) entries attached to a new [`Subject`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Subject.kt).
   * **Dispatch**: Resolves the caller IP (`httpRequest.getRemoteAddr()`) and dispatches the call into the engine via:
     ```java
     reveila.invoke(componentName, request.getMethodName(), args, callerIp, subject);
     ```
-* **Driven / Outbound Adapter ([`BasePlatformAdapter`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/BasePlatformAdapter.kt))**:
+* **Driven / Outbound Adapter ([`BasePlatformAdapter`](/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/BasePlatformAdapter.kt))**:
   * Fulfills engine infrastructure requirements in the JVM environment by managing thread pools (`ExecutorService`), host file path lookups (`SystemHome`), scheduled auto-calls, and server-side encryption primitives.
 
 ##### 2.3.1.1 The Universal Cloud Operating System: Standalone vs. Clustered Mode (`system.standalone`)
-A foundational architectural property defined in [`reveila.properties`](file:///c:/IDE/Projects/Reveila-Suite/system-home/standard/configs/reveila.properties) controls whether Reveila operates in isolation or as a distributed cloud mesh:
+A foundational architectural property defined in [`reveila.properties`](/Reveila-Suite/system-home/standard/configs/reveila.properties) controls whether Reveila operates in isolation or as a distributed cloud mesh:
 
 ```properties
 # Standalone (Single Node) vs. Clustered (Universal Cloud Operating System)
@@ -201,18 +390,18 @@ When `system.standalone=false` is set in Server Mode, Reveila transforms into an
 1. **Central Registry & Sovereign Ledger**:
    * The cluster topology is orchestrated by a **Central Registry** (backed by PostgreSQL ledger tables `plugin_registry` and `global_settings`).
    * **Unbounded Horizontal Elasticity**: An infinite number of Reveila instances can join the cluster as compute needs rise or be decommissioned gracefully when demand drops, with all nodes registering with the central registry.
-   * **Reactive Config Pulses**: Configuration updates (new plugins, updated security policies, parameter changes) broadcast a real-time event via PostgreSQL `NOTIFY/LISTEN` on channel `reveila_config_updates`. The background [`ClusterSyncService`](file:///c:/IDE/Projects/Reveila-Suite/spring/core/src/main/java/com/reveila/spring/service/ClusterSyncService.java) on each running node captures this pulse and triggers `loadProperties()`, achieving instant, zero-downtime cluster-wide synchronization.
+   * **Reactive Config Pulses**: Configuration updates (new plugins, updated security policies, parameter changes) broadcast a real-time event via PostgreSQL `NOTIFY/LISTEN` on channel `reveila_config_updates`. The background [`ClusterSyncService`](/Reveila-Suite/spring/core/src/main/java/com/reveila/spring/service/ClusterSyncService.java) on each running node captures this pulse and triggers `loadProperties()`, achieving instant, zero-downtime cluster-wide synchronization.
 2. **Elastic Role-Based Workload Sharding (`cluster.role`)**:
    * Each cluster node boots with an assigned role in its properties (e.g. `cluster.role=FINANCE_WORKER`, `cluster.role=HEAVY_COMPUTE`, `cluster.role=AI_INFERENCE`).
    * Nodes evaluate incoming plugin registrations against their assigned role, only downloading and executing matching plugins. This provides declarative, horizontal sharding across massive multi-node clusters.
-3. **Adaptive Peer Latency Routing ([`PerformanceTracker`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PerformanceTracker.kt))**:
+3. **Adaptive Peer Latency Routing ([`PerformanceTracker`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PerformanceTracker.kt))**:
    * Nodes continuously track peer execution response times.
    * When a request is invoked via `Reveila.invoke(...)`, the engine queries `PerformanceTracker.getInstance().getBestNodeUrl()`. If an active remote cluster node has lower latency than the local node (`bestUrl != localUrl`), the engine dynamically offloads the call to that peer node.
-4. **Cross-Node Invocation Bridge ([`RemoteService`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/service/RemoteService.kt))**:
-   * When routing to a remote peer, the engine dispatches through [`RemoteService`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/service/RemoteService.kt) (`Constants.REMOTE_REVEILA` = `"remote.reveila"`).
-   * [`RemoteService`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/service/RemoteService.kt) formats an HTTP POST payload to the remote node's `api/components/{componentName}/invoke` endpoint and records the actual response time in [`PerformanceTracker`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PerformanceTracker.kt), dynamically keeping the routing table self-optimizing.
+4. **Cross-Node Invocation Bridge ([`RemoteService`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/service/RemoteService.kt))**:
+   * When routing to a remote peer, the engine dispatches through [`RemoteService`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/service/RemoteService.kt) (`Constants.REMOTE_REVEILA` = `"remote.reveila"`).
+   * [`RemoteService`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/service/RemoteService.kt) formats an HTTP POST payload to the remote node's `api/components/{componentName}/invoke` endpoint and records the actual response time in [`PerformanceTracker`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PerformanceTracker.kt), dynamically keeping the routing table self-optimizing.
 5. **Self-Healing Fault Tolerance & Automatic Fallback**:
-   * If a remote peer node fails, times out, or throws an HTTP exception, [`PerformanceTracker`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PerformanceTracker.kt) automatically penalizes that node with a 5000 ms penalty (`DEFAULT_PENALTY_MS = 5000L`) to prevent subsequent traffic routing to it.
+   * If a remote peer node fails, times out, or throws an HTTP exception, [`PerformanceTracker`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PerformanceTracker.kt) automatically penalizes that node with a 5000 ms penalty (`DEFAULT_PENALTY_MS = 5000L`) to prevent subsequent traffic routing to it.
    * The invocation immediately and transparently **falls back to local execution** on the current instance, ensuring zero dropped requests and maximum resilience.
 
 #### 2.3.2 Deployment Mode B: Embedded / Local-First Multiplatform Mode (Self-Contained Mobile & Desktop Apps)
@@ -222,13 +411,13 @@ Alternatively, the pure KMP core engine is compiled into target multiplatform bi
     ```kotlin
     val reveila = Reveila() // or private static final Reveila reveila = new Reveila();
     ```
-  * The host app initializes the OS-tailored platform adapter (e.g. [`AndroidPlatformAdapter`](file:///c:/IDE/Projects/Reveila-Suite/android/src/main/java/com/reveila/android/AndroidPlatformAdapter.java), pointing to private internal storage `context.getFilesDir()`) and boots the engine:
+  * The host app initializes the OS-tailored platform adapter (e.g. [`AndroidPlatformAdapter`](/Reveila-Suite/android/src/main/java/com/reveila/android/AndroidPlatformAdapter.java), pointing to private internal storage `context.getFilesDir()`) and boots the engine:
     ```kotlin
     reveila.start(platformAdapter)
     ```
-  * During boot, [`Reveila`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/Reveila.kt) loads all component manifests locally from `${system.home}/configs/shared` and `${system.home}/configs/${platform}`, validates them via [`ConfigurationLinter`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/ConfigurationLinter.kt), sequences dependencies, and boots auto-run components.
+  * During boot, [`Reveila`](/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/Reveila.kt) loads all component manifests locally from `${system.home}/configs/shared` and `${system.home}/configs/${platform}`, validates them via [`ConfigurationLinter`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/ConfigurationLinter.kt), sequences dependencies, and boots auto-run components.
 * **Direct In-Process Invocation**:
-  * Local client code (e.g. the React Native bridge [`ReveilaModule.java`](file:///c:/IDE/Projects/Reveila-Suite/android/src/main/java/com/reveila/android/ReveilaModule.java), UI view models, or background workers) accesses the engine directly in-process without HTTP serialization or network latency:
+  * Local client code (e.g. the React Native bridge [`ReveilaModule.java`](/Reveila-Suite/android/src/main/java/com/reveila/android/ReveilaModule.java), UI view models, or background workers) accesses the engine directly in-process without HTTP serialization or network latency:
     1. **Universal Invocation Pipeline**:
        ```kotlin
        reveila.invoke(componentName, methodName, params, "127.0.0.1", subject)
@@ -251,12 +440,12 @@ Alternatively, the pure KMP core engine is compiled into target multiplatform bi
 | Dimension | Mode A: Enterprise Java Server (Spring Boot) | Mode B: Embedded / Local-First Multiplatform |
 | :--- | :--- | :--- |
 | **Packaging Target** | Pre-built `distribution/jvm/reveila-core.jar` | Android `.aar`, Windows `.dll`, Apple framework, Linux `.so` |
-| **Host Application** | Spring Boot 3.x web application server | Native Android app ([`ReveilaService`](file:///c:/IDE/Projects/Reveila-Suite/android/src/main/java/com/reveila/android/ReveilaService.java)), Windows app |
-| **Inbound / Driving Layer** | REST Controller ([`ApiController`](file:///c:/IDE/Projects/Reveila-Suite/spring/core/src/main/java/com/reveila/spring/system/ApiController.java)) | In-process native bridge ([`ReveilaModule`](file:///c:/IDE/Projects/Reveila-Suite/android/src/main/java/com/reveila/android/ReveilaModule.java)), local UI |
+| **Host Application** | Spring Boot 3.x web application server | Native Android app ([`ReveilaService`](/Reveila-Suite/android/src/main/java/com/reveila/android/ReveilaService.java)), Windows app |
+| **Inbound / Driving Layer** | REST Controller ([`ApiController`](/Reveila-Suite/spring/core/src/main/java/com/reveila/spring/system/ApiController.java)) | In-process native bridge ([`ReveilaModule`](/Reveila-Suite/android/src/main/java/com/reveila/android/ReveilaModule.java)), local UI |
 | **Primary Entry Point** | `POST /api/components/{componentName}/invoke` | In-memory `reveila.invoke(...)` / `ctx.getProxy(...)` |
 | **Clustering & Scale** | **Universal Cloud OS** (`system.standalone=false`) with Central Registry, or Standalone (`system.standalone=true`) | Dedicated Standalone (`system.standalone=true`) running local-first on device |
 | **Identity & Roles** | Spring Security token parsed to `RolePrincipal` | Local client subject (e.g. `RolePrincipal("ui-client")`) |
-| **Driven Adapter** | [`BasePlatformAdapter`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/BasePlatformAdapter.kt) | [`AndroidPlatformAdapter`](file:///c:/IDE/Projects/Reveila-Suite/android/src/main/java/com/reveila/android/AndroidPlatformAdapter.java), Win32/POSIX native adapters |
+| **Driven Adapter** | [`BasePlatformAdapter`](/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/BasePlatformAdapter.kt) | [`AndroidPlatformAdapter`](/Reveila-Suite/android/src/main/java/com/reveila/android/AndroidPlatformAdapter.java), Win32/POSIX native adapters |
 | **Transport / Latency** | HTTP / JSON serialization network latency | Zero-overhead, sub-millisecond in-process function calls |
 | **Target Use Cases** | Multi-tenant cloud backend, elastic clustering, central DB | Sovereign mobile app, edge AI runtime, air-gapped desktop |
 
@@ -264,13 +453,13 @@ Alternatively, the pure KMP core engine is compiled into target multiplatform bi
 Components are declared using JSON manifests rather than hardcoded framework bindings. Reveila employs a two-tier configuration resolution strategy during startup:
 1. **Shared Tier**: `${system.home}/configs/shared/*.json` loaded first to supply universal components.
 2. **Platform Tier**: `${system.home}/configs/${platform}/*.json` (e.g. `spring/`, `android/`) loaded second, overriding shared declarations with platform-tailored implementations.
-3. **Validation & Linting**: All discovered metadata objects ([`MetaObject`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/MetaObject.kt)) are validated by [`ConfigurationLinter`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/ConfigurationLinter.kt) to catch circular dependencies, invalid class references, and configuration conflicts before instantiation.
+3. **Validation & Linting**: All discovered metadata objects ([`MetaObject`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/MetaObject.kt)) are validated by [`ConfigurationLinter`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/ConfigurationLinter.kt) to catch circular dependencies, invalid class references, and configuration conflicts before instantiation.
 
 ### 2.5 Dynamic Plugins (`configs/plugins/` & `${system.home}/plugins/`)
 Plugins extend platform capabilities but originate from third parties or isolated modules. Unlike trusted system components, plugins:
 * Execute with restricted privileges under the Principle of Least Privilege.
 * Are isolated via custom classloaders or micro-VM/container runtimes.
-* Receive an isolated [`PluginContext`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginContext.kt) that filters configuration properties and blocks unauthorized host access.
+* Receive an isolated [`PluginContext`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginContext.kt) that filters configuration properties and blocks unauthorized host access.
 
 ---
 
@@ -278,14 +467,14 @@ Plugins extend platform capabilities but originate from third parties or isolate
 
 The Reveila-Suite operates as a strictly proxied system. Direct instantiation and unmediated cross-service calls are prohibited.
 
-### 3.1 [`Proxy.invoke`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Proxy.kt)
+### 3.1 [`Proxy.invoke`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Proxy.kt)
 The foundational communication pipeline across all components and plugins:
 * **Classloader Isolation**: Before reflection invocation, the proxy switches the current thread's context classloader to the plugin's isolated classloader and restores the host classloader in a `finally` block.
-* **Reflection Dispatch & Argument Coercion**: Handled by [`ReflectionMethod`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/ReflectionMethod.kt), automatically resolving overloaded methods, coercing numeric primitives, converting collections/arrays, and preparing varargs.
+* **Reflection Dispatch & Argument Coercion**: Handled by [`ReflectionMethod`](/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/ReflectionMethod.kt), automatically resolving overloaded methods, coercing numeric primitives, converting collections/arrays, and preparing varargs.
 * **Secret Resolution**: Arguments referencing vault keys (e.g. `${secret:DB_PASSWORD}` or `REF:SECRET_...`) are intercepted and resolved securely via the platform `SecretManager`.
-* **RBAC Enforcement**: Validates caller [`Subject`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Subject.kt) roles against the target component and method `requiredRoles`.
+* **RBAC Enforcement**: Validates caller [`Subject`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Subject.kt) roles against the target component and method `requiredRoles`.
 
-### 3.2 [`Reveila.invoke`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/Reveila.kt)
+### 3.2 [`Reveila.invoke`](/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/Reveila.kt)
 The Universal Service Bus and central orchestration entry point across both deployment paradigms. The execution pipeline proceeds as follows:
 
 ```
@@ -321,29 +510,29 @@ The Universal Service Bus and central orchestration entry point across both depl
 ```
 
 * **Inbound Access Avenues**:
-  * In **Enterprise Server Mode**, incoming HTTP requests are received by [`ApiController`](file:///c:/IDE/Projects/Reveila-Suite/spring/core/src/main/java/com/reveila/spring/system/ApiController.java) at `/api/components/{componentName}/invoke` and delegated to `Reveila.invoke`.
-  * In **Embedded / Local-First Mode**, local client bridges (such as [`ReveilaModule.java`](file:///c:/IDE/Projects/Reveila-Suite/android/src/main/java/com/reveila/android/ReveilaModule.java) or desktop UI controllers) call `Reveila.invoke` directly in-process.
-* **Cluster Mesh Execution**: When `system.standalone=false`, the engine evaluates [`PerformanceTracker`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PerformanceTracker.kt) for the optimal node URL. If a remote peer is faster than the local instance, it invokes [`RemoteService`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/service/RemoteService.kt) (`Constants.REMOTE_REVEILA`), dynamically routing across the cloud fabric with automatic fallback to local execution on network errors.
+  * In **Enterprise Server Mode**, incoming HTTP requests are received by [`ApiController`](/Reveila-Suite/spring/core/src/main/java/com/reveila/spring/system/ApiController.java) at `/api/components/{componentName}/invoke` and delegated to `Reveila.invoke`.
+  * In **Embedded / Local-First Mode**, local client bridges (such as [`ReveilaModule.java`](/Reveila-Suite/android/src/main/java/com/reveila/android/ReveilaModule.java) or desktop UI controllers) call `Reveila.invoke` directly in-process.
+* **Cluster Mesh Execution**: When `system.standalone=false`, the engine evaluates [`PerformanceTracker`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PerformanceTracker.kt) for the optimal node URL. If a remote peer is faster than the local instance, it invokes [`RemoteService`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/service/RemoteService.kt) (`Constants.REMOTE_REVEILA`), dynamically routing across the cloud fabric with automatic fallback to local execution on network errors.
 * **Audit Trail**: Logs caller IP, execution durations, target service names, and method signatures.
-* **Delegation**: Resolves the target proxy from [`SystemContext`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/SystemContext.kt) and invokes it under the caller's verified subject.
+* **Delegation**: Resolves the target proxy from [`SystemContext`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/SystemContext.kt) and invokes it under the caller's verified subject.
 
-### 3.3 Context Separation: [`SystemContext`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/SystemContext.kt) vs. [`PluginContext`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginContext.kt)
+### 3.3 Context Separation: [`SystemContext`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/SystemContext.kt) vs. [`PluginContext`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginContext.kt)
 The platform enforces strict context separation based on service trust tier:
 
-| Architectural Dimension | [`SystemContext`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/SystemContext.kt) (Trusted Components) | [`PluginContext`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginContext.kt) (Third-Party Plugins) |
+| Architectural Dimension | [`SystemContext`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/SystemContext.kt) (Trusted Components) | [`PluginContext`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginContext.kt) (Third-Party Plugins) |
 | :--- | :--- | :--- |
 | **Trust Tier** | First-party system services | Untrusted or semi-trusted extensions |
 | **Assigned Role** | `Constants.SYSTEM` ("system") | `RolePrincipal("plugin")` |
-| **Platform Adapter** | Full access to [`PlatformAdapter`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PlatformAdapter.kt) | Blocked (`null` returned unless role elevated to `system`) |
+| **Platform Adapter** | Full access to [`PlatformAdapter`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PlatformAdapter.kt) | Blocked (`null` returned unless role elevated to `system`) |
 | **Configuration Scope** | Unrestricted read access to all system properties | Scoped strictly to `plugin.<PluginName>.<key>` and safe globals |
-| **Proxy Resolution** | Can resolve any registered component proxy | Wrapped in [`PluginProxy`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginProxy.kt); blocked from system-only components |
+| **Proxy Resolution** | Can resolve any registered component proxy | Wrapped in [`PluginProxy`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginProxy.kt); blocked from system-only components |
 | **Runtime Environment** | Host process classpath | Isolated ClassLoader, DEX container, or Docker sandbox |
 
 ### 3.4 Native Agentic AI Runtime Fabric
 The Agentic AI Runtime Fabric implements the Agentic Control Plane, providing a secure gateway for LLMs and autonomous agents interacting with Reveila services:
 * **Safety Audits & Guardrails**: Defends against prompt injections, unauthorized intent spoofing, and jailbreak attempts before requests reach the proxy pipeline.
-* **Intent Validation against [`MetadataRegistry`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/safety/MetadataRegistry.kt)**: Ensures model intents map to registered, authorized tools and methods.
-* **Agency Perimeter Enforcement ([`SecurityPerimeter`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/safety/SecurityPerimeter.kt))**: Enforces metadata boundaries restricting network egress (`allowedDomains`), blocking raw Internet access, and imposing CPU/memory quotas.
+* **Intent Validation against [`MetadataRegistry`](/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/safety/MetadataRegistry.kt)**: Ensures model intents map to registered, authorized tools and methods.
+* **Agency Perimeter Enforcement ([`SecurityPerimeter`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/safety/SecurityPerimeter.kt))**: Enforces metadata boundaries restricting network egress (`allowedDomains`), blocking raw Internet access, and imposing CPU/memory quotas.
 * **Secret Masking**: Identifies parameters flagged with `isSecret: true` in the plugin manifest, masking credentials, PII, and PHI from AI context windows and flight recorder logs.
 
 ---
@@ -354,7 +543,7 @@ This section details the architecture, contracts, manifest specifications, and r
 
 ### 4.1 The Plugin Component Model
 
-All third-party plugins must inherit from [`PluginComponent`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginComponent.kt) (or [`AbstractComponent`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/AbstractComponent.kt)):
+All third-party plugins must inherit from [`PluginComponent`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginComponent.kt) (or [`AbstractComponent`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/AbstractComponent.kt)):
 
 ```
        ┌───────────────────────────────┐
@@ -384,7 +573,7 @@ All third-party plugins must inherit from [`PluginComponent`](file:///c:/IDE/Pro
 1. **Class Loading**: Plugin bytecode is loaded via an isolated classloader (`ChildFirstURLClassLoader` or `ChildFirstDexClassLoader`).
 2. **Instantiation**: The engine creates a new instance using the public no-argument constructor.
 3. **Static Setter Injection**: The engine reads the `arguments` array from the plugin manifest, resolves secrets, and executes setter methods on the plugin class (e.g. `setApiKey()`, `setEndpoint()`).
-4. **Context Injection**: The engine injects a configured [`PluginContext`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginContext.kt) via `setContext(Context)`.
+4. **Context Injection**: The engine injects a configured [`PluginContext`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginContext.kt) via `setContext(Context)`.
 5. **Startup Hook (`onStart`)**: The engine invokes `start()` (which calls `onStart()`) asynchronously within a monitored execution future.
 6. **Active Invocation**: Methods are invoked dynamically by the proxy bus. The thread context classloader is swapped during execution.
 7. **Shutdown Hook (`onStop`)**: When the engine shuts down or the plugin is unloaded, `stop()` (which calls `onStop()`) is invoked to release resources, threads, and connections.
@@ -452,7 +641,7 @@ Every plugin must define a manifest adhering to the standard schema:
 * **`name`** *(string, required)*: Unique alphanumeric identifier of the plugin within Reveila.
 * **`displayName`** *(string, optional)*: Human-readable name displayed in admin consoles and dashboards.
 * **`version`** *(string, required)*: Semantic versioning string (e.g. `1.0.0`).
-* **`class`** *(string, required)*: Fully qualified class name implementing [`PluginComponent`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginComponent.kt).
+* **`class`** *(string, required)*: Fully qualified class name implementing [`PluginComponent`](/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginComponent.kt).
 * **`thread-safe`** *(boolean, optional, default: `true`)*: If `true`, the engine instantiates and caches a singleton instance. If `false`, a new instance is created on each invocation.
 * **`hot-deploy`** *(boolean, optional, default: `false`)*: Enables runtime reload when the underlying archive changes.
 * **`auto-start`** *(boolean, optional, default: `true`)*: Determines if `onStart()` is automatically invoked during engine boot.
@@ -464,7 +653,7 @@ Every plugin must define a manifest adhering to the standard schema:
   * **`required-roles`**: List of RBAC roles required to invoke this specific method (`*` allows any role).
   * **`parameters`**: Parameter list with `name`, `type`, `description`, `isRequired`, and `isSecret` flags. Parameters with `isSecret: true` are scrubbed from telemetry and agent contexts.
 * **`security-perimeter` & `agency_perimeter`** *(object, optional)*:
-  * **`isolation`**: When set to `true`, the plugin runs inside a containerized sandbox ([`DockerGuardedRuntime`](file:///c:/IDE/Projects/Reveila-Suite/reveila/rt/src/main/java/com/reveila/rt/DockerGuardedRuntime.java)).
+  * **`isolation`**: When set to `true`, the plugin runs inside a containerized sandbox ([`DockerGuardedRuntime`](/Reveila-Suite/reveila/rt/src/main/java/com/reveila/rt/DockerGuardedRuntime.java)).
   * **`network`**: Network egress policy (`restricted`, `blocked`, `allow`).
   * **`accessScopes`**: Security scopes granted to the plugin.
   * **`allowedDomains`**: Outbound network egress whitelist.
@@ -495,7 +684,7 @@ Plugins can be packaged for different deployment targets:
 #### Target A: JVM / Spring Boot Server Deployments
 * **Format**: Standard Java/Kotlin `.jar` package containing compiled classes and embedded third-party dependencies.
 * **Location**: Placed in `${system.home}/plugins/<plugin-name>/` along with its manifest.
-* **ClassLoader**: Handled via [`ChildFirstURLClassLoader`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/ChildFirstURLClassLoader.kt). The classloader prioritizes classes bundled inside the plugin JAR before delegating to the parent application classloader. This prevents version collisions between plugin dependencies and host libraries.
+* **ClassLoader**: Handled via [`ChildFirstURLClassLoader`](/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/ChildFirstURLClassLoader.kt). The classloader prioritizes classes bundled inside the plugin JAR before delegating to the parent application classloader. This prevents version collisions between plugin dependencies and host libraries.
 
 #### Target B: Android ART Mobile Deployments
 * **Format**: DEX-compiled archive (`classes.dex` packaged inside a `.jar`).
@@ -504,10 +693,10 @@ Plugins can be packaged for different deployment targets:
   2. Run Android's `d8` tool to convert class files to `classes.dex`.
   3. Archive `classes.dex` into `<plugin-name>.jar`.
 * **Android 14+ Compliance**: Files must be stored in private app storage (`context.getFilesDir()`) and marked immutable via `file.setReadOnly()` prior to instantiation to prevent `SecurityException`.
-* **ClassLoader**: Loaded via [`ChildFirstDexClassLoader`](file:///c:/IDE/Projects/Reveila-Suite/android/src/main/java/com/reveila/android/ChildFirstDexClassLoader.java).
+* **ClassLoader**: Loaded via [`ChildFirstDexClassLoader`](/Reveila-Suite/android/src/main/java/com/reveila/android/ChildFirstDexClassLoader.java).
 
 #### Target C: Containerized / Guarded Sandboxes
-* **Runtime**: Handled via [`DockerGuardedRuntime`](file:///c:/IDE/Projects/Reveila-Suite/reveila/rt/src/main/java/com/reveila/rt/DockerGuardedRuntime.java).
+* **Runtime**: Handled via [`DockerGuardedRuntime`](/Reveila-Suite/reveila/rt/src/main/java/com/reveila/rt/DockerGuardedRuntime.java).
 * **Isolation**: High-risk or untrusted third-party plugins run in an isolated container or micro-VM running a minimal Reveila worker agent. Invocations are serialized across an isolated bridge with zero direct memory or host access.
 
 ### 4.5 Plugin Registration Channels
@@ -642,171 +831,21 @@ public class CustomAnalyticsPlugin extends PluginComponent {
 ---
 
 *Related Architectural Decision Records:*
-* [ADR-0002: Dynamic Plugin Strategy using DexClassLoader](file:///c:/IDE/Projects/Reveila-Suite/memory-bank/ADR/0002%20Dynamic%20Plugin%20Strategy.md)
-* [ADR-0004: Plugin Metadata and Manifest Standard](file:///c:/IDE/Projects/Reveila-Suite/memory-bank/ADR/0004%20Plugin%20Manifest.md)
-* [ADR-0005: Guarded Runtime for Agentic Plugin Execution](file:///c:/IDE/Projects/Reveila-Suite/memory-bank/ADR/0005%20Guarded%20Runtime%20for%20Plugins.md)
-* [ADR-0006: Reveila Booting and Proxy Architecture](file:///c:/IDE/Projects/Reveila-Suite/memory-bank/ADR/0006%20Reveila%20Booting%20and%20Proxy%20Architecture.md)
-* [ADR-0013: Plugin-Based Security Architecture](file:///c:/IDE/Projects/Reveila-Suite/memory-bank/ADR/0013%20Plugin-Based%20Security%20Architecture.md)
-* [ADR-0016: Agent and Plugin Registration](file:///c:/IDE/Projects/Reveila-Suite/memory-bank/ADR/0016%20Agent%20and%20Plugin%20Registration.md)
-* [ADR-0022: Reveila Core Kotlin Multiplatform](file:///c:/IDE/Projects/Reveila-Suite/memory-bank/ADR/0022%20Reveila%20Core%20Kotlin%20Multiplatform.md)
+* [ADR-0002: Dynamic Plugin Strategy using DexClassLoader](/Reveila-Suite/memory-bank/ADR/0002%20Dynamic%20Plugin%20Strategy.md)
+* [ADR-0004: Plugin Metadata and Manifest Standard](/Reveila-Suite/memory-bank/ADR/0004%20Plugin%20Manifest.md)
+* [ADR-0005: Guarded Runtime for Agentic Plugin Execution](/Reveila-Suite/memory-bank/ADR/0005%20Guarded%20Runtime%20for%20Plugins.md)
+* [ADR-0006: Reveila Booting and Proxy Architecture](/Reveila-Suite/memory-bank/ADR/0006%20Reveila%20Booting%20and%20Proxy%20Architecture.md)
+* [ADR-0013: Plugin-Based Security Architecture](/Reveila-Suite/memory-bank/ADR/0013%20Plugin-Based%20Security%20Architecture.md)
+* [ADR-0016: Agent and Plugin Registration](/Reveila-Suite/memory-bank/ADR/0016%20Agent%20and%20Plugin%20Registration.md)
+* [ADR-0022: Reveila Core Kotlin Multiplatform](/Reveila-Suite/memory-bank/ADR/0022%20Reveila%20Core%20Kotlin%20Multiplatform.md)
 
 <!-- END_EMBED -->
----
-
-## 🛠️ Technological Inventory
-
-* **Core Systems Ecosystem:** Java 21, Kotlin, Spring Boot 3.5.x, Gradle (Kotlin DSL), Hibernate/JPA.
-* **Edge & Client Engines:** React Native (Expo Environment with customized native Gradle wrappers), SQLite (with specialized native extensions), Node.js.
-* **Enterprise Storage Fabrics:** PostgreSQL (with isolated schema/catalog tenancies), MongoDB, H2 (Local Profiles).
-
----
-
-## 🧠 AI Architecture: The Agentic Core Runtime
-
-### 🔄 The "AI Loop" Session Management
-
-Agent activities are grouped into isolated, stateful sessions. These sessions are fully persisted, allowing reasoning states to be suspended, terminated, or resumed at a later timestamp. During an active execution thread, the **Agentic Loop** runs via the following deterministic pattern:
-
-```
-[System Instruction + Tool Definitions + User Intent] 
-                        │
-                        ▼
-            [LLM Non-Deterministic Reasoning]
-                        │
-                        ▼
-          [Structured JSON Tool Call Output]
-                        │
-                        ▼
-        [Java Execution & Schema Validation (Host / OS)]
-                        │
-                        ▼
-        [Tool Output Result Matrix Recovers] ─── (Loops back to stabilize)
-
-```
-
-### 🌉 LangChain4j Translation & Structural Type Safety
-
-The engine integrates `LangChain4j` to act as an infrastructure abstraction driver layer between core domain interfaces and external inference models (e.g., cloud endpoints like OpenAI/Gemini vs local targets like Ollama). It manages low-level API serialization, enforces structural Java object mappings from raw model outputs, and permits swapping providers by tweaking single application property definitions.
-
-### ⛓️ The Message Chain Pattern
-
-To preserve accurate reasoning histories across multi-turn execution loops, the system maintains a chronologically ordered state array (`dev.langchain4j.memory.ChatMemory`). The `processLoop()` method in `AgenticFabric.java` explicitly pieces this array together on every turn, injecting four critical discrete roles:
-
-1. **SystemMessage:** Contains core operational instructions, perimeter rules, and tools structured via the Model Context Protocol (MCP).
-2. **UserMessage:** The raw incoming intent statement provided by the user.
-3. **AiMessage:** Captures the LLM's explicit reasoning steps and generated tool-call parameters.
-4. **ToolExecutionResultMessage:** Binds the execution result payload (e.g., PowerShell runtime output or REST data logs) back into the conversation context block.
-
----
-
-## 📊 Prompt Standardization & Structural Security
-
-### Markdown + XML Prompts
-
-All system instructions and user payloads are assembled utilizing structural **Markdown + XML** markup configurations managed through `Prompt.getBasePrompt()`.
-
-* **Markdown:** Provides macro-level system hierarchies, operational roles, and clear readability sections (`# ROLE`, `# CONTEXT`).
-* **XML Tags:** Act as structural "firewalls" surrounding dynamic external data blocks (e.g., `<context_boundary>`), effectively stopping prompt injection attempts from altering target instructions.
-
-### Format Performance Evaluation
-
-| Architectural Strategy | Core Reasoning Capabilities | Token Asset Footprint | Injection Safety Profiles | Human Auditability |
-| --- | --- | --- | --- | --- |
-| **Plain Text** | Basic Pattern Discovery | Lowest Footprint | Poor Context Isolation | High Clarity |
-| **JSON Specifications** | Moderate Logic Parsing | High Token Overhead | Good Structure Parsing | Low Auditing Clarity |
-| **Markdown + XML** | **Highest Capability (81.2%)** | **Optimized Efficiency** | **Excellent (Tag Firewalls)** | **High Structural Clarity** |
-
----
-
-## 💾 Context Optimization & Memory Footprint Controls
-
-### Sliding Memory Windows
-
-To prevent memory inflation and escalating token processing latency during long-running tasks, the system implements a runtime truncation strategy. After an execution track passes 10–15 turns, the engine automatically commands a lightweight model tracking step to summarize preceding entries, capturing historical state indicators while freeing block overhead using a defined `MessageWindowChatMemory` configuration:
-
-```java
-// How Reveila-Suite maintains conversational state at runtime
-ChatMemory chatMemory = MessageWindowChatMemory.withMaxMessages(20);
-chatMemory.add(UserMessage.from("Yes, run the script."));
-
-// Execution step matches tool tracking pipelines
-String result = terminal.execute(script);
-chatMemory.add(ToolExecutionResultMessage.from(toolId, result));
-
-// Sequential forward invocations dynamically inherit the optimized context window
-String finalAnswer = model.generate(chatMemory.messages()).content();
-
-```
-
-### Size-Aware Session Management
-
-Total operational session storage limits are defined inside `reveila.properties` via the `ai.optimization.history` property key (e.g., `10MB`).
-
-* `AgentSessionManager.estimateSessionSize()` calculates the explicit memory allocation of a target session by analyzing its active messages array and parameter payload maps.
-* When saving a tracking state via `saveSession()`, the engine sweeps the global workspace footprint; if the aggregated storage crosses your configured threshold boundary, an eviction step discards the oldest **Least Recently Used (LRU)** sessions to preserve memory safety.
-
----
-
-## 🚀 Execution Configurations: Personal vs. Enterprise
-
-### 1. The Autonomous Agent (Personal Edition Standalone)
-
-Reveila Personal Edition allows the platform to run recurring tasks independently when authorized by the user.
-
-* **Task Ingestion:** Bounded task scripts are defined using structured JSON schemas inside the `system-home/standard/tasks` workspace directory (see example configurations like `daily-news.json`).
-* **Autonomous Worker Thread:** The `AutonomousAgent` tracking class invokes a `doTask()` sweep pattern on a 30-second loop interval (governed through `standard.json`). It automatically loads task definitions, spins up an isolated `AgentSession`, and triggers execution loops via the core `AgenticFabric`.
-* **Dynamic Script Execution:** If the agent calculates that a problem requires a custom operational script, it can dynamically assemble and run scripts natively through `ReveilaTerminal.executeDynamicScript()` using a biometrically validated authorization gate.
-
-```
-[User Intent Provided] ──> [LLM Realizes Tool Gap] ──> [LLM Synthesizes Script (PS1 / Bash)] 
-                                                                    │
-                                                                    ▼
-[LLM Summary Outputs Completed] <── [Result Matrix Captured] <── [Reveila Runs Script via HITL Gate]
-
-```
-
-### 2. Pre-Defined Secure Tools (Enterprise Edition Fabric)
-
-To guarantee security across absolute corporate tiers, Reveila Enterprise Edition restricts execution parameters strictly to an authenticated list of predefined tools managed through `ReveilaTerminal.executeSafeScript()`.
-
-* **Platform Sandbox Engineering:** Enterprise operations run under low-privilege service configurations, hard-capping execution timeouts at 30 seconds to block infinite loops or runaway threads.
-* **Enterprise Tool Portfolio:**
-* *Terminal Core Interface:* Implemented via stable `Xterm.js` and `node-pty` foundations.
-* *Agentic Automation Layers:* Driven through structured browser engines using `Playwright` integration blocks.
-* *Sandboxed Compute Execution:* Leverages isolated WebAssembly runtimes (`Wasmtime`) for near-native speed with complete memory encapsulation.
-* *Localized Architecture Storage:* Managed via lightweight embedded analytical architectures (`DuckDB` / `ChromaDB`).
-
-
-
----
-
-## ⚡ High-Precision Context Pipelines (Tool RAG & Knowledge Vault)
-
-* **Two-Stage Tool RAG:** To prevent context bloating and eliminate model logic degradation ("Short Model Tax"), `DynamicToolProvider.java` runs a two-stage tool injection pipeline. It performs an initial semantic vector search across available system actions, then sorts candidates through a dedicated `ScoringModel` step to pass only high-relevance tool parameters into the operational prompt window.
-* **Knowledge Vault Injections:** For every incoming user intent, `AgenticFabric.java` triggers an internal document lookup. Relevant internal repository blocks (extracted from user guides, PDFs, or system specifications) are automatically parsed and wrapped safely inside the `<context_boundary>` block of the instruction matrix.
-
----
-
-## 🔌 API Invocation Contracts
-
-To trigger model tracking processes via remote REST configurations, target payloads are dispatched to the core `AgenticFabric.processIntent()` service engine, which returns unified JSON payload metadata schemas tracking execution status:
-
-```json
-{
-  "status": "completed",
-  "reasoning": "Determined system log inflation stems from unarchived output logs. Prepared file compression routines.",
-  "result": "Dispatched compression execution task across target directories successfully.",
-  "confidence-score": 1.0,
-  "tool-call": []
-}
-
-```
 
 ---
 
 ## 👨‍💻 Platform Author & Principle Executive Advisory
 
-**Charles Lee**
+**Charles Lee**  
 *Senior Technology Executive, Enterprise Systems Architect, and Fractional CTO.*
 
 Specializing in macro-level corporate application modernization, complex systems integration engineering, strategic AI adoption roadmaps, and high-concurrency software frameworks within heavily regulated industries (including Financial Services, Healthcare, Transportation, and Energy ecosystems). Deep operational background managing large-scale, multi-million dollar technology portfolios, executing technical due diligence pipelines across critical M&A lifecycle windows, and translating highly complex distributed systems architectures into explicit, strategic milestones for enterprise organizations.
