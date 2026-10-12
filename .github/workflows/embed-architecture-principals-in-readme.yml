@@ -1,0 +1,60 @@
+name: Update Embedded Architecture Principals in README
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'memory-bank/ADR/0001 Architecture Principals.md'
+  workflow_dispatch:
+
+jobs:
+  embed:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Embed File Content
+        run: |
+          python3 -c "
+          with open('README.md', 'r', encoding='utf-8') as f:
+              text = f.read()
+
+          with open('memory-bank/ADR/0001 Architecture Principals.md', 'r', encoding='utf-8') as f:
+              embed = f.read()
+
+          start_marker = '<!-- START_EMBED -->'
+          end_marker = '<!-- END_EMBED -->'
+
+          start_idx = text.find(start_marker)
+          end_idx = text.find(end_marker)
+
+          if start_idx == -1 or end_idx == -1 or start_idx >= end_idx:
+              raise ValueError('Required markers <!-- START_EMBED --> and <!-- END_EMBED --> not found in README.md')
+
+          new_text = (
+              text[:start_idx + len(start_marker)]
+              + '\n\n'
+              + embed.strip()
+              + '\n\n'
+              + text[end_idx:]
+          )
+
+          with open('README.md', 'w', encoding='utf-8') as f:
+              f.write(new_text)
+          "
+
+      - name: Commit and Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          if ! git diff --staged --quiet; then
+            git commit -m "docs: auto-embed Architecture Principles into README [skip ci]"
+            git push
+          else
+            echo "No changes detected in README.md"
+          fi
