@@ -22,7 +22,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.nio.file.Files;
-import java.util.Properties;
+import com.reveila.system.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -157,7 +157,7 @@ public class ReveilaService extends Service {
 
                 synchronized (this) {
                     if (localLlmServer == null || !localLlmServer.isRunning()) {
-                        localLlmServer = new LocalLlmServer(exeFile, modelFile);
+                        localLlmServer = new LocalLlmServer(exeFile.getAbsolutePath(), modelFile.getAbsolutePath());
                         localLlmServer.start();
                     }
                 }
@@ -232,7 +232,7 @@ public class ReveilaService extends Service {
     private void deleteSilently(File f) {
         try {
             FileUtil.delete(f, true);
-        } catch (IOException e) {
+        } catch (Exception e) {
             Log.e(TAG, "Failed to delete file: " + f.getAbsolutePath(), e);
         }
     }
@@ -264,27 +264,35 @@ public class ReveilaService extends Service {
     }
 
     private void downloadModel(URL url, File modelFile) {
+        HttpURLConnection conn = null;
         try {
-            FileUtil.download(url, modelFile, true, new FileUtil.DownloadCallback() {
-                @Override
-                public void onProgress(int progress) {
-                    serviceManager.updateNotification(ReveilaService.this, "Downloading model: " + progress + "%", 100,
-                            progress, false);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(30000);
+            int contentLength = conn.getContentLength();
+            try (InputStream in = new BufferedInputStream(conn.getInputStream());
+                 FileOutputStream out = new FileOutputStream(modelFile)) {
+                byte[] buffer = new byte[8192];
+                int len;
+                long total = 0;
+                while ((len = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, len);
+                    total += len;
+                    if (contentLength > 0) {
+                        int progress = (int) ((total * 100) / contentLength);
+                        serviceManager.updateNotification(ReveilaService.this, "Downloading model: " + progress + "%", 100,
+                                progress, false);
+                    }
                 }
-
-                @Override
-                public void onError(Exception e) {
-                    Log.e(TAG, "Download error", e);
-                }
-
-                @Override
-                public void onComplete(File downloaded) {
-                    serviceManager.updateNotification(ReveilaService.this, "Local LLM Ready");
-                }
-            });
+                serviceManager.updateNotification(ReveilaService.this, "Local LLM Ready");
+            }
         } catch (Exception e) {
             serviceManager.updateNotification(ReveilaService.this, "Model download failed");
             Log.e(TAG, "Model download error", e);
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
         }
     }
 

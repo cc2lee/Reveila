@@ -4,31 +4,14 @@ import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, FlatList, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useColorScheme, View } from 'react-native';
 
-// Injected Universal Client via your protocol-agnostic target bridge core
-class ReveilaClient {
-  private baseURL: string;
-  private transport: any;
+import { ReveilaBridge } from '../../ReveilaBridge';
 
-  constructor(config: any = {}) {
-    this.baseURL = config.baseURL || '';
-    this.transport = config.transport || null;
+// Universal client routing directly through ReveilaBridge
+const client = {
+  invoke: async (componentName: string, methodName: string, args: any[] = []) => {
+    return ReveilaBridge.invoke(componentName, methodName, args);
   }
-
-  async invoke(componentName: string, methodName: string, args: any[] = []) {
-    if (this.transport) {
-      return this.transport(componentName, methodName, args);
-    }
-    const response = await fetch(`${this.baseURL}/api/components/${componentName}/invoke`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ methodName, args }),
-    });
-    return response.json();
-  }
-}
-
-// Instantiate universal agnostic instance mapped directly onto your architecture bridge
-const client = new ReveilaClient({ baseURL: 'http://localhost:8080' });
+};
 
 function transformProviderConfig(providers: any[]): any[] {
   return providers.map(p => ({
@@ -569,7 +552,7 @@ const styles = StyleSheet.create({
   content: { padding: 16 },
   section: { gap: 12, marginBottom: 24 },
   title: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
-  card: { borderRadius: 12, padding: 16, borderHorizontalWidth: 1, borderVerticalWidth: 1, elevation: 1 },
+  card: { borderRadius: 12, padding: 16, borderWidth: 1, elevation: 1 },
   description: { fontSize: 13, lineHeight: 18 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   button: { padding: 12, borderRadius: 8, alignItems: 'center', backgroundColor: '#0f172a' },

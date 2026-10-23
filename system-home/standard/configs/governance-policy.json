@@ -1,6 +1,7 @@
 {
-    "policyName": "SOVEREIGN_ACCESS_CONTROL_v1",
-    "description": "Protects core system assets and sensitive data identifiers.",
+    "policyName": "SOVEREIGN_ACCESS_CONTROL_v2",
+    "description": "Enterprise sovereign AI governance policy protecting core system assets, sensitive data, and runtime execution boundaries.",
+    "version": "2.0.0",
     "restrictedKeywords": [
         "ENCRYPTION",
         "DATABASE",
@@ -9,9 +10,96 @@
         "KEYS",
         "CREDENTIALS",
         "SURPLUS",
-        "PROJECT MARS"
+        "PROJECT MARS",
+        "PASSWORD",
+        "API_KEY",
+        "SECRET_KEY",
+        "PRIVATE_KEY",
+        "BEARER_TOKEN",
+        "CREDIT_CARD",
+        "PATIENT_PHI",
+        "HIPAA_IDENTIFIER",
+        "TRADE_SECRET",
+        "MA_TARGET_DATA",
+        "DROP_TABLE",
+        "PURGE_LOGS",
+        "OVERWATCH_OVERRIDE"
     ],
     "baseRiskScore": 0.80,
     "keywordPenalty": 0.05,
-    "alertThreshold": 0.80
+    "alertThreshold": 0.80,
+    "promptInjectionPatterns": [
+        "ignore previous instructions",
+        "ignore all instructions",
+        "ignore prior directives",
+        "disregard safety guidelines",
+        "disregard previous constraints",
+        "act as DAN",
+        "do anything now",
+        "jailbreak",
+        "system override",
+        "developer mode enabled",
+        "bypass guardrails",
+        "expose system prompt",
+        "reveal your instructions",
+        "repeat system prompt",
+        "print hidden instructions",
+        "__proto__",
+        "constructor.prototype"
+    ],
+    "prohibitedSystemCommands": [
+        "rm -rf",
+        "DROP TABLE",
+        "TRUNCATE TABLE",
+        "ALTER TABLE",
+        "format c:",
+        "powershell -enc",
+        "powershell -encodedcommand",
+        "Invoke-Expression",
+        "IEX (",
+        "curl | sh",
+        "wget | bash",
+        "nc -e",
+        "/bin/sh",
+        "/bin/bash",
+        ":(){ :|:& };:"
+    ],
+    "sensitiveDataPatterns": [
+        "\\b\\d{3}-\\d{2}-\\d{4}\\b",
+        "\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\\b",
+        "\\bAKIA[0-9A-Z]{16}\\b",
+        "-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----",
+        "\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b"
+    ],
+    "dualModelGovernance": {
+        "enabled": true,
+        "governanceProvider": "gemini",
+        "workerProvider": "openai",
+        "consensusRequiredRiskThreshold": 0.70,
+        "description": "Multi-Model Consensus: Secondary independent governance model audits worker model outputs before high-risk execution."
+    },
+    "thresholds": {
+        "baseRiskScore": 0.10,
+        "keywordPenalty": 0.15,
+        "injectionPenalty": 0.50,
+        "commandPenalty": 0.60,
+        "alertThreshold": 0.75,
+        "hitlApprovalThreshold": 0.80,
+        "blockThreshold": 0.95
+    },
+    "overwatchGate": {
+        "enabled": true,
+        "requireOversightToken": true,
+        "killSwitchActive": false,
+        "allowedRoles": [
+            "ciso",
+            "security-admin",
+            "overwatch-operator"
+        ]
+    },
+    "dataRetention": {
+        "auditLogRetentionDays": 365,
+        "forensicStorageMoat": "sovereign-local-data",
+        "immutableLineage": true
+    }
 }

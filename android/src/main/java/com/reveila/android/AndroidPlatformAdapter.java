@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Properties;
+import com.reveila.system.Properties;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -85,7 +85,7 @@ public class AndroidPlatformAdapter extends BasePlatformAdapter {
             try {
                 this.cryptographer = new AndroidCryptographer();
             } catch (Exception e) {
-                getLogger().log(Level.SEVERE, "Failed to initialize AndroidCryptographer", e);
+                getLogger().severe("Failed to initialize AndroidCryptographer", e);
             }
         }
         return this.cryptographer;

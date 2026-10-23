@@ -23,11 +23,10 @@ import com.reveila.android.db.ReveilaDatabase;
 import com.reveila.android.data.VaultRepository;
 import com.reveila.android.data.RoomRepository;
 
-import javax.security.auth.Subject;
+import com.reveila.system.Subject;
 import com.reveila.system.RolePrincipal;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.reveila.data.EntityMapper;
 
 /**
  * ReveilaModule: The Sovereign Bridge.
@@ -39,8 +38,9 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
     private static final String NAME = "ReveilaModule";
     private static final Subject subject = new Subject();
     static {
-        RolePrincipal principal = new RolePrincipal("ui-client");
-        subject.getPrincipals().add(principal);
+        subject.getPrincipals().add(new RolePrincipal("ui-client"));
+        subject.getPrincipals().add(new RolePrincipal("system"));
+        subject.getPrincipals().add(new RolePrincipal("admin"));
     }
     private final ExecutorService executorService = Executors.newFixedThreadPool(2);
     
@@ -79,7 +79,7 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
                 }
 
                 // 1. Parse the JSON Envelope via standard shared mapper specifications
-                ObjectMapper mapper = EntityMapper.getObjectMapper();
+                ObjectMapper mapper = new ObjectMapper();
                 Map<String, Object> payload = mapper.readValue(jsonInput, new TypeReference<Map<String, Object>>() {});
 
                 String component = (String) payload.get("component");

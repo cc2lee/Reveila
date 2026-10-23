@@ -2,11 +2,8 @@
 import { registerRootComponent } from 'expo';
 import { ExpoRoot } from 'expo-router';
 import { useEffect } from 'react';
-import { NativeModules, Platform } from 'react-native';
-
-console.log("[CRITICAL PROBE] Registered Native Modules:", Object.keys(NativeModules));
-
-const { ReveilaModule } = NativeModules;
+import { Platform } from 'react-native';
+import { ReveilaBridge } from './ReveilaBridge';
 
 // 1. Initialize Expo Router and handle the background engine lifecycle
 export function App() {
@@ -14,16 +11,11 @@ export function App() {
         // Safeguard against web/iOS compilation targets
         if (Platform.OS !== 'android') return;
 
-        if (!ReveilaModule) {
-            console.error("[Reveila Bridge Critical Failure]: ReveilaModule registration was skipped.");
-            return;
-        }
-
-        console.log("[Reveila App] Requesting native background engine activation...");
+        console.log("[Reveila App] Requesting native background engine activation via ReveilaBridge...");
         
         // Fired non-blocking as a traditional promise chain instead of top-level async await.
         // This lets the main Expo thread drop straight through to render the routing layout context.
-        ReveilaModule.startService()
+        ReveilaBridge.startService()
             .then((homePathHandshake) => {
                 console.log(`[Reveila App] Foreground service active. Home: ${homePathHandshake}`);
             })

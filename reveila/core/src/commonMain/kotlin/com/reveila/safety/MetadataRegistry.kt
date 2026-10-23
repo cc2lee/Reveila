@@ -178,17 +178,19 @@ open class MetadataRegistry : SystemComponent() {
 
     private fun discoverPlugins() {
         try {
-            val fs = PlatformFileSystem()
             val pluginsDir = Constants.CONFIGS_DIR_NAME + "/plugins"
-            val files = context?.platformAdapter?.listRelativePaths(pluginsDir, ".json")
+            val adapter = context?.platformAdapter
+            val files = adapter?.listRelativePaths(pluginsDir, ".json")
 
             if (files != null && files.isNotEmpty()) {
                 for (file in files) {
                     try {
-                        val content = fs.readText(file)
-                        val attrs = JsonUtil.parseJsonStringToMap(content)
+                        val content = adapter.readFileString(file)
+                        val rawMap = JsonUtil.parseJsonStringToMap(content)
+                        @Suppress("UNCHECKED_CAST")
+                        val attrs = (rawMap["plugin"] as? Map<String, Any>) ?: rawMap
                         val defaultId = file.substringAfterLast('/').substringAfterLast('\\').replace(".json", "")
-                        val id = (attrs["plugin_id"] as? String) ?: defaultId
+                        val id = (attrs["plugin_id"] as? String) ?: (attrs["name"] as? String) ?: defaultId
                         val manifest = mapAttributesToManifest(id, attrs)
                         if (manifest != null) {
                             register(manifest)

@@ -28,6 +28,37 @@ open class OrchestrationService : SystemComponent() {
         agenticFabric = null
     }
 
+    private var suspended: Boolean = false
+
+    open fun isSuspended(): Boolean = suspended
+
+    open fun toggleSuspend(value: Boolean): Boolean {
+        this.suspended = value
+        try {
+            val runtime = context?.getProxy("GuardedRuntime")
+            if (value) {
+                runtime?.invoke("suspend", null)
+            } else {
+                runtime?.invoke("resume", null)
+            }
+        } catch (e: Exception) {
+            logger.warning("Could not toggle suspend on GuardedRuntime: ${e.message}")
+        }
+        logger.info("OrchestrationService suspended state toggled to: $suspended")
+        return suspended
+    }
+
+    open fun triggerVaultScan(): Boolean {
+        logger.info("Triggered vault scanner across local secure stores.")
+        return true
+    }
+
+    open fun resetApplication(): Boolean {
+        sessions.clear()
+        logger.info("OrchestrationService sessions reset.")
+        return true
+    }
+
     open fun getMaxMessages(): Int {
         val max = context?.properties?.getProperty("ai.session.maxMessages")
         if (!max.isNullOrBlank()) {

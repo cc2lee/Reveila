@@ -245,7 +245,7 @@ class SystemProxy(
             try {
                 if (context != null) {
                     val proxy = context?.getProxy("MetadataRegistry")
-                    val obj = proxy?.invoke("getInstance", null) ?: (proxy as? SystemProxy)?.getInstance()
+                    val obj = proxy?.getInstance()
                     if (obj is MetadataRegistry) {
                         val tools = HashMap<String, Any>()
                         val secrets = HashSet<String>()

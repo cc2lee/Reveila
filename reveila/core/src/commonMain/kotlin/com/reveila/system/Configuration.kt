@@ -20,17 +20,16 @@ open class Configuration {
     @Throws(JsonException::class)
     @Suppress("UNCHECKED_CAST")
     private fun parse(jsonContent: String): MutableList<MetaObject> {
-        var list: MutableList<Map<String, Any>>? = null
-        try {
-            val parsedList = JsonUtil.parseJsonStringToList(jsonContent)
-            list = parsedList.toMutableList()
-        } catch (e: Exception) {
-            try {
+        val trimmed = jsonContent.trim()
+        val list: List<Map<String, Any>> = try {
+            if (trimmed.startsWith("[")) {
+                JsonUtil.parseJsonStringToList(jsonContent)
+            } else {
                 val single = JsonUtil.parseJsonStringToMap(jsonContent)
-                list = mutableListOf(single)
-            } catch (e2: Exception) {
-                throw JsonException("Failed to parse configuration.", e2)
+                if (single.isNotEmpty()) listOf(single) else emptyList()
             }
+        } catch (e: Exception) {
+            throw JsonException("Failed to parse configuration: ${e.message}", e)
         }
 
         if (list.isEmpty()) {

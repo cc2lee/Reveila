@@ -43,7 +43,8 @@ val subprojects = listOf(
     ":spring:admin" to "spring/admin",
     ":spring:core" to "spring/core",
     ":web:vue-project" to "web/vue-project",
-    ":android" to "android"
+    ":android" to "android",
+    ":apps:java-test" to "apps/java-test"
 )
 
 for ((name, dir) in subprojects) {

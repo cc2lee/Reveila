@@ -101,9 +101,19 @@ export default function HomeScreen() {
     }
   };
 
-  // Keep the UI container unrendered until the static liveness matrix clears
+  // Display loading status while the engine boots up
   if (!isEngineReady) {
-    return null;
+    return (
+      <View style={[styles.container, { backgroundColor: theme.bg, justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
+        <ActivityIndicator size="large" color="#ff6600" />
+        <Text style={{ color: theme.text, fontSize: 18, fontWeight: '700', marginTop: 16 }}>
+          Connecting to Reveila Engine...
+        </Text>
+        <Text style={{ color: theme.subText, fontSize: 13, marginTop: 8, textAlign: 'center' }}>
+          Initializing background service and sovereign components
+        </Text>
+      </View>
+    );
   }
 
   return (

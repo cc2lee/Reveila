@@ -82,6 +82,12 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
 
     @Synchronized
     @Throws(Exception::class)
+    open fun start() {
+        start(DefaultPlatformAdapter())
+    }
+
+    @Synchronized
+    @Throws(Exception::class)
     open fun start(platformAdapter: PlatformAdapter) {
         this.platformAdapter = platformAdapter
         this.startExecutor = (platformAdapter as? BasePlatformAdapter)?.getExecutor() ?: Executors.newFixedThreadPool(4)

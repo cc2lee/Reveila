@@ -6,7 +6,7 @@ import kotlin.random.Random
  * Universal multiplatform implementation of [Cryptographer] extending [PlatformCryptographerAdapter].
  * Works identically on any host OS: Windows, Mac, iOS, Android, Linux, and JVM.
  */
-open class DefaultCryptographer(
+open class DefaultCryptographer @kotlin.jvm.JvmOverloads constructor(
     secretKey: ByteArray,
     platformCrypto: PlatformCryptographer = PlatformCryptographer()
 ) : PlatformCryptographerAdapter(secretKey, platformCrypto) {
@@ -21,6 +21,7 @@ open class DefaultCryptographer(
         private const val SALT_LENGTH = 16
         private const val KEY_LENGTH = 32 // 256 bits
 
+        @kotlin.jvm.JvmStatic
         fun deriveKey(password: String, salt: ByteArray): ByteArray {
             val crypto = PlatformCryptographer()
             var hash = crypto.sha256(password.encodeToByteArray() + salt)
@@ -31,13 +32,22 @@ open class DefaultCryptographer(
             return hash
         }
 
+        @kotlin.jvm.JvmStatic
         fun generateRandomKey(): ByteArray {
             return Random.nextBytes(KEY_LENGTH)
         }
 
+        @kotlin.jvm.JvmStatic
         fun generateSaltHex(): String {
             val salt = Random.nextBytes(SALT_LENGTH)
             return bytesToHex(salt)
+        }
+
+        @kotlin.jvm.JvmStatic
+        fun wrapKeyToBase64(dek: ByteArray, password: String, saltHex: String): String {
+            val crypto = DefaultCryptographer(password, hexToBytes(saltHex))
+            val encrypted = crypto.encrypt(dek)
+            return PlatformCryptographer().base64Encode(encrypted)
         }
 
         fun bytesToHex(bytes: ByteArray): String {

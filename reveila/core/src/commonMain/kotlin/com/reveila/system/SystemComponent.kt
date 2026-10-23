@@ -4,7 +4,13 @@ import com.reveila.event.EventConsumer
 import com.reveila.event.EventObject
 
 abstract class SystemComponent : AbstractComponent(), EventConsumer {
+    @kotlin.jvm.JvmField
     var context: Context? = null
+
+    fun getContext(): Context? = context
+    fun setContext(ctx: Context?) {
+        this.context = ctx
+    }
 
     open fun getComponent(name: String): Any? {
         val ctx = context ?: return null

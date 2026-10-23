@@ -44,7 +44,7 @@ import com.reveila.util.io.FileUtil
 /**
  * An implementation of PlatformAdapter for standard JVM platforms.
  */
-abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
+open class BasePlatformAdapter @Throws(Exception::class) @JvmOverloads constructor(
     commandLineArgs: Properties? = null
 ) : PlatformAdapter {
 
@@ -183,8 +183,11 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
         }
 
         // 2. Load platform-specific properties
-        val platName = getPlatformName()
+        val platName = getPlatformName() ?: overrides?.getProperty(Constants.PLATFORM) ?: rawProps.getProperty(Constants.PLATFORM)
         if (!platName.isNullOrBlank()) {
+            if (this.platformName == null) {
+                this.platformName = platName
+            }
             path = Constants.CONFIGS_DIR_NAME + "/" + platName + "/" + filename
             val homePath = this.systemHome?.systemHome
             if (homePath != null && fs.exists(fs.toSafePath(homePath, path))) {
@@ -202,6 +205,9 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
         }
 
         this.properties.putAll(resolveAllPlaceholders(rawProps))
+        if (this.platformName == null) {
+            this.platformName = this.properties.getProperty(Constants.PLATFORM)
+        }
 
         if (properties.getProperty(Constants.PLATFORM_OS) == null) {
             properties.setProperty(
@@ -296,7 +302,28 @@ abstract class BasePlatformAdapter @Throws(Exception::class) constructor(
     private fun setupSystemHome(jvmArgs: Properties) {
         var path = jvmArgs.getProperty(Constants.SYSTEM_HOME)
         if (path.isNullOrBlank()) {
-            path = System.getenv("REVEILA_HOME")
+            path = System.getProperty(Constants.SYSTEM_HOME)
+            if (path.isNullOrBlank()) {
+                path = System.getProperty("reveila.system.home")
+            }
+            if (path.isNullOrBlank()) {
+                path = System.getenv("REVEILA_HOME")
+            }
+            if (path.isNullOrBlank()) {
+                val candidates = listOf(
+                    "system-home/standard",
+                    "../system-home/standard",
+                    "../../system-home/standard",
+                    "build/distributions/reveila-system-home"
+                )
+                for (cand in candidates) {
+                    val candFile = File(cand)
+                    if (candFile.exists() && candFile.isDirectory) {
+                        path = candFile.canonicalPath
+                        break
+                    }
+                }
+            }
             if (path.isNullOrBlank()) {
                 throw ConfigurationException(
                     "SYSTEM STARTUP ERROR: System Home directory not specified. Please set the " +

@@ -5,7 +5,10 @@ import kotlin.time.TimeSource
 
 abstract class AbstractComponent : Startable, Stoppable {
 
+    @kotlin.jvm.JvmField
     protected val logger: PlatformLogger = PlatformLogger("reveila.component")
+
+    fun getLogger(): PlatformLogger = logger
 
     var isManaged: Boolean = false
     var isDebug: Boolean = false

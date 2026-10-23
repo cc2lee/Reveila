@@ -182,9 +182,14 @@ if (isSuiteWorkspace) {
     // Force asset synchronization to execute seamlessly prior to compiling code variations
     tasks.named("preBuild") {
         dependsOn(prepareAndroidHome)
+        if (project.rootProject.findProject(":reveila:core") != null) {
+            dependsOn(":reveila:core:exportJvmJar")
+        }
     }
 
-    tasks.matching { it.name.startsWith("compile") }.configureEach {
-        dependsOn(":reveila:core:exportJvmJar")
+    if (project.rootProject.findProject(":reveila:core") != null) {
+        tasks.matching { it.name.contains("JniLibs") || it.name.startsWith("compile") || it.name.contains("Classes") }.configureEach {
+            dependsOn(":reveila:core:exportJvmJar")
+        }
     }
 }
