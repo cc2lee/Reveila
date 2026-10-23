@@ -2,9 +2,9 @@
 // To build from this directory: ./gradlew :android:assembleRelease or ./gradlew :android:assembleDebug
 
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
-    id("com.google.devtools.ksp") version "2.1.20-2.0.1"
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.ksp)
 }
 
 // Modern Gradle service injection for the 'exec' replacement
