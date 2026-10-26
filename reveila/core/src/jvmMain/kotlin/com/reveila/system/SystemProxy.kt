@@ -460,14 +460,14 @@ class SystemProxy(
             return value
         }
 
-        if (value is Double) {
+        if (value is Number) {
             return when (targetType.name) {
-                "java.lang.Byte", "byte" -> value.toInt().toByte()
-                "java.lang.Short", "short" -> value.toInt().toShort()
+                "java.lang.Byte", "byte" -> value.toByte()
+                "java.lang.Short", "short" -> value.toShort()
                 "java.lang.Integer", "int" -> value.toInt()
                 "java.lang.Long", "long" -> value.toLong()
                 "java.lang.Float", "float" -> value.toFloat()
-                "java.lang.Double", "double" -> value
+                "java.lang.Double", "double" -> value.toDouble()
                 else -> value
             }
         } else if (value is List<*> && targetType.isArray) {

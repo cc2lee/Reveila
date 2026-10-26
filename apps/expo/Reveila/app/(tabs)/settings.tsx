@@ -2,7 +2,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, FlatList, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useColorScheme, View } from 'react-native';
 
 import { ReveilaBridge } from '../../ReveilaBridge';
 
@@ -15,13 +15,13 @@ const client = {
 
 function transformProviderConfig(providers: any[]): any[] {
   return providers.map(p => ({
-    name: p.name,
-    type: p.type,
-    endpoint: p.endpoint,
-    model: p.model,
-    model_options: p['model.options'],
-    temperature: p.temperature,
-    apiKey: p['api.key'] || p.apiKey || ''
+    name: p.Name || p.name || '',
+    type: p.Type || p.type || '',
+    endpoint: p.Endpoint || p.endpoint || '',
+    model: p.Model || p.model || '',
+    model_options: p['Model.Options'] || p['model.options'] || p.model_options || [],
+    temperature: p.Temperature ?? p.temperature ?? 0.7,
+    apiKey: p['Api.Key'] || p['api.key'] || p.apiKey || ''
   }));
 }
 
@@ -39,6 +39,12 @@ export default function SettingsScreen() {
   // Selection States
   const [workerProvider, setWorkerProvider] = useState('');
   const [governanceProvider, setGovernanceProvider] = useState('Disable');
+
+  // Vault States
+  const [vaultFolder, setVaultFolder] = useState('ReveilaVault');
+  const [vaultDocCount, setVaultDocCount] = useState(0);
+  const [vaultChunkCount, setVaultChunkCount] = useState(0);
+  const [isVaultScanning, setIsVaultScanning] = useState(false);
 
   // Modals
   const [isWorkerModalVisible, setWorkerModalVisible] = useState(false);
@@ -86,7 +92,34 @@ export default function SettingsScreen() {
     AsyncStorage.getItem('use_biometrics').then(val => {
       setIsBiometricEnabled(val === 'true');
     });
+
+    ReveilaBridge.getVaultFolder().then(v => {
+      if (v && v.folder) setVaultFolder(v.folder);
+    }).catch(() => {});
+
+    ReveilaBridge.getVaultStats().then(s => {
+      if (s) {
+        setVaultDocCount(s.documentCount || 0);
+        setVaultChunkCount(s.chunkCount || 0);
+      }
+    }).catch(() => {});
   }, []);
+
+  const handleSaveAndScanVault = async () => {
+    setIsVaultScanning(true);
+    try {
+      await ReveilaBridge.setVaultFolder(vaultFolder);
+      const res = await ReveilaBridge.scanVault();
+      const stats = await ReveilaBridge.getVaultStats();
+      setVaultDocCount(stats.documentCount || 0);
+      setVaultChunkCount(stats.chunkCount || 0);
+      Alert.alert('Scan Complete', `Successfully scanned vault. Files processed: ${res.filesScanned}, Vectors: ${stats.chunkCount}`);
+    } catch (e: any) {
+      Alert.alert('Scan Error', e.message || 'Failed to scan vault.');
+    } finally {
+      setIsVaultScanning(false);
+    }
+  };
 
   useEffect(() => {
     if (!isRunning) return;
@@ -97,7 +130,21 @@ export default function SettingsScreen() {
           const config = typeof res === 'string' ? JSON.parse(res) : res;
           const onboarded = config['onboarded.providers'] || config.onboarded_providers || [];
           const transformedProviders = transformProviderConfig(onboarded);
-          setProvidersList([...transformedProviders, { name: 'Custom', endpoint: '', model: '', apiKey: '' }]);
+
+          const defaultStandard = [
+            { name: 'On-Device Model', type: 'LocalLlamaProvider', endpoint: 'http://127.0.0.1:8080', model: 'qwen2.5-0.5b-instruct-q4_k_m.gguf', apiKey: '' },
+            { name: 'Google Gemini', type: 'GeminiProvider', endpoint: 'https://generativelanguage.googleapis.com', model: 'gemini-1.5-flash', apiKey: '' },
+            { name: 'OpenAI', type: 'OpenAiProvider', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: '' }
+          ];
+
+          const mergedProviders = [...transformedProviders];
+          for (const def of defaultStandard) {
+            if (!mergedProviders.some(p => p.name === def.name)) {
+              mergedProviders.push(def);
+            }
+          }
+
+          setProvidersList([...mergedProviders, { name: 'Custom', endpoint: '', model: '', apiKey: '' }]);
           setProvidersError(null);
 
           const legacyWorkerMap: Record<string, string> = { 'OpenAiProvider': 'OpenAI', 'AnthropicProvider': 'Anthropic', 'GeminiProvider': 'Google Gemini', 'OnDeviceProvider': 'On-Device Model' };
@@ -109,12 +156,17 @@ export default function SettingsScreen() {
           let gProvider = config['ai.governance.llm'] || 'Disable';
           if (legacyGovMap[gProvider]) gProvider = legacyGovMap[gProvider];
 
-          setWorkerProvider(wProvider || (transformedProviders.length > 0 ? transformedProviders[0].name : ''));
+          setWorkerProvider(wProvider || 'On-Device Model');
           setGovernanceProvider(gProvider);
         } catch (e) {
           setProvidersError('Failed to parse LLM providers configuration');
-          setProvidersList([]);
-          setWorkerProvider('');
+          setProvidersList([
+            { name: 'On-Device Model', type: 'LocalLlamaProvider', endpoint: 'http://127.0.0.1:8080', model: 'qwen2.5-0.5b-instruct-q4_k_m.gguf', apiKey: '' },
+            { name: 'Google Gemini', type: 'GeminiProvider', endpoint: 'https://generativelanguage.googleapis.com', model: 'gemini-1.5-flash', apiKey: '' },
+            { name: 'OpenAI', type: 'OpenAiProvider', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: '' },
+            { name: 'Custom', endpoint: '', model: '', apiKey: '' }
+          ]);
+          setWorkerProvider('On-Device Model');
         }
       } else {
         setProvidersError('Failed to retrieve LLM providers list from Configuration Manager');
@@ -123,8 +175,13 @@ export default function SettingsScreen() {
       }
     }).catch(() => {
         setProvidersError('Failed to retrieve LLM providers list from Configuration Manager');
-        setProvidersList([]);
-        setWorkerProvider('');
+        setProvidersList([
+          { name: 'On-Device Model', type: 'LocalLlamaProvider', endpoint: 'http://127.0.0.1:8080', model: 'qwen2.5-0.5b-instruct-q4_k_m.gguf', apiKey: '' },
+          { name: 'Google Gemini', type: 'GeminiProvider', endpoint: 'https://generativelanguage.googleapis.com', model: 'gemini-1.5-flash', apiKey: '' },
+          { name: 'OpenAI', type: 'OpenAiProvider', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: '' },
+          { name: 'Custom', endpoint: '', model: '', apiKey: '' }
+        ]);
+        setWorkerProvider('On-Device Model');
         
         AsyncStorage.getItem('custom_providers').then(val => {
           if (val) {
@@ -208,7 +265,7 @@ export default function SettingsScreen() {
   const handleSaveLLM = async () => {
     try {
       const customOnly = providersList.filter(p => {
-        const knownNames = ['OpenAI', 'Anthropic', 'Google Gemini', 'On-Device Model'];
+        const knownNames = ['OpenAI', 'Anthropic', 'Google Gemini', 'On-Device Model', 'Custom'];
         return !knownNames.includes(p.name);
       });
       await AsyncStorage.setItem('custom_providers', JSON.stringify(customOnly));
@@ -216,7 +273,15 @@ export default function SettingsScreen() {
       const config = {
         'ai.worker.llm': workerProvider,
         'ai.governance.llm': governanceProvider === 'Disable' ? '' : governanceProvider,
-        'onboarded.providers': providersList
+        'onboarded.providers': providersList.filter(p => p.name !== 'Custom').map(p => ({
+          Name: p.name,
+          Type: p.type || (p.name === 'On-Device Model' ? 'LocalLlamaProvider' : p.name === 'Google Gemini' ? 'GeminiProvider' : 'OpenAiProvider'),
+          Endpoint: p.endpoint,
+          Model: p.model,
+          'Model.Options': p.model_options || p['model.options'],
+          Temperature: p.temperature ?? 0.7,
+          'Api.Key': p.apiKey || p['api.key'] || ''
+        }))
       };
 
       await client.invoke('UiController', 'saveSettings', ['llm.json', JSON.stringify(config)]);
@@ -229,6 +294,7 @@ export default function SettingsScreen() {
   const isProviderConfigured = (pName: string) => {
     if (isLoadingProviders) return false; 
     if (pName === 'Disable' || pName === 'Custom') return false;
+    if (pName === 'On-Device Model') return true;
     const p = providersList.find(x => x.name === pName);
     if (!p) return false;
 
@@ -330,6 +396,57 @@ export default function SettingsScreen() {
               <TouchableOpacity style={[styles.button, { marginTop: 16 }]} onPress={handleSaveLLM}>
                 <Text style={styles.buttonText}>Save Configuration</Text>
               </TouchableOpacity>
+            </View>
+
+            {/* Document Vault & Vector Database Card */}
+            <Text style={[styles.title, { color: theme.text, marginTop: 12 }]}>Document Vault & Vector Embeddings</Text>
+            <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.sectionLabel, { color: theme.text }]}>MONITORED DOCUMENT FOLDER</Text>
+              <Text style={[styles.description, { color: theme.subText, marginBottom: 8 }]}>
+                The Android service monitors this folder for PDF, DOCX, TXT, and Markdown files to automatically compute vector embeddings.
+              </Text>
+              <TextInput
+                style={[styles.monoInput, { color: '#000', marginBottom: 12 }]}
+                value={vaultFolder}
+                onChangeText={setVaultFolder}
+                placeholder="Folder Path (e.g. ReveilaVault)"
+              />
+
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
+                <View style={{ flex: 1, backgroundColor: isDark ? '#0f172a' : '#f1f5f9', padding: 12, borderRadius: 8 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: theme.subText }}>DOCUMENTS</Text>
+                  <Text style={{ fontSize: 20, fontWeight: '900', color: '#10b981', marginTop: 2 }}>{vaultDocCount}</Text>
+                </View>
+                <View style={{ flex: 1, backgroundColor: isDark ? '#0f172a' : '#f1f5f9', padding: 12, borderRadius: 8 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '900', color: theme.subText }}>VECTOR CHUNKS</Text>
+                  <Text style={{ fontSize: 20, fontWeight: '900', color: '#3b82f6', marginTop: 2 }}>{vaultChunkCount}</Text>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={[styles.button, { flex: 1, backgroundColor: '#ff6600' }]}
+                  disabled={isVaultScanning}
+                  onPress={handleSaveAndScanVault}
+                >
+                  {isVaultScanning ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.buttonText}>🔄 Scan & Re-index</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.outlineButton, { flex: 1 }]}
+                  onPress={async () => {
+                    await AsyncStorage.setItem('reveila_setup_completed', 'false');
+                    Alert.alert('Setup Wizard', 'Setup Wizard will launch upon returning to the Home tab.');
+                    router.replace('/');
+                  }}
+                >
+                  <Text style={[styles.outlineButtonText, { color: theme.text }]}>Launch Wizard</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Selection Modals */}

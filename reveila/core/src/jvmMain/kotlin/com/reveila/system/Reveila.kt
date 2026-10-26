@@ -191,11 +191,12 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
         methodName: String,
         params: Array<Any?>?,
         callerIp: String?,
-        subject: Subject
+        subject: Subject?
     ): Any? {
         val startTime = System.currentTimeMillis()
         val ctx = systemContext
             ?: throw IllegalStateException("SystemContext is not initialized. Cannot invoke component.")
+        val effectiveSubject = subject ?: ctx.subject
 
         if (!callerIp.isNullOrBlank()) {
             logger?.info("Received invocation request from $callerIp for target: $componentName, method: $methodName")
@@ -207,7 +208,7 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
 
             if (url != null && url != this.localUrl) {
                 try {
-                    val proxy = ctx.getProxy(Constants.REMOTE_REVEILA, subject)
+                    val proxy = ctx.getProxy(Constants.REMOTE_REVEILA, effectiveSubject)
                     val result = proxy.invoke("invoke", arrayOf(url, componentName, methodName, params))
                     val timeUsed = System.currentTimeMillis() - startTime
                     PerformanceTracker.getInstance().track(timeUsed, url)
@@ -223,7 +224,7 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
         }
 
         return try {
-            val proxy = ctx.getProxy(componentName, subject)
+            val proxy = ctx.getProxy(componentName, effectiveSubject)
             val result = proxy.invoke(methodName, params)
             val timeUsed = System.currentTimeMillis() - startTime
             PerformanceTracker.getInstance().track(timeUsed, this.localUrl)

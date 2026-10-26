@@ -45,6 +45,11 @@ open class UiController : SystemComponent() {
     }
 
     @Throws(Exception::class)
+    open fun setSettings(tab: String, jsonConfig: String) {
+        saveSettings(tab, jsonConfig)
+    }
+
+    @Throws(Exception::class)
     open fun saveSettings(tab: String, jsonConfig: String) {
         val fs = PlatformFileSystem()
         var mutableJsonConfig = jsonConfig

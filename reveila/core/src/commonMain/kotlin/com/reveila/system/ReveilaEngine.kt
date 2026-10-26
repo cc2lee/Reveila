@@ -14,6 +14,6 @@ interface ReveilaEngine : EventConsumer {
         methodName: String,
         params: Array<Any?>? = null,
         callerIp: String? = null,
-        subject: Subject
+        subject: Subject? = null
     ): Any?
 }

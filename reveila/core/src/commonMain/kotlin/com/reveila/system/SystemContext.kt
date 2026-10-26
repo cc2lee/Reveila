@@ -22,7 +22,7 @@ class SystemContext(
 
     override val properties: Properties = Properties(properties)
     private val proxiesByName: MutableMap<String, Proxy> = mutableMapOf()
-    private val subject: Subject = Subject().apply {
+    val subject: Subject = Subject().apply {
         principals.add(RolePrincipal(Constants.SYSTEM))
     }
 

@@ -13,6 +13,10 @@ export interface ReveilaBridgeType {
     authenticateBiometric: () => Promise<boolean>;
     saveSensitiveData: (data: string) => void;
     triggerEmergencyStop: () => Promise<boolean>;
+    setVaultFolder: (folderPath: string) => Promise<{ folder: string; filesScanned: number; entitiesFound: number; status: string }>;
+    getVaultFolder: () => Promise<{ folder: string; focusKeywords: string }>;
+    scanVault: () => Promise<{ folder: string; filesScanned: number; entitiesFound: number; status: string }>;
+    getVaultStats: () => Promise<{ documentCount: number; chunkCount: number; folder: string }>;
 }
 
 export declare const ReveilaBridge: ReveilaBridgeType;

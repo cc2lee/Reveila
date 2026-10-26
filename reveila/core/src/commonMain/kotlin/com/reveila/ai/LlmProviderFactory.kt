@@ -35,12 +35,13 @@ open class LlmProviderFactory : SystemComponent() {
 
                 if (onboarded != null) {
                     for (p in onboarded) {
-                        val type = (p["type"] as? String) ?: "openai"
-                        val name = p["name"] as? String
+                        val type = (p["type"] as? String) ?: (p["Type"] as? String) ?: "openai"
+                        val name = (p["name"] as? String) ?: (p["Name"] as? String)
                         if (!name.isNullOrBlank()) {
                             val provider = createProviderInstance(type)
                             configureProvider(provider, p)
                             startAndAddProvider(name, provider)
+                            logger.info("Registered LLM Provider: '$name' (type=$type)")
                         }
                     }
                 }
@@ -53,7 +54,14 @@ open class LlmProviderFactory : SystemComponent() {
     open fun getActiveProvider(): LlmProvider? {
         if (activeProvider == null) {
             val configured = context?.properties?.getProperty("ai.worker.llm")
-            activeProvider = getProvider(configured)
+            activeProvider = getProvider(configured) 
+                ?: getProvider("On-Device Model") 
+                ?: providers.values.firstOrNull()
+                ?: LocalLlamaProvider().apply {
+                    context = this@LlmProviderFactory.context
+                    setName("On-Device Model")
+                    start()
+                }
         }
         return activeProvider
     }
@@ -86,8 +94,8 @@ open class LlmProviderFactory : SystemComponent() {
     }
 
     private fun configureProvider(provider: BaseLlmProvider, params: Map<String, Any>) {
-        val name = params["name"] as? String
-        var endpoint = params["endpoint"] as? String
+        val name = (params["name"] as? String) ?: (params["Name"] as? String)
+        var endpoint = (params["endpoint"] as? String) ?: (params["Endpoint"] as? String)
 
         if (endpoint != null && (endpoint.contains("localhost") || endpoint.contains("127.0.0.1"))) {
             if (isAndroid()) {
@@ -97,9 +105,9 @@ open class LlmProviderFactory : SystemComponent() {
 
         provider.setName(name)
         provider.endpoint = endpoint
-        provider.model = params["model"] as? String
-        provider.apiKey = params["api.key"] as? String
-        val tempObj = params["temperature"] ?: 0.7
+        provider.model = (params["model"] as? String) ?: (params["Model"] as? String)
+        provider.apiKey = (params["api.key"] as? String) ?: (params["apiKey"] as? String) ?: (params["API.Key"] as? String)
+        val tempObj = params["temperature"] ?: params["Temperature"] ?: 0.7
         provider.temperature = tempObj.toString().toDouble()
     }
 

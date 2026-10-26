@@ -24,7 +24,7 @@ export const ReveilaBridge = {
             return false;
         }
         try {
-            return await ReveilaModule.startService(systemHome);
+            return await ReveilaModule.startService();
         } catch (e) {
             console.error('[ReveilaBridge Intent Failure]:', e);
             return false;
@@ -146,6 +146,75 @@ export const ReveilaBridge = {
             return false;
         }
         return await ReveilaModule.triggerEmergencyStop();
+    },
+
+    /**
+     * Configure local document folder for background scanning and vector embeddings.
+     *
+     * @param {string} folderPath Local filesystem or content URI folder path
+     * @returns {Promise<{folder: string, filesScanned: number, entitiesFound: number, status: string}>}
+     */
+    setVaultFolder: async (folderPath) => {
+        if (!ReveilaModule || !ReveilaModule.setVaultFolder) {
+            return { folder: folderPath, filesScanned: 0, entitiesFound: 0, status: 'MOCK_CONFIGURED' };
+        }
+        try {
+            return await ReveilaModule.setVaultFolder(folderPath);
+        } catch (e) {
+            console.error('[ReveilaBridge setVaultFolder Failure]:', e);
+            throw e;
+        }
+    },
+
+    /**
+     * Get current configured document vault folder.
+     *
+     * @returns {Promise<{folder: string, focusKeywords: string}>}
+     */
+    getVaultFolder: async () => {
+        if (!ReveilaModule || !ReveilaModule.getVaultFolder) {
+            return { folder: 'ReveilaVault', focusKeywords: '' };
+        }
+        try {
+            return await ReveilaModule.getVaultFolder();
+        } catch (e) {
+            console.error('[ReveilaBridge getVaultFolder Failure]:', e);
+            return { folder: 'ReveilaVault', focusKeywords: '' };
+        }
+    },
+
+    /**
+     * Trigger on-demand document vault scan and vector embedding generation.
+     *
+     * @returns {Promise<{folder: string, filesScanned: number, entitiesFound: number, status: string}>}
+     */
+    scanVault: async () => {
+        if (!ReveilaModule || !ReveilaModule.scanVault) {
+            return { folder: 'ReveilaVault', filesScanned: 0, entitiesFound: 0, status: 'MOCK_SUCCESS' };
+        }
+        try {
+            return await ReveilaModule.scanVault();
+        } catch (e) {
+            console.error('[ReveilaBridge scanVault Failure]:', e);
+            throw e;
+        }
+    },
+
+    /**
+     * Get KnowledgeVault statistics (number of indexed documents and vector chunks).
+     *
+     * @returns {Promise<{documentCount: number, chunkCount: number, folder: string}>}
+     */
+    getVaultStats: async () => {
+        if (!ReveilaModule || !ReveilaModule.getVaultStats) {
+            return { documentCount: 0, chunkCount: 0, folder: 'ReveilaVault' };
+        }
+        try {
+            return await ReveilaModule.getVaultStats();
+        } catch (e) {
+            console.error('[ReveilaBridge getVaultStats Failure]:', e);
+            return { documentCount: 0, chunkCount: 0, folder: 'ReveilaVault' };
+        }
     }
 };
 

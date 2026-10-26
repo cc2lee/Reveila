@@ -123,6 +123,9 @@ public class ReveilaService extends Service {
                 // Automatically attempt to start LLM server if binary exists
                 startLocalLlmServer();
 
+                // Automatically start Vault document directory scanner
+                startVaultMonitor();
+
             } catch (Exception e) {
                 Log.e(TAG, "CRITICAL: Failed to start Reveila engine", e);
                 stopSelf();
@@ -163,6 +166,36 @@ public class ReveilaService extends Service {
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Local LLM startup sequence failed", e);
+            }
+        });
+    }
+
+    public void startVaultMonitor() {
+        mainExecutor.execute(() -> {
+            try {
+                ModelSettings settings = new ModelSettings(this);
+                String vaultUriStr = settings.getVaultUri();
+                if (vaultUriStr == null || vaultUriStr.isBlank()) {
+                    File defaultVault = new File(getExternalFilesDir(null), "ReveilaVault");
+                    if (!defaultVault.exists()) {
+                        defaultVault.mkdirs();
+                    }
+                    vaultUriStr = defaultVault.getAbsolutePath();
+                    settings.setVaultUri(vaultUriStr);
+                }
+
+                VaultScanner scanner = new VaultScanner(this);
+                com.reveila.android.data.VaultRepository repo = new com.reveila.android.data.RoomRepository(
+                        "CONCEPT", 
+                        com.reveila.android.db.ReveilaDatabase.getDatabase(this).genericDao()
+                );
+                android.net.Uri uri = android.net.Uri.parse(vaultUriStr);
+                ScanResult result = scanner.performScan(uri, repo, settings.getFocusKeywords(), progress -> {
+                    Log.d(TAG, "Vault scanning progress: " + (int)(progress * 100) + "%");
+                });
+                Log.i(TAG, "Initial Vault scan complete. Scanned: " + result.getFilesScanned() + ", Entities: " + result.getEntitiesFound());
+            } catch (Exception e) {
+                Log.w(TAG, "Vault monitor scan failed: " + e.getMessage());
             }
         });
     }

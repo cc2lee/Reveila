@@ -49,7 +49,19 @@ public class VaultScanner {
             }
         }
 
-        DocumentFile rootDir = DocumentFile.fromTreeUri(context, uri);
+        DocumentFile rootDir;
+        if (uri.getScheme() != null && uri.getScheme().equalsIgnoreCase("content")) {
+            rootDir = DocumentFile.fromTreeUri(context, uri);
+        } else {
+            String path = uri.getPath() != null ? uri.getPath() : uri.toString();
+            if (path.startsWith("file://")) path = path.substring(7);
+            java.io.File dir = new java.io.File(path);
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            rootDir = DocumentFile.fromFile(dir);
+        }
+
         if (rootDir == null) return new ScanResult(0, 0);
 
         DocumentFile[] allFiles = rootDir.listFiles();
@@ -87,11 +99,26 @@ public class VaultScanner {
             String extractedText = extractTextFromUri(file.getUri(), file.length());
             if (extractedText == null) extractedText = "Unreadable content.";
 
-            // 2. Reasoning
+            // 2. Reasoning / Entity Extraction
             String analysis = engine.prompt("Analyze entities in: " + extractedText);
             entitiesFound += analysis.split(",").length;
 
-            // 3. Persistence (Headless)
+            // 3. Persistence into Vector Store / KnowledgeVault
+            try {
+                com.reveila.system.Reveila coreEngine = ReveilaService.getReveilaInstance();
+                if (coreEngine != null && coreEngine.isRunning()) {
+                    Map<String, Object> meta = new java.util.HashMap<>();
+                    meta.put("title", fileName);
+                    meta.put("uri", file.getUri().toString());
+                    meta.put("analysis", analysis);
+                    coreEngine.invoke("KnowledgeVault", "indexDocument", new Object[]{ fileName, extractedText, meta }, "127.0.0.1", null);
+                    Log.i(TAG, "Indexed " + fileName + " into KnowledgeVault vector embeddings.");
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to index into KnowledgeVault: " + e.getMessage());
+            }
+
+            // 4. Persistence in Room Repository
             if (repository != null) {
                 repository.insertFact("Knowledge Vault", "CONCEPT", "CONTAINS", fileName, "DOCUMENT", analysis);
                 repository.markFileAsIndexed(file.getUri().toString(), file.lastModified());
@@ -110,16 +137,25 @@ public class VaultScanner {
                 listener.onProgress(progress);
             }
             
-            try { Thread.sleep(500); } catch (InterruptedException ignored) {} // Pacing
+            try { Thread.sleep(200); } catch (InterruptedException ignored) {} // Pacing
         }
 
         engine.shutdown();
         return new ScanResult(filesToProcess.size(), entitiesFound);
     }
 
+    private InputStream openStream(Uri uri) throws Exception {
+        if (uri.getScheme() != null && uri.getScheme().equalsIgnoreCase("content")) {
+            return context.getContentResolver().openInputStream(uri);
+        } else {
+            String path = uri.getPath() != null ? uri.getPath() : uri.toString();
+            if (path.startsWith("file://")) path = path.substring(7);
+            return new java.io.FileInputStream(new java.io.File(path));
+        }
+    }
+
     private String extractTextFromUri(Uri uri, long size) {
-        String path = uri.getPath();
-        if (path == null) return null;
+        String path = uri.getPath() != null ? uri.getPath() : uri.toString();
         String fileName = path.toLowerCase();
         
         try {
@@ -134,7 +170,7 @@ public class VaultScanner {
 
     private String extractPlainText(Uri uri) throws Exception {
         StringBuilder sb = new StringBuilder();
-        try (InputStream is = context.getContentResolver().openInputStream(uri);
+        try (InputStream is = openStream(uri);
              BufferedReader reader = new BufferedReader(new InputStreamReader(is))) {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -148,7 +184,7 @@ public class VaultScanner {
         MemoryUsageSetting memSetting = size > MAX_PDF_RAM_SIZE ? 
             MemoryUsageSetting.setupTempFileOnly() : MemoryUsageSetting.setupMainMemoryOnly();
 
-        try (InputStream is = context.getContentResolver().openInputStream(uri);
+        try (InputStream is = openStream(uri);
              PDDocument document = PDDocument.load(is, memSetting)) {
             PDFTextStripper stripper = new PDFTextStripper();
             return stripper.getText(document);
@@ -157,7 +193,7 @@ public class VaultScanner {
 
     private String extractDocxText(Uri uri) {
         StringBuilder sb = new StringBuilder();
-        try (InputStream is = context.getContentResolver().openInputStream(uri);
+        try (InputStream is = openStream(uri);
              ZipInputStream zip = new ZipInputStream(is)) {
             ZipEntry entry;
             while ((entry = zip.getNextEntry()) != null) {

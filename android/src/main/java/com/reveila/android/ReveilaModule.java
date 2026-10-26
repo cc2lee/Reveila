@@ -259,10 +259,126 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
         }
     }
 
+    /**
+     * DOCUMENT VAULT MANAGEMENT
+     */
+    @ReactMethod
+    public void setVaultFolder(String folderPath, Promise promise) {
+        executorService.execute(() -> {
+            try {
+                ModelSettings settings = getModelSettings();
+                settings.setVaultUri(folderPath);
+
+                VaultScanner scanner = new VaultScanner(this.context);
+                VaultRepository repo = getRepository();
+                android.net.Uri uri = android.net.Uri.parse(folderPath);
+                ScanResult result = scanner.performScan(uri, repo, settings.getFocusKeywords(), null);
+
+                WritableMap map = Arguments.createMap();
+                map.putString("folder", folderPath);
+                map.putInt("filesScanned", result.getFilesScanned());
+                map.putInt("entitiesFound", result.getEntitiesFound());
+                map.putString("status", "CONFIGURED");
+                promise.resolve(map);
+            } catch (Exception e) {
+                Log.e(NAME, "setVaultFolder error", e);
+                promise.reject("E_VAULT_SET_FAILED", e.getMessage());
+            }
+        });
+    }
+
+    @ReactMethod
+    public void getVaultFolder(Promise promise) {
+        try {
+            ModelSettings settings = getModelSettings();
+            String folder = settings.getVaultUri();
+            if (folder == null || folder.isBlank()) {
+                java.io.File defaultVault = new java.io.File(this.context.getExternalFilesDir(null), "ReveilaVault");
+                if (!defaultVault.exists()) defaultVault.mkdirs();
+                folder = defaultVault.getAbsolutePath();
+                settings.setVaultUri(folder);
+            }
+
+            WritableMap map = Arguments.createMap();
+            map.putString("folder", folder);
+            map.putString("focusKeywords", settings.getFocusKeywords());
+            promise.resolve(map);
+        } catch (Exception e) {
+            promise.reject("E_VAULT_GET_FAILED", e.getMessage());
+        }
+    }
+
+    @ReactMethod
+    public void scanVault(Promise promise) {
+        executorService.execute(() -> {
+            try {
+                ModelSettings settings = getModelSettings();
+                String folder = settings.getVaultUri();
+                if (folder == null || folder.isBlank()) {
+                    java.io.File defaultVault = new java.io.File(this.context.getExternalFilesDir(null), "ReveilaVault");
+                    if (!defaultVault.exists()) defaultVault.mkdirs();
+                    folder = defaultVault.getAbsolutePath();
+                    settings.setVaultUri(folder);
+                }
+
+                VaultScanner scanner = new VaultScanner(this.context);
+                VaultRepository repo = getRepository();
+                android.net.Uri uri = android.net.Uri.parse(folder);
+                ScanResult result = scanner.performScan(uri, repo, settings.getFocusKeywords(), null);
+
+                WritableMap map = Arguments.createMap();
+                map.putString("folder", folder);
+                map.putInt("filesScanned", result.getFilesScanned());
+                map.putInt("entitiesFound", result.getEntitiesFound());
+                map.putString("status", "SUCCESS");
+                promise.resolve(map);
+            } catch (Exception e) {
+                Log.e(NAME, "scanVault error", e);
+                promise.reject("E_SCAN_FAILED", e.getMessage());
+            }
+        });
+    }
+
+    @ReactMethod
+    public void getVaultStats(Promise promise) {
+        executorService.execute(() -> {
+            try {
+                Reveila engine = ReveilaService.getReveilaInstance();
+                int docCount = 0;
+                int chunkCount = 0;
+                if (engine != null && engine.isRunning()) {
+                    try {
+                        Object docs = engine.invoke("KnowledgeVault", "getDocumentCount", new Object[0], "127.0.0.1", subject);
+                        if (docs instanceof Number) docCount = ((Number) docs).intValue();
+                        Object chunks = engine.invoke("KnowledgeVault", "getChunkCount", new Object[0], "127.0.0.1", subject);
+                        if (chunks instanceof Number) chunkCount = ((Number) chunks).intValue();
+                    } catch (Exception ignored) {}
+                }
+
+                WritableMap map = Arguments.createMap();
+                map.putInt("documentCount", docCount);
+                map.putInt("chunkCount", chunkCount);
+                map.putString("folder", getModelSettings().getVaultUri());
+                promise.resolve(map);
+            } catch (Exception e) {
+                promise.reject("E_STATS_FAILED", e.getMessage());
+            }
+        });
+    }
+
     @Override
     public void invalidate() {
         executorService.shutdown();
         super.invalidate();
+    }
+
+    private ModelSettings modelSettings;
+
+    private synchronized ModelSettings getModelSettings() {
+        if (this.modelSettings == null) {
+            this.modelSettings = new ModelSettings(this.context);
+        }
+        return this.modelSettings;
     }
 
     /**

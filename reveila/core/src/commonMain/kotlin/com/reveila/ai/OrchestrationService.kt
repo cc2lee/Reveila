@@ -18,8 +18,14 @@ open class OrchestrationService : SystemComponent() {
     @Throws(Exception::class)
     override fun onStart() {
         this.optimizationPriority = context?.properties?.getProperty("ai.optimization.priority", "cost") ?: "cost"
-        val p = context?.getProxy(AgenticFabric.COMPONENT_NAME)
-        this.agenticFabric = (p?.getInstance() as? AgenticFabric) ?: p as? AgenticFabric
+    }
+
+    private fun getAgenticFabric(): AgenticFabric? {
+        if (agenticFabric == null) {
+            val p = context?.getProxy(AgenticFabric.COMPONENT_NAME)
+            agenticFabric = (p?.getInstance() as? AgenticFabric) ?: p as? AgenticFabric
+        }
+        return agenticFabric
     }
 
     @Throws(Exception::class)
@@ -121,7 +127,7 @@ open class OrchestrationService : SystemComponent() {
                 try {
                     val cleaned = JsonUtil.clean(content)
                     if (cleaned != null && cleaned.startsWith("{")) {
-                        content = agenticFabric?.interpretAiResponse(JsonUtil.parseJsonStringToMap(cleaned)) ?: content
+                        content = getAgenticFabric()?.interpretAiResponse(JsonUtil.parseJsonStringToMap(cleaned)) ?: content
                     }
                 } catch (e: Exception) {
                     // Keep original content

@@ -133,13 +133,22 @@
     },
     {
         "component": {
+            "name": "KnowledgeVault",
+            "class": "com.reveila.ai.KnowledgeVault",
+            "description": "Sovereign knowledge management, vector store and document embedding index.",
+            "thread-safe": true
+        }
+    },
+    {
+        "component": {
             "name": "AgenticFabric",
             "class": "com.reveila.ai.AgenticFabric",
             "description": "Orchestrates complex multi-agent workflows.",
             "thread-safe": true,
             "dependencies": [
                 "ManagedInvocation",
-                "AgentSessionManager"
+                "AgentSessionManager",
+                "KnowledgeVault"
             ],
             "arguments": [
                 {

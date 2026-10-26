@@ -17,7 +17,15 @@ public class ScanResult {
         return newFilesCount;
     }
 
+    public int getFilesScanned() {
+        return newFilesCount;
+    }
+
     public int getEntitiesDiscoveredCount() {
+        return entitiesDiscoveredCount;
+    }
+
+    public int getEntitiesFound() {
         return entitiesDiscoveredCount;
     }
 }
