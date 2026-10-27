@@ -98,7 +98,7 @@ open class LlmProviderFactory : SystemComponent() {
         var endpoint = (params["endpoint"] as? String) ?: (params["Endpoint"] as? String)
 
         if (endpoint != null && (endpoint.contains("localhost") || endpoint.contains("127.0.0.1"))) {
-            if (isAndroid()) {
+            if (isAndroid() && provider !is LocalLlamaProvider) {
                 endpoint = endpoint.replace("localhost", "10.0.2.2").replace("127.0.0.1", "10.0.2.2")
             }
         }

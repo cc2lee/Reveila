@@ -97,7 +97,7 @@ open class KnowledgeVault : SystemComponent() {
 
         val sb = StringBuilder()
         for ((idx, match) in matches.withIndex()) {
-            if (match.score > 0.05) {
+            if (match.score > 0.25) {
                 sb.append("\n[Doc ${idx + 1} (relevance: ${(match.score * 100).toInt()}%)]: ")
                 sb.append(match.payload.trim())
             }

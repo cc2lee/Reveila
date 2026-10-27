@@ -4,6 +4,8 @@ import { SplashScreen, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -98,6 +100,16 @@ export default function HomeScreen() {
     });
   }, []);
 
+  // Auto-scroll chat to latest message when messages update
+  useEffect(() => {
+    if (activeMessages.length > 0) {
+      const timer = setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [activeMessages.length]);
+
   const refreshVaultStats = async () => {
     try {
       const stats = await ReveilaBridge.getVaultStats();
@@ -173,6 +185,10 @@ export default function HomeScreen() {
     );
   }
 
+  const vaultDisplayName = vaultStats.folder
+    ? (vaultStats.folder.split('/').filter(Boolean).pop() || vaultStats.folder)
+    : 'ReveilaVault';
+
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {/* Top Header */}
@@ -195,78 +211,159 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Vault & Model Status Banner */}
+        {/* Vault & Model Status Banner - Non-overlapping layout */}
         <View style={styles.statusBar}>
           <TouchableOpacity
             style={styles.statusChip}
             onPress={() => router.push('/settings')}
+            activeOpacity={0.7}
           >
-            <Text style={{ color: '#94a3b8', fontSize: 11 }}>📁 Monitored Vault: </Text>
-            <Text style={{ color: '#f8fafc', fontSize: 11, fontWeight: '800' }}>{vaultStats.folder || 'ReveilaVault'}</Text>
+            <Text style={{ color: '#94a3b8', fontSize: 11, flexShrink: 0 }}>📁 Vault: </Text>
+            <Text
+              style={{ color: '#f8fafc', fontSize: 11, fontWeight: '800', flexShrink: 1 }}
+              numberOfLines={1}
+              ellipsizeMode="middle"
+            >
+              {vaultDisplayName}
+            </Text>
             <View style={styles.statsPill}>
-              <Text style={{ color: theme.success, fontSize: 10, fontWeight: '900' }}>{vaultStats.chunkCount} vectors</Text>
+              <Text style={{ color: theme.success, fontSize: 10, fontWeight: '900' }}>
+                {vaultStats.chunkCount} vectors
+              </Text>
             </View>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.wizardLaunchBtn}
             onPress={() => setShowSetupWizard(true)}
+            activeOpacity={0.7}
           >
             <Text style={{ color: theme.primary, fontSize: 11, fontWeight: '800' }}>⚡ Wizard</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Messages Scroll Area */}
-      <ScrollView contentContainerStyle={styles.content} style={{ flex: 1 }}>
-        <View style={[styles.responseCard, { backgroundColor: theme.card, borderColor: isCloudMode ? theme.accent : theme.primary, borderLeftWidth: 4 }]}>
-          <ScrollView ref={scrollViewRef} style={{ maxHeight: 380 }} nestedScrollEnabled={true}>
-            <View style={{ gap: 14 }}>
-              {activeMessages.map((msg, i) => (
-                <View key={i} style={[styles.msgLine, { borderBottomColor: theme.border }]}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <Text style={{ fontSize: 10, fontWeight: '900', color: msg.role === 'USER' ? theme.accent : (msg.role === 'SYSTEM' ? '#ef4444' : theme.primary) }}>
-                      {msg.role === 'USER' ? 'YOU' : (msg.role === 'SYSTEM' ? 'SYSTEM' : `REVEILA AGENT (${activeLlmName})`)}
-                    </Text>
-                  </View>
-                  <Text selectable={true} style={[styles.responseText, { color: theme.text }]}>
-                    {msg.content}
+      {/* Main Chat Stream & Anchored Input Area */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.chatScroll}
+          contentContainerStyle={styles.chatContent}
+          showsVerticalScrollIndicator={true}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled={true}
+        >
+          {activeMessages.map((msg, i) => {
+            const isUser = msg.role === 'USER';
+            const isSystem = msg.role === 'SYSTEM';
+            return (
+              <View
+                key={i}
+                style={[
+                  styles.messageBubble,
+                  {
+                    backgroundColor: isUser
+                      ? (isDark ? '#1e293b' : '#e2e8f0')
+                      : theme.card,
+                    borderColor: isUser
+                      ? (isDark ? '#334155' : '#cbd5e1')
+                      : (isCloudMode ? theme.accent : theme.primary),
+                    borderLeftWidth: isUser ? 1 : 4,
+                    alignSelf: isUser ? 'flex-end' : 'flex-start',
+                    maxWidth: isUser ? '88%' : '95%',
+                  }
+                ]}
+              >
+                <View style={styles.bubbleHeader}>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontWeight: '900',
+                      letterSpacing: 0.5,
+                      color: isUser
+                        ? theme.accent
+                        : isSystem
+                        ? '#ef4444'
+                        : theme.primary,
+                    }}
+                  >
+                    {isUser
+                      ? 'YOU'
+                      : isSystem
+                      ? 'SYSTEM'
+                      : `REVEILA AGENT (${activeLlmName})`}
                   </Text>
                 </View>
-              ))}
-              {isProcessing && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 }}>
-                  <ActivityIndicator size="small" color={theme.primary} />
-                  <Text style={{ color: theme.subText, fontSize: 12 }}>
-                    {isCloudMode ? 'Querying cloud model with guardrails...' : 'Executing on-device reasoning and vector search...'}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </ScrollView>
-        </View>
+                <Text style={[styles.responseText, { color: theme.text }]}>
+                  {msg.content}
+                </Text>
+              </View>
+            );
+          })}
 
-        {/* Prompt Input Box */}
-        <View style={[styles.inputCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <TextInput
-            style={[styles.textInput, { color: theme.text }]}
-            multiline
-            placeholder={isCloudMode ? 'Ask cloud agent (Google Gemini / OpenAI)...' : 'Ask sovereign on-device agent (indexed vault)...'}
-            placeholderTextColor="#64748b"
-            value={promptText}
-            onChangeText={setPromptText}
-            editable={!isProcessing}
-            textAlignVertical="top"
-          />
-          <TouchableOpacity
-            style={[styles.sendButton, { backgroundColor: theme.primary, opacity: promptText.trim() && !isProcessing ? 1 : 0.4 }]}
-            disabled={isProcessing || !promptText.trim()}
-            onPress={handleSendPrompt}
-          >
-            <Text style={styles.buttonText}>SEND</Text>
-          </TouchableOpacity>
+          {isProcessing && (
+            <View
+              style={[
+                styles.messageBubble,
+                {
+                  backgroundColor: theme.card,
+                  borderColor: theme.border,
+                  borderLeftWidth: 4,
+                  borderLeftColor: isCloudMode ? theme.accent : theme.primary,
+                  alignSelf: 'flex-start',
+                  maxWidth: '92%',
+                }
+              ]}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
+                <ActivityIndicator size="small" color={isCloudMode ? theme.accent : theme.primary} />
+                <Text style={{ color: theme.subText, fontSize: 12 }}>
+                  {isCloudMode
+                    ? 'Querying cloud model with guardrails...'
+                    : 'Executing on-device reasoning and vector search...'}
+                </Text>
+              </View>
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Anchored Prompt Input Box */}
+        <View style={[styles.bottomBar, { backgroundColor: isDark ? '#090d16' : '#ffffff', borderTopColor: theme.border }]}>
+          <View style={[styles.inputCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <TextInput
+              style={[styles.textInput, { color: theme.text }]}
+              multiline
+              placeholder={
+                isCloudMode
+                  ? 'Ask cloud agent (Google Gemini / OpenAI)...'
+                  : 'Ask sovereign on-device agent (indexed vault)...'
+              }
+              placeholderTextColor="#64748b"
+              value={promptText}
+              onChangeText={setPromptText}
+              editable={!isProcessing}
+              textAlignVertical="top"
+            />
+            <TouchableOpacity
+              style={[
+                styles.sendButton,
+                {
+                  backgroundColor: isCloudMode ? theme.accent : theme.primary,
+                  opacity: promptText.trim() && !isProcessing ? 1 : 0.4,
+                }
+              ]}
+              disabled={isProcessing || !promptText.trim()}
+              onPress={handleSendPrompt}
+            >
+              <Text style={styles.buttonText}>SEND</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Setup Wizard Modal for First Launch */}
       <SetupWizard
@@ -297,7 +394,6 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   brandSubtitle: { color: '#ff6600', fontSize: 10, fontWeight: '900', letterSpacing: 1.2 },
   headerTitle: { color: '#fff', fontSize: 18, fontWeight: '900' },
-  content: { padding: 16, gap: 16 },
   miniBadge: { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6 },
   miniBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900' },
   settingsBtn: {
@@ -315,11 +411,14 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#1e293b',
+    gap: 8,
   },
   statusChip: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    marginRight: 6,
+    overflow: 'hidden',
   },
   statsPill: {
     backgroundColor: 'rgba(16, 185, 129, 0.15)',
@@ -327,19 +426,71 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 4,
     marginLeft: 6,
+    flexShrink: 0,
   },
   wizardLaunchBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255, 102, 0, 0.3)',
+    borderColor: 'rgba(255, 102, 0, 0.4)',
+    backgroundColor: 'rgba(255, 102, 0, 0.1)',
+    flexShrink: 0,
   },
-  responseCard: { borderRadius: 14, padding: 16, elevation: 2, minHeight: 180, borderWidth: 1 },
-  msgLine: { borderBottomWidth: 1, paddingBottom: 12, marginBottom: 8 },
-  responseText: { fontSize: 14, lineHeight: 22, fontWeight: '400' },
-  inputCard: { borderRadius: 14, padding: 10, flexDirection: 'row', alignItems: 'flex-end', gap: 10, borderWidth: 1 },
-  textInput: { flex: 1, backgroundColor: 'transparent', padding: 8, fontSize: 15, maxHeight: 120 },
-  sendButton: { paddingHorizontal: 18, paddingVertical: 12, borderRadius: 10, justifyContent: 'center' },
-  buttonText: { color: '#fff', fontWeight: '900', fontSize: 13 },
+  chatScroll: {
+    flex: 1,
+  },
+  chatContent: {
+    padding: 16,
+    paddingBottom: 28,
+    gap: 12,
+  },
+  messageBubble: {
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    elevation: 2,
+  },
+  bubbleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  responseText: {
+    fontSize: 14,
+    lineHeight: 22,
+    fontWeight: '400',
+  },
+  bottomBar: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+    borderTopWidth: 1,
+  },
+  inputCard: {
+    borderRadius: 14,
+    padding: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+    borderWidth: 1,
+  },
+  textInput: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    padding: 8,
+    fontSize: 15,
+    maxHeight: 120,
+  },
+  sendButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 10,
+    justifyContent: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: 13,
+  },
 });

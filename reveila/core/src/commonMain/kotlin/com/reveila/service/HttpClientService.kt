@@ -11,7 +11,7 @@ open class HttpClientService : SystemComponent() {
 
     var connectTimeout: Long = 10 // seconds
     var writeTimeout: Long = 10 // seconds
-    var readTimeout: Long = 30 // seconds
+    var readTimeout: Long = 90 // seconds
 
     @Throws(Exception::class)
     open fun invokeRest(

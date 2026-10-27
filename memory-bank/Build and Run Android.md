@@ -329,3 +329,28 @@ Now, update your reveila.properties to point to your PC's IP and the port you ju
 In reveila.properties:
 download.base.url=http://192.168.1.219:8000
 
+---
+
+## 5. Bundled Native `llama.cpp` (`libllama-server.so`) Deployment
+
+The Android app bundles a stripped, self-contained `llama.cpp` native server directly within APK native libraries for complete on-device sovereign inference.
+
+### Architecture & Packaging
+- **Location:** `apps/expo/Reveila/android/app/src/main/jniLibs/x86_64/libllama-server.so` (and `arm64-v8a` for physical hardware).
+- **Symbol Stripping:** Debug symbols stripped using NDK 27's `llvm-strip.exe`, reducing binary from 184 MB to 16 MB.
+- **SELinux Compliance:** `android:extractNativeLibs="true"` in `AndroidManifest.xml` and `expo.useLegacyPackaging=true` in `gradle.properties`. Android extracts the binary into the app's `nativeLibraryDir` with SELinux label `u:object_r:apk_data_file:s0`, permitting `execve()` process execution.
+
+### Service Process Management (`ReveilaService.java`)
+- **Lifecycle Auto-Spawn:** `ReveilaService` locates the binary in `context.getApplicationInfo().nativeLibraryDir` and launches it with:
+  ```bash
+  libllama-server.so -m <modelPath> --host 127.0.0.1 --port 8080 -c 2048 --parallel 1 -n 256 -t 4
+  ```
+- **Context & KV Cache Optimization:** Explicitly setting `--parallel 1` and `-c 2048` guarantees all 2,048 tokens are allocated to a single active reasoning slot, avoiding slot partitioning and KV-cache exhaustion.
+- **Health Verification:** The service polls `http://127.0.0.1:8080/health` up to 10 seconds on startup and updates foreground notification to `"Local LLM Online"`.
+- **Termination:** `onDestroy()` safely issues process destruction (`SIGTERM` / `SIGKILL`).
+
+### Provider & Endpoint Sizing (`LocalLlamaProvider.kt` & `LlmProviderFactory.kt`)
+- **Direct Localhost Routing:** `LlmProviderFactory.kt` guarantees `127.0.0.1:8080` is preserved for `LocalLlamaProvider` on Android rather than rewriting to `10.0.2.2`.
+- **Prompt Templating:** Uses Qwen ChatML formatting (`<|im_start|>role\ncontent<|im_end|>\n`) with `<|im_end|>` stop token and `n_predict = 256`.
+- **Inference Timeout:** `HttpClientService.readTimeout` configured to 90 seconds to accommodate mobile CPU prompt evaluation and token generation without premature timeouts.
+

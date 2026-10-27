@@ -101,14 +101,25 @@ public class ReveilaSetup {
     }
 
     private void copyFile(InputStream in, File targetFile, boolean overwrite) throws IOException {
-        if (!overwrite && targetFile.exists()) return;
+        if (!overwrite && targetFile.exists() && targetFile.length() > 0) {
+            if (targetFile.getName().contains("llama") || (targetFile.getParentFile() != null && targetFile.getParentFile().getName().equals("android"))) {
+                targetFile.setReadable(true, false);
+                targetFile.setExecutable(true, false);
+            }
+            return;
+        }
         
         try (FileOutputStream out = new FileOutputStream(targetFile)) {
-            byte[] buffer = new byte[4096]; // Expanded buffer sizing to 4KB to improve engine dex storage copies
+            byte[] buffer = new byte[65536]; // Expanded buffer sizing to 64KB for faster staging of native binaries
             int read;
             while ((read = in.read(buffer)) != -1) {
                 out.write(buffer, 0, read);
             }
+        }
+
+        if (targetFile.getName().contains("llama") || (targetFile.getParentFile() != null && targetFile.getParentFile().getName().equals("android"))) {
+            targetFile.setReadable(true, false);
+            targetFile.setExecutable(true, false);
         }
     }
 }

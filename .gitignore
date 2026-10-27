@@ -44,3 +44,5 @@ local.properties
 
 # Sovereign Data (Local Persistence)
 **/infrastructure/data/postgres/
+scratch/
+*.gguf

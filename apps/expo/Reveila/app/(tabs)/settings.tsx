@@ -132,7 +132,7 @@ export default function SettingsScreen() {
           const transformedProviders = transformProviderConfig(onboarded);
 
           const defaultStandard = [
-            { name: 'On-Device Model', type: 'LocalLlamaProvider', endpoint: 'http://127.0.0.1:8080', model: 'qwen2.5-0.5b-instruct-q4_k_m.gguf', apiKey: '' },
+            { name: 'On-Device Model', type: 'LocalLlamaProvider', endpoint: 'http://127.0.0.1:8080/completion', model: 'qwen2.5-0.5b-instruct-q4_k_m.gguf', apiKey: '' },
             { name: 'Google Gemini', type: 'GeminiProvider', endpoint: 'https://generativelanguage.googleapis.com', model: 'gemini-1.5-flash', apiKey: '' },
             { name: 'OpenAI', type: 'OpenAiProvider', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: '' }
           ];
@@ -161,7 +161,7 @@ export default function SettingsScreen() {
         } catch (e) {
           setProvidersError('Failed to parse LLM providers configuration');
           setProvidersList([
-            { name: 'On-Device Model', type: 'LocalLlamaProvider', endpoint: 'http://127.0.0.1:8080', model: 'qwen2.5-0.5b-instruct-q4_k_m.gguf', apiKey: '' },
+            { name: 'On-Device Model', type: 'LocalLlamaProvider', endpoint: 'http://127.0.0.1:8080/completion', model: 'qwen2.5-0.5b-instruct-q4_k_m.gguf', apiKey: '' },
             { name: 'Google Gemini', type: 'GeminiProvider', endpoint: 'https://generativelanguage.googleapis.com', model: 'gemini-1.5-flash', apiKey: '' },
             { name: 'OpenAI', type: 'OpenAiProvider', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: '' },
             { name: 'Custom', endpoint: '', model: '', apiKey: '' }
@@ -176,7 +176,7 @@ export default function SettingsScreen() {
     }).catch(() => {
         setProvidersError('Failed to retrieve LLM providers list from Configuration Manager');
         setProvidersList([
-          { name: 'On-Device Model', type: 'LocalLlamaProvider', endpoint: 'http://127.0.0.1:8080', model: 'qwen2.5-0.5b-instruct-q4_k_m.gguf', apiKey: '' },
+          { name: 'On-Device Model', type: 'LocalLlamaProvider', endpoint: 'http://127.0.0.1:8080/completion', model: 'qwen2.5-0.5b-instruct-q4_k_m.gguf', apiKey: '' },
           { name: 'Google Gemini', type: 'GeminiProvider', endpoint: 'https://generativelanguage.googleapis.com', model: 'gemini-1.5-flash', apiKey: '' },
           { name: 'OpenAI', type: 'OpenAiProvider', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini', apiKey: '' },
           { name: 'Custom', endpoint: '', model: '', apiKey: '' }

@@ -173,6 +173,15 @@ if (isSuiteWorkspace) {
             from(layout.buildDirectory.dir("reveila/dex-libs")) { 
                 into("libs") 
             }
+
+            // 4. Map bundled Android llama.cpp native binaries (llama-server)
+            val androidBinDir = file("${homeDir}/bin/android")
+            if (androidBinDir.exists()) {
+                from(androidBinDir) {
+                    include("llama-server")
+                    into("bin/android")
+                }
+            }
         }
         
         // Direct output targets your synchronized local asset directory wrapper
