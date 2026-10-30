@@ -26,4 +26,5 @@ dependencies {
     implementation(libs.jakarta.persistence.api)
     implementation(libs.hibernate.core)
     implementation(libs.commons.compress)
+    implementation(libs.jackson.databind)
 }

@@ -22,6 +22,7 @@ java-shared = "17"
 java-server = "21"
 springBoot = "3.5.9"
 kotlin = "2.1.20"
+compose-multiplatform = "1.7.3"
 kotlinx-coroutines = "1.10.1"
 kotlinx-datetime = "0.6.2"
 kotlinx-serialization = "1.8.0"
@@ -50,7 +51,7 @@ androidMinSdk = "26"
 androidTargetSdk = "35"
 androidJvmTarget = "17"
 androidGradlePlugin = "8.7.2" # Android Gradle Plugin version
-androidxCore = "1.17.0"
+androidxCore = "1.15.0"
 androidxBiometric = "1.2.0-alpha05"
 androidxWork = "2.9.0"
 pdfbox = "2.0.27.0"
@@ -85,6 +86,7 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+jetbrains-compose = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
 
 # The Gradle Node Plugin allows Gradle to manage Node.js and NPM automatically
 node = { id = "com.github.node-gradle.node", version = "7.1.0" }
@@ -147,6 +149,8 @@ spring-dependency-management-plugin = { module = "io.spring.dependency-managemen
 shadow-gradle-plugin = { module = "com.gradleup.shadow:shadow-gradle-plugin", version.ref = "shadow" }
 android-gradle-plugin = { module = "com.android.tools.build:gradle", version.ref = "androidGradlePlugin" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidxCore" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version = "1.9.3" }
+kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
 
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commons-compress" }
 commonmark = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
