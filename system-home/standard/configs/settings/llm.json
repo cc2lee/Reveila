@@ -2,7 +2,8 @@
     "onboarded.providers": [
         {
             "Name": "OpenAI",
-            "Type": "openai",
+            "Type": "Cloud",
+            "Provider": "OpenAI",
             "Endpoint": "https://api.openai.com/v1/chat/completions",
             "Model": "gpt-4o",
             "Model.Options": ["gpt-4o"],
@@ -11,7 +12,8 @@
         },
         {
             "Name": "Google Gemini",
-            "Type": "gemini",
+            "Type": "Cloud",
+            "Provider": "Gemini",
             "Endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
             "Model": "gemini-3-flash",
             "Model.Options": ["gemini-3-flash"],
@@ -19,8 +21,28 @@
             "api.key": "REF:GEMINI_KEY"
         },
         {
+            "Name": "DeepSeek",
+            "Type": "Cloud",
+            "Provider": "DeepSeek",
+            "Endpoint": "https://api.deepseek.com/chat/completions",
+            "Model": "deepseek-chat",
+            "Model.Options": ["deepseek-chat", "deepseek-reasoner"],
+            "Temperature": 0.7,
+            "api.key": "REF:DEEPSEEK_KEY"
+        },
+        {
+            "Name": "Qwen",
+            "Type": "Cloud",
+            "Provider": "Qwen",
+            "Endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            "Model": "qwen-plus",
+            "Model.Options": ["qwen-plus", "qwen-turbo", "qwen-max"],
+            "Temperature": 0.7,
+            "api.key": "REF:QWEN_KEY"
+        },
+        {
             "Name": "On-Device Model",
-            "Type": "local",
+            "Type": "Local",
             "Endpoint": "http://127.0.0.1:8888/completion",
             "Model": "gemma-2-2b-it-Q4_K_M.gguf",
             "Model.Options": ["gemma-2-2b-it-Q4_K_M.gguf"],

@@ -20,9 +20,11 @@ reveilaApp {
     requiredComponents.set(
         listOf(
             "AgenticFabric",
+            "AutonomousAgent",
             "OrchestrationService",
-            "UiController",
-            "KnowledgeVault"
+            "KnowledgeVault",
+            "HttpClientService",
+            "LlmProviderFactory"
         )
     )
     requiredPlugins.set(emptyList())
@@ -139,6 +141,10 @@ android {
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0.0"
+
+        ndk {
+            abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+        }
     }
 
     sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/assets/androidMain"))
@@ -161,6 +167,9 @@ android {
     }
 
     packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "/META-INF/INDEX.LIST"

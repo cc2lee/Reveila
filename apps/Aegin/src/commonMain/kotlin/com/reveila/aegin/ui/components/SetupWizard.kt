@@ -8,10 +8,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -19,9 +23,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,20 +43,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.reveila.aegin.bridge.AeginBridge
+import com.reveila.aegin.bridge.DeviceCapabilityReport
 import com.reveila.aegin.bridge.VaultScanResult
+import com.reveila.aegin.ui.PlatformBackHandler
 import com.reveila.aegin.ui.theme.LocalAeginColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SetupWizard(
     visible: Boolean,
-    onComplete: () -> Unit
+    onComplete: () -> Unit,
+    onCancel: () -> Unit
 ) {
     if (!visible) return
 
@@ -56,14 +67,34 @@ fun SetupWizard(
     val scope = rememberCoroutineScope()
 
     var step by remember { mutableStateOf(1) }
-    var folderPath by remember { mutableStateOf("ReveilaVault") }
+    var folderPath by remember { mutableStateOf("Documents/Reveila") }
+    var initialFolder by remember { mutableStateOf("Documents/Reveila") }
+    var showCustomFolderDialog by remember { mutableStateOf(false) }
     var focusKeywords by remember { mutableStateOf("strategy, confidential, roadmap, architectural") }
+    var initialKeywords by remember { mutableStateOf("strategy, confidential, roadmap, architectural") }
     var selectedLlm by remember { mutableStateOf("local") } // "local" | "gemini" | "openai"
     var apiKey by remember { mutableStateOf("") }
     var isScanning by remember { mutableStateOf(false) }
     var scanResult by remember { mutableStateOf<VaultScanResult?>(null) }
     var scanProgressMsg by remember { mutableStateOf("Ready to index") }
     var isEngineReady by remember { mutableStateOf(false) }
+    var capabilities by remember { mutableStateOf(DeviceCapabilityReport()) }
+
+    fun handleCancel() {
+        scope.launch {
+            if (initialFolder.isNotBlank() && (initialFolder != folderPath || initialKeywords != focusKeywords)) {
+                try {
+                    AeginBridge.setVaultFolder(initialFolder, initialKeywords)
+                } catch (_: Exception) {
+                }
+            }
+            onCancel()
+        }
+    }
+
+    PlatformBackHandler(enabled = visible) {
+        handleCancel()
+    }
 
     LaunchedEffect(visible) {
         try {
@@ -72,13 +103,24 @@ fun SetupWizard(
         } catch (_: Exception) {
         }
         try {
+            val cap = AeginBridge.getDeviceCapabilities()
+            capabilities = cap
+            if (!cap.canRunLocalGguf) {
+                selectedLlm = "gemini"
+            }
+        } catch (_: Exception) {
+        }
+        try {
             val vault = AeginBridge.getVaultFolder()
             if (vault.folder.isNotBlank()) {
                 folderPath = vault.folder
+                initialFolder = vault.folder
             }
             if (vault.focusKeywords.isNotBlank()) {
                 focusKeywords = vault.focusKeywords
+                initialKeywords = vault.focusKeywords
             }
+            AeginBridge.ensureVaultDirectory(folderPath)
         } catch (_: Exception) {
         }
     }
@@ -86,14 +128,10 @@ fun SetupWizard(
     fun handleStartScan() {
         scope.launch {
             isScanning = true
-            scanProgressMsg = "Registering document folder with Reveila Service..."
+            scanProgressMsg = "Registering Inference Documents Folder with Reveila Service..."
             try {
-                AeginBridge.setVaultFolder(folderPath, focusKeywords)
-                scanProgressMsg = "Scanning document files & parsing text..."
-                delay(400)
-
-                scanProgressMsg = "Computing vector embeddings into Vector Database..."
-                val result = AeginBridge.scanVault()
+                scanProgressMsg = "Scanning reference documents & refreshing embeddings database..."
+                val result = AeginBridge.setVaultFolder(folderPath, focusKeywords)
                 delay(400)
 
                 val stats = AeginBridge.getVaultStats()
@@ -103,7 +141,7 @@ fun SetupWizard(
                     entitiesFound = if (result.entitiesFound > 0) result.entitiesFound else 4,
                     chunkCount = if (stats.chunkCount > 0) stats.chunkCount else 3
                 )
-                scanProgressMsg = "Vector embeddings generated successfully!"
+                scanProgressMsg = "Embeddings database refreshed successfully!"
             } catch (e: Exception) {
                 scanResult = VaultScanResult(
                     folder = folderPath,
@@ -111,7 +149,7 @@ fun SetupWizard(
                     entitiesFound = 3,
                     chunkCount = 2
                 )
-                scanProgressMsg = "Folder configured with sovereign local storage."
+                scanProgressMsg = "Inference Documents Folder configured with local storage."
             } finally {
                 isScanning = false
             }
@@ -133,9 +171,27 @@ fun SetupWizard(
             }
 
             try {
-                val jsonPayload = """{"ai.worker.llm":"$providerName","ai.governance.llm":"$providerName"}"""
-                AeginBridge.invoke("UiController", "setSettings", listOf("llm.json", jsonPayload))
+                val rawLlm = AeginBridge.invoke("LlmProviderFactory", "getSettings", listOf("llm.json"))
+                val (providers, _, gProv) = AeginBridge.parseLlmSettingsJson(rawLlm)
+                val updatedProviders = providers.map { p ->
+                    if (p.name == providerName && apiKey.isNotBlank()) {
+                        p.copy(apiKey = apiKey.trim())
+                    } else {
+                        p
+                    }
+                }
+                val jsonPayload = AeginBridge.buildLlmSettingsJson(
+                    providers = updatedProviders,
+                    workerProvider = providerName,
+                    governanceProvider = gProv
+                )
+                AeginBridge.invoke("LlmProviderFactory", "saveSettings", listOf("llm.json", jsonPayload))
             } catch (_: Exception) {
+                try {
+                    val jsonPayload = """{"ai.worker.llm":"$providerName","ai.governance.llm":"$providerName"}"""
+                    AeginBridge.invoke("LlmProviderFactory", "setSettings", listOf("llm.json", jsonPayload))
+                } catch (_: Exception) {
+                }
             }
 
             AeginBridge.setStorageItem("reveila_setup_completed", "true")
@@ -144,83 +200,98 @@ fun SetupWizard(
         }
     }
 
-    Dialog(
-        onDismissRequest = {},
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(theme.bg)
-        ) {
-            // Header Bar
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(theme.headerBg)
-                    .padding(top = 36.dp, start = 24.dp, end = 24.dp, bottom = 20.dp)
-            ) {
-                Text(
-                    text = "REVEILA SOVEREIGN INITIALIZATION",
-                    color = theme.primary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 1.5.sp
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "System Setup Wizard",
-                    color = Color.White,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Black
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Step Indicators
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    for (s in 1..4) {
-                        val dotColor = when {
-                            s == step -> theme.primary
-                            s < step -> theme.success
-                            else -> theme.border
-                        }
-                        Box(
-                            modifier = Modifier
-                                .height(20.dp)
-                                .width(if (s == step) 38.dp else 20.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(dotColor),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = s.toString(),
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Black
-                            )
+    Scaffold(
+        containerColor = theme.bg,
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            TopAppBar(
+                navigationIcon = {
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 8.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { handleCancel() }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "Cancel",
+                            color = theme.subText,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                title = {
+                    Text(
+                        text = "Setup",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                actions = {
+                    // Step Indicators
+                    Row(
+                        modifier = Modifier.padding(end = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        for (s in 1..4) {
+                            val dotColor = when {
+                                s == step -> theme.primary
+                                s < step -> theme.success
+                                else -> theme.border
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .height(20.dp)
+                                    .width(if (s == step) 38.dp else 20.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(dotColor),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = s.toString(),
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                            }
                         }
                     }
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(theme.border)
+                },
+                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = theme.headerBg,
+                    titleContentColor = Color.White,
+                    actionIconContentColor = Color.White
+                )
             )
+        }
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(theme.border)
+                )
 
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
-            ) {
-                // STEP 1: Welcome & Sovereign Privacy
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                // STEP 1: Welcome
                 if (step == 1) {
                     Column(
                         modifier = Modifier
@@ -233,26 +304,26 @@ fun SetupWizard(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(60.dp)
+                                .size(52.dp)
                                 .clip(CircleShape)
                                 .background(theme.primary.copy(alpha = 0.12f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(text = "🛡️", fontSize = 28.sp)
+                            Text(text = "🛡️", fontSize = 24.sp)
                         }
 
                         Text(
-                            text = "Sovereign AI on Your Device",
+                            text = "Local & Cloud AI",
                             color = theme.text,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Black
                         )
 
                         Text(
-                            text = "Aegin pairs the Reveila Sovereign Kotlin Multiplatform Core Engine with a background runtime service to execute local AI reasoning, private document vector indexing, and autonomous tools.",
+                            text = "Run on-device models or connect cloud LLMs with local document indexing.",
                             color = theme.subText,
                             fontSize = 14.sp,
-                            lineHeight = 22.sp
+                            lineHeight = 20.sp
                         )
 
                         Column(
@@ -264,64 +335,61 @@ fun SetupWizard(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = "🔒 Zero Cloud Leaks: Data stays on physical storage.",
+                                text = "🔒 Private local storage",
                                 color = theme.text,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "⚡ Local Vector DB: Embeddings generated on-device.",
+                                text = "⚡ On-device document embeddings",
                                 color = theme.text,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                text = "🤖 Hybrid Inference: Local GGUF or Cloud LLMs.",
+                                text = "🤖 Local GGUF or Cloud LLMs",
                                 color = theme.text,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold
-                            )
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (isEngineReady) theme.success.copy(alpha = 0.15f)
-                                    else theme.warning.copy(alpha = 0.15f)
-                                )
-                                .padding(12.dp)
-                        ) {
-                            Text(
-                                text = if (isEngineReady) "● Sovereign Engine Service: ONLINE"
-                                else "○ Engine initializing in background...",
-                                color = if (isEngineReady) theme.success else theme.warning,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
                             )
                         }
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(theme.primary)
-                            .clickable { step = 2 },
-                        contentAlignment = Alignment.Center
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = "Configure Document Vault →",
-                            color = Color.White,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Black
-                        )
+                        Box(
+                            modifier = Modifier
+                                .height(52.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, theme.border, RoundedCornerShape(12.dp))
+                                .clickable { handleCancel() }
+                                .padding(horizontal = 20.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Cancel", color = theme.danger, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(52.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(theme.primary)
+                                .clickable { step = 2 },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Next →",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
                     }
                 }
 
-                // STEP 2: Choose / Create Document Folder
+                // STEP 2: Choose / Create Inference Documents Folder
                 if (step == 2) {
                     Column(
                         modifier = Modifier
@@ -333,20 +401,20 @@ fun SetupWizard(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = "Document Vault Folder",
+                            text = "Inference Documents Folder",
                             color = theme.text,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Black
                         )
                         Text(
-                            text = "Choose or create the local document directory that the Reveila service will monitor. Changes will automatically trigger vector embeddings.",
+                            text = "Select the folder containing reference documents to include in inference.",
                             color = theme.subText,
-                            fontSize = 14.sp,
-                            lineHeight = 22.sp
+                            fontSize = 13.sp,
+                            lineHeight = 19.sp
                         )
 
                         Text(
-                            text = "Vault Folder Path",
+                            text = "Folder Path",
                             color = theme.text,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.ExtraBold
@@ -358,7 +426,7 @@ fun SetupWizard(
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             placeholder = {
-                                Text("e.g. ReveilaVault or Documents/SovereignVault", color = theme.subText)
+                                Text("e.g. Documents/Reveila", color = theme.subText)
                             },
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = theme.text,
@@ -371,23 +439,61 @@ fun SetupWizard(
                         )
 
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val isDefaultSelected = folderPath.equals("Documents/Reveila", ignoreCase = true) ||
+                                folderPath.equals("Documents/Reveila Vault", ignoreCase = true) ||
+                                folderPath.equals("Documents/ReveilaVault", ignoreCase = true)
+                            val isCustomSelected = !isDefaultSelected
+
                             Box(
                                 modifier = Modifier
+                                    .weight(1f)
                                     .clip(RoundedCornerShape(8.dp))
-                                    .border(1.dp, theme.border, RoundedCornerShape(8.dp))
-                                    .clickable { folderPath = "ReveilaVault" }
-                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    .background(if (isDefaultSelected) theme.primary.copy(alpha = 0.15f) else Color.Transparent)
+                                    .border(
+                                        1.dp,
+                                        if (isDefaultSelected) theme.primary else theme.border,
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable {
+                                        folderPath = "Documents/Reveila"
+                                        scope.launch {
+                                            AeginBridge.ensureVaultDirectory("Documents/Reveila")
+                                        }
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text("📁 Standard App Vault", color = theme.subText, fontSize = 12.sp)
+                                Text(
+                                    text = "Default",
+                                    color = if (isDefaultSelected) theme.primary else theme.subText,
+                                    fontWeight = if (isDefaultSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 13.sp,
+                                    maxLines = 1
+                                )
                             }
                             Box(
                                 modifier = Modifier
+                                    .weight(1f)
                                     .clip(RoundedCornerShape(8.dp))
-                                    .border(1.dp, theme.border, RoundedCornerShape(8.dp))
-                                    .clickable { folderPath = "Documents/SovereignVault" }
-                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    .background(if (isCustomSelected) theme.primary.copy(alpha = 0.15f) else Color.Transparent)
+                                    .border(
+                                        1.dp,
+                                        if (isCustomSelected) theme.primary else theme.border,
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable {
+                                        showCustomFolderDialog = true
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text("📂 Shared Documents", color = theme.subText, fontSize = 12.sp)
+                                Text(
+                                    text = "Custom",
+                                    color = if (isCustomSelected) theme.primary else theme.subText,
+                                    fontWeight = if (isCustomSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 13.sp,
+                                    maxLines = 1
+                                )
                             }
                         }
 
@@ -397,6 +503,12 @@ fun SetupWizard(
                             color = theme.text,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            text = "Always include documents that contain the following keywords.",
+                            color = theme.subText,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp
                         )
 
                         OutlinedTextField(
@@ -418,18 +530,29 @@ fun SetupWizard(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Box(
                             modifier = Modifier
                                 .height(52.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .border(1.dp, theme.border, RoundedCornerShape(12.dp))
-                                .clickable { step = 1 }
-                                .padding(horizontal = 20.dp),
+                                .clickable { handleCancel() }
+                                .padding(horizontal = 14.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("← Back", color = theme.subText, fontWeight = FontWeight.Bold)
+                            Text("Cancel", color = theme.danger, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .height(52.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, theme.border, RoundedCornerShape(12.dp))
+                                .clickable { step = 1 }
+                                .padding(horizontal = 16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("← Back", color = theme.subText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                         Box(
                             modifier = Modifier
@@ -441,7 +564,7 @@ fun SetupWizard(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "Choose AI Engine →",
+                                text = "Next →",
                                 color = Color.White,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Black
@@ -468,16 +591,49 @@ fun SetupWizard(
                             fontWeight = FontWeight.Black
                         )
                         Text(
-                            text = "Select your primary LLM for autonomous reasoning and question answering.",
+                            text = "Select your primary model.",
                             color = theme.subText,
-                            fontSize = 14.sp,
-                            lineHeight = 22.sp
+                            fontSize = 13.sp
                         )
+
+                        // Hardware Preflight Summary
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(theme.inputBg)
+                                .border(
+                                    1.dp,
+                                    if (capabilities.canRunLocalGguf) theme.success.copy(alpha = 0.5f) else theme.warning,
+                                    RoundedCornerShape(10.dp)
+                                )
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = capabilities.hardwareTier,
+                                color = if (capabilities.canRunLocalGguf) theme.success else theme.warning,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text(
+                                text = "RAM: ${capabilities.totalRamGb} GB • Free Disk: ${capabilities.freeDiskGb} GB • ABI: ${capabilities.cpuAbi}",
+                                color = theme.text,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Recommended: ${capabilities.recommendedModel}",
+                                color = theme.primary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
 
                         // Local Option
                         WizardEngineOptionCard(
-                            title = "💻 Local On-Device Model",
-                            description = "Gemma 2B / Qwen 2.5 Q4_K_M On-Device Reasoning. Completely sovereign, zero cloud transmission, works offline.",
+                            title = "💻 On-Device (${capabilities.recommendedModel})",
+                            description = "Runs locally on your device.",
                             selected = selectedLlm == "local",
                             highlightColor = theme.primary,
                             onClick = { selectedLlm = "local" }
@@ -485,8 +641,8 @@ fun SetupWizard(
 
                         // Gemini Option
                         WizardEngineOptionCard(
-                            title = "☁️ Google Gemini (Cloud)",
-                            description = "Gemini 1.5 Flash / Gemini 2.0. High-speed reasoning with extensive token window.",
+                            title = "☁️ Google Gemini",
+                            description = "Gemini 1.5 / 2.0 Flash cloud API.",
                             selected = selectedLlm == "gemini",
                             highlightColor = theme.accent,
                             onClick = { selectedLlm = "gemini" }
@@ -494,8 +650,8 @@ fun SetupWizard(
 
                         // OpenAI Option
                         WizardEngineOptionCard(
-                            title = "☁️ OpenAI (Cloud)",
-                            description = "GPT-4o / GPT-4o-mini. Enterprise industry standard for complex instruction following.",
+                            title = "☁️ OpenAI",
+                            description = "GPT-4o / GPT-4o-mini cloud API.",
                             selected = selectedLlm == "openai",
                             highlightColor = theme.success,
                             onClick = { selectedLlm = "openai" }
@@ -532,18 +688,29 @@ fun SetupWizard(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Box(
                             modifier = Modifier
                                 .height(52.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .border(1.dp, theme.border, RoundedCornerShape(12.dp))
-                                .clickable { step = 2 }
-                                .padding(horizontal = 20.dp),
+                                .clickable { handleCancel() }
+                                .padding(horizontal = 14.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("← Back", color = theme.subText, fontWeight = FontWeight.Bold)
+                            Text("Cancel", color = theme.danger, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .height(52.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, theme.border, RoundedCornerShape(12.dp))
+                                .clickable { step = 2 }
+                                .padding(horizontal = 16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("← Back", color = theme.subText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                         Box(
                             modifier = Modifier
@@ -558,7 +725,7 @@ fun SetupWizard(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "Scan & Index Vault →",
+                                text = "Index Documents →",
                                 color = Color.White,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Black
@@ -579,16 +746,16 @@ fun SetupWizard(
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Text(
-                            text = "Vector Embedding Indexing",
+                            text = "Document Indexing",
                             color = theme.text,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Black
                         )
                         Text(
-                            text = "The Reveila service scans your vault folder, converts documents into dense semantic embeddings, and populates the sovereign vector database.",
+                            text = "Indexing reference documents into the local embeddings database.",
                             color = theme.subText,
-                            fontSize = 14.sp,
-                            lineHeight = 22.sp
+                            fontSize = 13.sp,
+                            lineHeight = 19.sp
                         )
 
                         if (isScanning) {
@@ -620,7 +787,7 @@ fun SetupWizard(
                                     .background(theme.inputBg)
                                     .padding(14.dp)
                             ) {
-                                Text("MONITORED FOLDER", color = theme.subText, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                Text("FOLDER", color = theme.subText, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(folderPath, color = theme.text, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                             }
@@ -636,7 +803,7 @@ fun SetupWizard(
                                         .background(theme.inputBg)
                                         .padding(14.dp)
                                 ) {
-                                    Text("FILES INDEXED", color = theme.subText, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("FILES", color = theme.subText, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = "${scanResult?.filesScanned ?: 1}",
@@ -652,7 +819,7 @@ fun SetupWizard(
                                         .background(theme.inputBg)
                                         .padding(14.dp)
                                 ) {
-                                    Text("VECTOR CHUNKS", color = theme.subText, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                    Text("VECTORS", color = theme.subText, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
                                         text = "${scanResult?.chunkCount ?: 2}",
@@ -670,11 +837,11 @@ fun SetupWizard(
                                     .background(theme.inputBg)
                                     .padding(14.dp)
                             ) {
-                                Text("SELECTED INFERENCE ENGINE", color = theme.subText, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                Text("MODEL", color = theme.subText, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = when (selectedLlm) {
-                                        "local" -> "Local On-Device (Gemma / Qwen GGUF)"
+                                        "local" -> "On-Device (${capabilities.recommendedModel})"
                                         "gemini" -> "Google Gemini"
                                         else -> "OpenAI"
                                     },
@@ -691,31 +858,69 @@ fun SetupWizard(
                                     .clickable { handleStartScan() }
                                     .padding(horizontal = 14.dp, vertical = 8.dp)
                             ) {
-                                Text("🔄 Re-Scan Document Folder", color = theme.primary, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+                                Text("🔄 Re-index", color = theme.primary, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
                             }
                         }
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (isScanning) theme.success.copy(alpha = 0.5f) else theme.success)
-                            .clickable(enabled = !isScanning) { handleFinishWizard() },
-                        contentAlignment = Alignment.Center
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(
-                            text = "✓ Complete Setup & Open Aegin",
-                            color = Color.White,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Black
-                        )
+                        Box(
+                            modifier = Modifier
+                                .height(52.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, theme.border, RoundedCornerShape(12.dp))
+                                .clickable { handleCancel() }
+                                .padding(horizontal = 14.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Cancel", color = theme.danger, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .height(52.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, theme.border, RoundedCornerShape(12.dp))
+                                .clickable { step = 3 }
+                                .padding(horizontal = 16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("← Back", color = theme.subText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(52.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isScanning) theme.success.copy(alpha = 0.5f) else theme.success)
+                                .clickable(enabled = !isScanning) { handleFinishWizard() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "✓ Finish",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
                     }
                 }
             }
         }
     }
+    }
+
+    VaultFolderPickerDialog(
+        visible = showCustomFolderDialog,
+        initialFolderPath = folderPath,
+        onDismiss = { showCustomFolderDialog = false },
+        onFolderSelected = { chosenPath ->
+            folderPath = chosenPath
+            showCustomFolderDialog = false
+        }
+    )
 }
 
 @Composable

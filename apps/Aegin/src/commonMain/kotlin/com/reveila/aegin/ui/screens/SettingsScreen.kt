@@ -8,10 +8,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -20,16 +24,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -41,15 +50,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.reveila.aegin.bridge.AeginBridge
+import com.reveila.aegin.bridge.DeviceCapabilityReport
 import com.reveila.aegin.bridge.LlmProviderConfig
+import com.reveila.aegin.ui.PlatformBackHandler
+import com.reveila.aegin.ui.components.SetupWizard
+import com.reveila.aegin.ui.components.VaultFolderPickerDialog
 import com.reveila.aegin.ui.theme.LocalAeginColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onClose: () -> Unit,
@@ -63,11 +78,14 @@ fun SettingsScreen(
     var isBiometricEnabled by remember { mutableStateOf(false) }
     var isLoadingProviders by remember { mutableStateOf(true) }
     val providersList = remember { mutableStateListOf<LlmProviderConfig>() }
+    val configuredMap = remember { mutableStateMapOf<String, Boolean>() }
 
     var workerProvider by remember { mutableStateOf("On-Device Model") }
+    var selectedCloudProvider by remember { mutableStateOf("Google Gemini") }
     var governanceProvider by remember { mutableStateOf("Disable") }
 
-    var vaultFolder by remember { mutableStateOf("ReveilaVault") }
+    var vaultFolder by remember { mutableStateOf("Documents/Reveila") }
+    var showCustomVaultDialog by remember { mutableStateOf(false) }
     var vaultDocCount by remember { mutableStateOf(0) }
     var vaultChunkCount by remember { mutableStateOf(0) }
     var isVaultScanning by remember { mutableStateOf(false) }
@@ -76,10 +94,12 @@ fun SettingsScreen(
     var isGovModalVisible by remember { mutableStateOf(false) }
     var isEditModalVisible by remember { mutableStateOf(false) }
     var editData by remember { mutableStateOf(LlmProviderConfig(name = "")) }
+    var showSetupWizardModal by remember { mutableStateOf(false) }
 
     var isRunning by remember { mutableStateOf(false) }
     var isSuspended by remember { mutableStateOf(false) }
     var storageMountPath by remember { mutableStateOf("/data/user/0/com.reveila.aegin/files") }
+    var capabilities by remember { mutableStateOf(DeviceCapabilityReport()) }
 
     var alertTitle by remember { mutableStateOf<String?>(null) }
     var alertMessage by remember { mutableStateOf<String?>(null) }
@@ -103,6 +123,11 @@ fun SettingsScreen(
         }
 
         try {
+            capabilities = AeginBridge.getDeviceCapabilities()
+        } catch (_: Exception) {
+        }
+
+        try {
             val v = AeginBridge.getVaultFolder()
             if (v.folder.isNotBlank()) vaultFolder = v.folder
         } catch (_: Exception) {
@@ -116,12 +141,15 @@ fun SettingsScreen(
         }
 
         try {
-            val res = AeginBridge.invoke("UiController", "getSettings", listOf("llm.json"))
+            val res = AeginBridge.invoke("LlmProviderFactory", "getSettings", listOf("llm.json"))
             val (parsed, wProv, gProv) = AeginBridge.parseLlmSettingsJson(res)
             providersList.clear()
             providersList.addAll(parsed)
             providersList.add(LlmProviderConfig(name = "Custom"))
             workerProvider = wProv
+            if (wProv != "On-Device Model" && wProv != "Disable" && wProv.isNotBlank()) {
+                selectedCloudProvider = wProv
+            }
             governanceProvider = gProv
         } catch (_: Exception) {
             val (defaults, wProv, gProv) = AeginBridge.parseLlmSettingsJson("{}")
@@ -129,9 +157,21 @@ fun SettingsScreen(
             providersList.addAll(defaults)
             providersList.add(LlmProviderConfig(name = "Custom"))
             workerProvider = wProv
+            if (wProv != "On-Device Model" && wProv != "Disable" && wProv.isNotBlank()) {
+                selectedCloudProvider = wProv
+            }
             governanceProvider = gProv
         } finally {
             isLoadingProviders = false
+            for (p in providersList) {
+                val isConf = try {
+                    AeginBridge.invoke("LlmProviderFactory", "isProviderConfigured", listOf(p.name)).trim().equals("true", ignoreCase = true)
+                } catch (_: Exception) {
+                    if (p.name == "On-Device Model") true
+                    else p.apiKey.isNotBlank() && !p.apiKey.startsWith("REF:")
+                }
+                configuredMap[p.name] = isConf
+            }
         }
 
         while (true) {
@@ -152,22 +192,28 @@ fun SettingsScreen(
     fun isProviderConfigured(pName: String): Boolean {
         if (isLoadingProviders) return false
         if (pName == "Disable" || pName == "Custom") return false
-        if (pName == "On-Device Model") return true
         val p = providersList.find { it.name == pName } ?: return false
+        if (p.type.equals("Local", ignoreCase = true) || p.name == "On-Device Model") return true
+        if (configuredMap.containsKey(pName)) return configuredMap[pName] == true
         if (p.name.startsWith("Gemma") || p.name.contains("Ollama")) {
             return p.endpoint.isNotBlank()
         }
-        if (p.name == "OpenAI" || p.name == "Google Gemini" || p.name == "Anthropic") {
-            return p.apiKey.isNotBlank()
+        if (p.name == "OpenAI" || p.name == "Google Gemini" || p.name == "DeepSeek" || p.name == "Qwen" || p.name == "Anthropic") {
+            return p.apiKey.isNotBlank() && !p.apiKey.startsWith("REF:")
         }
-        return p.endpoint.isNotBlank() && p.apiKey.isNotBlank()
+        return p.endpoint.isNotBlank() && p.apiKey.isNotBlank() && !p.apiKey.startsWith("REF:")
     }
 
     fun openEditModal(providerName: String) {
         if (providerName == "Disable" || providerName == "Custom") return
         val provider = providersList.find { it.name == providerName }
         if (provider != null) {
-            editData = provider.copy()
+            val keyDisplay = if (provider.apiKey.startsWith("REF:")) "" else provider.apiKey
+            val isLocal = provider.type.equals("Local", ignoreCase = true) || provider.name == "On-Device Model"
+            editData = provider.copy(
+                type = if (isLocal) "Local" else "Cloud",
+                apiKey = if (isLocal) "" else keyDisplay
+            )
             isEditModalVisible = true
         }
     }
@@ -184,44 +230,66 @@ fun SettingsScreen(
 
     fun handleSaveLLM() {
         scope.launch {
+            isVaultScanning = true
             try {
                 val configJson = AeginBridge.buildLlmSettingsJson(
                     providers = providersList,
                     workerProvider = workerProvider,
                     governanceProvider = governanceProvider
                 )
-                AeginBridge.invoke("UiController", "saveSettings", listOf("llm.json", configJson))
+                AeginBridge.invoke("LlmProviderFactory", "saveSettings", listOf("llm.json", configJson))
                 AeginBridge.setStorageItem("selected_llm_provider", workerProvider)
                 AeginBridge.setStorageItem(
                     "selected_llm_mode",
-                    when (workerProvider) {
-                        "On-Device Model" -> "local"
-                        "Google Gemini" -> "gemini"
+                    when {
+                        workerProvider == "On-Device Model" -> "local"
+                        workerProvider == "Google Gemini" -> "gemini"
+                        workerProvider == "DeepSeek" -> "deepseek"
+                        workerProvider == "Qwen" -> "qwen"
+                        providersList.find { it.name == workerProvider }?.type.equals("Local", ignoreCase = true) -> "local"
                         else -> "openai"
                     }
                 )
-                showAlert("Success", "LLM Configuration saved successfully.")
-            } catch (e: Exception) {
-                showAlert("Error", "Failed to save configuration: ${e.message}")
-            }
-        }
-    }
-
-    fun handleSaveAndScanVault() {
-        scope.launch {
-            isVaultScanning = true
-            try {
-                AeginBridge.setVaultFolder(vaultFolder)
-                val res = AeginBridge.scanVault()
+                for (p in providersList) {
+                    val isConf = try {
+                        AeginBridge.invoke("LlmProviderFactory", "isProviderConfigured", listOf(p.name)).trim().equals("true", ignoreCase = true)
+                    } catch (_: Exception) {
+                        if (p.name == "On-Device Model") true
+                        else p.apiKey.isNotBlank() && !p.apiKey.startsWith("REF:")
+                    }
+                    configuredMap[p.name] = isConf
+                }
+                val res = AeginBridge.setVaultFolder(vaultFolder)
                 val stats = AeginBridge.getVaultStats()
                 vaultDocCount = stats.documentCount
                 vaultChunkCount = stats.chunkCount
                 showAlert(
-                    "Scan Complete",
-                    "Successfully scanned vault. Files processed: ${res.filesScanned}, Vectors: ${stats.chunkCount}"
+                    "Success",
+                    "Configuration saved and embeddings database refreshed for '$vaultFolder' (${res.filesScanned} docs, ${stats.chunkCount} vectors)."
                 )
             } catch (e: Exception) {
-                showAlert("Scan Error", e.message ?: "Failed to scan vault.")
+                showAlert("Error", "Failed to save configuration: ${e.message}")
+            } finally {
+                isVaultScanning = false
+            }
+        }
+    }
+
+    fun handleSaveAndScanVault(targetFolder: String = vaultFolder) {
+        scope.launch {
+            isVaultScanning = true
+            try {
+                vaultFolder = targetFolder
+                val res = AeginBridge.setVaultFolder(targetFolder)
+                val stats = AeginBridge.getVaultStats()
+                vaultDocCount = stats.documentCount
+                vaultChunkCount = stats.chunkCount
+                showAlert(
+                    "Embeddings Refreshed",
+                    "Indexed Inference Documents Folder '$targetFolder'. Documents processed: ${res.filesScanned}, Vector chunks: ${stats.chunkCount}"
+                )
+            } catch (e: Exception) {
+                showAlert("Indexing Error", e.message ?: "Failed to index Inference Documents Folder.")
             } finally {
                 isVaultScanning = false
             }
@@ -256,43 +324,56 @@ fun SettingsScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(theme.bg)
-    ) {
-        // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFF0F172A))
-                .padding(top = 34.dp, bottom = 15.dp, start = 20.dp, end = 20.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Engine Configuration",
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 0.5.sp
-            )
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .clickable { onClose() }
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = "CLOSE",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
+    Scaffold(
+        containerColor = theme.bg,
+        contentWindowInsets = WindowInsets.safeDrawing,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "Settings",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.5.sp
+                    )
+                },
+                actions = {
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 12.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onClose() }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "CLOSE",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+                },
+                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF0F172A),
+                    titleContentColor = Color.White,
+                    actionIconContentColor = Color.White
                 )
-            }
+            )
         }
-
-        // Tab Bar
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(theme.bg)
+            ) {
+                // Tab Bar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -332,8 +413,13 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (activeTab == "General") {
+                val isDeviceActive = workerProvider == "On-Device Model"
+                val onDeviceConfig = providersList.find { it.name == "On-Device Model" }
+                val cloudProviders = providersList.filter { it.name != "On-Device Model" && it.name != "Disable" && it.name != "Custom" }
+
+                // 1. ACTIVE REASONING ENGINE (Choice Card)
                 Text(
-                    text = "AI Model (LLM) Settings",
+                    text = "Active Reasoning Engine",
                     color = theme.text,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
@@ -346,22 +432,376 @@ fun SettingsScreen(
                         .background(theme.card)
                         .border(1.dp, theme.border, RoundedCornerShape(12.dp))
                         .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    ProviderSelectorRow(
-                        label = "Worker Provider",
-                        description = "This provider is used to perform all regular AI reasoning.",
-                        selectedProvider = workerProvider,
-                        isLoading = isLoadingProviders,
-                        isConfigured = isProviderConfigured(workerProvider),
-                        onOpenSelectModal = { isWorkerModalVisible = true },
-                        onOpenEditModal = { openEditModal(workerProvider) },
-                        onCustomNameChange = { workerProvider = it }
+                    Text(
+                        text = "Choose how the assistant processes queries, analyzes documents, and executes tasks.",
+                        color = theme.subText,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
                     )
 
+                    // Option A: On-Device Model
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (isDeviceActive) theme.primary.copy(alpha = 0.12f) else theme.inputBg)
+                            .border(
+                                1.5.dp,
+                                if (isDeviceActive) theme.primary else theme.border,
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clickable {
+                                workerProvider = "On-Device Model"
+                            }
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = if (isDeviceActive) "🔘" else "⚪",
+                            fontSize = 16.sp
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "📱 On-Device Model",
+                                    color = theme.text,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(theme.success.copy(alpha = 0.15f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "100% PRIVATE • OFFLINE",
+                                        color = theme.success,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Embedded GGUF running locally on device hardware. Zero internet, no subscription, no API key needed.",
+                                color = theme.subText,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+
+                    // Option B: Cloud AI Services
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (!isDeviceActive) theme.accent.copy(alpha = 0.12f) else theme.inputBg)
+                            .border(
+                                1.5.dp,
+                                if (!isDeviceActive) theme.accent else theme.border,
+                                RoundedCornerShape(10.dp)
+                            )
+                            .clickable {
+                                val target = if (selectedCloudProvider != "On-Device Model" && selectedCloudProvider.isNotBlank()) {
+                                    selectedCloudProvider
+                                } else {
+                                    cloudProviders.firstOrNull { isProviderConfigured(it.name) }?.name
+                                        ?: cloudProviders.firstOrNull()?.name
+                                        ?: "Google Gemini"
+                                }
+                                workerProvider = target
+                            }
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = if (!isDeviceActive) "🔘" else "⚪",
+                            fontSize = 16.sp
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "☁️ Cloud AI Services",
+                                    color = theme.text,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(theme.accent.copy(alpha = 0.15f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "HIGH INTELLIGENCE • BYO KEY",
+                                        color = theme.accent,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Connects to commercial providers (Gemini, OpenAI, DeepSeek, Qwen). Requires internet and your personal API key.",
+                                color = theme.subText,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+
+                    // If Cloud is active, show the Active Cloud Provider selector row
+                    if (!isDeviceActive) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(theme.inputBg)
+                                .border(1.dp, theme.border, RoundedCornerShape(8.dp))
+                                .clickable { isWorkerModalVisible = true }
+                                .padding(horizontal = 12.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "ACTIVE CLOUD SERVICE",
+                                    color = theme.subText,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = workerProvider,
+                                    color = theme.text,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isProviderConfigured(workerProvider)) Color(0xFF22C55E) else Color(0xFFEF4444)
+                                        )
+                                )
+                                Text("CHANGE ▼", color = theme.cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                // 2. 📱 ON-DEVICE ENGINE (EMBEDDED GGUF) CARD
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "📱 On-Device Engine (Embedded GGUF)",
+                    color = theme.text,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(theme.card)
+                        .border(1.dp, theme.border, RoundedCornerShape(12.dp))
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "The embedded llama.cpp runtime executes local GGUF models directly on this phone. No account or API key is required.",
+                        color = theme.subText,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(theme.inputBg)
+                            .border(1.dp, theme.border, RoundedCornerShape(8.dp))
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "ACTIVE GGUF MODEL",
+                                color = theme.subText,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = onDeviceConfig?.model ?: "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+                                color = theme.text,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (onDeviceConfig != null && onDeviceConfig.modelOptions.isNotEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(theme.border)
+                                    .clickable {
+                                        val idx = onDeviceConfig.modelOptions.indexOf(onDeviceConfig.model)
+                                        val next = onDeviceConfig.modelOptions[(idx + 1) % onDeviceConfig.modelOptions.size]
+                                        val updated = onDeviceConfig.copy(model = next)
+                                        val pIdx = providersList.indexOfFirst { it.name == "On-Device Model" }
+                                        if (pIdx >= 0) providersList[pIdx] = updated
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text("CYCLE", color = theme.text, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .border(1.dp, theme.primary, RoundedCornerShape(8.dp))
+                                .clickable { openEditModal("On-Device Model") }
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                text = "⚙️ Configure On-Device Settings",
+                                color = theme.primary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // 3. ☁️ CLOUD PROVIDERS (BYO API KEY) CARD
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "☁️ Cloud Providers (BYO API Key)",
+                    color = theme.text,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(theme.card)
+                        .border(1.dp, theme.border, RoundedCornerShape(12.dp))
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Add your personal API key for each commercial service you wish to use.",
+                        color = theme.subText,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+
+                    cloudProviders.forEach { cp ->
+                        val isConf = isProviderConfigured(cp.name)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(theme.inputBg)
+                                .border(1.dp, theme.border, RoundedCornerShape(8.dp))
+                                .clickable { openEditModal(cp.name) }
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = cp.name,
+                                        color = theme.text,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isConf) Color(0xFF22C55E) else Color(0xFF94A3B8))
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (isConf) "Model: ${cp.model.ifBlank { "default" }}" else "API Key required",
+                                    color = if (isConf) theme.subText else Color(0xFFF59E0B),
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isConf) theme.border else Color(0xFF0EA5E9))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = if (isConf) "Edit Key" else "Set Key",
+                                    color = if (isConf) theme.text else Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 4. GOVERNANCE & PRIVACY GUARDRAIL CARD
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Governance & Privacy Guardrail",
+                    color = theme.text,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(theme.card)
+                        .border(1.dp, theme.border, RoundedCornerShape(12.dp))
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     ProviderSelectorRow(
                         label = "Governance Provider",
-                        description = "Optional pre-processor to scan prompts for security risks and privacy violations.",
+                        description = "Optional pre-processor to scan prompts for security risks and privacy leaks before sending to cloud.",
                         selectedProvider = governanceProvider,
                         isLoading = isLoadingProviders,
                         isConfigured = isProviderConfigured(governanceProvider),
@@ -390,7 +830,7 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Document Vault & Vector Embeddings",
+                    text = "Inference Documents Folder",
                     color = theme.text,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
@@ -406,14 +846,7 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "MONITORED DOCUMENT FOLDER",
-                        color = theme.text,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.sp
-                    )
-                    Text(
-                        text = "The Reveila service monitors this folder for PDF, DOCX, TXT, and Markdown files to automatically compute vector embeddings.",
+                        text = "Reference documents in this folder are indexed for AI inference. Saving a new path refreshes the embeddings database.",
                         color = theme.subText,
                         fontSize = 13.sp,
                         lineHeight = 18.sp
@@ -424,7 +857,7 @@ fun SettingsScreen(
                         onValueChange = { vaultFolder = it },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        placeholder = { Text("Folder Path (e.g. ReveilaVault)", color = theme.subText) },
+                        placeholder = { Text("Folder Path (e.g. Documents/Reveila)", color = theme.subText) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = theme.text,
                             unfocusedTextColor = theme.text,
@@ -434,6 +867,69 @@ fun SettingsScreen(
                             unfocusedBorderColor = theme.border
                         )
                     )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val isDefaultSelected = vaultFolder.equals("Documents/Reveila", ignoreCase = true) ||
+                            vaultFolder.equals("Documents/Reveila Vault", ignoreCase = true) ||
+                            vaultFolder.equals("Documents/ReveilaVault", ignoreCase = true)
+                        val isCustomSelected = !isDefaultSelected
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isDefaultSelected) theme.primary.copy(alpha = 0.15f) else Color.Transparent)
+                                .border(
+                                    1.dp,
+                                    if (isDefaultSelected) theme.primary else theme.border,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .clickable {
+                                    vaultFolder = "Documents/Reveila"
+                                    scope.launch {
+                                        AeginBridge.ensureVaultDirectory("Documents/Reveila")
+                                    }
+                                    handleSaveAndScanVault("Documents/Reveila")
+                                }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Default",
+                                color = if (isDefaultSelected) theme.primary else theme.subText,
+                                fontWeight = if (isDefaultSelected) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = 13.sp,
+                                maxLines = 1
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isCustomSelected) theme.primary.copy(alpha = 0.15f) else Color.Transparent)
+                                .border(
+                                    1.dp,
+                                    if (isCustomSelected) theme.primary else theme.border,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .clickable {
+                                    showCustomVaultDialog = true
+                                }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Custom",
+                                color = if (isCustomSelected) theme.primary else theme.subText,
+                                fontWeight = if (isCustomSelected) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = 13.sp,
+                                maxLines = 1
+                            )
+                        }
+                    }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -492,7 +988,7 @@ fun SettingsScreen(
                                 )
                             } else {
                                 Text(
-                                    text = "🔄 Scan & Re-index",
+                                    text = "💾 Save & Re-Index",
                                     color = Color.White,
                                     fontWeight = FontWeight.ExtraBold,
                                     fontSize = 13.sp
@@ -506,8 +1002,7 @@ fun SettingsScreen(
                                 .clip(RoundedCornerShape(8.dp))
                                 .border(1.dp, theme.border, RoundedCornerShape(8.dp))
                                 .clickable {
-                                    AeginBridge.setStorageItem("reveila_setup_completed", "false")
-                                    onClose()
+                                    showSetupWizardModal = true
                                 }
                                 .padding(12.dp),
                             contentAlignment = Alignment.Center
@@ -525,7 +1020,7 @@ fun SettingsScreen(
 
             if (activeTab == "Security") {
                 Text(
-                    text = "Safety & Security Core",
+                    text = "Security",
                     color = theme.text,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
@@ -543,14 +1038,14 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                         Text(
-                            text = "Suspend System Execution",
+                            text = "Suspend Execution",
                             color = theme.warning,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Pause all operational agent tasks and runtime context scanning.",
+                            text = "Pause background AI tasks and indexing.",
                             color = theme.subText,
                             fontSize = 13.sp,
                             lineHeight = 18.sp
@@ -578,14 +1073,14 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                         Text(
-                            text = "Biometric Integration",
+                            text = "Biometric Lock",
                             color = theme.text,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Enforce secure local hardware verification paths upon bootstrap initialization.",
+                            text = "Require biometric authentication on startup.",
                             color = theme.subText,
                             fontSize = 13.sp,
                             lineHeight = 18.sp
@@ -611,13 +1106,13 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Sovereign Security Portal",
+                        text = "Security Portal",
                         color = theme.text,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Inspect authorization prompts and multi-tenant sandboxing checks for private data operations.",
+                        text = "Inspect authorization prompts and sandbox permissions.",
                         color = theme.subText,
                         fontSize = 13.sp,
                         lineHeight = 18.sp
@@ -659,6 +1154,51 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
+                        text = "On-Device GGUF Hardware Preflight & Staging",
+                        color = theme.text,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Tier: ${capabilities.hardwareTier} • Recommended: ${capabilities.recommendedModel}",
+                        color = if (capabilities.canRunLocalGguf) theme.success else theme.warning,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "RAM: ${capabilities.totalRamGb} GB total (${capabilities.availableRamGb} GB free) | Disk: ${capabilities.freeDiskGb} GB free",
+                        color = theme.subText,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = "ABI: ${capabilities.cpuAbi} | DotProd: ${capabilities.supportsSimdDotProd} | FP16: ${capabilities.supportsFp16} | Vulkan 1.1+: ${capabilities.supportsVulkanCompute}",
+                        color = theme.subText,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = "GGUF Staging Directory (No-Backup mmap):",
+                        color = theme.text,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = capabilities.modelsStagingPath.ifBlank { "$storageMountPath/models" },
+                        color = theme.subText,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp
+                    )
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(theme.card)
+                        .border(1.dp, theme.border, RoundedCornerShape(12.dp))
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
                         text = "System Storage Mount Path",
                         color = theme.text,
                         fontSize = 14.sp,
@@ -682,13 +1222,13 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "Knowledge Vault Integrity Sync",
+                        text = "Inference Documents Index Sync",
                         color = theme.text,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Force-trigger an explicit delta processing pass across authorized multi-tenant storage nodes.",
+                        text = "Force-trigger an explicit re-indexing pass across the active Inference Documents Folder to refresh vector embeddings.",
                         color = theme.subText,
                         fontSize = 13.sp,
                         lineHeight = 18.sp
@@ -706,7 +1246,7 @@ fun SettingsScreen(
                                         val stats = AeginBridge.getVaultStats()
                                         vaultDocCount = stats.documentCount
                                         vaultChunkCount = stats.chunkCount
-                                        showAlert("Vault Sync", "Vault scan initiated and completed successfully.")
+                                        showAlert("Index Sync", "Inference Documents scan and embedding refresh completed successfully.")
                                     } catch (e: Exception) {
                                         showAlert("Scan Failed", e.message ?: "Error triggering scan")
                                     }
@@ -764,15 +1304,19 @@ fun SettingsScreen(
                 }
             }
         }
+            }
+        }
     }
 
-    // Worker Provider Selection Modal
+    // Cloud Provider Selection Modal
     if (isWorkerModalVisible) {
+        val cloudNames = providersList.filter { it.name != "On-Device Model" && it.name != "Disable" }.map { it.name }
         ProviderListDialog(
-            title = "Select Worker Provider",
-            items = providersList.map { it.name },
+            title = "Select Cloud AI Service",
+            items = cloudNames,
             onSelect = {
                 workerProvider = it
+                selectedCloudProvider = it
                 isWorkerModalVisible = false
             },
             onCancel = { isWorkerModalVisible = false }
@@ -794,6 +1338,11 @@ fun SettingsScreen(
 
     // Edit Provider Modal
     if (isEditModalVisible) {
+        val isDeviceModel = editData.name == "On-Device Model"
+        val isCustom = editData.name == "Custom"
+        val isCloudService = !isDeviceModel && !isCustom
+        val isLocalProvider = if (isDeviceModel) true else if (isCloudService) false else editData.type.equals("Local", ignoreCase = true)
+
         Dialog(onDismissRequest = { isEditModalVisible = false }) {
             Column(
                 modifier = Modifier
@@ -801,70 +1350,180 @@ fun SettingsScreen(
                     .clip(RoundedCornerShape(16.dp))
                     .background(theme.card)
                     .border(1.dp, theme.border, RoundedCornerShape(16.dp))
-                    .padding(24.dp),
+                    .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Header Title
                 Text(
-                    text = "Edit ${editData.name}",
+                    text = if (isDeviceModel) "📱 On-Device Model" else if (isCustom) "🛠️ Custom Provider" else "☁️ Configure ${editData.name}",
                     color = theme.text,
-                    fontSize = 16.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Bold
                 )
 
-                Text("TYPE", color = theme.text, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                OutlinedTextField(
-                    value = editData.type,
-                    onValueChange = { editData = editData.copy(type = it) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                Text("ENDPOINT", color = theme.text, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                OutlinedTextField(
-                    value = editData.endpoint,
-                    onValueChange = { editData = editData.copy(endpoint = it) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                Text("MODEL", color = theme.text, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = editData.model,
-                        onValueChange = { editData = editData.copy(model = it) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                    if (editData.modelOptions.isNotEmpty()) {
+                // Educational / Status Banner
+                if (isDeviceModel) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(theme.primary.copy(alpha = 0.12f))
+                            .border(1.dp, theme.primary.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "🔒 100% Private & Offline (Embedded GGUF)",
+                            color = theme.primary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Runs directly on your device using the local llama engine. No internet connection, account subscription, or API key is required.",
+                            color = theme.subText,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                    }
+                } else if (isCloudService) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(theme.accent.copy(alpha = 0.12f))
+                            .border(1.dp, theme.accent.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "⚡ Commercial Cloud LLM Service",
+                            color = theme.accent,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Requests are sent over the internet to ${editData.name}'s servers. Requires an active account and your personal API key.",
+                            color = theme.subText,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                    }
+                } else {
+                    // Custom Provider: Show selector
+                    Text("PROVIDER TYPE", color = theme.text, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val isCustomLocal = editData.type.equals("Local", ignoreCase = true)
                         Box(
                             modifier = Modifier
+                                .weight(1f)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(theme.border)
-                                .clickable {
-                                    val idx = editData.modelOptions.indexOf(editData.model)
-                                    val next = editData.modelOptions[(idx + 1) % editData.modelOptions.size]
-                                    editData = editData.copy(model = next)
-                                }
-                                .padding(horizontal = 10.dp, vertical = 12.dp)
+                                .background(if (!isCustomLocal) Color(0xFF0F172A) else theme.inputBg)
+                                .border(1.dp, if (!isCustomLocal) Color(0xFF0F172A) else theme.border, RoundedCornerShape(8.dp))
+                                .clickable { editData = editData.copy(type = "Cloud") }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text("CYCLE", color = theme.text, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text("☁️ Cloud API", color = if (!isCustomLocal) Color.White else theme.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isCustomLocal) Color(0xFF0F172A) else theme.inputBg)
+                                .border(1.dp, if (isCustomLocal) Color(0xFF0F172A) else theme.border, RoundedCornerShape(8.dp))
+                                .clickable { editData = editData.copy(type = "Local", apiKey = "") }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("💻 Local / Self-Hosted", color = if (isCustomLocal) Color.White else theme.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
                 }
 
-                Text("API KEY", color = theme.text, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                OutlinedTextField(
-                    value = editData.apiKey,
-                    onValueChange = { editData = editData.copy(apiKey = it) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation()
-                )
+                // If Cloud, show API Key with helper hint
+                if (!isLocalProvider) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("API KEY", color = theme.text, fontSize = 10.sp, fontWeight = FontWeight.Black)
+                        OutlinedTextField(
+                            value = editData.apiKey,
+                            onValueChange = { editData = editData.copy(apiKey = it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            placeholder = { Text("Paste your API key here", color = theme.subText, fontSize = 13.sp) },
+                            visualTransformation = PasswordVisualTransformation()
+                        )
+                        val keyHint = when (editData.name) {
+                            "Google Gemini" -> "Get an API key from Google AI Studio (aistudio.google.com)"
+                            "OpenAI" -> "Get an API key from OpenAI Platform (platform.openai.com)"
+                            "DeepSeek" -> "Get an API key from DeepSeek Platform (platform.deepseek.com)"
+                            "Qwen" -> "Get an API key from Alibaba Cloud DashScope (dashscope.aliyun.com)"
+                            else -> "Enter your commercial provider API key"
+                        }
+                        Text(
+                            text = keyHint,
+                            color = theme.subText,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
 
+                // Model field with cycle button
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = if (isDeviceModel) "EMBEDDED GGUF MODEL" else "MODEL NAME",
+                        color = theme.text,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = editData.model,
+                            onValueChange = { editData = editData.copy(model = it) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        if (editData.modelOptions.isNotEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(theme.border)
+                                    .clickable {
+                                        val idx = editData.modelOptions.indexOf(editData.model)
+                                        val next = editData.modelOptions[(idx + 1) % editData.modelOptions.size]
+                                        editData = editData.copy(model = next)
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 12.dp)
+                            ) {
+                                Text("CYCLE", color = theme.text, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                // Endpoint (Advanced)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = if (isDeviceModel) "INTERNAL ENGINE ENDPOINT" else "ENDPOINT URL",
+                        color = theme.text,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    OutlinedTextField(
+                        value = editData.endpoint,
+                        onValueChange = { editData = editData.copy(endpoint = it) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+
+                // Save / Cancel Action Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -893,16 +1552,18 @@ fun SettingsScreen(
                     }
                 }
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, theme.danger, RoundedCornerShape(8.dp))
-                        .clickable { showConfirmDeleteDialog = true }
-                        .padding(12.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Delete Custom Provider", color = theme.danger, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                if (isCustom) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, theme.danger, RoundedCornerShape(8.dp))
+                            .clickable { showConfirmDeleteDialog = true }
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Delete Custom Provider", color = theme.danger, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
                 }
             }
         }
@@ -996,6 +1657,55 @@ fun SettingsScreen(
                 }
             }
         )
+    }
+
+    VaultFolderPickerDialog(
+        visible = showCustomVaultDialog,
+        initialFolderPath = vaultFolder,
+        onDismiss = { showCustomVaultDialog = false },
+        onFolderSelected = { chosenPath ->
+            vaultFolder = chosenPath
+            showCustomVaultDialog = false
+            handleSaveAndScanVault(chosenPath)
+        }
+    )
+
+    if (showSetupWizardModal) {
+        SetupWizard(
+            visible = true,
+            onComplete = {
+                showSetupWizardModal = false
+                scope.launch {
+                    try {
+                        val v = AeginBridge.getVaultFolder()
+                        if (v.folder.isNotBlank()) vaultFolder = v.folder
+                        val s = AeginBridge.getVaultStats()
+                        vaultDocCount = s.documentCount
+                        vaultChunkCount = s.chunkCount
+                    } catch (_: Exception) {
+                    }
+                }
+            },
+            onCancel = {
+                showSetupWizardModal = false
+            }
+        )
+    }
+
+    PlatformBackHandler(enabled = !showSetupWizardModal) {
+        when {
+            alertTitle != null -> {
+                alertTitle = null
+                alertMessage = null
+            }
+            showConfirmDeleteDialog -> showConfirmDeleteDialog = false
+            showConfirmResetDialog -> showConfirmResetDialog = false
+            showCustomVaultDialog -> showCustomVaultDialog = false
+            isEditModalVisible -> isEditModalVisible = false
+            isWorkerModalVisible -> isWorkerModalVisible = false
+            isGovModalVisible -> isGovModalVisible = false
+            else -> onClose()
+        }
     }
 }
 

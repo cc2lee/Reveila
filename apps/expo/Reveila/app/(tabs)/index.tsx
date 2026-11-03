@@ -133,7 +133,7 @@ export default function HomeScreen() {
     await AsyncStorage.setItem('selected_llm_provider', newProvider);
 
     try {
-      await ReveilaBridge.invoke('UiController', 'setSettings', ['llm.json', JSON.stringify({
+      await ReveilaBridge.invoke('LlmProviderFactory', 'setSettings', ['llm.json', JSON.stringify({
         'ai.worker.llm': newProvider,
         'ai.governance.llm': newProvider
       })]);
@@ -199,9 +199,6 @@ export default function HomeScreen() {
             <Text style={styles.headerTitle}>Reveila Intelligence</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <View style={[styles.miniBadge, { backgroundColor: theme.success }]}>
-              <Text style={styles.miniBadgeText}>ONLINE</Text>
-            </View>
             <TouchableOpacity onPress={toggleLlmMode} style={[styles.miniBadge, { backgroundColor: isCloudMode ? theme.accent : theme.primary }]}>
               <Text style={styles.miniBadgeText}>{isCloudMode ? 'CLOUD' : 'LOCAL'}</Text>
             </TouchableOpacity>

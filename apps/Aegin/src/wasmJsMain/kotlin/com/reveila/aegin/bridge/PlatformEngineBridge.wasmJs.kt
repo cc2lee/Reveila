@@ -28,6 +28,27 @@ actual object PlatformEngineBridge {
         )
     }
 
+    actual suspend fun getDeviceCapabilities(): DeviceCapabilityReport {
+        return DeviceCapabilityReport(
+            totalRamGb = 4.0,
+            availableRamGb = 2.0,
+            isLowMemory = false,
+            freeDiskGb = 4.0,
+            hasEnoughStorage = true,
+            cpuAbi = "wasm32",
+            supportsSimdDotProd = true,
+            supportsFp16 = false,
+            supportsVulkanCompute = false,
+            hardwareTier = "ENTRY TIER (WebGPU / Wasm)",
+            recommendedModel = "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+            recommendedModelSizeMb = 491,
+            canRunLocalGguf = true,
+            modelsStagingPath = "indexeddb://reveila-aegin/models",
+            stagedModels = emptyList(),
+            statusSummary = "Browser sandbox detected. Cloud or lightweight 0.5B/1.5B WebGPU model recommended."
+        )
+    }
+
     actual suspend fun invoke(component: String, method: String, params: List<String>): String {
         return when (component) {
             "OrchestrationService" -> when (method) {
@@ -44,7 +65,7 @@ actual object PlatformEngineBridge {
                 }
                 else -> "true"
             }
-            "UiController" -> when (method) {
+            "LlmProviderFactory" -> when (method) {
                 "getSettings" -> llmSettingsJson
                 "setSettings", "saveSettings" -> {
                     if (params.size > 1) llmSettingsJson = params[1]
@@ -55,7 +76,7 @@ actual object PlatformEngineBridge {
             "AgenticFabric" -> {
                 val prompt = params.firstOrNull() ?: ""
                 val sessionId = params.getOrNull(1)?.ifBlank { null } ?: "web-session-1"
-                """{"answer":"Sovereign Web Agent Response: Processed \"$prompt\" against local KnowledgeVault ($chunkCount vector chunks).","sessionId":"$sessionId"}"""
+                """{"answer":"Sovereign Web Agent Response: Processed \"$prompt\" against local Inference Documents ($chunkCount vector chunks).","sessionId":"$sessionId"}"""
             }
             else -> "{}"
         }
@@ -80,10 +101,26 @@ actual object PlatformEngineBridge {
 
     actual suspend fun getVaultFolder(): VaultFolderConfig {
         return VaultFolderConfig(
-            folder = getStorageItem("vault_folder_path") ?: "ReveilaVault",
+            folder = getStorageItem("vault_folder_path") ?: "Documents/Reveila",
             focusKeywords = getStorageItem("vault_focus_keywords") ?: "strategy, confidential, roadmap, architectural"
         )
     }
+
+    actual suspend fun ensureVaultDirectory(folderPath: String): String {
+        return folderPath.ifBlank { "Documents/Reveila" }
+    }
+
+    actual suspend fun listVaultDirectories(parentPath: String): List<String> {
+        return listOf("Reveila", "Notes", "Research")
+    }
+
+    actual suspend fun createVaultDirectory(parentPath: String, newFolderName: String): String {
+        val cleanName = newFolderName.trim().ifBlank { "Reveila" }
+        val basePrefix = parentPath.trim().trimEnd('/').ifBlank { "Documents" }
+        return "$basePrefix/$cleanName"
+    }
+
+    actual suspend fun pickSystemFolder(): String? = null
 
     actual suspend fun scanVault(): VaultScanResult {
         docCount = 1

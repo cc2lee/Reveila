@@ -30,6 +30,27 @@ actual object PlatformEngineBridge {
         )
     }
 
+    actual suspend fun getDeviceCapabilities(): DeviceCapabilityReport {
+        return DeviceCapabilityReport(
+            totalRamGb = 8.0,
+            availableRamGb = 4.2,
+            isLowMemory = false,
+            freeDiskGb = 32.0,
+            hasEnoughStorage = true,
+            cpuAbi = "arm64",
+            supportsSimdDotProd = true,
+            supportsFp16 = true,
+            supportsVulkanCompute = true,
+            hardwareTier = "STANDARD TIER (8 – 12 GB RAM)",
+            recommendedModel = "qwen2.5-3b-instruct-q4_k_m.gguf",
+            recommendedModelSizeMb = 2200,
+            canRunLocalGguf = true,
+            modelsStagingPath = "${NSHomeDirectory()}/Library/Application Support/reveila/models",
+            stagedModels = emptyList(),
+            statusSummary = "iOS ARM64 Metal/NEON verified. Recommended profile: qwen2.5-3b-instruct-q4_k_m.gguf."
+        )
+    }
+
     actual suspend fun invoke(component: String, method: String, params: List<String>): String {
         return when (component) {
             "OrchestrationService" -> when (method) {
@@ -46,7 +67,7 @@ actual object PlatformEngineBridge {
                 }
                 else -> "true"
             }
-            "UiController" -> when (method) {
+            "LlmProviderFactory" -> when (method) {
                 "getSettings" -> llmSettingsJson
                 "setSettings", "saveSettings" -> {
                     if (params.size > 1) llmSettingsJson = params[1]
@@ -57,7 +78,7 @@ actual object PlatformEngineBridge {
             "AgenticFabric" -> {
                 val prompt = params.firstOrNull() ?: ""
                 val sessionId = params.getOrNull(1)?.ifBlank { null } ?: "ios-session-1"
-                """{"answer":"Sovereign iOS Agent Response: Processed \"$prompt\" against local KnowledgeVault ($chunkCount vector chunks).","sessionId":"$sessionId"}"""
+                """{"answer":"Sovereign iOS Agent Response: Processed \"$prompt\" against local Inference Documents ($chunkCount vector chunks).","sessionId":"$sessionId"}"""
             }
             else -> "{}"
         }
@@ -82,10 +103,26 @@ actual object PlatformEngineBridge {
 
     actual suspend fun getVaultFolder(): VaultFolderConfig {
         return VaultFolderConfig(
-            folder = getStorageItem("vault_folder_path") ?: "ReveilaVault",
+            folder = getStorageItem("vault_folder_path") ?: "Documents/Reveila",
             focusKeywords = getStorageItem("vault_focus_keywords") ?: "strategy, confidential, roadmap, architectural"
         )
     }
+
+    actual suspend fun ensureVaultDirectory(folderPath: String): String {
+        return folderPath.ifBlank { "Documents/Reveila" }
+    }
+
+    actual suspend fun listVaultDirectories(parentPath: String): List<String> {
+        return listOf("Reveila", "Notes", "Research")
+    }
+
+    actual suspend fun createVaultDirectory(parentPath: String, newFolderName: String): String {
+        val cleanName = newFolderName.trim().ifBlank { "Reveila" }
+        val basePrefix = parentPath.trim().trimEnd('/').ifBlank { "Documents" }
+        return "$basePrefix/$cleanName"
+    }
+
+    actual suspend fun pickSystemFolder(): String? = null
 
     actual suspend fun scanVault(): VaultScanResult {
         docCount = 1

@@ -71,8 +71,9 @@ val appExt = extensions.create<ReveilaAppExtension>("reveilaApp").apply {
     requiredComponents.convention(
         listOf(
             "AgenticFabric",
+            "AutonomousAgent",
             "OrchestrationService",
-            "UiController",
+            "LlmProviderFactory",
             "KnowledgeVault"
         )
     )
@@ -249,11 +250,11 @@ abstract class PrepareSlimSystemHomeTask : DefaultTask() {
             "configs/governance-policy.json",
             "configs/global-perimeter.json",
             "configs/logo.txt",
-            "configs/ui-schema.json",
             "configs/settings/llm.json",
             "configs/settings/security.properties",
             "configs/settings/identity.properties",
-            "configs/templates/intent_validation_prompt.md"
+            "configs/templates/intent_validation_prompt.md",
+            "tasks/daily-news.json"
         )
         for (relPath in essentialConfigFiles) {
             val srcFile = File(srcHome, relPath)
@@ -265,7 +266,7 @@ abstract class PrepareSlimSystemHomeTask : DefaultTask() {
         }
 
         // Ensure empty runtime directories exist as lightweight placeholders
-        listOf("logs", "data", "temp", "plugins", "libs").forEach { dirName ->
+        listOf("logs", "data", "temp", "plugins", "libs", "tasks").forEach { dirName ->
             File(outHome, dirName).mkdirs()
         }
 

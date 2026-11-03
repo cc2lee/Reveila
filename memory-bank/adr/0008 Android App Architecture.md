@@ -44,7 +44,7 @@ flowchart TD
 
     subgraph Core_Engine ["Reveila Core Engine (KMP)"]
         Reveila["Reveila.kt Engine Runtime"]
-        Components["DataService | OrchestrationService | AgenticFabric | UiController | etc."]
+        Components["DataService | OrchestrationService | AgenticFabric | LlmProviderFactory | etc."]
         Plugins["Dynamic Plugins (EchoService, etc.)"]
         Adapter --> Reveila
         Reveila --> Components

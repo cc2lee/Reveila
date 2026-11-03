@@ -36,6 +36,11 @@
             "class": "com.reveila.ai.AutonomousAgent",
             "description": "Performs autonomous agent tasks.",
             "thread-safe": true,
+            "dependencies": [
+                "AgenticFabric",
+                "OrchestrationService",
+                "DataService"
+            ],
             "runnable": {
                 "delay.seconds": 60,
                 "interval.seconds": 30,
@@ -89,6 +94,18 @@
                 {
                     "name": "loadProviders",
                     "description": "Reloads LLM providers from configuration."
+                },
+                {
+                    "name": "getSettings",
+                    "description": "Reads configuration settings for a given tab."
+                },
+                {
+                    "name": "setSettings",
+                    "description": "Updates configuration settings for a given tab."
+                },
+                {
+                    "name": "saveSettings",
+                    "description": "Persists configuration settings and reloads providers."
                 }
             ]
         }
@@ -157,14 +174,6 @@
                     "value": 5
                 }
             ]
-        }
-    },
-    {
-        "component": {
-            "name": "UiController",
-            "class": "com.reveila.system.UiController",
-            "description": "Manages configuration settings dynamically.",
-            "thread-safe": true
         }
     },
     {

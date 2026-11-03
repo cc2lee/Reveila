@@ -57,20 +57,34 @@ abstract class BaseLlmProvider : SystemComponent(), LlmProvider {
         if (resolvedApiKey != null) return resolvedApiKey
         val key = apiKey
         if (key != null && key.startsWith("REF:")) {
-            resolvedApiKey = context?.getProxy("SecretManager")
-                ?.invoke("getSecret", arrayOf(key.substring(4))) as? String
+            val secretKey = key.substring(4)
+            var sec = context?.getProxy("SecretManager")
+                ?.invoke("getSecret", arrayOf(secretKey)) as? String
+            if (sec.isNullOrBlank()) {
+                val altKey = when {
+                    secretKey.contains("GEMINI") -> "GOOGLE_GEMINI_API_KEY"
+                    secretKey.contains("DEEPSEEK") -> "DEEPSEEK_API_KEY"
+                    secretKey.contains("QWEN") -> "QWEN_API_KEY"
+                    else -> "OPENAI_API_KEY"
+                }
+                sec = context?.getProxy("SecretManager")
+                    ?.invoke("getSecret", arrayOf(altKey)) as? String
+            }
+            resolvedApiKey = sec
         } else {
             resolvedApiKey = key
         }
         return resolvedApiKey
     }
 
+    private val fallbackHttpClientService = HttpClientService()
+
     protected open fun getHttpClientService(): HttpClientService? {
         return try {
             val sp = context?.getProxy("HttpClientService")
-            sp?.getInstance() as? HttpClientService
+            (sp?.getInstance() as? HttpClientService) ?: fallbackHttpClientService
         } catch (e: Exception) {
-            null
+            fallbackHttpClientService
         }
     }
 

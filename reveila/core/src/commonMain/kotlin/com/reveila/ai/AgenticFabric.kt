@@ -294,6 +294,15 @@ open class AgenticFabric : SystemComponent() {
             return escalateResponse
         }
 
+        // 2b. Check if the root agent prompt is requesting creation of a repeating / scheduled background task
+        val isAutonomousCaller = principals.any { it is RolePrincipal && it.name.equals("autonomous-agent", ignoreCase = true) }
+        if (!isAutonomousCaller) {
+            val taskCreatedResponse = tryHandleTaskCreationIntent(session, intent)
+            if (taskCreatedResponse != null) {
+                return taskCreatedResponse
+            }
+        }
+
         var intentBuffer = intent
         val responseValidator = AiResponseValidator(governancePolicy)
 
@@ -553,6 +562,123 @@ open class AgenticFabric : SystemComponent() {
 
     @Throws(Exception::class)
     override fun onStop() {
+    }
+
+    private fun tryHandleTaskCreationIntent(session: AgentSession, intent: String): Map<String, Any?>? {
+        val lower = intent.lowercase().trim()
+        val hasCreateVerb = lower.contains("create ") || lower.contains("schedule ") || lower.contains("add ") || lower.contains("set up ")
+        val hasTaskNoun = lower.contains("task") || lower.contains("repeating") || lower.contains("recurring") || lower.contains("daily") || lower.contains("hourly") || lower.contains("weekly")
+        if (!hasCreateVerb || !hasTaskNoun || !lower.contains("task")) {
+            return null
+        }
+
+        val frequency = when {
+            lower.contains("hourly") || lower.contains("every hour") -> "hourly"
+            lower.contains("weekly") || lower.contains("every week") -> "weekly"
+            lower.contains("15 min") || lower.contains("every 15") -> "every 15m"
+            else -> "daily"
+        }
+
+        // Extract schedule time like "8:00 AM", "08:00", "9pm", etc.
+        val timeRegex = Regex("""\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\b""", RegexOption.IGNORE_CASE)
+        var scheduleTime = "08:00"
+        val afterAt = lower.substringAfter(" at ", "")
+        val timeMatch = (if (afterAt.isNotBlank()) timeRegex.find(afterAt) else null) ?: timeRegex.find(lower)
+        if (timeMatch != null) {
+            var hour = timeMatch.groupValues[1].toIntOrNull() ?: 8
+            val minute = timeMatch.groupValues[2].toIntOrNull() ?: 0
+            val ampm = timeMatch.groupValues[3].lowercase()
+            if (ampm.startsWith("p") && hour in 1..11) hour += 12
+            if (ampm.startsWith("a") && hour == 12) hour = 0
+            if (hour in 0..23 && minute in 0..59) {
+                scheduleTime = hour.toString().padStart(2, '0') + ":" + minute.toString().padStart(2, '0')
+            }
+        }
+
+        // Extract core action/prompt after "task to ..." or "task: ..."
+        var actionPrompt = intent
+            .replace(Regex("""^(?:please\s+)?(?:create|schedule|add|set\s+up)\s+(?:a\s+|an\s+)?(?:daily|hourly|weekly|repeating|recurring|\s)*task\s+(?:to\s+|that\s+|for\s+|:\s*)?""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\s+at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?\b.*$""", RegexOption.IGNORE_CASE), "")
+            .trim()
+            .trimEnd('.', '!')
+        if (actionPrompt.isBlank()) {
+            actionPrompt = intent.trim()
+        }
+
+        val titleWords = actionPrompt
+            .replace(Regex("""^(?:show\s+me\s+(?:the\s+)?|find\s+(?:the\s+)?|check\s+(?:the\s+)?|summarize\s+(?:the\s+)?)""", RegexOption.IGNORE_CASE), "")
+            .split(Regex("""\s+"""))
+            .take(5)
+            .joinToString(" ") { w -> w.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() } }
+            .ifBlank { "Scheduled Task" }
+
+        val requiresApproval = lower.contains("approval") || lower.contains("confirm")
+
+        return try {
+            val autoProxy = context?.getProxy("AutonomousAgent")
+            val autoAgent = (autoProxy?.getInstance() as? AutonomousAgent) ?: autoProxy as? AutonomousAgent
+            val createdJson = if (autoAgent != null) {
+                autoAgent.createTask(
+                    title = titleWords,
+                    prompt = actionPrompt,
+                    frequency = frequency,
+                    scheduleTime = scheduleTime,
+                    requiresApproval = requiresApproval
+                )
+            } else {
+                // Direct fallback if AutonomousAgent proxy is not yet resolved
+                val fs = PlatformFileSystem()
+                val home = context?.properties?.getProperty("system.home") ?: "."
+                val tasksDir = fs.resolve(home, "tasks")
+                if (!fs.exists(tasksDir)) fs.createDirectories(tasksDir)
+                val slug = titleWords.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifBlank { "scheduled-task" }
+                val filePath = fs.resolve(tasksDir, "$slug.json")
+                val map = linkedMapOf<String, Any?>(
+                    "taskId" to slug,
+                    "title" to titleWords,
+                    "intent" to "autonomous.task",
+                    "prompt" to actionPrompt,
+                    "frequency" to frequency,
+                    "scheduleTime" to scheduleTime,
+                    "enabled" to true,
+                    "status" to if (requiresApproval) "WAITING_APPROVAL" else "ACTIVE",
+                    "requiresApproval" to requiresApproval,
+                    "createdAt" to PlatformSystem.currentTimeMillis(),
+                    "lastRunAt" to 0L,
+                    "lastResult" to "Scheduled ($frequency at $scheduleTime)."
+                )
+                fs.writeText(filePath, JsonUtil.toPrettyJsonString(map), append = false)
+                JsonUtil.toJsonString(map)
+            }
+
+            val createdMap = JsonUtil.parseJsonStringToMap(createdJson)
+            val taskId = createdMap["taskId"]?.toString() ?: "scheduled-task"
+            val statusStr = createdMap["status"]?.toString() ?: "ACTIVE"
+
+            session.chatMemory.add(ReveilaMessage.user(intent))
+            val summaryMsg = buildString {
+                appendLine("Created repeating task in \${REVEILA_HOME}/tasks/$taskId.json:")
+                appendLine("• Title: $titleWords")
+                appendLine("• ID: $taskId")
+                appendLine("• Schedule: ${frequency.uppercase()} at $scheduleTime")
+                appendLine("• Status: $statusStr")
+                appendLine("• Prompt: \"$actionPrompt\"")
+                append("Open the Tasks tab to monitor, run, edit, approve, or stop this task.")
+            }
+            session.chatMemory.add(ReveilaMessage.assistant(summaryMsg))
+            sessionManager?.saveSession(session.sessionId, session)
+            recordAuditLog("TASK_CREATED_FROM_CHAT", "Task [$taskId] ($titleWords) scheduled $frequency at $scheduleTime")
+
+            mapOf(
+                STATUS to Constants.AI_STATUS_COMPLETED,
+                REASONING to "Created task definition $taskId.json in tasks folder",
+                RESULT to summaryMsg,
+                CONFIDENCE_SCORE to 0.99
+            )
+        } catch (e: Exception) {
+            logger.warning("Failed to create task from chat intent: ${e.message}")
+            null
+        }
     }
 
     private fun buildErrorResponse(errorMessage: String): Map<String, Any?> {

@@ -101,9 +101,9 @@ export default function SetupWizard({ visible, onComplete }: SetupWizardProps) {
         await AsyncStorage.setItem(`${selectedLlm}_api_key`, apiKey.trim());
       }
 
-      // Update Engine llm.json via UiController if available
+      // Update Engine llm.json via LlmProviderFactory if available
       try {
-        await ReveilaBridge.invoke('UiController', 'setSettings', ['llm.json', JSON.stringify({
+        await ReveilaBridge.invoke('LlmProviderFactory', 'setSettings', ['llm.json', JSON.stringify({
           'ai.worker.llm': providerName,
           'ai.governance.llm': providerName
         })]);
@@ -166,12 +166,6 @@ export default function SetupWizard({ visible, onComplete }: SetupWizardProps) {
                   <Text style={[styles.featureItem, { color: theme.text }]}>🔒 <Text style={{ fontWeight: '700' }}>Zero Cloud Leaks:</Text> Data stays on physical storage.</Text>
                   <Text style={[styles.featureItem, { color: theme.text }]}>⚡ <Text style={{ fontWeight: '700' }}>Local Vector DB:</Text> Embeddings generated on-device.</Text>
                   <Text style={[styles.featureItem, { color: theme.text }]}>🤖 <Text style={{ fontWeight: '700' }}>Hybrid Inference:</Text> Local GGUF or Cloud LLMs.</Text>
-                </View>
-
-                <View style={[styles.statusBanner, { backgroundColor: isEngineReady ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)' }]}>
-                  <Text style={{ color: isEngineReady ? theme.success : '#f59e0b', fontWeight: '700', fontSize: 13 }}>
-                    {isEngineReady ? '● Android Engine Service: ONLINE' : '○ Engine initializing in background...'}
-                  </Text>
                 </View>
               </View>
 

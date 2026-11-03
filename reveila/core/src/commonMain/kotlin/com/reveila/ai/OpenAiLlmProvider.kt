@@ -75,6 +75,12 @@ open class OpenAiLlmProvider : BaseLlmProvider() {
     }
 
     override fun isConfigured(): Boolean {
-        return endpoint != null && apiKey != null
+        if (endpoint.isNullOrBlank()) return false
+        val key = try {
+            resolveApiKey()
+        } catch (_: Exception) {
+            null
+        }
+        return !key.isNullOrBlank()
     }
 }

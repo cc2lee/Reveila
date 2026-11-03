@@ -51,7 +51,6 @@ actual object PlatformEngineBridge {
             "configs/governance-policy.json",
             "configs/global-perimeter.json",
             "configs/logo.txt",
-            "configs/ui-schema.json",
             "configs/shared/standard.json",
             "configs/java/java.json",
             "configs/android/android.json",
@@ -76,7 +75,7 @@ actual object PlatformEngineBridge {
                 }
             }
         }
-        listOf("logs", "data", "temp", "plugins", "libs", "ReveilaVault").forEach {
+        listOf("logs", "data", "temp", "plugins", "libs", "ReveilaVault", "models").forEach {
             File(targetDir, it).mkdirs()
         }
     }
@@ -152,6 +151,57 @@ actual object PlatformEngineBridge {
         )
     }
 
+    actual suspend fun getDeviceCapabilities(): DeviceCapabilityReport = withContext(Dispatchers.IO) {
+        val osBean = java.lang.management.ManagementFactory.getOperatingSystemMXBean()
+        val sunBean = osBean as? com.sun.management.OperatingSystemMXBean
+        val totalRamBytes = sunBean?.totalMemorySize ?: Runtime.getRuntime().maxMemory()
+        val availRamBytes = sunBean?.freeMemorySize ?: Runtime.getRuntime().freeMemory()
+        val totalRamGb = totalRamBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+        val availRamGb = availRamBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+
+        val modelsDir = File(activeSystemHome, "models").apply { mkdirs() }
+        val usableDiskBytes = modelsDir.usableSpace
+        val freeDiskGb = usableDiskBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+
+        val arch = System.getProperty("os.arch") ?: "x86_64"
+        val (tier, recModel, recSizeMb) = when {
+            totalRamGb < 4.0 -> Triple("INCOMPATIBLE (< 4 GB RAM)", "Cloud / Hybrid Fallback Required", 0)
+            totalRamGb < 8.0 -> Triple("ENTRY TIER (4 – 6 GB RAM)", "qwen2.5-1.5b-instruct-q4_k_m.gguf", 1050)
+            totalRamGb < 14.0 -> Triple("STANDARD TIER (8 – 12 GB RAM)", "qwen2.5-3b-instruct-q4_k_m.gguf", 2200)
+            else -> Triple("FLAGSHIP TIER (12 GB+ RAM)", "llama-3.1-8b-instruct-q4_k_m.gguf", 4600)
+        }
+
+        val requiredBytes = recSizeMb.toLong() * 1024L * 1024L
+        val bufferBytes = (1.5 * 1024.0 * 1024.0 * 1024.0).toLong()
+        val hasEnoughDisk = usableDiskBytes > (requiredBytes + bufferBytes)
+
+        val stagedFiles = modelsDir.listFiles()
+            ?.filter { it.isFile && it.extension.equals("gguf", ignoreCase = true) }
+            ?.map { "${it.name} (${it.length() / (1024 * 1024)} MB)" }
+            .orEmpty()
+
+        val canRunLocal = totalRamGb >= 4.0 && hasEnoughDisk
+
+        DeviceCapabilityReport(
+            totalRamGb = kotlin.math.round(totalRamGb * 10.0) / 10.0,
+            availableRamGb = kotlin.math.round(availRamGb * 10.0) / 10.0,
+            isLowMemory = availRamGb < 1.0,
+            freeDiskGb = kotlin.math.round(freeDiskGb * 10.0) / 10.0,
+            hasEnoughStorage = hasEnoughDisk,
+            cpuAbi = arch,
+            supportsSimdDotProd = true,
+            supportsFp16 = true,
+            supportsVulkanCompute = true,
+            hardwareTier = tier,
+            recommendedModel = recModel,
+            recommendedModelSizeMb = recSizeMb,
+            canRunLocalGguf = canRunLocal,
+            modelsStagingPath = modelsDir.absolutePath,
+            stagedModels = stagedFiles,
+            statusSummary = "Desktop ($arch) verified ($tier). Recommended model: $recModel (~$recSizeMb MB)."
+        )
+    }
+
     actual suspend fun invoke(component: String, method: String, params: List<String>): String =
         withContext(Dispatchers.IO) {
             if (!engine.isRunning()) {
@@ -183,7 +233,7 @@ actual object PlatformEngineBridge {
                         null
                     }
                     val synthesized = buildString {
-                        appendLine("Sovereign On-Device RAG Response (KnowledgeVault Active):")
+                        appendLine("Sovereign On-Device RAG Response (Inference Documents Active):")
                         if (!ragSnippets.isNullOrBlank() && !ragSnippets.contains("No relevant internal documents")) {
                             appendLine(ragSnippets)
                         } else {
@@ -224,19 +274,110 @@ actual object PlatformEngineBridge {
         true
     }
 
+    private fun normalizeFolderDisplayCasing(rawPath: String): String {
+        val trimmed = rawPath.trim().replace('\\', '/')
+        return when {
+            trimmed.equals("documents", ignoreCase = true) -> "Documents"
+            trimmed.startsWith("documents/", ignoreCase = true) -> "Documents/" + trimmed.substringAfter('/')
+            trimmed.equals("download", ignoreCase = true) || trimmed.equals("downloads", ignoreCase = true) -> "Downloads"
+            trimmed.startsWith("download/", ignoreCase = true) || trimmed.startsWith("downloads/", ignoreCase = true) ->
+                "Downloads/" + trimmed.substringAfter('/')
+            trimmed.isBlank() -> "Documents/Reveila"
+            else -> trimmed
+        }
+    }
+
     actual suspend fun setVaultFolder(folderPath: String, focusKeywords: String): VaultScanResult =
         withContext(Dispatchers.IO) {
-            setStorageItem("vault_folder_path", folderPath)
+            val canonical = normalizeFolderDisplayCasing(folderPath)
+            setStorageItem("vault_folder_path", canonical)
             if (focusKeywords.isNotBlank()) {
                 setStorageItem("vault_focus_keywords", focusKeywords)
             }
-            performLocalVaultScan(folderPath)
+            performLocalVaultScan(canonical)
         }
 
     actual suspend fun getVaultFolder(): VaultFolderConfig = withContext(Dispatchers.IO) {
-        val folder = getStorageItem("vault_folder_path") ?: "ReveilaVault"
+        val rawFolder = getStorageItem("vault_folder_path") ?: "Documents/Reveila"
+        val folder = normalizeFolderDisplayCasing(rawFolder)
         val keywords = getStorageItem("vault_focus_keywords") ?: "strategy, confidential, roadmap, architectural"
         VaultFolderConfig(folder = folder, focusKeywords = keywords)
+    }
+
+    actual suspend fun ensureVaultDirectory(folderPath: String): String = withContext(Dispatchers.IO) {
+        val targetPath = normalizeFolderDisplayCasing(folderPath)
+        resolveVaultDirectory(targetPath)
+        targetPath
+    }
+
+    actual suspend fun listVaultDirectories(parentPath: String): List<String> = withContext(Dispatchers.IO) {
+        val normalized = parentPath.trim().replace('\\', '/').trimEnd('/')
+        val direct = File(parentPath)
+        val userHome = System.getProperty("user.home")
+        val baseDir = when {
+            direct.isAbsolute -> direct
+            normalized.equals("Download", ignoreCase = true) || normalized.equals("Downloads", ignoreCase = true) -> {
+                File(userHome, "Downloads")
+            }
+            normalized.startsWith("Download/", ignoreCase = true) || normalized.startsWith("Downloads/", ignoreCase = true) -> {
+                File(File(userHome, "Downloads"), normalized.substringAfter('/'))
+            }
+            normalized.equals("documents", ignoreCase = true) || normalized.isBlank() -> {
+                val docs = File(userHome, "Documents")
+                val defaultDir = File(docs, "Reveila")
+                if (!defaultDir.exists()) {
+                    defaultDir.mkdirs()
+                }
+                docs
+            }
+            normalized.startsWith("documents/", ignoreCase = true) -> {
+                File(File(userHome, "Documents"), normalized.substringAfter('/'))
+            }
+            else -> {
+                File(File(userHome, "Documents"), normalized)
+            }
+        }
+        if (!baseDir.exists()) {
+            baseDir.mkdirs()
+        }
+        baseDir.listFiles()
+            ?.filter { it.isDirectory && !it.name.startsWith(".") }
+            ?.map { it.name }
+            ?.sortedBy { it.lowercase() }
+            ?: emptyList()
+    }
+
+    actual suspend fun createVaultDirectory(parentPath: String, newFolderName: String): String = withContext(Dispatchers.IO) {
+        val cleanName = newFolderName.trim().replace('/', '_').replace('\\', '_').ifBlank { "Reveila" }
+        val basePrefix = parentPath.trim().replace('\\', '/').trimEnd('/').ifBlank { "Documents" }
+        val combinedPath = "$basePrefix/$cleanName"
+        resolveVaultDirectory(combinedPath)
+        combinedPath
+    }
+
+    actual suspend fun pickSystemFolder(): String? = withContext(Dispatchers.IO) {
+        try {
+            var chosen: String? = null
+            javax.swing.SwingUtilities.invokeAndWait {
+                val chooser = javax.swing.JFileChooser().apply {
+                    dialogTitle = "Select or Create Inference Documents Folder"
+                    fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
+                    isAcceptAllFileFilterUsed = false
+                    currentDirectory = File(System.getProperty("user.home"), "Documents").apply { mkdirs() }
+                }
+                val result = chooser.showOpenDialog(null)
+                if (result == javax.swing.JFileChooser.APPROVE_OPTION && chooser.selectedFile != null) {
+                    val selected = chooser.selectedFile
+                    if (!selected.exists()) {
+                        selected.mkdirs()
+                    }
+                    chosen = selected.absolutePath
+                }
+            }
+            chosen
+        } catch (_: Exception) {
+            null
+        }
     }
 
     actual suspend fun scanVault(): VaultScanResult = withContext(Dispatchers.IO) {
@@ -276,37 +417,67 @@ actual object PlatformEngineBridge {
     }
 
     private fun resolveVaultDirectory(folderPath: String): File {
+        val normalized = folderPath.trim().replace('\\', '/')
         val direct = File(folderPath)
-        val dir = if (direct.isAbsolute) {
-            direct
-        } else {
-            File(activeSystemHome, folderPath)
+        val dir = when {
+            direct.isAbsolute -> direct
+            normalized.startsWith("Download/", ignoreCase = true) ||
+                normalized.startsWith("Downloads/", ignoreCase = true) ||
+                normalized.equals("Download", ignoreCase = true) ||
+                normalized.equals("Downloads", ignoreCase = true) -> {
+                val subPath = normalized.substringAfter('/', "Reveila").ifBlank { "Reveila" }
+                val userDownloads = File(System.getProperty("user.home"), "Downloads")
+                File(userDownloads, subPath)
+            }
+            normalized.startsWith("Documents/", ignoreCase = true) || normalized.equals("Documents", ignoreCase = true) -> {
+                val subPath = normalized.substringAfter('/', "Reveila").ifBlank { "Reveila" }
+                val userDocs = File(System.getProperty("user.home"), "Documents")
+                File(userDocs, subPath)
+            }
+            else -> {
+                val userDocs = File(System.getProperty("user.home"), "Documents")
+                File(userDocs, normalized.ifBlank { "Reveila" })
+            }
         }
         if (!dir.exists()) {
             dir.mkdirs()
         }
         val files = dir.listFiles()
         if (files == null || files.isEmpty()) {
-            File(dir, "Reveila_Sovereign_Overview.md").writeText(
-                """
-                # Reveila Sovereign AI Vault Document
-                This document is indexed in your local KnowledgeVault vector store.
-                Focus areas: strategy, confidential architecture, multi-platform roadmap, zero cloud leaks.
-                """.trimIndent()
-            )
+            try {
+                File(dir, "Reveila_Sovereign_Overview.md").writeText(
+                    """
+                    # Reveila Sovereign AI Reference Document
+                    This document is indexed in your local Inference Documents vector store.
+                    Physical folder location: ${dir.absolutePath}
+                    Focus areas: strategy, confidential architecture, multi-platform roadmap, zero cloud leaks.
+                    """.trimIndent()
+                )
+            } catch (_: Exception) {
+            }
         }
         return dir
     }
 
     private fun performLocalVaultScan(folderPath: String): VaultScanResult {
         val dir = resolveVaultDirectory(folderPath)
-        val supportedExts = setOf("md", "txt", "json", "docx", "pdf")
+        val supportedExts = setOf("md", "txt", "json", "docx", "pdf", "csv", "log", "xml", "yaml", "yml", "html")
         val files = dir.listFiles()?.filter { it.isFile && it.extension.lowercase() in supportedExts }.orEmpty()
 
-        val keywords = (getStorageItem("vault_focus_keywords") ?: "strategy, confidential, roadmap, architectural")
+        val keywordsCsv = getStorageItem("vault_focus_keywords") ?: "strategy, confidential, roadmap, architectural"
+        val keywords = keywordsCsv
             .split(",")
             .map { it.trim().lowercase() }
             .filter { it.isNotEmpty() }
+
+        // Clear previous embeddings and sync priority focus keywords so switching folders refreshes the vector database cleanly
+        if (engine.isRunning()) {
+            try {
+                engine.invoke("KnowledgeVault", "clear", emptyArray(), "127.0.0.1", uiSubject)
+                engine.invoke("KnowledgeVault", "setFocusKeywords", arrayOf<Any?>(keywordsCsv), "127.0.0.1", uiSubject)
+            } catch (_: Exception) {
+            }
+        }
 
         var filesScanned = 0
         var entitiesFound = 0

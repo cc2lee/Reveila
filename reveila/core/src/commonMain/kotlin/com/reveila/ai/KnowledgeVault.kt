@@ -21,6 +21,9 @@ open class KnowledgeVault : SystemComponent() {
 
     // Tracks indexed documents: docId -> DocumentMeta
     private val documentIndex = mutableMapOf<String, DocumentMeta>()
+    // Tracks raw document content by docId for keyword & priority focus matching
+    private val documentContents = mutableMapOf<String, String>()
+    private var focusKeywords: List<String> = listOf("strategy", "confidential", "roadmap", "architectural")
     private val lock = Any()
 
     data class DocumentMeta(
@@ -32,11 +35,32 @@ open class KnowledgeVault : SystemComponent() {
     )
 
     override fun onStart() {
+        val propKeywords = context?.properties?.getProperty("vault.focus.keywords")
+        if (!propKeywords.isNullOrBlank()) {
+            setFocusKeywords(propKeywords)
+        }
         logger.info("KnowledgeVault started. Ready for document embeddings and semantic retrieval.")
     }
 
     override fun onStop() {
         logger.info("KnowledgeVault stopped.")
+    }
+
+    open fun setFocusKeywords(keywordsCsv: String): Boolean {
+        synchronized(lock) {
+            focusKeywords = keywordsCsv
+                .split(",")
+                .map { it.trim().lowercase() }
+                .filter { it.isNotEmpty() }
+        }
+        logger.info("Updated priority focus keywords: $focusKeywords")
+        return true
+    }
+
+    open fun getFocusKeywords(): String {
+        synchronized(lock) {
+            return focusKeywords.joinToString(", ")
+        }
     }
 
     /**
@@ -73,6 +97,7 @@ open class KnowledgeVault : SystemComponent() {
                 length = content.length,
                 timestamp = PlatformSystem.currentTimeMillis()
             )
+            documentContents[id] = content
         }
 
         logger.info("Indexed document [$id] (${chunks.size} chunks, ${content.length} chars) into vector store.")
@@ -80,30 +105,91 @@ open class KnowledgeVault : SystemComponent() {
     }
 
     /**
-     * Semantic search over the indexed documents.
-     * Returns a formatted text snippet summary suitable for prompt context injection.
+     * Semantic + lexical + priority-keyword search over the indexed documents.
+     * Always includes documents that match the configured Priority Focus Keywords,
+     * plus the top semantically and lexically relevant chunks for the user's query.
      */
     open fun search(query: String, limit: Int = 3): String {
-        if (query.isBlank()) {
+        if (query.isBlank() || vectorStore.count() == 0) {
             return "No relevant internal documents found."
         }
 
         val queryVector = embeddingModel.embed(query)
-        val matches = vectorStore.search(queryVector, limit)
+        val allMatches = vectorStore.search(queryVector, maxOf(limit * 4, 20))
+        if (allMatches.isEmpty()) {
+            return "No relevant internal documents found."
+        }
 
-        if (matches.isEmpty()) {
+        val stopWords = setOf(
+            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+            "in", "on", "at", "to", "for", "of", "with", "by", "from", "about",
+            "what", "which", "who", "whom", "whose", "where", "when", "why", "how",
+            "can", "could", "would", "should", "do", "does", "did", "have", "has",
+            "had", "my", "your", "our", "their", "this", "that", "these", "those",
+            "me", "tell", "give", "show", "please", "and", "or", "but", "if"
+        )
+        val queryTokens = query.lowercase()
+            .split(Regex("[^a-z0-9_-]+"))
+            .filter { it.length >= 2 && it !in stopWords }
+
+        val activeKeywords: List<String>
+        synchronized(lock) {
+            activeKeywords = focusKeywords.toList()
+        }
+
+        data class RankedChunk(
+            val match: VectorMatch,
+            val combinedScore: Double,
+            val isPriorityKeywordMatch: Boolean
+        )
+
+        val ranked = allMatches.map { match ->
+            val payloadLower = match.payload.lowercase()
+            val matchedQueryTokens = if (queryTokens.isEmpty()) {
+                0
+            } else {
+                queryTokens.count { token -> payloadLower.contains(token) }
+            }
+            val lexicalBoost = if (queryTokens.isEmpty()) {
+                0.0
+            } else {
+                (matchedQueryTokens.toDouble() / queryTokens.size.toDouble()) * 0.45
+            }
+
+            val hasPriorityKeyword = activeKeywords.any { kw -> kw.isNotBlank() && payloadLower.contains(kw) }
+            val priorityBoost = if (hasPriorityKeyword) 0.20 else 0.0
+
+            val combined = (match.score.coerceAtLeast(0.0) + lexicalBoost + priorityBoost).coerceAtMost(0.99)
+            RankedChunk(match, combined, hasPriorityKeyword)
+        }.sortedByDescending { it.combinedScore }
+
+        val selected = mutableListOf<RankedChunk>()
+        // 1. Take top ranked matches up to limit
+        for (item in ranked) {
+            if (selected.size < limit) {
+                selected.add(item)
+            }
+        }
+        // 2. Ensure documents containing Priority Focus Keywords are always included
+        for (item in ranked) {
+            if (item.isPriorityKeywordMatch && selected.none { it.match.id == item.match.id } && selected.size < limit + 2) {
+                selected.add(item)
+            }
+        }
+
+        if (selected.isEmpty()) {
             return "No relevant internal documents found."
         }
 
         val sb = StringBuilder()
-        for ((idx, match) in matches.withIndex()) {
-            if (match.score > 0.25) {
-                sb.append("\n[Doc ${idx + 1} (relevance: ${(match.score * 100).toInt()}%)]: ")
-                sb.append(match.payload.trim())
-            }
+        for ((idx, item) in selected.withIndex()) {
+            val pct = maxOf((item.combinedScore * 100).toInt(), 15)
+            val tag = if (item.isPriorityKeywordMatch) " [Priority Keyword Match]" else ""
+            sb.append("\n[Doc ${idx + 1}$tag (relevance: $pct%)]: ")
+            sb.append(item.match.payload.trim())
         }
 
-        return if (sb.isNotEmpty()) sb.toString().trim() else "No relevant internal documents found."
+        return sb.toString().trim()
     }
 
     open fun searchMatches(query: String, limit: Int = 5): List<Map<String, Any?>> {
@@ -145,6 +231,7 @@ open class KnowledgeVault : SystemComponent() {
     open fun clear(): Boolean {
         synchronized(lock) {
             documentIndex.clear()
+            documentContents.clear()
             vectorStore.clear()
         }
         logger.info("KnowledgeVault cleared.")

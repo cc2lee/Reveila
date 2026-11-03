@@ -124,7 +124,7 @@ export default function SettingsScreen() {
   useEffect(() => {
     if (!isRunning) return;
 
-    client.invoke('UiController', 'getSettings', ['llm.json']).then((res: any) => {
+    client.invoke('LlmProviderFactory', 'getSettings', ['llm.json']).then((res: any) => {
       if (res) {
         try {
           const config = typeof res === 'string' ? JSON.parse(res) : res;
@@ -284,7 +284,7 @@ export default function SettingsScreen() {
         }))
       };
 
-      await client.invoke('UiController', 'saveSettings', ['llm.json', JSON.stringify(config)]);
+      await client.invoke('LlmProviderFactory', 'saveSettings', ['llm.json', JSON.stringify(config)]);
       Alert.alert('Success', 'LLM Configuration saved successfully.');
     } catch (error: any) {
       Alert.alert('Error', 'Failed to save configuration: ' + error.message);
