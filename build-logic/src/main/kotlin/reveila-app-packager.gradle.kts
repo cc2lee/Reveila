@@ -618,7 +618,11 @@ val sliceWarehouseJars = tasks.register<SliceWarehouseJarsTask>("sliceWarehouseJ
     if (rootProject.findProject(":reveila:core") != null) {
         dependsOn(":reveila:core:exportJvmJar")
     }
+    if (rootProject.findProject(":reveila:ext") != null) {
+        dependsOn(":reveila:ext:exportJvmJar")
+    }
     inputJars.from(rootProject.file("distribution/jvm/reveila-core.jar"))
+    inputJars.from(rootProject.file("distribution/jvm/reveila-ext.jar"))
     inputJars.from(appExt.warehouseJars)
     resolvedComponentClassesFile.set(prepareSlimSystemHome.flatMap { it.resolvedClassesFile })
     additionalRootClasses.set(appExt.additionalRootClasses)

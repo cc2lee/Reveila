@@ -70,19 +70,19 @@ open class DefaultVectorStore : VectorStore {
             .take(limit)
     }
 
-    open fun count(): Int {
+    override fun count(): Int {
         synchronized(lock) {
             return entries.size
         }
     }
 
-    open fun delete(id: String): Boolean {
+    override fun delete(id: String): Boolean {
         synchronized(lock) {
             return entries.removeAll { it.id == id }
         }
     }
 
-    open fun clear() {
+    override fun clear() {
         synchronized(lock) {
             entries.clear()
         }

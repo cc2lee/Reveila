@@ -23,4 +23,22 @@ interface VectorStore {
      * @return a list of VectorMatch representing the closest matches
      */
     fun search(query: FloatArray, limit: Int): List<VectorMatch>
+
+    /**
+     * Removes a vector by its unique identifier.
+     *
+     * @param id the identifier of the vector to remove
+     * @return true if an entry was removed, false otherwise
+     */
+    fun delete(id: String): Boolean = false
+
+    /**
+     * Returns the total count of vectors currently stored.
+     */
+    fun count(): Int = 0
+
+    /**
+     * Clears all entries from the vector store.
+     */
+    fun clear() {}
 }

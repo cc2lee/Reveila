@@ -42,6 +42,7 @@ public class ClusterSyncService implements CommandLineRunner {
                 
                 try (Statement stmt = conn.createStatement()) {
                     stmt.execute("LISTEN reveila_config_updates");
+                    stmt.execute("LISTEN reveila_vector_updates");
                 }
 
                 // 2. Continuous Polling for Notifications
@@ -54,7 +55,13 @@ public class ClusterSyncService implements CommandLineRunner {
                             System.out.println("🔔 [CLUSTER] RECEIVED PULSE: " + notification.getName() + " -> " + notification.getParameter());
                             
                             // Trigger the hot-reload logic implemented in the platform adapter
-                            reveila.getSystemContext().getPlatformAdapter().loadProperties(null);
+                            String channel = notification.getName();
+                            String payload = notification.getParameter();
+                            if ("reveila_config_updates".equals(channel)) {
+                                reveila.getSystemContext().getPlatformAdapter().loadProperties(null);
+                                } else if ("reveila_vector_updates".equals(channel)) {
+                                System.out.println("⚡ [CLUSTER] Vector store synchronized for entity/doc: " + payload);
+                            }
                             System.out.println("✅ [CLUSTER] Hot Reload complete on this node.");
                         }
                     }

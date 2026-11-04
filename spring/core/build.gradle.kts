@@ -37,6 +37,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-aop")
     implementation("org.springframework.boot:spring-boot-starter-mail")
     implementation(files("${rootProject.projectDir}/distribution/jvm/reveila-rt.jar"))
+    implementation(files("${rootProject.projectDir}/distribution/jvm/reveila-ext.jar"))
     implementation(files("${rootProject.projectDir}/distribution/jvm/reveila-core.jar"))
 
     // Dependencies required by pre-built Reveila Core & Runtime binaries
@@ -87,6 +88,8 @@ tasks.withType<org.springframework.boot.gradle.tasks.run.BootRun> {
 }
 
 tasks.named<JavaCompile>("compileJava") {
+    dependsOn(":reveila:core:exportJvmJar")
+    dependsOn(":reveila:ext:exportExtJar")
     dependsOn(":reveila:rt:exportRtJar")
 }
 

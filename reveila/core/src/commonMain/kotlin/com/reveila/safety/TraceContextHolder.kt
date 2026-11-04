@@ -1,4 +1,4 @@
-package com.reveila.ai
+package com.reveila.safety
 
 import kotlin.jvm.JvmStatic
 

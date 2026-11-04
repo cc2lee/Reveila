@@ -27,6 +27,7 @@ dependencies {
 
 tasks.named<JavaCompile>("compileJava") {
     dependsOn(":reveila:core:exportJvmJar")
+    dependsOn(":reveila:ext:exportJvmJar")
 }
 
 val exportRtJar by tasks.registering(Copy::class) {

@@ -8,6 +8,32 @@ import com.reveila.system.PlatformAdapter
 import com.reveila.system.SystemComponent
 
 /**
+ * Types of mutations emitted during entity lifecycle events.
+ */
+enum class MutationType {
+    SAVE,
+    DELETE
+}
+
+/**
+ * Carries metadata and payloads for entity mutations dispatched by DataService.
+ */
+data class EntityMutation(
+    val type: MutationType,
+    val entityType: String,
+    val entity: Entity? = null,
+    val key: Map<String, Map<String, Any>>? = null
+)
+
+/**
+ * Listener interface for observing entity persistence mutations.
+ * Enables reactive index synchronization (e.g. VectorStore/KnowledgeVault updates).
+ */
+fun interface EntityMutationListener {
+    fun onMutation(mutation: EntityMutation)
+}
+
+/**
  * The DataService bridges the Reveila API and the Repositories.
  * It abstracts and separates Reveila data access interfaces from the underlying
  * platform specific data storage technologies (PostgreSQL, Room, SQLite, JSON files),
@@ -17,6 +43,8 @@ open class DataService : SystemComponent() {
 
     private var platform: PlatformAdapter? = null
     private val dynamicRepositories: MutableMap<String, Repository<Entity, Map<String, Map<String, Any>>>> = mutableMapOf()
+    private val mutationListeners = mutableListOf<EntityMutationListener>()
+    private val listenerLock = Any()
 
     @Throws(Exception::class)
     override fun onStart() {
@@ -27,7 +55,45 @@ open class DataService : SystemComponent() {
     @Throws(Exception::class)
     override fun onStop() {
         dynamicRepositories.clear()
+        synchronized(listenerLock) {
+            mutationListeners.clear()
+        }
         logger.info("DataService stopping.")
+    }
+
+    /**
+     * Registers a listener to receive notifications when entities are saved or deleted.
+     */
+    open fun addMutationListener(listener: EntityMutationListener) {
+        synchronized(listenerLock) {
+            mutationListeners.add(listener)
+        }
+    }
+
+    /**
+     * Unregisters an entity mutation listener.
+     */
+    open fun removeMutationListener(listener: EntityMutationListener) {
+        synchronized(listenerLock) {
+            mutationListeners.remove(listener)
+        }
+    }
+
+    /**
+     * Dispatches mutation events to all registered listeners safely.
+     */
+    protected open fun notifyMutation(mutation: EntityMutation) {
+        val snapshot: List<EntityMutationListener>
+        synchronized(listenerLock) {
+            snapshot = ArrayList(mutationListeners)
+        }
+        for (listener in snapshot) {
+            try {
+                listener.onMutation(mutation)
+            } catch (e: Exception) {
+                logger.warning("Error notifying EntityMutationListener: ${e.message}")
+            }
+        }
     }
 
     /**
@@ -70,18 +136,23 @@ open class DataService : SystemComponent() {
             .mapValues { it.value as Any }
         val finalAttrs = if (attrs.isEmpty()) mapOf("payload" to "empty") else attrs
         val entity = Entity(entityType, key, finalAttrs)
-        return getRepository(entityType).store(entity)
+        val saved = getRepository(entityType).store(entity)
+        notifyMutation(EntityMutation(MutationType.SAVE, entityType, saved, saved.key))
+        return saved
     }
 
     /**
      * Stores a pre-constructed Entity directly.
      */
     open fun store(entity: Entity): Entity {
-        return getRepository(entity.type).store(entity)
+        val saved = getRepository(entity.type).store(entity)
+        notifyMutation(EntityMutation(MutationType.SAVE, entity.type, saved, saved.key))
+        return saved
     }
 
     open fun delete(entityType: String, key: Map<String, Map<String, Any>>) {
         getRepository(entityType).disposeById(key)
+        notifyMutation(EntityMutation(MutationType.DELETE, entityType, null, key))
     }
 
     /**

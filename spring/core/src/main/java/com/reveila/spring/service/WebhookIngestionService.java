@@ -61,7 +61,7 @@ public class WebhookIngestionService {
         String source = (String) payload.getOrDefault("trigger_source", "unknown");
         String perimeter = (String) payload.getOrDefault("agency_perimeter", "default");
         
-        com.reveila.ai.ToolCall toolCall = new com.reveila.ai.ToolCall();
+        com.reveila.safety.ToolCall toolCall = new com.reveila.safety.ToolCall();
         toolCall.setFunctionName("webhook-agent-" + source);
         
         @SuppressWarnings("unchecked")

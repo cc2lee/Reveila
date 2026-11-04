@@ -1,8 +1,12 @@
 package com.reveila.ai
 
+import com.reveila.data.Entity
 import com.reveila.persistence.DefaultVectorStore
 import com.reveila.persistence.VectorMatch
 import com.reveila.persistence.VectorStore
+import com.reveila.service.DataService
+import com.reveila.service.EntityMutationListener
+import com.reveila.service.MutationType
 import com.reveila.system.SystemComponent
 import com.reveila.system.platform.PlatformSystem
 
@@ -14,15 +18,17 @@ import com.reveila.system.platform.PlatformSystem
  * Consulted automatically by AgenticFabric during reasoning to augment prompts
  * with enterprise / local document context (RAG).
  */
-open class KnowledgeVault : SystemComponent() {
-
-    private val vectorStore: DefaultVectorStore = DefaultVectorStore()
+open class KnowledgeVault(
+    private var vectorStore: VectorStore = DefaultVectorStore(),
     private val embeddingModel: ReveilaEmbeddingModel = DefaultEmbeddingModel(128)
+) : SystemComponent() {
 
     // Tracks indexed documents: docId -> DocumentMeta
     private val documentIndex = mutableMapOf<String, DocumentMeta>()
     // Tracks raw document content by docId for keyword & priority focus matching
     private val documentContents = mutableMapOf<String, String>()
+    // Tracks content hash by docId to avoid redundant re-embeddings
+    private val documentHashes = mutableMapOf<String, Int>()
     private var focusKeywords: List<String> = listOf("strategy", "confidential", "roadmap", "architectural")
     private val lock = Any()
 
@@ -64,16 +70,33 @@ open class KnowledgeVault : SystemComponent() {
     }
 
     /**
+     * Swaps the active vector store implementation (e.g. DefaultVectorStore vs PgVectorStore).
+     */
+    open fun setVectorStore(store: VectorStore) {
+        synchronized(lock) {
+            this.vectorStore = store
+        }
+        logger.info("KnowledgeVault vector store updated to: ${store::class.simpleName}")
+    }
+
+    /**
      * Indexes a document into the vector store.
      * Breaks text into semantic chunks and generates embeddings for each chunk.
+     * Checks content hash to eliminate redundant re-embeddings when text is unchanged.
      */
     open fun indexDocument(id: String, content: String, metadata: Map<String, Any?> = emptyMap()): Boolean {
         if (id.isBlank() || content.isBlank()) {
             return false
         }
 
-        val chunks = chunkText(content, 600, 100)
+        val contentHash = content.hashCode()
         synchronized(lock) {
+            if (documentHashes[id] == contentHash && documentIndex.containsKey(id)) {
+                logger.debug("Skipping re-indexing of unmodified document [$id]")
+                return true
+            }
+
+            val chunks = chunkText(content, 600, 100)
             // Remove previous chunks for this doc
             val previousMeta = documentIndex[id]
             if (previousMeta != null) {
@@ -98,10 +121,95 @@ open class KnowledgeVault : SystemComponent() {
                 timestamp = PlatformSystem.currentTimeMillis()
             )
             documentContents[id] = content
+            documentHashes[id] = contentHash
+
+            logger.info("Indexed document [$id] (${chunks.size} chunks, ${content.length} chars) into vector store.")
         }
 
-        logger.info("Indexed document [$id] (${chunks.size} chunks, ${content.length} chars) into vector store.")
         return true
+    }
+
+    /**
+     * Removes an indexed document and all of its associated vector chunks from the store.
+     */
+    open fun removeDocument(id: String): Boolean {
+        if (id.isBlank()) return false
+        synchronized(lock) {
+            val meta = documentIndex.remove(id)
+            documentContents.remove(id)
+            documentHashes.remove(id)
+            if (meta != null) {
+                for (i in 0 until meta.chunkCount) {
+                    vectorStore.delete("${id}_chunk_$i")
+                }
+                logger.info("Removed document [$id] (${meta.chunkCount} chunks) from vector store.")
+                return true
+            } else {
+                vectorStore.delete(id)
+                return false
+            }
+        }
+    }
+
+    /**
+     * Attaches an EntityMutationListener to DataService to automatically keep vector embeddings
+     * synchronized with relational / edge document mutations (Dual Index Synchronization).
+     */
+    open fun attachDataService(
+        dataService: DataService,
+        targetEntityTypes: Set<String> = setOf("document", "knowledge", "note", "article", "doc")
+    ): EntityMutationListener {
+        val listener = EntityMutationListener { mutation ->
+            if (mutation.entityType.lowercase() in targetEntityTypes) {
+                when (mutation.type) {
+                    MutationType.SAVE -> {
+                        mutation.entity?.let { entity ->
+                            val docId = extractEntityId(entity)
+                            val content = extractEntityContent(entity)
+                            if (docId.isNotBlank() && content.isNotBlank()) {
+                                indexDocument(docId, content, entity.attributes)
+                            }
+                        }
+                    }
+                    MutationType.DELETE -> {
+                        val docId = extractKeyId(mutation.key)
+                        if (!docId.isNullOrBlank()) {
+                            removeDocument(docId)
+                        }
+                    }
+                }
+            }
+        }
+        dataService.addMutationListener(listener)
+        logger.info("KnowledgeVault attached to DataService for entity types: $targetEntityTypes")
+        return listener
+    }
+
+    private fun extractEntityId(entity: Entity): String {
+        val keyId = extractKeyId(entity.key)
+        if (!keyId.isNullOrBlank()) return keyId
+
+        return entity.attributes["id"]?.toString()
+            ?: entity.attributes["docId"]?.toString()
+            ?: entity.attributes["title"]?.toString()
+            ?: ""
+    }
+
+    private fun extractKeyId(key: Map<String, Map<String, Any>>?): String? {
+        if (key == null) return null
+        for (group in key.values) {
+            val idVal = group["id"] ?: group["docId"] ?: group["key"]
+            if (idVal != null) return idVal.toString()
+        }
+        return null
+    }
+
+    private fun extractEntityContent(entity: Entity): String {
+        return entity.attributes["content"]?.toString()
+            ?: entity.attributes["text"]?.toString()
+            ?: entity.attributes["body"]?.toString()
+            ?: entity.attributes["payload"]?.toString()
+            ?: ""
     }
 
     /**
@@ -232,6 +340,7 @@ open class KnowledgeVault : SystemComponent() {
         synchronized(lock) {
             documentIndex.clear()
             documentContents.clear()
+            documentHashes.clear()
             vectorStore.clear()
         }
         logger.info("KnowledgeVault cleared.")

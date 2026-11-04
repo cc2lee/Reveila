@@ -39,6 +39,7 @@ includeBuild("build-logic")
 
 val subprojects = listOf(
     ":reveila:core" to "reveila/core",
+    ":reveila:ext" to "reveila/ext",
     ":reveila:rt" to "reveila/rt",
     ":spring:admin" to "spring/admin",
     ":spring:core" to "spring/core",

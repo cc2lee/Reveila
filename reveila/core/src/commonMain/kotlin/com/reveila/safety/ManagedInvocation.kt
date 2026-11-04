@@ -1,9 +1,5 @@
 package com.reveila.safety
 
-import com.reveila.ai.AgentSession
-import com.reveila.ai.AiIntentValidator
-import com.reveila.ai.ToolCall
-import com.reveila.ai.TraceContextHolder
 import com.reveila.system.Plugin
 import com.reveila.system.Proxy
 import com.reveila.system.SystemComponent
@@ -104,7 +100,7 @@ open class ManagedInvocation : SystemComponent() {
         val sm = secretManager ?: throw IllegalStateException("SecretManager not available")
 
         val pluginId = toolCall.functionName ?: throw IllegalArgumentException("toolCall functionName cannot be null")
-        val sessionId = metaInfo[AgentSession.ID] as? String
+        val sessionId = (metaInfo["_session_id"] as? String) ?: (metaInfo["sessionId"] as? String)
         val traceId = (metaInfo["traceId"] as? String) ?: Uuid.randomUuid()
         val tenantId = context?.properties?.getProperty("tenant-id", "default-tenant") ?: "default-tenant"
 
@@ -147,13 +143,11 @@ open class ManagedInvocation : SystemComponent() {
         if (!safe) {
             fr.recordStep(plugin, "safety_audit_failed", mapOf("pluginId" to pluginId))
 
-            if (iv is AiIntentValidator) {
-                val audit = iv.getGuardrailResponse(pluginId, maskedArgs.toString(), "Safety Guardrail Context")
-                if ("REJECTED" == audit.status() && audit.reasoning().contains("SECURITY_BREACH")) {
-                    return InvocationResult.securityBreach("Governance Pipeline: SECURITY_BREACH detected by Gemini RailGuard: ${audit.reasoning()}")
-                }
+            val audit = iv.getGuardrailResponse(pluginId, maskedArgs.toString(), "Safety Guardrail Context")
+            if (audit != null && "REJECTED" == audit.status() && audit.reasoning().contains("SECURITY_BREACH")) {
+                return InvocationResult.securityBreach("Governance Pipeline: SECURITY_BREACH detected by Guardrail: ${audit.reasoning()}")
             }
-            return InvocationResult.error("Governance Pipeline: Safety audit failed by Gemini RailGuard.")
+            return InvocationResult.error("Governance Pipeline: Safety audit failed by Guardrail.")
         }
 
         val activePerimeter = if (perimeter != null) manifest.defaultPerimeter().intersect(perimeter) else manifest.defaultPerimeter()

@@ -19,4 +19,9 @@ interface IntentValidator {
      * @return true if approved, false otherwise.
      */
     fun performSafetyAudit(pluginId: String, maskedArgs: String, systemContext: String): Boolean
+
+    /**
+     * Retrieves structured guardrail response if supported by the validator implementation.
+     */
+    fun getGuardrailResponse(pluginId: String, maskedArgs: String, systemContext: String): GuardrailResponse? = null
 }

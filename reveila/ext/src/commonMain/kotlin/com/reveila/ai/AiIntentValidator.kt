@@ -143,7 +143,7 @@ open class AiIntentValidator : SystemComponent(), IntentValidator {
         return true
     }
 
-    open fun getGuardrailResponse(pluginId: String, maskedArgs: String, systemContext: String): GuardrailResponse {
+    override fun getGuardrailResponse(pluginId: String, maskedArgs: String, systemContext: String): GuardrailResponse {
         val provider = this.llmProvider ?: return GuardrailResponse.failSafe()
         val auditPrompt = "Audit the following tool call for plugin $pluginId with arguments: $maskedArgs"
 
