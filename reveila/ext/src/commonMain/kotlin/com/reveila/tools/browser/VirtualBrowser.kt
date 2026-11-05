@@ -20,6 +20,7 @@ open class VirtualBrowser : SystemComponent() {
 
     private val httpEngine = PlatformHttpEngine()
     val cookieJar = CookieJar()
+    var passwordManager: PasswordManager = PasswordManager()
 
     var userAgent: String = DEFAULT_USER_AGENT
     var timeoutSeconds: Long = 30L
@@ -144,6 +145,71 @@ open class VirtualBrowser : SystemComponent() {
     }
 
     /**
+     * Automatically retrieves stored credentials for the current page (or specified domain),
+     * auto-fills username and password into the DOM login fields, marks secrets to prevent leaking
+     * into LLM snapshots, and optionally submits the form.
+     */
+    fun autofillLogin(
+        domainOrUrl: String? = null,
+        formTarget: String? = null,
+        autoSubmit: Boolean = true
+    ): WebPage {
+        val page = currentPage ?: throw IllegalStateException("No active page loaded in browser. Call navigate() first.")
+        val targetDomain = if (!domainOrUrl.isNullOrBlank()) {
+            CookieJar.extractDomain(domainOrUrl)
+        } else {
+            CookieJar.extractDomain(page.url)
+        }
+
+        val credential = passwordManager.findCredentialForUrl(page.url)
+            ?: passwordManager.getCredential(targetDomain)
+            ?: throw IllegalArgumentException("No stored credentials found in password manager for domain: '$targetDomain'")
+
+        // Find target form
+        val form = if (!formTarget.isNullOrBlank()) {
+            page.forms.find { it.id == formTarget || it.index.toString() == formTarget }
+        } else {
+            // Find form containing password field
+            page.forms.find { f -> f.fields.any { it.isSecret || it.type == "password" } }
+                ?: page.forms.firstOrNull()
+        } ?: throw IllegalStateException("No login form detected on page: ${page.url}")
+
+        // Find username input field
+        val userField = form.fields.find {
+            it.name.contains("user", ignoreCase = true) ||
+            it.name.contains("email", ignoreCase = true) ||
+            it.name.contains("login", ignoreCase = true) ||
+            it.type in listOf("text", "email")
+        }
+
+        // Find password input field
+        val passField = form.fields.find {
+            it.isSecret || it.type == "password" || it.name.contains("pass", ignoreCase = true)
+        }
+
+        if (userField != null) {
+            userField.value = credential.username
+            val domElem = page.elements.find { it.name == userField.name || it.elementId == userField.name }
+            domElem?.value = credential.username
+        }
+
+        if (passField != null) {
+            passField.value = credential.password
+            val domElem = page.elements.find { it.name == passField.name || it.elementId == passField.name }
+            if (domElem != null) {
+                domElem.value = credential.password
+            }
+        }
+
+        logger.info("[VirtualBrowser] Auto-filled credentials for user: ${credential.username} on domain: $targetDomain")
+
+        if (autoSubmit) {
+            return submit(form.id ?: form.index.toString())
+        }
+        return page
+    }
+
+    /**
      * Navigates back in history stack.
      */
     fun back(): WebPage? {
@@ -168,6 +234,13 @@ open class VirtualBrowser : SystemComponent() {
      * Returns the current loaded page model.
      */
     fun getCurrentPage(): WebPage? = currentPage
+
+    /**
+     * Injects a parsed WebPage directly for unit testing and offline sandbox simulation.
+     */
+    fun loadPageForTest(page: WebPage) {
+        currentPage = page
+    }
 
     /**
      * Produces a token-efficient text snapshot of the current page optimized for LLM reasoning.

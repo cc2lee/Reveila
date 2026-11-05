@@ -21,6 +21,7 @@ class VirtualBrowserTool(
             - click: { "action": "click", "target": "3" } (clicks links or buttons)
             - submit: { "action": "submit", "form": "1" } (submits form with current values)
             - snapshot: { "action": "snapshot" } (returns current page snapshot with interactive elements)
+            - login / autofill: { "action": "login", "domain": "example.com", "submit": true } (auto-fills stored credentials and signs in without exposing password)
             - back: { "action": "back" } (navigates back)
             - request_takeover: { "action": "request_takeover", "reason": "CAPTCHA_DETECTED", "message": "Please solve captcha" }
         """.trimIndent()
@@ -59,6 +60,14 @@ class VirtualBrowserTool(
                     "Form submitted successfully.\n\n" + browser.getPageSnapshotForLlm()
                 }
 
+                "login", "autofill", "signin" -> {
+                    val domain = (args["domain"] as? String) ?: (args["url"] as? String)
+                    val autoSubmit = (args["submit"] as? Boolean) ?: (args["auto_submit"] as? Boolean) ?: true
+                    val formTarget = (args["form"] as? String) ?: (args["target"] as? String)
+                    browser.autofillLogin(domain, formTarget, autoSubmit)
+                    "Credentials securely auto-filled and submitted.\n\n" + browser.getPageSnapshotForLlm()
+                }
+
                 "back" -> {
                     browser.back()
                     browser.getPageSnapshotForLlm()
@@ -86,7 +95,7 @@ class VirtualBrowserTool(
                 }
 
                 else -> {
-                    "Unknown browser action: '$action'. Available actions: navigate, type, click, submit, snapshot, back, reload, request_takeover."
+                    "Unknown browser action: '$action'. Available actions: navigate, type, click, submit, login, autofill, snapshot, back, reload, request_takeover."
                 }
             }
         } catch (e: Exception) {
