@@ -207,8 +207,8 @@ class Markdown private constructor() {
 
         private fun sanitize(html: String): String {
             // Strip any <script> tags or harmful event handlers
-            var clean = Regex("<script.*?</script>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).replace(html, "")
-            clean = Regex("<iframe.*?</iframe>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).replace(clean, "")
+            var clean = Regex("(?is)<script.*?</script>").replace(html, "")
+            clean = Regex("(?is)<iframe.*?</iframe>").replace(clean, "")
             clean = Regex("on\\w+\\s*=", RegexOption.IGNORE_CASE).replace(clean, "data-blocked=")
             return clean
         }

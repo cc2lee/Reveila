@@ -23,7 +23,7 @@ build_log.txt
 node_modules/
 
 # IDE
-.idea/
+.idea*/
 .vscode/
 .vscode-logs/
 bin/

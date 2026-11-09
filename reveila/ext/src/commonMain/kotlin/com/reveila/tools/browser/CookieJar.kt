@@ -1,5 +1,6 @@
 package com.reveila.tools.browser
 
+import com.reveila.system.concurrency.PlatformLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -10,6 +11,7 @@ import kotlinx.serialization.json.Json
 class CookieJar {
 
     private val cookies = mutableListOf<BrowserCookie>()
+    private val lock = PlatformLock()
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -37,7 +39,7 @@ class CookieJar {
         val domain = extractDomain(url)
         val path = extractPath(url)
 
-        val matching = synchronized(cookies) {
+        val matching = lock.withLock {
             cookies.filter { matchesDomain(it.domain, domain) && matchesPath(it.path, path) }
         }
 
@@ -49,7 +51,7 @@ class CookieJar {
      * Adds or updates a single cookie manually.
      */
     fun addCookie(cookie: BrowserCookie) {
-        synchronized(cookies) {
+        lock.withLock {
             cookies.removeAll { it.name == cookie.name && it.domain == cookie.domain && it.path == cookie.path }
             cookies.add(cookie)
         }
@@ -68,21 +70,21 @@ class CookieJar {
      * Retrieves all active cookies.
      */
     fun getAllCookies(): List<BrowserCookie> {
-        return synchronized(cookies) { cookies.toList() }
+        return lock.withLock { cookies.toList() }
     }
 
     /**
      * Clears all stored cookies.
      */
     fun clear() {
-        synchronized(cookies) { cookies.clear() }
+        lock.withLock { cookies.clear() }
     }
 
     /**
      * Serializes all cookies to JSON for state persistence.
      */
     fun toJson(): String {
-        return synchronized(cookies) {
+        return lock.withLock {
             json.encodeToString(cookies)
         }
     }
@@ -93,7 +95,7 @@ class CookieJar {
     fun fromJson(jsonStr: String) {
         try {
             val list = json.decodeFromString<List<BrowserCookie>>(jsonStr)
-            synchronized(cookies) {
+            lock.withLock {
                 cookies.clear()
                 cookies.addAll(list)
             }

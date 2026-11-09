@@ -1,5 +1,6 @@
 package com.reveila.persistence
 
+import com.reveila.system.concurrency.PlatformLock
 import kotlin.math.sqrt
 
 /**
@@ -29,10 +30,10 @@ open class DefaultVectorStore : VectorStore {
     }
 
     private val entries = mutableListOf<Entry>()
-    private val lock = Any()
+    private val lock = PlatformLock()
 
     override fun insert(id: String, vector: FloatArray, payload: String) {
-        synchronized(lock) {
+        lock.withLock {
             // Replace if existing ID matches, else add
             entries.removeAll { it.id == id }
             entries.add(Entry(id, vector, payload))
@@ -40,9 +41,8 @@ open class DefaultVectorStore : VectorStore {
     }
 
     override fun search(query: FloatArray, limit: Int): List<VectorMatch> {
-        val snapshot: List<Entry>
-        synchronized(lock) {
-            snapshot = ArrayList(entries)
+        val snapshot: List<Entry> = lock.withLock {
+            ArrayList(entries)
         }
 
         if (snapshot.isEmpty() || query.isEmpty()) {
@@ -71,26 +71,26 @@ open class DefaultVectorStore : VectorStore {
     }
 
     override fun count(): Int {
-        synchronized(lock) {
-            return entries.size
+        return lock.withLock {
+            entries.size
         }
     }
 
     override fun delete(id: String): Boolean {
-        synchronized(lock) {
-            return entries.removeAll { it.id == id }
+        return lock.withLock {
+            entries.removeAll { it.id == id }
         }
     }
 
     override fun clear() {
-        synchronized(lock) {
+        lock.withLock {
             entries.clear()
         }
     }
 
     open fun getAll(): List<Entry> {
-        synchronized(lock) {
-            return ArrayList(entries)
+        return lock.withLock {
+            ArrayList(entries)
         }
     }
 

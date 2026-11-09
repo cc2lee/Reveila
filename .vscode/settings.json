@@ -1,13 +1,27 @@
 {
+    // Ensure Gradle imports all nested subprojects
+    "java.import.gradle.enabled": true,
+    "java.import.gradle.wrapper.enabled": true,
+    "java.import.gradle.java.home": "C:/IDE/JDK/jdk-21.0.9+10",
+
+    // File associations
+    "files.associations": {
+        "*.kt": "kotlin",
+        "*.kts": "kotlin"
+    },
+
+    // Prevent Java Language Server from treating Kotlin build output as unmanaged Java classes
+    "files.exclude": {
+        "**/.gradle": true,
+        "**/build/classes/kotlin": true,
+        "**/bin": true
+    },
+
     // "java.compile.nullAnalysis.mode": "automatic",
     // "java.configuration.updateBuildConfiguration": "automatic",
     // "gradle.nestedProjects": true,
     // "maven.terminal.useJavaHome": true,
     
-    // "java.project.sourcePaths": [
-    //     "android/src/main/java"
-    // ],
-
     // Set "org.gradle.java.home" in each project's "gradle.properties" file
     // to use different JDK for Gradle build.
     // This setting here will take higher precedence.

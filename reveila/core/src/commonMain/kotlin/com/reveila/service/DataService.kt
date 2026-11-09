@@ -6,6 +6,7 @@ import com.reveila.data.Page
 import com.reveila.data.Repository
 import com.reveila.system.PlatformAdapter
 import com.reveila.system.SystemComponent
+import com.reveila.system.concurrency.PlatformLock
 
 /**
  * Types of mutations emitted during entity lifecycle events.
@@ -44,7 +45,7 @@ open class DataService : SystemComponent() {
     private var platform: PlatformAdapter? = null
     private val dynamicRepositories: MutableMap<String, Repository<Entity, Map<String, Map<String, Any>>>> = mutableMapOf()
     private val mutationListeners = mutableListOf<EntityMutationListener>()
-    private val listenerLock = Any()
+    private val listenerLock = PlatformLock()
 
     @Throws(Exception::class)
     override fun onStart() {
@@ -55,7 +56,7 @@ open class DataService : SystemComponent() {
     @Throws(Exception::class)
     override fun onStop() {
         dynamicRepositories.clear()
-        synchronized(listenerLock) {
+        listenerLock.withLock {
             mutationListeners.clear()
         }
         logger.info("DataService stopping.")
@@ -65,7 +66,7 @@ open class DataService : SystemComponent() {
      * Registers a listener to receive notifications when entities are saved or deleted.
      */
     open fun addMutationListener(listener: EntityMutationListener) {
-        synchronized(listenerLock) {
+        listenerLock.withLock {
             mutationListeners.add(listener)
         }
     }
@@ -74,7 +75,7 @@ open class DataService : SystemComponent() {
      * Unregisters an entity mutation listener.
      */
     open fun removeMutationListener(listener: EntityMutationListener) {
-        synchronized(listenerLock) {
+        listenerLock.withLock {
             mutationListeners.remove(listener)
         }
     }
@@ -83,9 +84,8 @@ open class DataService : SystemComponent() {
      * Dispatches mutation events to all registered listeners safely.
      */
     protected open fun notifyMutation(mutation: EntityMutation) {
-        val snapshot: List<EntityMutationListener>
-        synchronized(listenerLock) {
-            snapshot = ArrayList(mutationListeners)
+        val snapshot: List<EntityMutationListener> = listenerLock.withLock {
+            ArrayList(mutationListeners)
         }
         for (listener in snapshot) {
             try {

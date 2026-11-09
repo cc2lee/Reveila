@@ -3,6 +3,7 @@ package com.reveila.tools.browser
 import com.reveila.service.PlatformHttpEngine
 import com.reveila.service.PlatformHttpResponse
 import com.reveila.system.SystemComponent
+import com.reveila.system.concurrency.PlatformLock
 import com.reveila.util.Uuid
 import kotlinx.datetime.Clock
 
@@ -27,6 +28,7 @@ open class VirtualBrowser : SystemComponent() {
 
     private var currentPage: WebPage? = null
     private val historyStack = mutableListOf<String>()
+    private val lock = PlatformLock()
 
     var takeoverState: UserTakeoverState? = null
         private set
@@ -53,7 +55,7 @@ open class VirtualBrowser : SystemComponent() {
     fun navigate(url: String): WebPage {
         val targetUrl = normalizeUrl(url)
         val page = executeRequestWithRedirects(targetUrl, method = "GET", payload = null, contentType = null)
-        synchronized(historyStack) {
+        lock.withLock {
             historyStack.add(page.url)
         }
         currentPage = page
@@ -133,7 +135,7 @@ open class VirtualBrowser : SystemComponent() {
                 payload = formData,
                 contentType = "application/x-www-form-urlencoded"
             )
-            synchronized(historyStack) {
+            lock.withLock {
                 historyStack.add(pageResult.url)
             }
             currentPage = pageResult
@@ -213,14 +215,15 @@ open class VirtualBrowser : SystemComponent() {
      * Navigates back in history stack.
      */
     fun back(): WebPage? {
-        synchronized(historyStack) {
+        val prevUrl = lock.withLock {
             if (historyStack.size > 1) {
                 historyStack.removeAt(historyStack.lastIndex) // Remove current
-                val prevUrl = historyStack.removeAt(historyStack.lastIndex) // Pop previous to re-navigate
-                return navigate(prevUrl)
+                historyStack.removeAt(historyStack.lastIndex) // Pop previous to re-navigate
+            } else {
+                null
             }
         }
-        return currentPage
+        return prevUrl?.let { navigate(it) } ?: currentPage
     }
 
     /**

@@ -1,3 +1,4 @@
+//noinspection PackageDirectoryMismatch
 package com.reveila.tools.browser
 
 import com.reveila.ai.ReveilaTool

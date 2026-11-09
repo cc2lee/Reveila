@@ -1,5 +1,6 @@
 package com.reveila.tools.browser
 
+import com.reveila.system.concurrency.PlatformLock
 import com.reveila.system.io.PlatformFileSystem
 import com.reveila.util.json.JsonUtil
 import kotlinx.serialization.decodeFromString
@@ -25,39 +26,40 @@ interface CredentialStore {
  */
 class InMemoryCredentialStore : CredentialStore {
     private val store = mutableMapOf<String, WebCredential>()
+    private val lock = PlatformLock()
 
     override fun save(credential: WebCredential) {
-        synchronized(store) {
+        lock.withLock {
             store[credential.domain.lowercase()] = credential
         }
     }
 
     override fun get(domain: String): WebCredential? {
-        return synchronized(store) {
+        return lock.withLock {
             store[domain.lowercase()]
         }
     }
 
     override fun getAll(): List<WebCredential> {
-        return synchronized(store) {
+        return lock.withLock {
             store.values.toList()
         }
     }
 
     override fun delete(domain: String): Boolean {
-        return synchronized(store) {
+        return lock.withLock {
             store.remove(domain.lowercase()) != null
         }
     }
 
     override fun exists(domain: String): Boolean {
-        return synchronized(store) {
+        return lock.withLock {
             store.containsKey(domain.lowercase())
         }
     }
 
     override fun clear() {
-        synchronized(store) {
+        lock.withLock {
             store.clear()
         }
     }
@@ -73,6 +75,7 @@ class EncryptedJsonCredentialStore(
 ) : CredentialStore {
 
     private val cache = mutableMapOf<String, WebCredential>()
+    private val lock = PlatformLock()
     private var isLoaded = false
 
     init {
@@ -90,7 +93,7 @@ class EncryptedJsonCredentialStore(
     }
 
     private fun loadFromDisk() {
-        synchronized(cache) {
+        lock.withLock {
             if (fs.exists(vaultFilePath)) {
                 try {
                     val rawJson = fs.readText(vaultFilePath)
@@ -110,7 +113,7 @@ class EncryptedJsonCredentialStore(
     }
 
     private fun flushToDisk() {
-        synchronized(cache) {
+        lock.withLock {
             ensureParentDirectory()
             val vault = CredentialVault(
                 version = 1,
@@ -122,42 +125,42 @@ class EncryptedJsonCredentialStore(
     }
 
     override fun save(credential: WebCredential) {
-        synchronized(cache) {
+        lock.withLock {
             cache[credential.domain.lowercase()] = credential
             flushToDisk()
         }
     }
 
     override fun get(domain: String): WebCredential? {
-        synchronized(cache) {
-            return cache[domain.lowercase()]
+        return lock.withLock {
+            cache[domain.lowercase()]
         }
     }
 
     override fun getAll(): List<WebCredential> {
-        synchronized(cache) {
-            return cache.values.toList()
+        return lock.withLock {
+            cache.values.toList()
         }
     }
 
     override fun delete(domain: String): Boolean {
-        synchronized(cache) {
+        return lock.withLock {
             val removed = cache.remove(domain.lowercase()) != null
             if (removed) {
                 flushToDisk()
             }
-            return removed
+            removed
         }
     }
 
     override fun exists(domain: String): Boolean {
-        synchronized(cache) {
-            return cache.containsKey(domain.lowercase())
+        return lock.withLock {
+            cache.containsKey(domain.lowercase())
         }
     }
 
     override fun clear() {
-        synchronized(cache) {
+        lock.withLock {
             cache.clear()
             flushToDisk()
         }

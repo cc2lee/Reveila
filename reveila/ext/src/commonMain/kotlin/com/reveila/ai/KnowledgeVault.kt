@@ -8,6 +8,7 @@ import com.reveila.service.DataService
 import com.reveila.service.EntityMutationListener
 import com.reveila.service.MutationType
 import com.reveila.system.SystemComponent
+import com.reveila.system.concurrency.PlatformLock
 import com.reveila.system.platform.PlatformSystem
 
 /**
@@ -30,7 +31,7 @@ open class KnowledgeVault(
     // Tracks content hash by docId to avoid redundant re-embeddings
     private val documentHashes = mutableMapOf<String, Int>()
     private var focusKeywords: List<String> = listOf("strategy", "confidential", "roadmap", "architectural")
-    private val lock = Any()
+    private val lock = PlatformLock()
 
     data class DocumentMeta(
         val id: String,
@@ -53,7 +54,7 @@ open class KnowledgeVault(
     }
 
     open fun setFocusKeywords(keywordsCsv: String): Boolean {
-        synchronized(lock) {
+        lock.withLock {
             focusKeywords = keywordsCsv
                 .split(",")
                 .map { it.trim().lowercase() }
@@ -64,8 +65,8 @@ open class KnowledgeVault(
     }
 
     open fun getFocusKeywords(): String {
-        synchronized(lock) {
-            return focusKeywords.joinToString(", ")
+        return lock.withLock {
+            focusKeywords.joinToString(", ")
         }
     }
 
@@ -73,7 +74,7 @@ open class KnowledgeVault(
      * Swaps the active vector store implementation (e.g. DefaultVectorStore vs PgVectorStore).
      */
     open fun setVectorStore(store: VectorStore) {
-        synchronized(lock) {
+        lock.withLock {
             this.vectorStore = store
         }
         logger.info("KnowledgeVault vector store updated to: ${store::class.simpleName}")
@@ -90,10 +91,10 @@ open class KnowledgeVault(
         }
 
         val contentHash = content.hashCode()
-        synchronized(lock) {
+        val skipped = lock.withLock {
             if (documentHashes[id] == contentHash && documentIndex.containsKey(id)) {
                 logger.debug("Skipping re-indexing of unmodified document [$id]")
-                return true
+                return@withLock true
             }
 
             val chunks = chunkText(content, 600, 100)
@@ -124,8 +125,10 @@ open class KnowledgeVault(
             documentHashes[id] = contentHash
 
             logger.info("Indexed document [$id] (${chunks.size} chunks, ${content.length} chars) into vector store.")
+            false
         }
 
+        if (skipped) return true
         return true
     }
 
@@ -134,7 +137,7 @@ open class KnowledgeVault(
      */
     open fun removeDocument(id: String): Boolean {
         if (id.isBlank()) return false
-        synchronized(lock) {
+        return lock.withLock {
             val meta = documentIndex.remove(id)
             documentContents.remove(id)
             documentHashes.remove(id)
@@ -143,10 +146,10 @@ open class KnowledgeVault(
                     vectorStore.delete("${id}_chunk_$i")
                 }
                 logger.info("Removed document [$id] (${meta.chunkCount} chunks) from vector store.")
-                return true
+                true
             } else {
                 vectorStore.delete(id)
-                return false
+                false
             }
         }
     }
@@ -240,9 +243,8 @@ open class KnowledgeVault(
             .split(Regex("[^a-z0-9_-]+"))
             .filter { it.length >= 2 && it !in stopWords }
 
-        val activeKeywords: List<String>
-        synchronized(lock) {
-            activeKeywords = focusKeywords.toList()
+        val activeKeywords: List<String> = lock.withLock {
+            focusKeywords.toList()
         }
 
         data class RankedChunk(
@@ -313,8 +315,8 @@ open class KnowledgeVault(
     }
 
     open fun getDocumentCount(): Int {
-        synchronized(lock) {
-            return documentIndex.size
+        return lock.withLock {
+            documentIndex.size
         }
     }
 
@@ -323,8 +325,8 @@ open class KnowledgeVault(
     }
 
     open fun getDocuments(): List<Map<String, Any?>> {
-        synchronized(lock) {
-            return documentIndex.values.map { meta ->
+        return lock.withLock {
+            documentIndex.values.map { meta ->
                 mapOf(
                     "id" to meta.id,
                     "title" to meta.title,
@@ -337,7 +339,7 @@ open class KnowledgeVault(
     }
 
     open fun clear(): Boolean {
-        synchronized(lock) {
+        lock.withLock {
             documentIndex.clear()
             documentContents.clear()
             documentHashes.clear()
