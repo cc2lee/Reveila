@@ -17,7 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import com.reveila.crypto.Cryptographer;
 import com.reveila.data.Entity;
 import com.reveila.data.EntityMapper;
-import com.reveila.data.GenericRepository;
+import com.reveila.spring.repository.GenericRepository;
 import com.reveila.data.JavaObjectRepository;
 import com.reveila.data.Repository;
 import com.reveila.system.BasePlatformAdapter;

@@ -8,7 +8,7 @@
 
 ## 1. Context & Architectural Motivation
 
-`Reveila-Suite` acts as a comprehensive **features warehouse**: the `reveila:core` engine, `system-home` distribution, and root monorepo house a broad collection of system components, AI runtimes (`llama-server`, `llama-cli`), database engines, web assets, and utility libraries. While this "batteries-included" warehouse accelerates rapid prototyping, bundling the entire warehouse into a fat binary is prohibitive for resource-constrained targets such as mobile phones, foldables, smartwatches, and web clients.
+`Reveila-Suite` acts as a comprehensive **capability suite**: the `reveila:core` engine, `system-home` distribution, and root monorepo house a broad collection of system components, AI runtimes (`llama-server`, `llama-cli`), database engines, web assets, and utility libraries. While this "batteries-included" capability catalog accelerates rapid prototyping, bundling the entire suite into a fat binary is prohibitive for resource-constrained targets such as mobile phones, foldables, smartwatches, and web clients.
 
 At the same time, maintaining separate UI codebases per platform (e.g., React Native / Expo for mobile alongside separate desktop or web shells) introduces bridge duplication, serialization overhead, and divergent UI behavior.
 
@@ -16,7 +16,7 @@ To solve both problems, project **Aegin**, located at `apps/Aegin`) establishes 
 
 1. **Single Shared UI & State Layer (`commonMain`)**: 100% of screens, themes, navigation, onboarding flows, and business state are authored once in Kotlin with Compose Multiplatform, targeting **Windows**, **macOS**, **Android**, **iOS**, and **Web (`wasmJs`)**.
 2. **Direct In-Process JVM/Android Execution**: On Windows, macOS, and Android, the UI communicates directly in-process with `com.reveila.Reveila` and `SystemComponents` without JSON-RPC or React Native JNI serialization bottlenecks.
-3. **Selective Warehouse Slicing (`reveila-app-packager`)**: Every multiplatform app declares only the `SystemComponent` keys it actually uses via the `reveilaApp { ... }` Gradle DSL. At build time, `reveila-app-packager` computes the transitive closure of required components, strips unused `system-home` binaries and assets, performs JVM constant-pool bytecode reachability analysis to slice warehouse JARs, and generates targeted R8/ProGuard `-keep` rules.
+3. **Selective Capability Assembly (`reveila-app-packager`)**: Every multiplatform app declares only the `SystemComponent` keys it actually uses via the `reveilaApp { ... }` Gradle DSL. At build time, `reveila-app-packager` computes the transitive closure of required components, strips unused `system-home` binaries and assets, performs JVM constant-pool bytecode reachability analysis to slice capability JARs, and generates targeted R8/ProGuard `-keep` rules.
 
 ---
 
@@ -49,7 +49,7 @@ flowchart TD
     ExpectBridge --> Wasm
 
     subgraph Core["Sliced Reveila Engine Runtime"]
-        SlimJar["reveila-core-slim.jar\n(Bytecode-Sliced Warehouse Classes)"]
+        SlimJar["reveila-core-slim.jar\n(Bytecode-Sliced Capability Classes)"]
         SlimHome["Slim system-home\n(Stripped Manifests & Active Configs Only)"]
         Components["Active SystemComponents\nAgenticFabric | KnowledgeVault | SovereignIdentity | SovereignVault"]
     end
@@ -120,7 +120,7 @@ apps/Aegin/
 
 ---
 
-## 4. Selective Warehouse Packaging & Bytecode Slicing (`reveila-app-packager`)
+## 4. Selective Capability Assembly & Bytecode Slicing (`reveila-app-packager`)
 
 The core innovation for keeping release binaries small on mobile and wearable targets is the **`reveila-app-packager`** Gradle convention plugin (`build-logic/src/main/kotlin/reveila-app-packager.gradle.kts`).
 
@@ -131,7 +131,7 @@ flowchart LR
     DSL["reveilaApp { requiredComponents }"] --> T1["1. prepareSlimSystemHome"]
     T1 --> Manifests["Stripped standard.json / java.json / android.json"]
     T1 --> ClassList["resolved-component-classes.txt"]
-    ClassList --> T2["2. sliceWarehouseJars"]
+    ClassList --> T2["2. sliceCapabilityJars"]
     ClassList --> T3["3. generateReveilaKeepRules"]
     T2 --> SlimJar["reveila-core-slim.jar\n(Constant-Pool Reachability)"]
     T3 --> KeepPro["reveila-keep.pro\n(R8/ProGuard Tree-Shaking)"]
@@ -141,17 +141,17 @@ flowchart LR
 - Parses `system-home/standard/configs/shared/standard.json` and platform manifests (`java.json`, `android.json`).
 - Computes the **transitive dependency closure** starting from `reveilaApp.requiredComponents` (automatically including core bootstrap services `SystemControl`, `Logger`, `Config`, and `DiagnosticService`).
 - Writes stripped JSON manifests containing *only* the reachable `SystemComponent` definitions.
-- Excludes warehouse bloat from the packaged `system-home`:
+- Excludes unused bundle bloat from the packaged `system-home`:
   - Native desktop LLM server binaries (`bin/llama/*` — ~38 MB saved on mobile)
   - Unused web bundles (`web/assets/*`)
-  - Warehouse sample images (`resources/images/*.png`)
+  - Sample images (`resources/images/*.png`)
   - Embedded database snapshots (`data/postgres/*`)
   - Inactive configuration templates (`configs/unused/*`)
   - Unreferenced plugin JARs (`plugins/*.jar`)
 - Emits `build/reveila-slim/resolved-component-classes.txt` listing the fully qualified class names of all active `SystemComponent` implementations.
 
-#### Stage 2: `sliceWarehouseJars` (`SliceWarehouseJarsTask`)
-- Reads `distribution/jvm/reveila-core.jar` and any additional JARs declared in `warehouseJars`.
+#### Stage 2: `sliceCapabilityJars` (`SliceCapabilityJarsTask`)
+- Reads `distribution/jvm/reveila-core.jar` and any additional JARs declared in `capabilityJars`.
 - Parses every `.class` file's **JVM Constant Pool (`0xCAFEBABE`)**:
   - Extracts `CONSTANT_Class` (`tag = 7`) references.
   - Parses UTF-8 class/method/field descriptors (`Lpackage/ClassName;`) to capture parameter types, return types, generic signatures, and annotations.
@@ -165,12 +165,12 @@ flowchart LR
 
 ### 4.2 Aegin Slicing Benchmark Results
 
-| Metric | Unconstrained Warehouse | Aegin Sliced Build (`reveila-app-packager`) | Reduction / Impact |
+| Metric | Full Capability Suite | Aegin Sliced Build (`reveila-app-packager`) | Reduction / Impact |
 | :--- | :--- | :--- | :--- |
 | **`system-home` Payload** | ~38.4 MB (includes `llama` binaries, web assets, unused configs) | **< 25 KB** (4 active JSON manifests + sovereign architecture doc) | **> 99.9% smaller** |
-| **Warehouse Classes (`reveila-core`)** | 244 `.class` entries (`523,907` bytes) | **194 `.class` entries (`431,514` bytes)** | **50 unused warehouse classes pruned (17.6% raw bytecode cut)** |
+| **Capability Classes (`reveila-core`)** | 244 `.class` entries (`523,907` bytes) | **194 `.class` entries (`431,514` bytes)** | **50 unused capability classes pruned (17.6% raw bytecode cut)** |
 | **Android Release APK (`Aegin-release.apk`)** | Fat multi-megabyte bundle | **1.21 MB (`1,270,254` bytes)** (Full Compose UI + Sliced Core + R8) | Ideal for mobile phones & smartwatches |
-| **Windows Slim Distribution (`Aegin-windows-slim`)** | Full warehouse runtime | **~18.9 MB** (Compose Desktop Skiko + Coroutines + `reveila-core-slim.jar`) | Self-contained `.bat` + slim `system-home` |
+| **Windows Slim Distribution (`Aegin-windows-slim`)** | Full capability runtime | **~18.9 MB** (Compose Desktop Skiko + Coroutines + `reveila-core-slim.jar`) | Self-contained `.bat` + slim `system-home` |
 
 ---
 
@@ -259,7 +259,7 @@ plugins {
 
 reveilaApp {
     appName.set("MyNewApp")
-    // Declare ONLY the components your app uses from the Reveila warehouse.
+    // Declare ONLY the components your app uses from the Reveila capability suite.
     // Transitive component dependencies and core bootstrap services are resolved automatically.
     requiredComponents.set(
         listOf(
@@ -278,7 +278,7 @@ reveilaApp {
 
 ### Step 3: Wire the Sliced JAR into `desktopMain` and `androidMain`
 
-Point `desktopMain` and `androidMain` dependencies to the sliced `build/reveila-slim/libs/reveila-core-slim.jar` generated by `sliceWarehouseJars` rather than the full warehouse project:
+Point `desktopMain` and `androidMain` dependencies to the sliced `build/reveila-slim/libs/reveila-core-slim.jar` generated by `sliceCapabilityJars` rather than the full capability suite project:
 
 ```kotlin
 val slimCoreJarProvider = layout.buildDirectory.file("reveila-slim/libs/reveila-core-slim.jar")
@@ -326,12 +326,12 @@ android {
 }
 ```
 
-### Step 5: Adding or Extending a Warehouse `SystemComponent`
+### Step 5: Adding or Extending a Capability `SystemComponent`
 
 If your app requires new backend capabilities in `reveila:core`:
 1. Implement `com.reveila.component.SystemComponent` in `reveila/core/src/commonMain/kotlin/...`.
 2. Register the component key, class name, and `"dependencies": [...]` in `system-home/standard/configs/shared/standard.json` (or platform-specific `java.json` / `android.json`).
-3. Rebuild the core warehouse JAR (`.\gradlew.bat :reveila:core:copyJarToDist`).
+3. Rebuild the core capability JAR (`.\gradlew.bat :reveila:core:exportJvmJar`).
 4. Add the component key to `requiredComponents` in your app's `reveilaApp { ... }` block.
 5. Call `AeginBridge.invoke("YourComponentKey", "yourMethod", "[\"arg1\"]")` from `commonMain` UI code.
 
@@ -343,7 +343,7 @@ All commands are executed from the `Reveila-Suite` root directory (`C:\IDE\Proje
 
 | Target / Workflow | Gradle Command | Output / Artifact Path |
 | :--- | :--- | :--- |
-| **Inspect Warehouse Slicing Report** | `.\gradlew.bat :apps:Aegin:prepareSlimSystemHome :apps:Aegin:sliceWarehouseJars` | `apps/Aegin/build/reveila-slim/slicing-report.txt` |
+| **Inspect Capability Slicing Report** | `.\gradlew.bat :apps:Aegin:prepareSlimSystemHome :apps:Aegin:sliceCapabilityJars` | `apps/Aegin/build/reveila-slim/slicing-report.txt` |
 | **Build Android Slim Release APK** | `.\gradlew.bat :apps:Aegin:assembleRelease` | `apps/Aegin/build/outputs/apk/release/Aegin-release.apk` (`1.21 MB`) |
 | **Build Windows Slim Portable Distribution** | `.\gradlew.bat :apps:Aegin:packageSlimWindowsDist` | `apps/Aegin/build/reveila-slim/windows-dist/Aegin-windows-slim/` |
 | **Run Desktop App (Windows / macOS)** | `.\gradlew.bat :apps:Aegin:run` | Launches interactive Compose Desktop window |

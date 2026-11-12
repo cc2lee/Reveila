@@ -2,7 +2,7 @@
 
 * **Status:** Accepted
 * **Deciders:** Charles Lee
-* **Date:** 2026-01-17 (Updated: 2026-11-03)
+* **Date:** 2026-01-17 (Updated: 2026-11-11)
 * **Tags:** #architecture #kmp #hexagonal #proxy #invocation #plugins #security #agentic-fabric #three-tier
 
 ---
@@ -11,9 +11,9 @@
 
 Reveila is an extensible, universal application framework and runtime platform engineered to execute consistently across enterprise cloud backends, edge servers, and sovereign mobile/desktop operating systems. The platform enforces strict process isolation, managed proxy invocations, hexagonal decoupling, role-based access control (RBAC), a native Agentic AI execution fabric, and an elastic clustering architecture that allows Reveila to function as a **Universal Cloud Operating System**.
 
-The platform is architected around a **Three-Tier Software Components Warehouse**:
+The platform is architected as a **Three-Tier Modular Platform & Capability Suite** — an active, layered runtime from which apps selectively assemble live capabilities:
 1. **`reveila:core` (Microkernel)**: A pure [Kotlin Multiplatform (KMP)](file:///c:/IDE/Projects/Reveila-Suite/reveila/core) runtime providing proxy dispatch, lifecycle orchestration, platform abstraction ports, security perimeters, and core contracts with zero external dependencies.
-2. **`reveila:ext` (Extended Warehouse & AI Fabric)**: A multiplatform extension layer hosting autonomous agents, RAG knowledge vaults, LLM provider integrations, tool dispatching, and workflow engines.
+2. **`reveila:ext` (Extended Capabilities & AI Fabric)**: A multiplatform capability suite hosting autonomous agents, first-class AI tool models ([`ToolCall`](file:///c:/IDE/Projects/Reveila-Suite/reveila/ext/src/commonMain/kotlin/com/reveila/ai/ToolCall.kt)), RAG knowledge vaults, LLM provider integrations, browser tools ([`VirtualBrowser`](file:///c:/IDE/Projects/Reveila-Suite/reveila/ext/src/commonMain/kotlin/com/reveila/tools/browser/VirtualBrowser.kt)), tool dispatching, and workflow engines.
 3. **`reveila:rt` (Guarded Container Runtime)**: A server-side containerized sandbox leveraging Docker and gVisor micro-VMs to execute untrusted third-party code with hard kernel-level isolation.
 
 Whether deployed as a sovereign standalone node (`system.standalone=true`) on an air-gapped device or scaling across an elastic multi-node cloud cluster governed by a Central Registry (`system.standalone=false`), Reveila maintains a unified programming model, strict encapsulation, and deterministic execution semantics.
@@ -22,37 +22,42 @@ Whether deployed as a sovereign standalone node (`system.standalone=true`) on an
 
 ## 2. System Architecture & Topology
 
-### 2.1 The Three-Tier Modular Warehouse Architecture
+### 2.1 The Three-Tier Modular Platform Architecture
 
-Reveila structures its runtime into three distinct tiers, separating foundational microkernel mechanics from high-level AI capabilities and heavy server containerization:
+Reveila structures its **active, layered runtime** into three distinct tiers—separating foundational microkernel mechanics from high-level AI capabilities and heavy server containerization—so apps can selectively assemble only the live capabilities they require:
 
 ```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                      reveila:core                                      │
-│                The Microkernel • Pure KMP (Common, JVM, Android, iOS, Desktop)         │
-│  • Component Lifecycle & IoC (Reveila, Context, Proxy, PlatformAdapter)                │
-│  • Security & Governance Contracts (Subject, RolePrincipal, SecurityPerimeter)         │
-│  • Data & Cryptography Primitives (PlatformCryptographer, Entity, Repositories)        │
-│  • Universal Event Bus & Cross-Platform Utilities (JSON, IO, XML, Markdown)            │
-└───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │ (Inherits Contracts & Abstractions)
-                     ┌──────────────────────┴──────────────────────┐
-                     ▼                                             ▼
-┌─────────────────────────────────────────┐   ┌──────────────────────────────────────────┐
-│               reveila:ext               │   │                reveila:rt                │
-│    Extended Capabilities & AI Fabric    │   │         Guarded Server Runtime           │
-│           (Kotlin Multiplatform)        │   │          (JVM / Linux Server)            │
-│ • Agentic AI Fabric & Autonomous Agents │   │ • Docker Client & gVisor (runsc) Sandboxes│
-│ • Knowledge Vault & Semantic Embeddings │   │ • Linux cgroups & Micro-VM Isolation     │
-│ • LLM Providers (Llama, Gemini, OpenAI) │   │ • Remote Container Callback Pipeline     │
-│ • Dynamic Tool Providers & Dispatchers  │   │ • Cloud S3 Vault Synchronization         │
-└─────────────────────────────────────────┘   └──────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                          reveila:core                                           │
+│                 The Microkernel • Pure KMP (Common, JVM, Android, iOS, Desktop)                 │
+│  • Component Lifecycle & IoC (Reveila, Context, Proxy, PlatformAdapter)                         │
+│  • Security & Governance Core (Subject, RolePrincipal, SecurityPerimeter, ManagedInvocation)    │
+│  • Core & Audit Contracts (InvocationRequest [generic invocation contract], FlightRecorder)     │
+│  • Data, Vector & Cryptography (VectorStore, Entity, Repositories, PlatformCryptographer)       │
+│  • Platform Low-Level Ports & I/O (PlatformSystem, PlatformFileSystem, PlatformLock, Terminal)  │
+│  • Universal Event Bus & Cross-Platform Utilities (EventManager, JSON, IO, XML, Markdown)       │
+└────────────────────────────────────────────────┬────────────────────────────────────────────────┘
+                                                 │ (Inherits Contracts & Abstractions)
+                       ┌─────────────────────────┴─────────────────────────┐
+                       ▼                                                   ▼
+┌─────────────────────────────────────────────┐     ┌─────────────────────────────────────────────┐
+│                 reveila:ext                 │     │                 reveila:rt                  │
+│      Extended Capabilities & AI Fabric      │     │           Guarded Server Runtime            │
+│           (Kotlin Multiplatform)            │     │            (JVM / Linux Server)             │
+│ • Agentic AI Fabric (AgenticFabric)         │     │ • Docker Client & gVisor (runsc) Sandboxes  │
+│ • First-Class ToolCall (AI Tool Model)      │     │ • Linux cgroups & Micro-VM Isolation        │
+│ • Autonomous Agents & Session Memory        │     │ • Remote Container Callback Pipeline        │
+│ • Knowledge Vault & Semantic Embeddings     │     │ • Cloud S3 Vault Synchronization            │
+│ • LLM Providers (Llama, Gemini, OpenAI)     │     │                                             │
+│ • Dynamic Tool Providers & Dispatchers      │     │                                             │
+│ • Browser Tools (VirtualBrowser, etc.)      │     │                                             │
+└─────────────────────────────────────────────┘     └─────────────────────────────────────────────┘
 ```
 
 | Tier Project | Role & Purpose | Target Platforms | Key Capabilities & Packages |
 | :--- | :--- | :--- | :--- |
-| **[`reveila:core`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core)** | **Microkernel** | Kotlin Multiplatform (`commonMain`, `jvmMain`, `androidMain`, `appleMain`, `mingwMain`, `linuxMain`) | Component lifecycle ([`Startable`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Startable.kt), [`Stoppable`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Stoppable.kt)), contexts ([`Context`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Context.kt), [`PluginContext`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginContext.kt)), proxies ([`Proxy`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Proxy.kt), [`SystemProxy`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/SystemProxy.kt)), hexagonal port ([`PlatformAdapter`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PlatformAdapter.kt)), RBAC ([`Principal`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Principal.kt), [`Subject`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Subject.kt)), cryptography, manifest parser. |
-| **[`reveila:ext`](file:///c:/IDE/Projects/Reveila-Suite/reveila/ext)** | **Extended Warehouse** | Kotlin Multiplatform (`commonMain`, `androidMain`, `appleMain`, `jvmMain`) | Agentic AI Fabric ([`AgenticFabric`](file:///c:/IDE/Projects/Reveila-Suite/reveila/ext/src/commonMain/kotlin/com/reveila/ai/AgenticFabric.kt)), autonomous agents ([`AutonomousAgent`](file:///c:/IDE/Projects/Reveila-Suite/reveila/ext/src/commonMain/kotlin/com/reveila/ai/AutonomousAgent.kt)), Knowledge Vault ([`KnowledgeVault`](file:///c:/IDE/Projects/Reveila-Suite/reveila/ext/src/commonMain/kotlin/com/reveila/ai/KnowledgeVault.kt)), LLM providers, Tool RAG, prompt formatters, telemetry. |
+| **[`reveila:core`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core)** | **Microkernel** | Kotlin Multiplatform (`commonMain`, `jvmMain`, `androidMain`, `appleMain`, `mingwMain`, `linuxMain`) | Component lifecycle ([`Startable`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Startable.kt), [`Stoppable`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Stoppable.kt)), contexts ([`Context`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Context.kt), [`PluginContext`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PluginContext.kt)), proxies ([`Proxy`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Proxy.kt), [`SystemProxy`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/jvmMain/kotlin/com/reveila/system/SystemProxy.kt)), hexagonal port ([`PlatformAdapter`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/PlatformAdapter.kt)), RBAC ([`Principal`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Principal.kt), [`Subject`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/Subject.kt)), safety & audit ([`InvocationRequest`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/safety/InvocationRequest.kt), [`ManagedInvocation`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/safety/ManagedInvocation.kt), [`FlightRecorder`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/safety/FlightRecorder.kt)), persistence ([`VectorStore`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/persistence/VectorStore.kt)), platform ports ([`PlatformLock`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/system/concurrency/PlatformLock.kt), [`Terminal`](file:///c:/IDE/Projects/Reveila-Suite/reveila/core/src/commonMain/kotlin/com/reveila/tools/Terminal.kt)), cryptography, manifest parser. |
+| **[`reveila:ext`](file:///c:/IDE/Projects/Reveila-Suite/reveila/ext)** | **Extended Capabilities & AI Fabric** | Kotlin Multiplatform (`commonMain`, `jvmMain`, `androidMain`, `appleMain`, `mingwMain`, `linuxMain`) | Agentic AI Fabric ([`AgenticFabric`](file:///c:/IDE/Projects/Reveila-Suite/reveila/ext/src/commonMain/kotlin/com/reveila/ai/AgenticFabric.kt)), first-class [`ToolCall`](file:///c:/IDE/Projects/Reveila-Suite/reveila/ext/src/commonMain/kotlin/com/reveila/ai/ToolCall.kt), autonomous agents ([`AutonomousAgent`](file:///c:/IDE/Projects/Reveila-Suite/reveila/ext/src/commonMain/kotlin/com/reveila/ai/AutonomousAgent.kt)) & session memory ([`AgentSession`](file:///c:/IDE/Projects/Reveila-Suite/reveila/ext/src/commonMain/kotlin/com/reveila/ai/AgentSession.kt)), Knowledge Vault ([`KnowledgeVault`](file:///c:/IDE/Projects/Reveila-Suite/reveila/ext/src/commonMain/kotlin/com/reveila/ai/KnowledgeVault.kt)), LLM providers, Tool RAG, browser tools ([`VirtualBrowser`](file:///c:/IDE/Projects/Reveila-Suite/reveila/ext/src/commonMain/kotlin/com/reveila/tools/browser/VirtualBrowser.kt)), telemetry. |
 | **[`reveila:rt`](file:///c:/IDE/Projects/Reveila-Suite/reveila/rt)** | **Guarded Runtime** | JVM (Server Deployments) | Docker daemon control ([`DockerGuardedRuntime`](file:///c:/IDE/Projects/Reveila-Suite/reveila/rt/src/main/java/com/reveila/rt/DockerGuardedRuntime.java)), gVisor runtime flags, memory/CPU cgroup enforcement, container network isolation, callback routing. |
 
 ---
@@ -67,18 +72,18 @@ The Core Engine is a self-contained runtime compiling to platform-specific bytec
 
 ---
 
-### 2.3 Decoupled Binary Distribution & Selective App Slicing
+### 2.3 Decoupled Binary Distribution & Selective Capability Assembly
 
 To preserve modular boundaries, downstream applications do not depend directly on engine source projects. Instead, the workspace relies on pre-built binary distributions exported via the Gradle distribution pipeline (`distribution/`):
 
 * **`distribution/jvm/reveila-core.jar`**: Compiled targeting Java 17 bytecode (class major version 61.0) for universal compatibility across Spring Boot 3.x and Android ART/Dalvik runtimes.
-* **`distribution/jvm/reveila-ext.jar`**: Multiplatform extension warehouse containing the Agentic AI fabric, Knowledge Vault, and LLM providers.
+* **`distribution/jvm/reveila-ext.jar`**: Multiplatform capability suite containing the Agentic AI fabric, first-class AI tool models, Knowledge Vault, LLM providers, and autonomous browser tools.
 * **`distribution/jvm/reveila-rt.jar`**: Guarded Runtime library ([`DockerGuardedRuntime`](file:///c:/IDE/Projects/Reveila-Suite/reveila/rt/src/main/java/com/reveila/rt/DockerGuardedRuntime.java)) for server sandboxing.
 * **`distribution/android/reveila-core.aar`**: Android release archive containing platform actuals.
 * **`distribution/windows/reveila_core.dll` & `reveila_core_api.h`**: Native Windows release shared library and C headers.
 
-#### Selective App Slicing ([`reveila-app-packager`](file:///c:/IDE/Projects/Reveila-Suite/build-logic/src/main/kotlin/reveila-app-packager.gradle.kts))
-When client applications (such as [Aegin](file:///c:/IDE/Projects/Reveila-Suite/apps/Aegin) or sovereign mobile apps) build, they declare required components rather than bundling the entire warehouse:
+#### Selective Capability Assembly ([`reveila-app-packager`](file:///c:/IDE/Projects/Reveila-Suite/build-logic/src/main/kotlin/reveila-app-packager.gradle.kts))
+When client applications (such as [Aegin](file:///c:/IDE/Projects/Reveila-Suite/apps/Aegin) or sovereign mobile apps) build, they selectively assemble only the live capabilities they require rather than bundling the entire platform suite:
 
 ```kotlin
 reveilaApp {

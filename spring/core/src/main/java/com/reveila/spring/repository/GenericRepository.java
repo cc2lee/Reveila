@@ -1,4 +1,4 @@
-package com.reveila.data;
+package com.reveila.spring.repository;
 
 import java.util.ArrayList;
 import java.util.Collection;

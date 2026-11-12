@@ -13,7 +13,7 @@ plugins {
 }
 
 // ===========================================================================
-// SELECTIVE WAREHOUSE PACKAGING & SIZE OPTIMIZATION (reveila-app-packager)
+// SELECTIVE CAPABILITY ASSEMBLY & SIZE OPTIMIZATION (reveila-app-packager)
 // Only packs the exact SystemComponents, classes, and configs needed by Aegin.
 // ===========================================================================
 reveilaApp {
@@ -117,16 +117,16 @@ kotlin {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
-                // Consumes the bytecode-sliced Reveila Core JAR instead of the full fat warehouse
-                implementation(files(tasks.named("sliceWarehouseJars")))
+                // Consumes the bytecode-sliced Reveila Core JAR instead of the full capability suite
+                implementation(files(tasks.named("sliceCapabilityJars")))
             }
         }
 
         androidMain.dependencies {
             implementation(libs.androidx.core.ktx)
             implementation(libs.androidx.activity.compose)
-            // Consumes the bytecode-sliced Reveila Core JAR instead of the full fat warehouse
-            implementation(files(tasks.named("sliceWarehouseJars")))
+            // Consumes the bytecode-sliced Reveila Core JAR instead of the full capability suite
+            implementation(files(tasks.named("sliceCapabilityJars")))
         }
     }
 }
@@ -216,7 +216,7 @@ compose.desktop {
 
 // Ensure generated assets, sliced JARs, and ProGuard rules are ready before compilation/packaging
 tasks.named("preBuild") {
-    dependsOn(stageAndroidSlimAssets, "sliceWarehouseJars", "generateReveilaKeepRules")
+    dependsOn(stageAndroidSlimAssets, "sliceCapabilityJars", "generateReveilaKeepRules")
 }
 
 tasks.matching {
@@ -227,7 +227,7 @@ tasks.matching {
             it.name.contains("R8") ||
             it.name.contains("Minify"))
 }.configureEach {
-    dependsOn(stageDesktopSlimResources, "sliceWarehouseJars", "generateReveilaKeepRules")
+    dependsOn(stageDesktopSlimResources, "sliceCapabilityJars", "generateReveilaKeepRules")
 }
 
 /**
@@ -236,8 +236,8 @@ tasks.matching {
  */
 val packageSlimWindowsDist by tasks.registering(Sync::class) {
     group = "reveila-packaging"
-    description = "Packages a slim, portable Windows distribution with sliced warehouse artifacts."
-    dependsOn("desktopJar", "sliceWarehouseJars", "prepareSlimSystemHome")
+    description = "Packages a slim, portable Windows distribution with assembled capability artifacts."
+    dependsOn("desktopJar", "sliceCapabilityJars", "prepareSlimSystemHome")
 
     val distDir = layout.buildDirectory.dir("distributions/aegin-windows-slim")
     into(distDir)

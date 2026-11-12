@@ -3,6 +3,7 @@
     "java.import.gradle.enabled": true,
     "java.import.gradle.wrapper.enabled": true,
     "java.import.gradle.java.home": "C:/IDE/JDK/jdk-21.0.9+10",
+    "kotlinLSP.jdkForSymbolResolution": "C:/IDE/JDK/jdk-21.0.9+10",
 
     // File associations
     "files.associations": {

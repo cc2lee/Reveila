@@ -34,7 +34,7 @@ import java.util.jar.JarOutputStream
  */
 abstract class ReveilaAppExtension {
     /**
-     * Root SystemComponent names required by this application from the Reveila warehouse.
+     * Root SystemComponent names required by this application from the Reveila capability suite.
      * Transitive component dependencies declared in standard.json are resolved automatically.
      */
     abstract val requiredComponents: ListProperty<String>
@@ -56,15 +56,15 @@ abstract class ReveilaAppExtension {
     abstract val includeLocalLlmBinary: Property<Boolean>
 
     /**
-     * Additional root class names (FQCN) from the warehouse JARs to retain as entry points
+     * Additional root class names (FQCN) from the capability JARs to retain as entry points
      * during bytecode reachability slicing.
      */
     abstract val additionalRootClasses: ListProperty<String>
 
     /**
-     * Extra warehouse JAR files to slice alongside reveila-core.jar.
+     * Extra capability JAR files to slice alongside reveila-core.jar.
      */
-    abstract val warehouseJars: ConfigurableFileCollection
+    abstract val capabilityJars: ConfigurableFileCollection
 }
 
 val appExt = extensions.create<ReveilaAppExtension>("reveilaApp").apply {
@@ -101,7 +101,7 @@ val appExt = extensions.create<ReveilaAppExtension>("reveilaApp").apply {
 }
 
 /**
- * Task 1: Resolves transitive component dependencies from the Reveila warehouse
+ * Task 1: Resolves transitive component dependencies from the Reveila capability suite
  * and stages a minimal, stripped system-home directory tailored to the app.
  */
 abstract class PrepareSlimSystemHomeTask : DefaultTask() {
@@ -310,10 +310,10 @@ abstract class PrepareSlimSystemHomeTask : DefaultTask() {
 }
 
 /**
- * Task 2: Performs bytecode constant-pool reachability analysis across warehouse JARs
+ * Task 2: Performs bytecode constant-pool reachability analysis across capability JARs
  * and packages ONLY the reachable classes into a slim, app-specific JAR.
  */
-abstract class SliceWarehouseJarsTask : DefaultTask() {
+abstract class SliceCapabilityJarsTask : DefaultTask() {
 
     @get:InputFiles
     abstract val inputJars: ConfigurableFileCollection
@@ -332,7 +332,7 @@ abstract class SliceWarehouseJarsTask : DefaultTask() {
 
     @TaskAction
     fun execute() {
-        // Load all .class entries and resource entries from the warehouse JARs
+        // Load all .class entries and resource entries from the capability JARs
         val classBytesMap = LinkedHashMap<String, ByteArray>() // internalName (e.g. com/reveila/system/Reveila) -> bytes
         val metaEntries = LinkedHashMap<String, ByteArray>()
 
@@ -440,24 +440,24 @@ abstract class SliceWarehouseJarsTask : DefaultTask() {
         reportFile.parentFile.mkdirs()
         reportFile.writeText(
             buildString {
-                appendLine("=== REVEILA WAREHOUSE BYTECODE SLICING REPORT ===")
-                appendLine("Total Warehouse Classes : ${classBytesMap.size}")
-                appendLine("Reachable App Classes   : ${reachable.size}")
-                appendLine("Pruned Unused Classes   : ${prunedClasses.size}")
-                appendLine("Original Class Payload  : $originalClassBytes bytes")
-                appendLine("Sliced Class Payload    : $slimClassBytes bytes")
-                appendLine("Bytecode Reduction      : ${String.format("%.1f", savedPercent)}%")
+                appendLine("=== REVEILA CAPABILITY ASSEMBLY BYTECODE SLICING REPORT ===")
+                appendLine("Total Capability Classes : ${classBytesMap.size}")
+                appendLine("Reachable App Classes    : ${reachable.size}")
+                appendLine("Pruned Unused Classes    : ${prunedClasses.size}")
+                appendLine("Original Class Payload   : $originalClassBytes bytes")
+                appendLine("Sliced Class Payload     : $slimClassBytes bytes")
+                appendLine("Bytecode Reduction       : ${String.format("%.1f", savedPercent)}%")
                 appendLine()
                 appendLine("--- Seed Root Classes ---")
                 roots.forEach { appendLine("  + ${it.replace('/', '.')}") }
                 appendLine()
-                appendLine("--- Pruned Warehouse Classes (${prunedClasses.size}) ---")
+                appendLine("--- Pruned Capability Classes (${prunedClasses.size}) ---")
                 prunedClasses.forEach { appendLine("  - ${it.replace('/', '.')}") }
             }
         )
 
         logger.lifecycle(
-            "[ReveilaPackager] Sliced warehouse JAR: kept ${reachable.size}/${classBytesMap.size} classes " +
+            "[ReveilaPackager] Sliced capability JAR: kept ${reachable.size}/${classBytesMap.size} classes " +
                 "(pruned ${prunedClasses.size} unused classes, ${String.format("%.1f", savedPercent)}% bytecode reduction) -> ${outJar.name}"
         )
     }
@@ -611,9 +611,9 @@ val prepareSlimSystemHome = tasks.register<PrepareSlimSystemHomeTask>("prepareSl
     resolvedClassesFile.set(layout.buildDirectory.file("reveila-slim/resolved-component-classes.txt"))
 }
 
-val sliceWarehouseJars = tasks.register<SliceWarehouseJarsTask>("sliceWarehouseJars") {
+val sliceCapabilityJars = tasks.register<SliceCapabilityJarsTask>("sliceCapabilityJars") {
     group = "reveila-packaging"
-    description = "Slices Reveila warehouse JARs using bytecode reachability analysis to pack only necessary classes."
+    description = "Slices Reveila capability JARs using bytecode reachability analysis to pack only necessary classes."
     dependsOn(prepareSlimSystemHome)
     if (rootProject.findProject(":reveila:core") != null) {
         dependsOn(":reveila:core:exportJvmJar")
@@ -623,7 +623,7 @@ val sliceWarehouseJars = tasks.register<SliceWarehouseJarsTask>("sliceWarehouseJ
     }
     inputJars.from(rootProject.file("distribution/jvm/reveila-core.jar"))
     inputJars.from(rootProject.file("distribution/jvm/reveila-ext.jar"))
-    inputJars.from(appExt.warehouseJars)
+    inputJars.from(appExt.capabilityJars)
     resolvedComponentClassesFile.set(prepareSlimSystemHome.flatMap { it.resolvedClassesFile })
     additionalRootClasses.set(appExt.additionalRootClasses)
     outputSlimJar.set(layout.buildDirectory.file("reveila-slim/libs/reveila-core-slim.jar"))

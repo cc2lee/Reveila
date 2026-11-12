@@ -25,7 +25,7 @@ open class ManagedInvocation : SystemComponent() {
     }
 
     open fun invoke(
-        toolCall: ToolCall,
+        request: InvocationRequest,
         perimeter: SecurityPerimeter?,
         intent: String?,
         metaInfo: Map<String, Any?>?
@@ -33,13 +33,13 @@ open class ManagedInvocation : SystemComponent() {
         val isManaged = intent != null && metaInfo != null
 
         if (isManaged) {
-            return invokeManaged(toolCall, perimeter, intent, metaInfo!!)
+            return invokeManaged(request, perimeter, intent, metaInfo!!)
         }
 
-        val pluginId = toolCall.functionName ?: throw IllegalArgumentException("toolCall functionName cannot be null")
+        val pluginId = request.functionName ?: throw IllegalArgumentException("InvocationRequest functionName cannot be null")
 
         var methodName = "defaultMethod"
-        val methodArgs: Array<Any?> = when (val args = toolCall.arguments) {
+        val methodArgs: Array<Any?> = when (val args = request.arguments) {
             is Map<*, *> -> {
                 @Suppress("UNCHECKED_CAST")
                 val argsMap = LinkedHashMap(args as Map<String, Any?>)
@@ -87,7 +87,7 @@ open class ManagedInvocation : SystemComponent() {
     }
 
     private fun invokeManaged(
-        toolCall: ToolCall,
+        request: InvocationRequest,
         perimeter: SecurityPerimeter?,
         intent: String,
         metaInfo: Map<String, Any?>
@@ -99,7 +99,7 @@ open class ManagedInvocation : SystemComponent() {
         val gr = guardedRuntime ?: throw IllegalStateException("GuardedRuntime not available")
         val sm = secretManager ?: throw IllegalStateException("SecretManager not available")
 
-        val pluginId = toolCall.functionName ?: throw IllegalArgumentException("toolCall functionName cannot be null")
+        val pluginId = request.functionName ?: throw IllegalArgumentException("InvocationRequest functionName cannot be null")
         val sessionId = (metaInfo["_session_id"] as? String) ?: (metaInfo["sessionId"] as? String)
         val traceId = (metaInfo["traceId"] as? String) ?: Uuid.randomUuid()
         val tenantId = context?.properties?.getProperty("tenant-id", "default-tenant") ?: "default-tenant"
