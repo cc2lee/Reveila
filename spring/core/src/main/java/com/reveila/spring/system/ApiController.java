@@ -1,6 +1,5 @@
 package com.reveila.spring.system;
 
-import java.util.Collection;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
@@ -52,51 +51,62 @@ public class ApiController {
         String clientVersion = request.getVersion();
         String backendVersion = resolveBackendVersion();
         if (!isVersionCompatible(clientVersion, backendVersion)) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
-                    "error", "API Version Conflict",
-                    "message", String.format(
-                            "Client version '%s' is incompatible with deployed backend version '%s'.",
-                            clientVersion != null ? clientVersion : "missing",
-                            backendVersion),
-                    "clientVersion", clientVersion != null ? clientVersion : "missing",
-                    "backendVersion", backendVersion
-            ));
+            return buildVersionConflictResponse(clientVersion, backendVersion);
         }
 
         Object[] args = request.getArgs();
         String callerIp = httpRequest != null ? httpRequest.getRemoteAddr() : null;
+        Subject subject = buildSubject(httpRequest, args);
+
+        Object result = reveila.invoke(componentName, request.getMethodName(), args, callerIp, subject);
+        return ResponseEntity.ok(result);
+    }
+
+    private ResponseEntity<Object> buildVersionConflictResponse(String clientVersion, String backendVersion) {
+        String resolvedClientVersion = clientVersion != null ? clientVersion : "missing";
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "error", "API Version Conflict",
+                "message", String.format(
+                        "Client version '%s' is incompatible with deployed backend version '%s'.",
+                        resolvedClientVersion,
+                        backendVersion),
+                "clientVersion", resolvedClientVersion,
+                "backendVersion", backendVersion
+        ));
+    }
+
+    private Subject buildSubject(HttpServletRequest httpRequest, Object[] args) {
         Subject subject = new Subject();
 
-        // 2. Populate Subject Principals from Spring Security Authentication
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null) {
-            Collection<? extends GrantedAuthority> authorities = auth.getAuthorities();
-            if (authorities != null) {
-                for (GrantedAuthority authority : authorities) {
-                    String role = authority.getAuthority();
-                    if (role != null) {
-                        if (role.startsWith("ROLE_")) {
-                            role = role.substring(5);
-                        }
-                        subject.getPrincipals().add(new RolePrincipal(role.toLowerCase()));
-                    }
-                }
-            }
-        }
+        // Populate Subject Principals from Spring Security Authentication
+        populateSpringSecurityPrincipals(subject);
 
-        // 3. Enrich Subject if authenticated via Sandbox JIT Bearer Token
+        // Enrich Subject if authenticated via Sandbox JIT Bearer Token
         if (hasValidJitToken(httpRequest, args)) {
             subject.getPrincipals().add(new RolePrincipal(Constants.SYSTEM));
             subject.getPrincipals().add(new RolePrincipal(Constants.PLUGIN));
         }
 
-        // 4. Enrich Subject if Dual-Key Overwatch Token was verified by OversightInterceptor
+        // Enrich Subject if Dual-Key Overwatch Token was verified by OversightInterceptor
         if (httpRequest != null && httpRequest.getAttribute("OVERSIGHT_TOKEN_ID") != null) {
             subject.getPrincipals().add(new RolePrincipal("overwatch-operator"));
         }
 
-        Object result = reveila.invoke(componentName, request.getMethodName(), args, callerIp, subject);
-        return ResponseEntity.ok(result);
+        return subject;
+    }
+
+    private void populateSpringSecurityPrincipals(Subject subject) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getAuthorities() == null) {
+            return;
+        }
+        for (GrantedAuthority authority : auth.getAuthorities()) {
+            String role = authority.getAuthority();
+            if (role != null) {
+                String normalizedRole = role.startsWith("ROLE_") ? role.substring(5) : role;
+                subject.getPrincipals().add(new RolePrincipal(normalizedRole.toLowerCase()));
+            }
+        }
     }
 
     private String resolveBackendVersion() {
@@ -112,7 +122,10 @@ public class ApiController {
                     return propVer.trim();
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            if (reveila.getSystemContext() != null && reveila.getSystemContext().getLogger() != null) {
+                reveila.getSystemContext().getLogger().warning("Failed to resolve backend version, caused by: " + e.getMessage() + " | Constants.DEFAULT_SYSTEM_VERSION is used.");
+            }
         }
         return Constants.DEFAULT_SYSTEM_VERSION;
     }
@@ -126,31 +139,40 @@ public class ApiController {
     }
 
     private boolean hasValidJitToken(HttpServletRequest httpRequest, Object[] args) {
-        String bearerToken = null;
-        if (httpRequest != null) {
-            String authHeader = httpRequest.getHeader("Authorization");
-            if (authHeader != null && authHeader.regionMatches(true, 0, "Bearer ", 0, 7)) {
-                bearerToken = authHeader.substring(7).trim();
-            }
-        }
-        if ((bearerToken == null || bearerToken.isEmpty()) && args != null && args.length > 0 && args[0] instanceof String s) {
-            if (s.startsWith("jit_") || s.startsWith("JIT-")) {
-                bearerToken = s;
-            }
-        }
+        String bearerToken = extractJitToken(httpRequest, args);
         if (bearerToken == null || bearerToken.isEmpty()) {
             return false;
         }
 
         try {
             if (reveila.getSystemContext() != null) {
-                Object smObj = reveila.getSystemContext().getProxy("SecretManager").getInstance();
-                if (smObj instanceof SecretManager sm) {
+                var proxy = reveila.getSystemContext().getProxy("SecretManager");
+                if (proxy != null && proxy.getInstance() instanceof SecretManager sm) {
                     return sm.validateToken(bearerToken);
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            if (reveila.getSystemContext() != null && reveila.getSystemContext().getLogger() != null) {
+                reveila.getSystemContext().getLogger().warning("Failed to validate JIT token via SecretManager: " + e.getMessage());
+            }
         }
         return false;
+    }
+
+    private String extractJitToken(HttpServletRequest httpRequest, Object[] args) {
+        if (httpRequest != null) {
+            String authHeader = httpRequest.getHeader("Authorization");
+            if (authHeader != null && authHeader.regionMatches(true, 0, "Bearer ", 0, 7)) {
+                String token = authHeader.substring(7).trim();
+                if (!token.isEmpty()) {
+                    return token;
+                }
+            }
+        }
+        if (args != null && args.length > 0 && args[0] instanceof String s
+                && (s.startsWith("jit_") || s.startsWith("JIT-"))) {
+            return s;
+        }
+        return null;
     }
 }
