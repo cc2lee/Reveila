@@ -73,13 +73,83 @@ open class ManagedInvocation : SystemComponent() {
         method: String,
         arguments: Map<String, Any>?
     ): Any? {
+        val args = arguments?.values?.toTypedArray() ?: emptyArray()
+        return executeAuthorizedCallback(jitToken, component, method, args)
+    }
+
+    @Throws(Exception::class)
+    open fun handleCallback(
+        jitToken: String,
+        component: String,
+        method: String,
+        arguments: List<Any?>?
+    ): Any? {
+        val args = arguments?.toTypedArray() ?: emptyArray()
+        return executeAuthorizedCallback(jitToken, component, method, args)
+    }
+
+    @Throws(Exception::class)
+    private fun executeAuthorizedCallback(
+        jitToken: String,
+        component: String,
+        method: String,
+        args: Array<out Any?>
+    ): Any? {
         val sm = secretManager ?: throw IllegalStateException("SecretManager not available")
         if (!sm.validateToken(jitToken)) {
             throw com.reveila.error.SecurityException("Invalid or expired JIT token: $jitToken")
         }
 
-        val args = arguments?.values?.toTypedArray() ?: emptyArray()
+        val tenantId = context?.properties?.getProperty("tenant-id", "default-tenant") ?: "default-tenant"
+        val traceId = TraceContextHolder.getTraceId() ?: Uuid.randomUuid()
+        val callbackPlugin = Plugin(traceId, component, tenantId, traceId)
+        flightRecorder?.recordStep(
+            callbackPlugin,
+            "sandbox_callback",
+            mapOf("targetComponent" to component, "targetMethod" to method)
+        )
+
         return context?.getProxy(component)?.invoke(method, args)
+    }
+
+    @Throws(Exception::class)
+    open fun handleCallbackResult(
+        jitToken: String,
+        traceId: String?,
+        pluginId: String?,
+        method: String?,
+        status: String?,
+        result: Any?
+    ): Map<String, Any?> {
+        val sm = secretManager ?: throw IllegalStateException("SecretManager not available")
+        if (!sm.validateToken(jitToken)) {
+            throw com.reveila.error.SecurityException("Invalid or expired JIT token: $jitToken")
+        }
+
+        val tenantId = context?.properties?.getProperty("tenant-id", "default-tenant") ?: "default-tenant"
+        val effectivePluginId = if (pluginId.isNullOrBlank()) "sandbox-plugin" else pluginId
+        val effectiveTraceId = if (traceId.isNullOrBlank()) Uuid.randomUuid() else traceId
+        val effectiveMethod = if (method.isNullOrBlank()) "defaultMethod" else method
+        val effectiveStatus = if (status.isNullOrBlank()) "SUCCESS" else status
+        val plugin = Plugin(effectiveTraceId, effectivePluginId, tenantId, effectiveTraceId)
+
+        if ("ERROR".equals(effectiveStatus, ignoreCase = true) || "FAILED".equals(effectiveStatus, ignoreCase = true)) {
+            flightRecorder?.recordStep(
+                plugin,
+                "sandbox_execution_failed",
+                mapOf("method" to effectiveMethod, "error" to (result?.toString() ?: "Unknown error"))
+            )
+        } else {
+            flightRecorder?.recordToolOutput(plugin, "$effectivePluginId.$effectiveMethod", result)
+        }
+
+        return mapOf(
+            "status" to effectiveStatus,
+            "traceId" to effectiveTraceId,
+            "pluginId" to effectivePluginId,
+            "method" to effectiveMethod,
+            "data" to result
+        )
     }
 
     @Throws(Exception::class)
@@ -168,10 +238,12 @@ open class ManagedInvocation : SystemComponent() {
             return InvocationResult.pendingApproval(intent, traceId)
         }
 
-        var jitCreds: Map<String, String>? = null
-        if (activePerimeter.accessScopes().isNotEmpty()) {
-            jitCreds = sm.generateJitToken(plugin, activePerimeter.accessScopes().iterator().next())
+        val scope = if (activePerimeter.accessScopes().isNotEmpty()) {
+            activePerimeter.accessScopes().joinToString(",")
+        } else {
+            "sandbox:callback"
         }
+        val jitCreds: Map<String, String> = sm.generateJitToken(plugin, scope)
 
         return try {
             val result = gr.execute(plugin, activePerimeter, validatedArgs, jitCreds)

@@ -1,43 +1,56 @@
 package com.reveila.system
 
-import com.reveila.service.HttpClientService
-import com.reveila.service.PlatformHttpEngine
 import com.reveila.system.platform.PlatformSystem
-import com.reveila.util.json.JsonUtil
 
+/**
+ * The Mini-Reveila Runtime (Reveila Worker Agent).
+ * ADR 0006: Executes plugin code in isolation within a container and reports
+ * results back to the host via the unified `ReveilaClient` callback architecture.
+ */
 object PluginRunner {
 
-    fun reportResult(callbackUrl: String?, traceId: String?, pluginId: String?, methodName: String?, result: Any?) {
+    @kotlin.jvm.JvmStatic
+    fun main(args: Array<String>) {
+        executeContainerPlugin(args)
+    }
+
+    @kotlin.jvm.JvmOverloads
+    @kotlin.jvm.JvmStatic
+    fun reportResult(
+        callbackUrl: String?,
+        traceId: String?,
+        pluginId: String?,
+        methodName: String?,
+        result: Any?,
+        status: String = "SUCCESS"
+    ) {
         if (callbackUrl.isNullOrEmpty()) {
             return
         }
 
         try {
-            val jitToken = PlatformSystem.getEnv("REVEILA_JIT_TOKEN")
-            val payload = mapOf(
-                "trace_id" to traceId,
-                "plugin_id" to pluginId,
-                "method" to methodName,
-                "status" to "SUCCESS",
-                "data" to (result ?: "null")
-            )
+            val jitToken = PlatformSystem.getEnv(Constants.ENV_JIT_TOKEN)
+            val version = PlatformSystem.getEnv(Constants.ENV_REVEILA_VERSION)
+                ?.takeIf { it.isNotBlank() }
+                ?: Constants.DEFAULT_SYSTEM_VERSION
 
-            val json = JsonUtil.toJsonString(payload)
-            val headers = mapOf(
-                "Content-Type" to HttpClientService.JSON,
-                "Authorization" to "Bearer $jitToken"
+            val client = ReveilaClient(
+                baseUrl = callbackUrl,
+                jitToken = jitToken,
+                version = version
             )
-
-            PlatformHttpEngine().execute(
-                url = "$callbackUrl/api/system/callback/result",
-                method = "POST",
-                payload = json,
-                contentType = HttpClientService.JSON,
-                headers = headers,
-                timeoutSeconds = 30
+            client.reportResult(
+                traceId = traceId,
+                pluginId = pluginId,
+                methodName = methodName,
+                result = result,
+                status = status,
+                targetBaseUrl = callbackUrl
             )
         } catch (e: Exception) {
-            // Ignore error reporting failure
+            // Ignore error reporting failure inside ephemeral container exit path
         }
     }
 }
+
+internal expect fun executeContainerPlugin(args: Array<String>)

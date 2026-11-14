@@ -5,6 +5,7 @@ export interface EngineStatus {
 }
 
 export interface ReveilaBridgeType {
+    version: string;
     startService: (systemHome?: string | null) => Promise<string | boolean>;
     getEngineStatus: () => Promise<EngineStatus>;
     waitForEngine: (timeoutMs?: number, pollIntervalMs?: number) => Promise<boolean>;

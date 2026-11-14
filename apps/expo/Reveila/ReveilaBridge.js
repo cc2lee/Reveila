@@ -11,6 +11,8 @@ const { ReveilaModule } = NativeModules;
  *   invoke: async (component, method, params = []) => { ... }
  */
 export const ReveilaBridge = {
+    version: '1.0.0',
+
     /**
      * Starts the long-running Android foreground service container.
      * Offloads engine initialization from the main thread.
@@ -85,7 +87,14 @@ export const ReveilaBridge = {
             throw new Error(`[ReveilaBridge] Native ReveilaModule is unavailable on this platform (${Platform.OS}). Ensure the Android ReveilaService is running.`);
         }
         const normalizedParams = Array.isArray(params) ? params : [params];
-        const envelope = JSON.stringify({ component, method, params: normalizedParams });
+        const envelope = JSON.stringify({
+            version: ReveilaBridge.version,
+            component,
+            methodName: method,
+            method,
+            args: normalizedParams,
+            params: normalizedParams
+        });
         const responseString = await ReveilaModule.sendCommand(envelope);
         try {
             return typeof responseString === 'string' ? JSON.parse(responseString) : responseString;

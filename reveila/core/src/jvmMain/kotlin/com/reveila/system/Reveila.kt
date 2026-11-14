@@ -42,6 +42,15 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
 
     override fun isRunning(): Boolean = isRunningFlag.get()
 
+    override fun getVersion(): String {
+        val ctxVersion = systemContext?.getSystemVersion()
+        if (!ctxVersion.isNullOrBlank()) {
+            return ctxVersion
+        }
+        val propVersion = properties.getProperty(Constants.SYSTEM_VERSION, Constants.DEFAULT_SYSTEM_VERSION)
+        return if (propVersion.isNullOrBlank()) Constants.DEFAULT_SYSTEM_VERSION else propVersion.trim()
+    }
+
     override fun close() {
         shutdown()
     }

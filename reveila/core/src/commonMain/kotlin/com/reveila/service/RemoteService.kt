@@ -2,10 +2,11 @@ package com.reveila.service
 
 import com.reveila.error.ConfigurationException
 import com.reveila.error.SystemException
+import com.reveila.system.Constants
 import com.reveila.system.PerformanceTracker
+import com.reveila.system.ReveilaClient
 import com.reveila.system.SystemComponent
 import com.reveila.util.json.JsonException
-import com.reveila.util.json.JsonUtil
 import kotlin.time.TimeSource
 
 open class RemoteService : SystemComponent() {
@@ -124,35 +125,23 @@ open class RemoteService : SystemComponent() {
             }
         }
 
-        var url = baseUrl
-        if (!url.endsWith("/")) {
-            url += "/"
-        }
-        url += "api/components/$componentName/invoke"
+        val systemVersion = context?.properties?.getProperty(Constants.SYSTEM_VERSION, Constants.DEFAULT_SYSTEM_VERSION)
+            ?.takeIf { it.isNotBlank() }
+            ?: Constants.DEFAULT_SYSTEM_VERSION
 
-        val requestPayload = mapOf("methodName" to methodName, "args" to args.toList())
-        val jsonBody = JsonUtil.toJsonString(requestPayload)
+        val url = ReveilaClient.buildInvokeUrl(baseUrl, componentName)
+        logger.info("Remote invocation: URL: $url target component: $componentName target method: $methodName version: $systemVersion")
 
-        logger.info("Remote invocation: URL: $url target component: $componentName target method: $methodName")
-        val httpEngine = PlatformHttpEngine()
-        val response = httpEngine.execute(
-            url = url,
-            method = "POST",
-            payload = jsonBody,
-            contentType = HttpClientService.JSON,
-            headers = mapOf("Content-Type" to HttpClientService.JSON),
-            timeoutSeconds = 30
-        )
-
-        val timeUsed = startMark.elapsedNow().inWholeMilliseconds
-        if (response.statusCode !in 200..299) {
+        val client = ReveilaClient(baseUrl = baseUrl, version = systemVersion)
+        return try {
+            val result = client.invoke(componentName, methodName, args, baseUrl)
+            val timeUsed = startMark.elapsedNow().inWholeMilliseconds
+            nodePerformanceTracker.track(timeUsed, baseUrl)
+            result
+        } catch (e: Exception) {
+            val timeUsed = startMark.elapsedNow().inWholeMilliseconds
             nodePerformanceTracker.track(timeUsed + PerformanceTracker.DEFAULT_PENALTY_MS, baseUrl)
-            throw Exception(
-                "Remote invocation failed with HTTP code ${response.statusCode} for $url. Body: ${response.body}"
-            )
+            throw e
         }
-        nodePerformanceTracker.track(timeUsed, baseUrl)
-        return if (response.body.isNullOrEmpty()) null
-        else JsonUtil.parseJsonStringToMap(response.body)
     }
 }

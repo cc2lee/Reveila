@@ -46,7 +46,7 @@ class SystemContext(
         val prefixedGlobal2 = properties.getProperty(prefix2 + propertyName)
         if (prefixedGlobal2 != null) return prefixedGlobal2
 
-        if ("system.home" == propertyName || "system.mode" == propertyName) {
+        if ("system.home" == propertyName || "system.mode" == propertyName || Constants.SYSTEM_VERSION == propertyName) {
             return properties.getProperty(propertyName)
         }
 
@@ -61,6 +61,11 @@ class SystemContext(
     }
 
     fun getEventManager(): EventManager = eventManager
+
+    fun getSystemVersion(): String {
+        val v = properties.getProperty(Constants.SYSTEM_VERSION, Constants.DEFAULT_SYSTEM_VERSION)
+        return if (v.isNullOrBlank()) Constants.DEFAULT_SYSTEM_VERSION else v.trim()
+    }
 
     override fun getLogger(): PlatformLogger = logger
 

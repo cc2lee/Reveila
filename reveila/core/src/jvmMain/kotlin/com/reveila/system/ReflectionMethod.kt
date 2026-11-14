@@ -72,6 +72,11 @@ open class ReflectionMethod {
                 return true
             }
 
+            // Allow JSON-deserialized Lists to bind to Array parameters.
+            if (targetType.isArray && List::class.java.isAssignableFrom(sourceType)) {
+                return true
+            }
+
             // Handle numeric conversions, as React Native sends all numbers as Double.
             if (sourceType == java.lang.Double::class.java) {
                 return targetType == java.lang.Integer.TYPE || targetType == java.lang.Integer::class.java ||
@@ -177,6 +182,15 @@ open class ReflectionMethod {
 
             if (paramType.isAssignableFrom(arg.javaClass)) {
                 return arg
+            }
+
+            if (paramType.isArray && arg is List<*>) {
+                val componentType = paramType.componentType
+                val array = java.lang.reflect.Array.newInstance(componentType, arg.size)
+                for (i in arg.indices) {
+                    java.lang.reflect.Array.set(array, i, coerceArg(componentType, arg[i]))
+                }
+                return array
             }
 
             if (arg is Number) {

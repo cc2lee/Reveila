@@ -8,6 +8,10 @@ package com.reveila.system
 object Constants {
     const val SYSTEM_NAME = "system.name"
     const val SYSTEM_VERSION = "system.version"
+    const val DEFAULT_SYSTEM_VERSION = "1.0.0"
+    const val ENV_CALLBACK_URL = "REVEILA_CALLBACK_URL"
+    const val ENV_JIT_TOKEN = "REVEILA_JIT_TOKEN"
+    const val ENV_REVEILA_VERSION = "REVEILA_VERSION"
     const val SYSTEM_HOME = "system.home"
     const val RESET_HOME = "reset.home"
     const val PLATFORM = "platform"

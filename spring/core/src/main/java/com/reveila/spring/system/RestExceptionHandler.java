@@ -12,6 +12,8 @@ import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import com.reveila.error.ConfigurationException;
+import com.reveila.error.SecurityException;
+import com.reveila.error.VersionConflictException;
 
 import java.util.Map;
 
@@ -23,6 +25,27 @@ import java.util.Map;
 public class RestExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(RestExceptionHandler.class);
+
+    @ExceptionHandler(VersionConflictException.class)
+    protected ResponseEntity<Object> handleVersionConflict(VersionConflictException ex, WebRequest request) {
+        log.warn("API version conflict: {}", ex.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(Map.of(
+                        "error", "API Version Conflict",
+                        "message", ex.getMessage(),
+                        "clientVersion", ex.getClientVersion() != null ? ex.getClientVersion() : "missing",
+                        "backendVersion", ex.getBackendVersion()
+                ));
+    }
+
+    @ExceptionHandler(SecurityException.class)
+    protected ResponseEntity<Object> handleSecurityException(SecurityException ex, WebRequest request) {
+        log.warn("Security violation: {}", ex.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(Map.of("error", ex.getMessage()));
+    }
 
     @ExceptionHandler(IllegalStateException.class)
     protected ResponseEntity<Object> handleIllegalState(IllegalStateException ex, WebRequest request) {

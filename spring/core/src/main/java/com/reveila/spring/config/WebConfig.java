@@ -80,7 +80,7 @@ public class WebConfig implements WebMvcConfigurer {
 
         if (this.oversightInterceptor != null) {
             registry.addInterceptor(this.oversightInterceptor)
-                    .addPathPatterns("/api/v1/overwatch/**");
+                    .addPathPatterns("/api/components/**/invoke");
         }
     }
 

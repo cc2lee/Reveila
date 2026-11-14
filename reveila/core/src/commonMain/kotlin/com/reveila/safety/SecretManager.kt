@@ -111,10 +111,33 @@ open class SecretManager : SystemComponent() {
     open fun generateJitToken(plugin: Plugin, scope: String): Map<String, String> {
         val token = "jit_" + Uuid.randomUuid().substring(0, 8)
         jitTokens[token] = "${plugin.traceId}:$scope"
-        return mapOf("REVEILA_JIT_TOKEN" to token)
+        return mapOf(com.reveila.system.Constants.ENV_JIT_TOKEN to token)
     }
 
-    open fun validateToken(token: String): Boolean {
-        return jitTokens.containsKey(token)
+    open fun registerJitToken(token: String, metadata: String = "sandbox:callback") {
+        val clean = normalizeToken(token)
+        if (clean.isNotEmpty()) {
+            jitTokens[clean] = metadata
+        }
+    }
+
+    open fun validateToken(token: String?): Boolean {
+        val clean = normalizeToken(token)
+        return clean.isNotEmpty() && jitTokens.containsKey(clean)
+    }
+
+    open fun revokeToken(token: String?) {
+        val clean = normalizeToken(token)
+        if (clean.isNotEmpty()) {
+            jitTokens.remove(clean)
+        }
+    }
+
+    private fun normalizeToken(token: String?): String {
+        if (token.isNullOrBlank()) return ""
+        return token.trim()
+            .removePrefix("Bearer ")
+            .removePrefix("bearer ")
+            .trim()
     }
 }

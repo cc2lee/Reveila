@@ -121,6 +121,20 @@ class JsonUtil private constructor() {
 
         @kotlin.jvm.JvmStatic
         @Throws(JsonException::class)
+        fun parseJsonValue(json: String?): Any? {
+            if (json.isNullOrBlank()) return null
+            val trimmed = json.trim()
+            if (trimmed == "null") return null
+            return try {
+                val element = JSON.parseToJsonElement(trimmed)
+                fromElement(element)
+            } catch (e: Exception) {
+                trimmed
+            }
+        }
+
+        @kotlin.jvm.JvmStatic
+        @Throws(JsonException::class)
         @Suppress("UNCHECKED_CAST")
         fun parseJsonStringToMap(json: String?): Map<String, Any> {
             if (json.isNullOrBlank()) return emptyMap()

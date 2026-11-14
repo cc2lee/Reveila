@@ -35,6 +35,7 @@ export const ReveilaService = {
         try {
             // Re-map the payload structure to align perfectly with Jackson mapper bindings inside ReveilaModule.java
             const commandEnvelope = JSON.stringify({
+                version: "1.0.0",  // Unified API contract version
                 component: "core", // Standard component targeting
                 method: action,    // Maps cleanly to your engine command strings (e.g., 'GET_STATUS')
                 params: params     // Sent explicitly as an array list to bind cleanly to Object[] params

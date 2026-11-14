@@ -7,8 +7,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
- * Interceptor for /api/v1/overwatch/* endpoints.
- * Enforces the Dual-Key requirement using X-Reveila-Oversight-Token.
+ * Interceptor for the unified `/api/components/{componentName}/invoke` endpoint.
+ * Enforces the Dual-Key requirement whenever `X-Reveila-Oversight-Token` is supplied.
  * 
  * @author CL
  */
@@ -16,6 +16,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class OversightInterceptor implements HandlerInterceptor {
 
     public static final String OVERSIGHT_TOKEN_HEADER = "X-Reveila-Oversight-Token";
+    public static final String OVERSIGHT_TOKEN_ID = "OVERSIGHT_TOKEN_ID";
     private final OversightAuthority oversightAuthority;
 
     public OversightInterceptor(OversightAuthority oversightAuthority) {
@@ -28,6 +29,9 @@ public class OversightInterceptor implements HandlerInterceptor {
                              @NonNull Object handler) throws Exception {
         
         String token = request.getHeader(OVERSIGHT_TOKEN_HEADER);
+        if (token == null) {
+            return true;
+        }
 
         if (!oversightAuthority.isValidToken(token)) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
@@ -35,8 +39,8 @@ public class OversightInterceptor implements HandlerInterceptor {
             return false;
         }
 
-        // Store token in request for forensic tie-in in controllers
-        request.setAttribute("OVERSIGHT_TOKEN_ID", token);
+        // Store token in request for forensic tie-in in controllers and FlightRecorder
+        request.setAttribute(OVERSIGHT_TOKEN_ID, token);
         return true;
     }
 }

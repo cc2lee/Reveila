@@ -82,11 +82,21 @@ public class ReveilaModule extends ReactContextBaseJavaModule {
                 ObjectMapper mapper = new ObjectMapper();
                 Map<String, Object> payload = mapper.readValue(jsonInput, new TypeReference<Map<String, Object>>() {});
 
-                String component = (String) payload.get("component");
-                String method = (String) payload.get("method");
+                String clientVersion = payload.get("version") != null ? String.valueOf(payload.get("version")) : null;
+                if (clientVersion != null && !engine.isVersionCompatible(clientVersion)) {
+                    promise.reject(
+                        "E_VERSION_CONFLICT",
+                        "API version conflict: client version '" + clientVersion + "' is incompatible with backend version '" + engine.getVersion() + "'."
+                    );
+                    return;
+                }
 
-                // Extract parameters safely as an Object array
-                List<Object> paramList = (List<Object>) payload.get("params");
+                String component = (String) payload.get("component");
+                String method = (String) (payload.get("methodName") != null ? payload.get("methodName") : payload.get("method"));
+
+                // Extract parameters safely as an Object array (supports both 'args' and 'params')
+                Object rawArgs = payload.get("args") != null ? payload.get("args") : payload.get("params");
+                List<Object> paramList = rawArgs instanceof List ? (List<Object>) rawArgs : null;
                 Object[] params = paramList != null ? paramList.toArray() : new Object[0];
 
                 // 2. Execute via the Engine's primary entry point
