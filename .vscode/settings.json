@@ -17,6 +17,8 @@
         "**/build/classes/kotlin": true,
         "**/bin": true
     },
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "java.compile.nullAnalysis.mode": "automatic",
 
     // "java.compile.nullAnalysis.mode": "automatic",
     // "java.configuration.updateBuildConfiguration": "automatic",

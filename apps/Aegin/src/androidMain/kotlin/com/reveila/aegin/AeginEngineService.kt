@@ -4,11 +4,13 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import com.reveila.aegin.bridge.LlamaJniBridge
 import com.reveila.aegin.bridge.PlatformEngineBridge
 import java.util.concurrent.Executors
 
@@ -61,7 +63,20 @@ class AeginEngineService : Service() {
         }
     }
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
+            Log.w(TAG, "Memory trim level=$level (>= TRIM_MEMORY_BACKGROUND): scheduling native GGUF release.")
+            LlamaJniBridge.scheduleRelease()
+            executor.execute {
+                PlatformEngineBridge.releaseLocalModelBlocking()
+            }
+        }
+    }
+
     override fun onDestroy() {
+        LlamaJniBridge.scheduleRelease()
+        PlatformEngineBridge.releaseLocalModelBlocking()
         executor.shutdownNow()
         super.onDestroy()
     }

@@ -90,6 +90,7 @@ val appExt = extensions.create<ReveilaAppExtension>("reveilaApp").apply {
             "com.reveila.system.SystemProxy",
             "com.reveila.system.ReflectionMethod",
             "com.reveila.ai.LocalLlamaProvider",
+            "com.reveila.ai.OnDeviceInferenceDelegate",
             "com.reveila.ai.GeminiLlmProvider",
             "com.reveila.ai.OpenAiLlmProvider",
             "com.reveila.ai.DefaultEmbeddingModel",

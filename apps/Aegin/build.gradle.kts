@@ -145,6 +145,29 @@ android {
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
         }
+
+        externalNativeBuild {
+            cmake {
+                arguments(
+                    "-DANDROID_STL=c++_shared",
+                    "-DGGML_NATIVE=OFF",
+                    "-DGGML_OPENMP=OFF",
+                    "-DGGML_LLAMAFILE=OFF",
+                    "-DLLAMA_CURL=OFF",
+                    "-DLLAMA_OPENSSL=OFF",
+                    "-DLLAMA_BUILD_TOOLS=OFF",
+                    "-DBUILD_SHARED_LIBS=OFF"
+                )
+                cppFlags("-std=c++17", "-O3", "-fexceptions", "-frtti")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/androidMain/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/assets/androidMain"))

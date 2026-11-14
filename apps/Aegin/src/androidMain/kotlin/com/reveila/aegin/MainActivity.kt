@@ -1,5 +1,6 @@
 package com.reveila.aegin
 
+import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
@@ -11,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import com.reveila.aegin.bridge.LlamaJniBridge
 import com.reveila.aegin.bridge.PlatformEngineBridge
 import com.reveila.aegin.ui.AeginApp
 
@@ -44,6 +46,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             AeginApp()
+        }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
+            LlamaJniBridge.scheduleRelease()
+            PlatformEngineBridge.releaseLocalModelBlocking()
         }
     }
 }

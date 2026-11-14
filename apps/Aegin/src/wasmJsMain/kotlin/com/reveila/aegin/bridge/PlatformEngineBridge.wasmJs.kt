@@ -1,5 +1,8 @@
 package com.reveila.aegin.bridge
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+
 actual object PlatformEngineBridge {
     private val memoryStorage = mutableMapOf<String, String>()
     private var initialized = false
@@ -150,5 +153,22 @@ actual object PlatformEngineBridge {
 
     actual fun clearStorage() {
         memoryStorage.clear()
+    }
+
+    actual suspend fun verifyModelPreflight(modelSizeBytes: Long): PreflightCheckResult {
+        val cap = getDeviceCapabilities()
+        return PreflightCheckResult(
+            allowed = cap.canRunLocalGguf,
+            tierLabel = cap.hardwareTier,
+            recommendedProfile = cap.recommendedModel,
+            reason = cap.statusSummary
+        )
+    }
+
+    actual fun streamAgent(prompt: String, sessionId: String?, prevSummary: String?): Flow<String> = flow {
+        emit(invoke("AgenticFabric", "askAgent", listOf(prompt, sessionId ?: "", prevSummary ?: "")))
+    }
+
+    actual suspend fun releaseLocalModel() {
     }
 }

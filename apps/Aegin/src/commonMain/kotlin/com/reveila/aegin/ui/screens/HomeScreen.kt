@@ -36,6 +36,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +58,8 @@ import com.reveila.aegin.bridge.VaultStats
 import com.reveila.aegin.ui.components.SetupWizard
 import com.reveila.aegin.ui.theme.LocalAeginColors
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,6 +90,7 @@ fun HomeScreen(
     var activeLlmName by remember { mutableStateOf("On-Device Model") }
     var showConfigureCloudDialog by remember { mutableStateOf(false) }
     var vaultStats by remember { mutableStateOf(VaultStats(0, 0, "Documents/Reveila")) }
+    val streamingTextFlow = remember { MutableStateFlow("") }
 
     fun refreshVaultStats() {
         scope.launch {
@@ -201,11 +205,24 @@ fun HomeScreen(
                 if (activeSessionId == null && activeMessages.isNotEmpty() && activeMessages[0].role == "SYSTEM") {
                     prevSummary = activeMessages[0].content
                 }
-                val (answer, newSessionId) = AeginBridge.askAgent(currentPrompt, activeSessionId, prevSummary)
-                if (!newSessionId.isNullOrBlank()) {
-                    activeSessionId = newSessionId
+                streamingTextFlow.value = ""
+                val buffer = StringBuilder()
+                AeginBridge.streamPrompt(
+                    prompt = currentPrompt,
+                    sessionId = activeSessionId,
+                    prevSummary = prevSummary,
+                    onSessionId = { newSessionId ->
+                        if (newSessionId.isNotBlank()) {
+                            activeSessionId = newSessionId
+                        }
+                    }
+                ).collect { token ->
+                    buffer.append(token)
+                    streamingTextFlow.value = buffer.toString()
                 }
-                activeMessages.add(ChatMessage(role = "ASSISTANT", content = answer))
+                if (buffer.isNotEmpty()) {
+                    activeMessages.add(ChatMessage(role = "ASSISTANT", content = buffer.toString()))
+                }
             } catch (e: Exception) {
                 activeMessages.add(
                     ChatMessage(
@@ -214,6 +231,7 @@ fun HomeScreen(
                     )
                 )
             } finally {
+                streamingTextFlow.value = ""
                 isProcessing = false
                 refreshVaultStats()
             }
@@ -460,7 +478,7 @@ fun HomeScreen(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        itemsIndexed(activeMessages) { _, msg ->
+                        itemsIndexed(activeMessages, key = { idx, msg -> "${idx}_${msg.role}" }) { _, msg ->
                             val isUser = msg.role == "USER"
                             val isSystem = msg.role == "SYSTEM"
                             val bubbleBg = if (isUser) theme.cardAlt else theme.card
@@ -524,7 +542,14 @@ fun HomeScreen(
                         }
 
                         if (isProcessing) {
-                            item {
+                            item(key = "streaming_active_bubble") {
+                                StreamingMessageBubble(
+                                    streamingTextFlow = streamingTextFlow,
+                                    isCloudMode = isCloudMode,
+                                    activeLlmName = activeLlmName
+                                )
+                            }
+                            item(key = "processing_indicator") {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth(0.92f)
@@ -676,5 +701,57 @@ fun HomeScreen(
             containerColor = theme.card,
             shape = RoundedCornerShape(12.dp)
         )
+    }
+}
+
+@Composable
+private fun StreamingMessageBubble(
+    streamingTextFlow: StateFlow<String>,
+    isCloudMode: Boolean,
+    activeLlmName: String
+) {
+    val theme = LocalAeginColors.current
+    val text by streamingTextFlow.collectAsState()
+    if (text.isEmpty()) return
+
+    val accentBarColor = if (isCloudMode) theme.accent else theme.primary
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .clip(RoundedCornerShape(14.dp))
+                .background(theme.card)
+                .border(1.dp, theme.border, RoundedCornerShape(14.dp))
+        ) {
+            Box(
+                modifier = Modifier
+                    .widthIn(min = 4.dp, max = 4.dp)
+                    .heightIn(min = 56.dp)
+                    .background(accentBarColor)
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp)
+            ) {
+                Text(
+                    text = if (isCloudMode) "REVEILA AGENT (☁️ Cloud: $activeLlmName)" else "REVEILA AGENT (📱 On-Device GGUF)",
+                    color = theme.primary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 0.5.sp
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = text,
+                    color = theme.text,
+                    fontSize = 14.sp,
+                    lineHeight = 22.sp
+                )
+            }
+        }
     }
 }

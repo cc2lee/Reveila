@@ -142,7 +142,7 @@ fun SettingsScreen(
 
         try {
             val res = AeginBridge.invoke("LlmProviderFactory", "getSettings", listOf("llm.json"))
-            val (parsed, wProv, gProv) = AeginBridge.parseLlmSettingsJson(res)
+            val (parsed, wProv, gProv) = AeginBridge.parseLlmSettingsJson(res, capabilities)
             providersList.clear()
             providersList.addAll(parsed)
             providersList.add(LlmProviderConfig(name = "Custom"))
@@ -152,7 +152,7 @@ fun SettingsScreen(
             }
             governanceProvider = gProv
         } catch (_: Exception) {
-            val (defaults, wProv, gProv) = AeginBridge.parseLlmSettingsJson("{}")
+            val (defaults, wProv, gProv) = AeginBridge.parseLlmSettingsJson("{}", capabilities)
             providersList.clear()
             providersList.addAll(defaults)
             providersList.add(LlmProviderConfig(name = "Custom"))
@@ -653,7 +653,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = onDeviceConfig?.model ?: "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+                                text = onDeviceConfig?.model?.ifBlank { capabilities.recommendedModel } ?: capabilities.recommendedModel,
                                 color = theme.text,
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 13.sp,

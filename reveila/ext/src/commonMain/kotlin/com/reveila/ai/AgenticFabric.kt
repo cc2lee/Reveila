@@ -148,6 +148,62 @@ open class AgenticFabric : SystemComponent() {
         return uiResponse
     }
 
+    /**
+     * Prepares a multi-turn session, injects KnowledgeVault RAG context, and formats the chat prompt
+     * for in-process native streaming while preserving session continuity.
+     */
+    open fun prepareStreamingTurn(
+        userIntent: String,
+        sessionId: String?,
+        systemPrompt: String?
+    ): Map<String, String> {
+        val actualSessionId = if (sessionId.isNullOrBlank()) Uuid.randomUuid() else sessionId
+        var session = orchestrationService?.getSession(actualSessionId)
+        if (session == null) {
+            session = orchestrationService?.createSession(actualSessionId, actualSessionId)
+            if (!systemPrompt.isNullOrBlank()) {
+                session?.chatMemory?.add(
+                    ReveilaMessage.system("Context carried over from previous session: $systemPrompt")
+                )
+            }
+        }
+        if (session != null) {
+            enforceSlidingWindow(session)
+        }
+
+        val ragSnippets = searchKnowledgeVault(userIntent)
+        val sysText = buildString {
+            append("You are Aegin, a sovereign on-device AI assistant. Answer concisely and accurately.")
+            if (ragSnippets.isNotBlank() && !ragSnippets.contains("No relevant internal documents")) {
+                append("\n\nRelated Documents:\n").append(ragSnippets)
+            }
+        }
+
+        val messages = mutableListOf<ReveilaMessage>()
+        messages.add(ReveilaMessage.system(sysText))
+        session?.chatMemory?.messages()?.takeLast(6)?.forEach { messages.add(it) }
+        messages.add(ReveilaMessage.user(userIntent))
+
+        val activeModel = (llmFactory?.getActiveProvider() as? BaseLlmProvider)?.model
+        val (formattedPrompt, stopToken) = LocalLlamaProvider.formatMessages(messages, activeModel)
+        return mapOf(
+            "sessionId" to (session?.sessionId ?: actualSessionId),
+            "formattedPrompt" to formattedPrompt,
+            "stopToken" to stopToken
+        )
+    }
+
+    /**
+     * Commits a completed streaming turn into the session's chat memory and persists the session.
+     */
+    open fun commitStreamingTurn(sessionId: String, userIntent: String, assistantAnswer: String): Boolean {
+        val session = orchestrationService?.getSession(sessionId) ?: return false
+        session.chatMemory.add(ReveilaMessage.user(userIntent))
+        session.chatMemory.add(ReveilaMessage.assistant(assistantAnswer))
+        sessionManager?.saveSession(session.sessionId, session)
+        return true
+    }
+
     open fun interpretAiResponse(jsonResponse: Map<String, Any?>): String {
         var prettyAnswer = ""
         try {

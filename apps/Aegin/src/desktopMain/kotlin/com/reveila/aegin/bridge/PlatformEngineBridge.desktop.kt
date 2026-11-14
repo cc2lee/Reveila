@@ -7,6 +7,9 @@ import com.reveila.system.RolePrincipal
 import com.reveila.system.Subject
 import com.reveila.util.json.JsonUtil
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
@@ -164,12 +167,7 @@ actual object PlatformEngineBridge {
         val freeDiskGb = usableDiskBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
 
         val arch = System.getProperty("os.arch") ?: "x86_64"
-        val (tier, recModel, recSizeMb) = when {
-            totalRamGb < 4.0 -> Triple("INCOMPATIBLE (< 4 GB RAM)", "Cloud / Hybrid Fallback Required", 0)
-            totalRamGb < 8.0 -> Triple("ENTRY TIER (4 – 6 GB RAM)", "qwen2.5-1.5b-instruct-q4_k_m.gguf", 1050)
-            totalRamGb < 14.0 -> Triple("STANDARD TIER (8 – 12 GB RAM)", "qwen2.5-3b-instruct-q4_k_m.gguf", 2200)
-            else -> Triple("FLAGSHIP TIER (12 GB+ RAM)", "llama-3.1-8b-instruct-q4_k_m.gguf", 4600)
-        }
+        val (tier, recModel, recSizeMb) = ModelTierCatalog.resolveTier(totalRamGb)
 
         val requiredBytes = recSizeMb.toLong() * 1024L * 1024L
         val bufferBytes = (1.5 * 1024.0 * 1024.0 * 1024.0).toLong()
@@ -180,7 +178,7 @@ actual object PlatformEngineBridge {
             ?.map { "${it.name} (${it.length() / (1024 * 1024)} MB)" }
             .orEmpty()
 
-        val canRunLocal = totalRamGb >= 4.0 && hasEnoughDisk
+        val canRunLocal = totalRamGb >= 5.5 && hasEnoughDisk
 
         DeviceCapabilityReport(
             totalRamGb = kotlin.math.round(totalRamGb * 10.0) / 10.0,
@@ -561,5 +559,23 @@ actual object PlatformEngineBridge {
         } catch (_: Exception) {
         }
         return sb.toString().trim()
+    }
+
+    actual suspend fun verifyModelPreflight(modelSizeBytes: Long): PreflightCheckResult =
+        withContext(Dispatchers.IO) {
+            val cap = getDeviceCapabilities()
+            PreflightCheckResult(
+                allowed = cap.canRunLocalGguf,
+                tierLabel = cap.hardwareTier,
+                recommendedProfile = cap.recommendedModel,
+                reason = cap.statusSummary
+            )
+        }
+
+    actual fun streamAgent(prompt: String, sessionId: String?, prevSummary: String?): Flow<String> = flow {
+        emit(invoke("AgenticFabric", "askAgent", listOf(prompt, sessionId ?: "", prevSummary ?: "")))
+    }.flowOn(Dispatchers.IO)
+
+    actual suspend fun releaseLocalModel() {
     }
 }

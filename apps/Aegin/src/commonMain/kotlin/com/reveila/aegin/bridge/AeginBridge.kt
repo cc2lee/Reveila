@@ -1,5 +1,7 @@
 package com.reveila.aegin.bridge
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -131,7 +133,10 @@ expect object PlatformEngineBridge {
     suspend fun startService(systemHome: String? = null): Boolean
     suspend fun getEngineStatus(): EngineStatus
     suspend fun getDeviceCapabilities(): DeviceCapabilityReport
+    suspend fun verifyModelPreflight(modelSizeBytes: Long): PreflightCheckResult
     suspend fun invoke(component: String, method: String, params: List<String> = emptyList()): String
+    fun streamAgent(prompt: String, sessionId: String? = null, prevSummary: String? = null): Flow<String>
+    suspend fun releaseLocalModel()
     suspend fun authenticateBiometric(): Boolean
     fun saveSensitiveData(data: String)
     suspend fun triggerEmergencyStop(): Boolean
@@ -170,8 +175,51 @@ object AeginBridge {
         return PlatformEngineBridge.getDeviceCapabilities()
     }
 
+    suspend fun verifyModelPreflight(modelSizeBytes: Long): PreflightCheckResult {
+        return PlatformEngineBridge.verifyModelPreflight(modelSizeBytes)
+    }
+
+    suspend fun releaseLocalModel() {
+        PlatformEngineBridge.releaseLocalModel()
+    }
+
     suspend fun invoke(component: String, method: String, params: List<String> = emptyList()): String {
         return PlatformEngineBridge.invoke(component, method, params)
+    }
+
+    fun streamPrompt(
+        prompt: String,
+        sessionId: String?,
+        prevSummary: String?,
+        onSessionId: (String) -> Unit = {}
+    ): Flow<String> = flow {
+        var emitted = false
+        PlatformEngineBridge.streamAgent(prompt, sessionId, prevSummary).collect { chunk ->
+            val trimmed = chunk.trimStart()
+            if (trimmed.startsWith("{") && trimmed.contains("\"__session_meta__\"")) {
+                val (_, newSessionId) = parseAgentResponse(chunk, sessionId)
+                if (!newSessionId.isNullOrBlank()) {
+                    onSessionId(newSessionId)
+                }
+            } else if (trimmed.startsWith("{") && (trimmed.contains("\"answer\"") || trimmed.contains("\"result\""))) {
+                emitted = true
+                val (answer, newSessionId) = parseAgentResponse(chunk, sessionId)
+                if (!newSessionId.isNullOrBlank()) {
+                    onSessionId(newSessionId)
+                }
+                emit(answer)
+            } else {
+                emitted = true
+                emit(chunk)
+            }
+        }
+        if (!emitted) {
+            val (answer, newSessionId) = askAgent(prompt, sessionId, prevSummary)
+            if (!newSessionId.isNullOrBlank()) {
+                onSessionId(newSessionId)
+            }
+            emit(answer)
+        }
     }
 
     suspend fun askAgent(prompt: String, sessionId: String?, prevSummary: String?): Pair<String, String?> {
@@ -180,16 +228,20 @@ object AeginBridge {
             "askAgent",
             listOf(prompt, sessionId ?: "", prevSummary ?: "")
         )
+        return parseAgentResponse(raw, sessionId)
+    }
+
+    private fun parseAgentResponse(raw: String, fallbackSessionId: String?): Pair<String, String?> {
         return try {
             val element = json.parseToJsonElement(raw)
             val obj = parsePossiblyNestedObject(element)
             val answer = obj["answer"]?.jsonPrimitive?.contentOrNull
                 ?: obj["result"]?.jsonPrimitive?.contentOrNull
                 ?: raw
-            val newSessionId = obj["sessionId"]?.jsonPrimitive?.contentOrNull ?: sessionId
+            val newSessionId = obj["sessionId"]?.jsonPrimitive?.contentOrNull ?: fallbackSessionId
             Pair(answer, newSessionId)
         } catch (_: Exception) {
-            Pair(raw, sessionId)
+            Pair(raw, fallbackSessionId)
         }
     }
 
@@ -283,15 +335,21 @@ object AeginBridge {
         return getConfiguredCloudProvider() != null
     }
 
-    fun parseLlmSettingsJson(rawJson: String): Triple<List<LlmProviderConfig>, String, String> {
+    fun parseLlmSettingsJson(
+        rawJson: String,
+        capabilities: DeviceCapabilityReport? = null
+    ): Triple<List<LlmProviderConfig>, String, String> {
+        val defaultLocalModel = capabilities?.recommendedModel
+            ?.takeIf { capabilities.canRunLocalGguf && it.endsWith(".gguf", ignoreCase = true) }
+            ?: ModelTierCatalog.MODEL_3B
         val defaultStandard = listOf(
             LlmProviderConfig(
                 name = "On-Device Model",
                 type = "Local",
                 provider = "",
-                endpoint = "http://127.0.0.1:8080/completion",
-                model = "qwen2.5-0.5b-instruct-q4_k_m.gguf",
-                modelOptions = listOf("qwen2.5-0.5b-instruct-q4_k_m.gguf", "gemma-2-2b-it-Q4_K_M.gguf"),
+                endpoint = "local://on-device",
+                model = defaultLocalModel,
+                modelOptions = ModelTierCatalog.standardProfiles,
                 temperature = 0.7,
                 apiKey = ""
             ),

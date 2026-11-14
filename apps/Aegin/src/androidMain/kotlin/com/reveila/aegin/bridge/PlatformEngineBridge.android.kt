@@ -19,6 +19,9 @@ import com.reveila.system.Subject
 import com.reveila.util.json.JsonUtil
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
 import java.io.BufferedReader
@@ -40,7 +43,13 @@ actual object PlatformEngineBridge {
     private val engine = Reveila()
     private val isStarting = AtomicBoolean(false)
     private val llmStarting = AtomicBoolean(false)
-    private val llmExecutor = Executors.newSingleThreadExecutor()
+    private val llmLock = Any()
+    private val llmExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "aegin-llama-control").apply { isDaemon = true }
+    }
+    private val llmLogExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "aegin-llama-log").apply { isDaemon = true }
+    }
     private val fallbackStorage = ConcurrentHashMap<String, String>()
 
     @Volatile
@@ -221,6 +230,12 @@ actual object PlatformEngineBridge {
                 val (baseUrl, targetModelName) = readLlmDownloadConfig()
                 var modelFile = findModelFile(modelDir, targetModelName)
 
+                val initialPreflight = verifyModelPreflightBlocking(modelFile?.length() ?: 0L)
+                if (!initialPreflight.allowed) {
+                    Log.w(TAG, "Local GGUF preflight blocked startup: ${initialPreflight.reason}")
+                    return@execute
+                }
+
                 if (modelFile == null || !modelFile.exists()) {
                     val downloadTarget = File(modelDir, targetModelName)
                     val candidateBaseUrls = buildList {
@@ -246,18 +261,37 @@ actual object PlatformEngineBridge {
                     return@execute
                 }
 
+                val postDownloadPreflight = verifyModelPreflightBlocking(modelFile.length())
+                if (!postDownloadPreflight.allowed) {
+                    Log.w(TAG, "Local GGUF preflight blocked model load (${modelFile.name}): ${postDownloadPreflight.reason}")
+                    return@execute
+                }
+
+                // Primary path: in-process JNI mmap() via LlamaJniBridge
+                if (LlamaJniBridge.loadModelBlocking(modelFile.absolutePath)) {
+                    Log.i(TAG, "Loaded local GGUF model via in-process JNI mmap: ${modelFile.name}")
+                    return@execute
+                }
+
+                // Legacy subprocess fallback (isolated behind explicit opt-in property)
+                val legacyServerEnabled = engine.systemContext?.properties
+                    ?.getProperty("ai.llm.legacy.server.enabled")
+                    ?.equals("true", ignoreCase = true) == true
+                if (!legacyServerEnabled) {
+                    Log.i(TAG, "Native JNI library unavailable and legacy server disabled; using sovereign on-device RAG fallback.")
+                    return@execute
+                }
+
                 if (exeFile == null) {
                     Log.w(TAG, "GGUF model staged at ${modelFile.absolutePath}, but llama-server executable not found for this ABI.")
                     return@execute
                 }
 
-                synchronized(this) {
+                synchronized(llmLock) {
                     if (isLlmServerHealthy("http://127.0.0.1:8080/health")) {
                         return@execute
                     }
-                    llmProcess?.let { proc ->
-                        if (proc.isAlive) proc.destroy()
-                    }
+                    stopLlmProcessLocked()
 
                     val cmd = listOf(
                         exeFile.absolutePath,
@@ -274,7 +308,7 @@ actual object PlatformEngineBridge {
                     val proc = pb.start()
                     llmProcess = proc
 
-                    Executors.newSingleThreadExecutor().execute {
+                    llmLogExecutor.execute {
                         try {
                             BufferedReader(InputStreamReader(proc.inputStream)).use { reader ->
                                 var line = reader.readLine()
@@ -330,10 +364,13 @@ actual object PlatformEngineBridge {
             } catch (_: Exception) {
             }
         }
-        return Pair(
-            baseUrl?.trim(),
-            modelName?.trim()?.ifBlank { "qwen2.5-0.5b-instruct-q4_k_m.gguf" } ?: "qwen2.5-0.5b-instruct-q4_k_m.gguf"
-        )
+        val recommendedDefault = buildDeviceCapabilityReport().recommendedModel
+            .takeIf { it.endsWith(".gguf", ignoreCase = true) }
+            ?: ModelTierCatalog.MODEL_3B
+        val resolvedModel = modelName?.trim()
+            ?.takeIf { it.isNotEmpty() && !it.equals("auto", ignoreCase = true) }
+            ?: recommendedDefault
+        return Pair(baseUrl?.trim(), resolvedModel)
     }
 
     private fun findLlamaServerExecutable(): File? {
@@ -502,6 +539,10 @@ actual object PlatformEngineBridge {
     }
 
     actual suspend fun getDeviceCapabilities(): DeviceCapabilityReport = withContext(Dispatchers.IO) {
+        buildDeviceCapabilityReport()
+    }
+
+    private fun buildDeviceCapabilityReport(): DeviceCapabilityReport {
         val ctx = appContext
         var totalRamGb = 4.0
         var availRamGb = 2.0
@@ -549,34 +590,19 @@ actual object PlatformEngineBridge {
             false
         }
 
-        // Hardware Tiering Matrix
-        val (tier, recModel, recSizeMb) = when {
-            totalRamGb < 3.6 -> Triple(
-                "INCOMPATIBLE (< 4 GB RAM)",
-                "Cloud / Hybrid Fallback Required",
-                0
-            )
-            totalRamGb < 6.8 -> Triple(
-                "ENTRY TIER (4 – 6 GB RAM)",
-                "qwen2.5-1.5b-instruct-q4_k_m.gguf",
-                1050
-            )
-            totalRamGb < 11.5 -> Triple(
-                "STANDARD TIER (8 – 12 GB RAM)",
-                "qwen2.5-3b-instruct-q4_k_m.gguf",
-                2200
-            )
-            else -> Triple(
-                "FLAGSHIP TIER (12 GB+ RAM)",
-                "llama-3.1-8b-instruct-q4_k_m.gguf",
-                4600
-            )
-        }
+        // Hardware Tiering Matrix (< 6 GB blocked, 6–8 GB 1.5B, 8–12 GB 3B, 12 GB+ 7B)
+        // Note: 5.5 GiB accounts for kernel/GPU carveouts on 6 GB physical RAM devices.
+        val (tier, recModel, recSizeMb) = ModelTierCatalog.resolveTier(totalRamGb)
 
+        val modelsDir = resolveModelsStagingDir()
         val statFs = try {
-            StatFs(Environment.getDataDirectory().path)
+            StatFs(modelsDir.absolutePath)
         } catch (_: Exception) {
-            null
+            try {
+                StatFs(Environment.getDataDirectory().path)
+            } catch (_: Exception) {
+                null
+            }
         }
         val availableDiskBytes = statFs?.availableBytes ?: 0L
         val freeDiskGb = availableDiskBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
@@ -584,23 +610,25 @@ actual object PlatformEngineBridge {
         val bufferBytes = (1.5 * 1024.0 * 1024.0 * 1024.0).toLong()
         val hasEnoughDisk = availableDiskBytes > (requiredBytes + bufferBytes)
 
-        val modelsDir = resolveModelsStagingDir()
         val stagedFiles = modelsDir.listFiles()
             ?.filter { it.isFile && it.extension.equals("gguf", ignoreCase = true) }
             ?.map { "${it.name} (${it.length() / (1024 * 1024)} MB)" }
             .orEmpty()
 
         val is64Bit = Build.SUPPORTED_64_BIT_ABIS?.isNotEmpty() == true
-        val canRunLocal = is64Bit && totalRamGb >= 3.6 && !isLowMem && hasEnoughDisk
+        val isArm64 = cpuAbi.contains("arm64", ignoreCase = true)
+        val hasRequiredSimd = !isArm64 || supportsDotProd
+        val canRunLocal = is64Bit && totalRamGb >= 5.5 && !isLowMem && hasEnoughDisk && hasRequiredSimd
 
         val summary = when {
             !is64Bit -> "32-bit ABI detected ($cpuAbi). 64-bit ARM64/x86_64 required for local GGUF."
-            totalRamGb < 3.6 || isLowMem -> "Insufficient physical RAM (${String.format("%.1f", totalRamGb)} GB). Android LMK would terminate local GGUF; Cloud/RAG mode recommended."
+            !hasRequiredSimd -> "ARM64 CPU lacks asimddp/dotprod SIMD instructions required for local Q4_K_M GGUF inference."
+            totalRamGb < 5.5 || isLowMem -> "Insufficient physical RAM (${String.format("%.1f", totalRamGb)} GB < 6 GB). Android LMK would terminate local GGUF; Cloud/RAG mode recommended."
             !hasEnoughDisk -> "Insufficient free storage (${String.format("%.1f", freeDiskGb)} GB free). Need ${recSizeMb} MB + 1.5 GB cache buffer."
             else -> "Compatible ($tier). Recommended quantized profile: $recModel (~$recSizeMb MB)."
         }
 
-        DeviceCapabilityReport(
+        return DeviceCapabilityReport(
             totalRamGb = kotlin.math.round(totalRamGb * 10.0) / 10.0,
             availableRamGb = kotlin.math.round(availRamGb * 10.0) / 10.0,
             isLowMemory = isLowMem,
@@ -619,6 +647,95 @@ actual object PlatformEngineBridge {
             statusSummary = summary
         )
     }
+
+    private fun verifyModelPreflightBlocking(modelSizeBytes: Long): PreflightCheckResult {
+        val report = buildDeviceCapabilityReport()
+        val modelsDir = resolveModelsStagingDir()
+        val availBytes = try {
+            StatFs(modelsDir.absolutePath).availableBytes
+        } catch (_: Exception) {
+            0L
+        }
+        val effectiveModelBytes = if (modelSizeBytes > 0L) {
+            modelSizeBytes
+        } else {
+            report.recommendedModelSizeMb.toLong() * 1024L * 1024L
+        }
+        val bufferBytes = (1.5 * 1024.0 * 1024.0 * 1024.0).toLong()
+        val diskOk = availBytes > (effectiveModelBytes + bufferBytes)
+        val allowed = report.canRunLocalGguf && diskOk
+        val reason = when {
+            !report.canRunLocalGguf -> report.statusSummary
+            !diskOk -> "Insufficient storage on ${modelsDir.absolutePath}: need ${effectiveModelBytes / (1024 * 1024)} MB + 1.5 GB buffer."
+            else -> "Preflight passed (${report.hardwareTier})."
+        }
+        return PreflightCheckResult(
+            allowed = allowed,
+            tierLabel = report.hardwareTier,
+            recommendedProfile = report.recommendedModel,
+            reason = reason
+        )
+    }
+
+    actual suspend fun verifyModelPreflight(modelSizeBytes: Long): PreflightCheckResult =
+        withContext(Dispatchers.IO) {
+            verifyModelPreflightBlocking(modelSizeBytes)
+        }
+
+    actual fun streamAgent(prompt: String, sessionId: String?, prevSummary: String?): Flow<String> = flow {
+        val isLocalMode = (getStorageItem("selected_llm_mode") ?: "local") == "local"
+        if (isLocalMode && LlamaJniBridge.isModelLoaded()) {
+            if (!engine.isRunning()) {
+                ensureStartedBlocking()
+            }
+            val prep = try {
+                engine.invoke(
+                    "AgenticFabric",
+                    "prepareStreamingTurn",
+                    arrayOf<Any?>(prompt, sessionId ?: "", prevSummary ?: ""),
+                    "127.0.0.1",
+                    uiSubject
+                ) as? Map<*, *>
+            } catch (_: Exception) {
+                null
+            }
+
+            val actualSessionId = prep?.get("sessionId")?.toString()?.takeIf { it.isNotBlank() }
+                ?: sessionId
+                ?: "android-session"
+            val formattedPrompt = prep?.get("formattedPrompt")?.toString()?.takeIf { it.isNotBlank() }
+                ?: prompt
+            val stopToken = prep?.get("stopToken")?.toString().orEmpty()
+
+            emit("""{"__session_meta__":true,"sessionId":"$actualSessionId"}""")
+
+            val answerBuilder = StringBuilder()
+            LlamaJniBridge.generateStream(formattedPrompt, 256).collect { token ->
+                val cleaned = if (stopToken.isNotEmpty()) token.substringBefore(stopToken) else token
+                if (cleaned.isNotEmpty()) {
+                    answerBuilder.append(cleaned)
+                    emit(cleaned)
+                }
+            }
+
+            val finalAnswer = answerBuilder.toString().trim()
+            if (finalAnswer.isNotEmpty()) {
+                try {
+                    engine.invoke(
+                        "AgenticFabric",
+                        "commitStreamingTurn",
+                        arrayOf<Any?>(actualSessionId, prompt, finalAnswer),
+                        "127.0.0.1",
+                        uiSubject
+                    )
+                } catch (_: Exception) {
+                }
+            }
+        } else {
+            val raw = invoke("AgenticFabric", "askAgent", listOf(prompt, sessionId ?: "", prevSummary ?: ""))
+            emit(raw)
+        }
+    }.flowOn(Dispatchers.IO)
 
     actual suspend fun invoke(component: String, method: String, params: List<String>): String =
         withContext(Dispatchers.IO) {
@@ -682,7 +799,7 @@ actual object PlatformEngineBridge {
         setStorageItem("sensitive_vault_secret", data)
     }
 
-    actual suspend fun triggerEmergencyStop(): Boolean = withContext(Dispatchers.IO) {
+    private fun stopLlmProcessLocked() {
         llmProcess?.let { proc ->
             try {
                 proc.destroy()
@@ -693,6 +810,24 @@ actual object PlatformEngineBridge {
             }
             llmProcess = null
         }
+    }
+
+    fun releaseLocalModelBlocking() {
+        LlamaJniBridge.scheduleRelease()
+        synchronized(llmLock) {
+            stopLlmProcessLocked()
+        }
+    }
+
+    actual suspend fun releaseLocalModel() = withContext(Dispatchers.IO) {
+        LlamaJniBridge.release()
+        synchronized(llmLock) {
+            stopLlmProcessLocked()
+        }
+    }
+
+    actual suspend fun triggerEmergencyStop(): Boolean = withContext(Dispatchers.IO) {
+        releaseLocalModelBlocking()
         if (engine.isRunning()) {
             engine.shutdown()
         }

@@ -10,6 +10,8 @@
 -keep class com.reveila.aegin.MainKt { *; }
 -keep class com.reveila.aegin.MainActivity { *; }
 -keep class com.reveila.aegin.AeginEngineService { *; }
+-keep class com.reveila.aegin.bridge.LlamaJniBridge { *; }
+-keep interface com.reveila.aegin.bridge.LlamaJniBridge$TokenCallback { *; }
 -keep class com.reveila.aegin.platform.** { *; }
 
 # Keep Kotlin Serialization generated serializers

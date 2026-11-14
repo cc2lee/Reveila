@@ -54,8 +54,8 @@ open class LlmProviderFactory : SystemComponent() {
                 val p = LocalLlamaProvider().apply {
                     this.context = this@LlmProviderFactory.context
                     setName("On-Device Model")
-                    endpoint = "http://127.0.0.1:8080/completion"
-                    model = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+                    endpoint = context?.properties?.getProperty("ai.llm.endpoint") ?: "local://on-device"
+                    model = context?.properties?.getProperty("ai.llm.model.name") ?: "auto"
                     temperature = 0.7
                 }
                 startAndAddProvider("On-Device Model", p)

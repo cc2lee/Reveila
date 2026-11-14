@@ -9,39 +9,47 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlin.concurrent.Volatile
 
 open class LocalLlamaProvider : BaseLlmProvider() {
 
+    companion object {
+        @Volatile
+        var nativeDelegate: OnDeviceInferenceDelegate? = null
+
+        fun registerNativeDelegate(delegate: OnDeviceInferenceDelegate?) {
+            nativeDelegate = delegate
+        }
+
+        fun formatMessages(messages: List<ReveilaMessage>, modelName: String?): Pair<String, String> {
+            val activeModel = modelName?.lowercase() ?: ""
+            val isLlama = activeModel.contains("llama-3") || activeModel.contains("llama3")
+            val isQwen = activeModel.contains("qwen") || activeModel.isBlank() || activeModel.contains("on-device") || activeModel == "auto"
+
+            return when {
+                isQwen -> {
+                    val sb = StringBuilder()
+                    for (msg in messages) {
+                        val role = msg.role.name.lowercase()
+                        sb.append("<|im_start|>").append(role).append("\n")
+                        sb.append(msg.content).append("<|im_end|>\n")
+                    }
+                    sb.append("<|im_start|>assistant\n")
+                    sb.toString() to "<|im_end|>"
+                }
+                isLlama -> Llama3PromptFormatter.format(messages) to "<|eot_id|>"
+                else -> GemmaPromptFormatter.format(messages) to "<end_of_turn>"
+            }
+        }
+    }
+
     init {
-        this.endpoint = "http://127.0.0.1:8080/completion"
+        this.endpoint = "local://on-device"
     }
 
     @Throws(LlmException::class)
     override fun buildRequestBody(request: LlmRequest): String {
-        val activeModel = model?.lowercase() ?: ""
-
-        val isLlama = activeModel.contains("llama-3") || activeModel.contains("llama3")
-        val isQwen = activeModel.contains("qwen") || activeModel.isBlank() || activeModel.contains("on-device")
-
-        val formattedPrompt: String
-        val stopToken: String
-        if (isQwen) {
-            val sb = StringBuilder()
-            for (msg in request.messages) {
-                val role = msg.role.name.lowercase()
-                sb.append("<|im_start|>").append(role).append("\n")
-                sb.append(msg.content).append("<|im_end|>\n")
-            }
-            sb.append("<|im_start|>assistant\n")
-            formattedPrompt = sb.toString()
-            stopToken = "<|im_end|>"
-        } else if (isLlama) {
-            formattedPrompt = Llama3PromptFormatter.format(request.messages)
-            stopToken = "<|eot_id|>"
-        } else {
-            formattedPrompt = GemmaPromptFormatter.format(request.messages)
-            stopToken = "<end_of_turn>"
-        }
+        val (formattedPrompt, stopToken) = formatMessages(request.messages, model)
 
         val json = buildJsonObject {
             put("prompt", formattedPrompt)
@@ -85,37 +93,62 @@ open class LocalLlamaProvider : BaseLlmProvider() {
 
     @Throws(LlmException::class)
     override fun invoke(request: LlmRequest): LlmResponse {
-        getHttpClientService()?.let { http ->
-            if (http.readTimeout < 90) {
-                http.readTimeout = 90
-            }
-        }
-
-        var baseEp = endpoint?.trim() ?: "http://127.0.0.1:8080/completion"
-        if (!baseEp.endsWith("/completion") && !baseEp.endsWith("/v1/chat/completions")) {
-            baseEp = if (baseEp.endsWith("/")) "${baseEp}completion" else "$baseEp/completion"
-        }
-
-        val candidateEndpoints = listOfNotNull(
-            "http://127.0.0.1:8080/completion",
-            baseEp,
-            "http://10.0.2.2:8080/completion"
-        ).distinct()
-
-        var lastException: Exception? = null
-        for (ep in candidateEndpoints) {
+        // 1. Primary path: In-process native JNI engine (zero HTTP overhead)
+        val delegate = nativeDelegate
+        if (delegate != null && delegate.isModelLoaded()) {
             try {
-                this.endpoint = ep
-                val res = super.invoke(request)
-                if (!res.content.isNullOrBlank()) {
-                    return res
+                val (formattedPrompt, stopToken) = formatMessages(request.messages, model)
+                val rawText = delegate.generateBlocking(formattedPrompt, stopToken, 256).trim()
+                if (rawText.isNotEmpty()) {
+                    val jsonResult = buildJsonObject {
+                        put("status", "COMPLETED")
+                        put("reasoning", "Executed in-process native GGUF inference.")
+                        put("result", rawText)
+                        put("confidence-score", 0.95)
+                    }
+                    return LlmResponse().apply { content = jsonResult.toString() }
                 }
             } catch (e: Exception) {
-                lastException = e
+                logger.warning("In-process native delegate failed (${e.message}), evaluating fallback.")
             }
         }
 
-        logger.info("Local HTTP LLM server unavailable (${lastException?.message}). Falling back to sovereign on-device reasoning engine.")
+        // 2. Optional external HTTP server (only when an explicit http/https endpoint is configured)
+        val configuredEp = endpoint?.trim() ?: ""
+        if (configuredEp.startsWith("http://") || configuredEp.startsWith("https://")) {
+            getHttpClientService()?.let { http ->
+                if (http.readTimeout < 90) {
+                    http.readTimeout = 90
+                }
+            }
+
+            var baseEp = configuredEp
+            if (!baseEp.endsWith("/completion") && !baseEp.endsWith("/v1/chat/completions")) {
+                baseEp = if (baseEp.endsWith("/")) "${baseEp}completion" else "$baseEp/completion"
+            }
+
+            val candidateEndpoints = listOfNotNull(
+                baseEp,
+                "http://127.0.0.1:8080/completion",
+                "http://10.0.2.2:8080/completion"
+            ).distinct()
+
+            for (ep in candidateEndpoints) {
+                try {
+                    this.endpoint = ep
+                    val res = super.invoke(request)
+                    if (!res.content.isNullOrBlank()) {
+                        this.endpoint = configuredEp
+                        return res
+                    }
+                } catch (_: Exception) {
+                }
+            }
+            this.endpoint = configuredEp
+        }
+
+        // 3. Sovereign on-device KnowledgeVault RAG synthesis fallback
+        logger.info("Executing sovereign on-device RAG reasoning fallback.")
         return executeOnDeviceInference(request)
     }
 

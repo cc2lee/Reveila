@@ -1,5 +1,7 @@
 package com.reveila.aegin.bridge
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import platform.Foundation.NSHomeDirectory
 import platform.Foundation.NSUserDefaults
 
@@ -162,5 +164,22 @@ actual object PlatformEngineBridge {
             "use_biometrics"
         )
         keys.forEach { NSUserDefaults.standardUserDefaults.removeObjectForKey("aegin_$it") }
+    }
+
+    actual suspend fun verifyModelPreflight(modelSizeBytes: Long): PreflightCheckResult {
+        val cap = getDeviceCapabilities()
+        return PreflightCheckResult(
+            allowed = cap.canRunLocalGguf,
+            tierLabel = cap.hardwareTier,
+            recommendedProfile = cap.recommendedModel,
+            reason = cap.statusSummary
+        )
+    }
+
+    actual fun streamAgent(prompt: String, sessionId: String?, prevSummary: String?): Flow<String> = flow {
+        emit(invoke("AgenticFabric", "askAgent", listOf(prompt, sessionId ?: "", prevSummary ?: "")))
+    }
+
+    actual suspend fun releaseLocalModel() {
     }
 }
