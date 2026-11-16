@@ -987,12 +987,12 @@ fun SettingsScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (isDefaultSelected) theme.primary.copy(alpha = 0.15f) else Color.Transparent)
+                                .clip(CircleShape)
+                                .background(if (isDefaultSelected) theme.primary.copy(alpha = 0.15f) else theme.inputBg)
                                 .border(
                                     1.dp,
                                     if (isDefaultSelected) theme.primary else theme.border,
-                                    RoundedCornerShape(8.dp)
+                                    CircleShape
                                 )
                                 .clickable {
                                     vaultFolder = "Documents/Reveila"
@@ -1007,7 +1007,7 @@ fun SettingsScreen(
                             Text(
                                 text = "Default",
                                 color = if (isDefaultSelected) theme.primary else theme.subText,
-                                fontWeight = if (isDefaultSelected) FontWeight.Bold else FontWeight.Normal,
+                                fontWeight = if (isDefaultSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
                                 fontSize = 13.sp,
                                 maxLines = 1
                             )
@@ -1015,12 +1015,12 @@ fun SettingsScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (isCustomSelected) theme.primary.copy(alpha = 0.15f) else Color.Transparent)
+                                .clip(CircleShape)
+                                .background(if (isCustomSelected) theme.primary.copy(alpha = 0.15f) else theme.inputBg)
                                 .border(
                                     1.dp,
                                     if (isCustomSelected) theme.primary else theme.border,
-                                    RoundedCornerShape(8.dp)
+                                    CircleShape
                                 )
                                 .clickable {
                                     showCustomVaultDialog = true
@@ -1031,7 +1031,7 @@ fun SettingsScreen(
                             Text(
                                 text = "Custom",
                                 color = if (isCustomSelected) theme.primary else theme.subText,
-                                fontWeight = if (isCustomSelected) FontWeight.Bold else FontWeight.Normal,
+                                fontWeight = if (isCustomSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
                                 fontSize = 13.sp,
                                 maxLines = 1
                             )
@@ -1081,8 +1081,8 @@ fun SettingsScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(theme.primary)
+                                .clip(CircleShape)
+                                .background(theme.primaryGradient)
                                 .clickable(enabled = !isVaultScanning) { handleSaveAndScanVault() }
                                 .padding(12.dp),
                             contentAlignment = Alignment.Center
@@ -1095,7 +1095,7 @@ fun SettingsScreen(
                                 )
                             } else {
                                 Text(
-                                    text = "💾 Save & Re-Index",
+                                    text = "Save & Re-Index",
                                     color = Color.White,
                                     fontWeight = FontWeight.ExtraBold,
                                     fontSize = 13.sp
@@ -1106,8 +1106,9 @@ fun SettingsScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .border(1.dp, theme.border, RoundedCornerShape(8.dp))
+                                .clip(CircleShape)
+                                .background(theme.inputBg)
+                                .border(1.dp, theme.border, CircleShape)
                                 .clickable {
                                     showSetupWizardModal = true
                                 }
@@ -1117,7 +1118,7 @@ fun SettingsScreen(
                             Text(
                                 text = "Launch Wizard",
                                 color = theme.text,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.ExtraBold,
                                 fontSize = 13.sp
                             )
                         }

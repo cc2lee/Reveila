@@ -150,6 +150,7 @@ android {
             cmake {
                 arguments(
                     "-DANDROID_STL=c++_shared",
+                    "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
                     "-DGGML_NATIVE=OFF",
                     "-DGGML_OPENMP=OFF",
                     "-DGGML_LLAMAFILE=OFF",
@@ -191,7 +192,7 @@ android {
 
     packaging {
         jniLibs {
-            useLegacyPackaging = true
+            useLegacyPackaging = false
         }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
