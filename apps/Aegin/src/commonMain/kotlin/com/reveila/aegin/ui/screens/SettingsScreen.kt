@@ -57,9 +57,14 @@ import androidx.compose.ui.window.Dialog
 import com.reveila.aegin.bridge.AeginBridge
 import com.reveila.aegin.bridge.DeviceCapabilityReport
 import com.reveila.aegin.bridge.LlmProviderConfig
+import com.reveila.aegin.bridge.TaskItem
+import androidx.compose.foundation.layout.windowInsetsPadding
 import com.reveila.aegin.ui.PlatformBackHandler
 import com.reveila.aegin.ui.components.SetupWizard
 import com.reveila.aegin.ui.components.VaultFolderPickerDialog
+import com.reveila.aegin.ui.theme.AeginIconType
+import com.reveila.aegin.ui.theme.AeginOrbAvatar
+import com.reveila.aegin.ui.theme.AeginVectorIcon
 import com.reveila.aegin.ui.theme.LocalAeginColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -73,12 +78,24 @@ fun SettingsScreen(
     val theme = LocalAeginColors.current
     val scope = rememberCoroutineScope()
 
-    val tabs = listOf("General", "Security", "Advanced")
+    val tabs = listOf("General", "Tasks", "Security", "Advanced")
     var activeTab by remember { mutableStateOf("General") }
     var isBiometricEnabled by remember { mutableStateOf(false) }
     var isLoadingProviders by remember { mutableStateOf(true) }
     val providersList = remember { mutableStateListOf<LlmProviderConfig>() }
     val configuredMap = remember { mutableStateMapOf<String, Boolean>() }
+
+    // Studio Tasks Authoring & Sandbox Control State
+    val studioTasks = remember { mutableStateListOf<TaskItem>() }
+    var tasksFolderPath by remember { mutableStateOf("") }
+    var editingStudioTaskId by remember { mutableStateOf<String?>(null) }
+    var studioTaskTitle by remember { mutableStateOf("") }
+    var studioTaskIntent by remember { mutableStateOf("auto") }
+    var studioTaskExecutionTarget by remember { mutableStateOf("auto") }
+    var studioTaskPrompt by remember { mutableStateOf("") }
+    var studioTaskFreq by remember { mutableStateOf("DAILY") }
+    var studioTaskTime by remember { mutableStateOf("08:00") }
+    var studioTaskRequiresApproval by remember { mutableStateOf(false) }
 
     var workerProvider by remember { mutableStateOf("On-Device Model") }
     var selectedCloudProvider by remember { mutableStateOf("Google Gemini") }
@@ -182,10 +199,29 @@ fun SettingsScreen(
                 if (isRunning) {
                     val suspStr = AeginBridge.invoke("OrchestrationService", "isSuspended", emptyList())
                     isSuspended = suspStr.trim().equals("true", ignoreCase = true)
+                    val dashboard = AeginBridge.getTasksDashboard()
+                    if (dashboard.tasksDir.isNotBlank()) {
+                        tasksFolderPath = dashboard.tasksDir
+                    }
+                    studioTasks.clear()
+                    studioTasks.addAll(dashboard.tasks)
                 }
             } catch (_: Exception) {
             }
-            delay(5000)
+            val hasRunningTask = studioTasks.any { it.status == "RUNNING" || it.status == "SUSPENDED" }
+            delay(if (hasRunningTask || activeTab == "Tasks") 1200L else 4000L)
+        }
+    }
+
+    suspend fun refreshStudioTasks() {
+        try {
+            val dashboard = AeginBridge.getTasksDashboard()
+            if (dashboard.tasksDir.isNotBlank()) {
+                tasksFolderPath = dashboard.tasksDir
+            }
+            studioTasks.clear()
+            studioTasks.addAll(dashboard.tasks)
+        } catch (_: Exception) {
         }
     }
 
@@ -210,9 +246,13 @@ fun SettingsScreen(
         if (provider != null) {
             val keyDisplay = if (provider.apiKey.startsWith("REF:")) "" else provider.apiKey
             val isLocal = provider.type.equals("Local", ignoreCase = true) || provider.name == "On-Device Model"
+            val initialIntents = provider.intentOptions.ifEmpty {
+                if (isLocal) AeginBridge.DEFAULT_LOCAL_INTENTS else AeginBridge.DEFAULT_CLOUD_INTENTS
+            }
             editData = provider.copy(
                 type = if (isLocal) "Local" else "Cloud",
-                apiKey = if (isLocal) "" else keyDisplay
+                apiKey = if (isLocal) "" else keyDisplay,
+                intentOptions = initialIntents
             )
             isEditModalVisible = true
         }
@@ -226,6 +266,17 @@ fun SettingsScreen(
             providersList.add(editData.copy())
         }
         isEditModalVisible = false
+        scope.launch {
+            try {
+                val configJson = AeginBridge.buildLlmSettingsJson(
+                    providers = providersList,
+                    workerProvider = workerProvider,
+                    governanceProvider = governanceProvider
+                )
+                AeginBridge.invoke("LlmProviderFactory", "saveSettings", listOf("llm.json", configJson))
+            } catch (_: Exception) {
+            }
+        }
     }
 
     fun handleSaveLLM() {
@@ -286,10 +337,10 @@ fun SettingsScreen(
                 vaultChunkCount = stats.chunkCount
                 showAlert(
                     "Embeddings Refreshed",
-                    "Indexed Inference Documents Folder '$targetFolder'. Documents processed: ${res.filesScanned}, Vector chunks: ${stats.chunkCount}"
+                    "Indexed Reference Documents Folder '$targetFolder'. Documents processed: ${res.filesScanned}, Vector chunks: ${stats.chunkCount}"
                 )
             } catch (e: Exception) {
-                showAlert("Indexing Error", e.message ?: "Failed to index Inference Documents Folder.")
+                showAlert("Indexing Error", e.message ?: "Failed to index Reference Documents Folder.")
             } finally {
                 isVaultScanning = false
             }
@@ -326,42 +377,7 @@ fun SettingsScreen(
 
     Scaffold(
         containerColor = theme.bg,
-        contentWindowInsets = WindowInsets.safeDrawing,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Settings",
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 0.5.sp
-                    )
-                },
-                actions = {
-                    Box(
-                        modifier = Modifier
-                            .padding(end = 12.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable { onClose() }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = "CLOSE",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                    }
-                },
-                windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top),
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF0F172A),
-                    titleContentColor = Color.White,
-                    actionIconContentColor = Color.White
-                )
-            )
-        }
+        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -373,36 +389,106 @@ fun SettingsScreen(
                     .fillMaxSize()
                     .background(theme.bg)
             ) {
-                // Tab Bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(theme.tabBar)
-        ) {
-            tabs.forEach { tab ->
-                val isSelected = activeTab == tab
-                Column(
+                // Studio Header Bar
+                Row(
                     modifier = Modifier
-                        .clickable { activeTab = tab }
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = tab,
-                        color = if (isSelected) theme.cyan else Color(0xFF94A3B8),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Box(
-                        modifier = Modifier
-                            .height(2.dp)
-                            .width(48.dp)
-                            .background(if (isSelected) theme.cyan else Color.Transparent)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        AeginOrbAvatar(
+                            size = 36.dp,
+                            isLocalMode = workerProvider == "On-Device Model",
+                            isThinking = isVaultScanning,
+                            showStatusDot = true
+                        )
+                        Column {
+                            Text(
+                                text = "Studio & Vault",
+                                color = theme.text,
+                                fontSize = 19.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text(
+                                text = "${workerProvider} • $vaultDocCount docs ($vaultChunkCount vectors)",
+                                color = theme.subText,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(theme.card)
+                                .border(1.dp, theme.glassBorder, CircleShape)
+                                .clickable { showSetupWizardModal = true }
+                                .padding(horizontal = 12.dp, vertical = 7.dp)
+                        ) {
+                            Text(
+                                text = "⚡ Wizard",
+                                color = theme.primary,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
                 }
-            }
-        }
+
+                // Segmented Pill Tab Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clip(CircleShape)
+                        .background(theme.card)
+                        .border(1.dp, theme.glassBorder, CircleShape)
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    tabs.forEach { tab ->
+                        val isSelected = activeTab == tab
+                        val tabLabel = when (tab) {
+                            "General" -> "AI & Vault"
+                            "Tasks" -> "Tasks"
+                            "Security" -> "Privacy"
+                            else -> "Diagnostics"
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isSelected) theme.primaryGradient
+                                    else androidx.compose.ui.graphics.Brush.linearGradient(
+                                        listOf(Color.Transparent, Color.Transparent)
+                                    )
+                                )
+                                .clickable { activeTab = tab }
+                                .padding(vertical = 9.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = tabLabel,
+                                color = if (isSelected) Color.White else theme.subText,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
 
         // Content
         Column(
@@ -680,6 +766,17 @@ fun SettingsScreen(
                         }
                     }
 
+                    if (onDeviceConfig != null && onDeviceConfig.intentOptions.isNotEmpty()) {
+                        Text(
+                            text = "Intents (${onDeviceConfig.intentOptions.size}): ${onDeviceConfig.intentOptions.joinToString(", ")}",
+                            color = theme.subText,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End
@@ -763,6 +860,16 @@ fun SettingsScreen(
                                     color = if (isConf) theme.subText else Color(0xFFF59E0B),
                                     fontSize = 12.sp
                                 )
+                                if (cp.intentOptions.isNotEmpty()) {
+                                    Text(
+                                        text = "Intents: ${cp.intentOptions.joinToString(", ")}",
+                                        color = theme.subText,
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                             Box(
                                 modifier = Modifier
@@ -813,14 +920,14 @@ fun SettingsScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF0F172A))
+                            .clip(CircleShape)
+                            .background(theme.primaryGradient)
                             .clickable { handleSaveLLM() }
                             .padding(12.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Save Configuration",
+                            text = "Save AI Configuration",
                             color = Color.White,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 13.sp
@@ -830,7 +937,7 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Inference Documents Folder",
+                    text = "Reference Documents Folder",
                     color = theme.text,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
@@ -1013,6 +1120,678 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
+                        }
+                    }
+                }
+            }
+
+            if (activeTab == "Tasks") {
+                val freqOptions = listOf("ONCE", "EVERY 15M", "HOURLY", "DAILY", "WEEKLY")
+                val targetOptions = listOf(
+                    "auto" to "AUTO (Smart Preprocessor)",
+                    "local" to "LOCAL ONLY (Offline)",
+                    "cloud" to "CLOUD (Force Cloud)"
+                )
+                val inProgressCount = studioTasks.count { it.status == "RUNNING" || it.status == "SUSPENDED" }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = if (editingStudioTaskId == null) "Create Task Definition" else "Edit Task ($editingStudioTaskId.json)",
+                            color = theme.text,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Saved in ${tasksFolderPath.ifBlank { "$storageMountPath/tasks" }}",
+                            color = theme.subText,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    if (editingStudioTaskId != null) {
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(theme.inputBg)
+                                .border(1.dp, theme.border, CircleShape)
+                                .clickable {
+                                    editingStudioTaskId = null
+                                    studioTaskTitle = ""
+                                    studioTaskPrompt = ""
+                                    studioTaskFreq = "DAILY"
+                                    studioTaskTime = "08:00"
+                                    studioTaskRequiresApproval = false
+                                }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Text("Cancel Edit", color = theme.subText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(theme.card)
+                        .border(1.dp, theme.border, RoundedCornerShape(14.dp))
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedTextField(
+                        value = studioTaskTitle,
+                        onValueChange = { studioTaskTitle = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Task Title", color = theme.subText, fontSize = 12.sp) },
+                        placeholder = { Text("e.g., Daily Security Briefing", color = theme.subText, fontSize = 13.sp) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = theme.text,
+                            unfocusedTextColor = theme.text,
+                            focusedContainerColor = theme.inputBg,
+                            unfocusedContainerColor = theme.inputBg,
+                            focusedBorderColor = theme.primary,
+                            unfocusedBorderColor = theme.border
+                        )
+                    )
+
+                    OutlinedTextField(
+                        value = studioTaskPrompt,
+                        onValueChange = { studioTaskPrompt = it },
+                        modifier = Modifier.fillMaxWidth().height(96.dp),
+                        label = { Text("Task Prompt / Instructions", color = theme.subText, fontSize = 12.sp) },
+                        placeholder = {
+                            Text(
+                                "Describe the action or analysis for Reveila Core Engine to execute...",
+                                color = theme.subText,
+                                fontSize = 13.sp
+                            )
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = theme.text,
+                            unfocusedTextColor = theme.text,
+                            focusedContainerColor = theme.inputBg,
+                            unfocusedContainerColor = theme.inputBg,
+                            focusedBorderColor = theme.primary,
+                            unfocusedBorderColor = theme.border
+                        )
+                    )
+
+                    Text(
+                        text = "EXECUTION TARGET OVERRIDE (DEFAULT: AUTO)",
+                        color = theme.subText,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        targetOptions.forEach { (targetKey, targetLabel) ->
+                            val selected = studioTaskExecutionTarget.equals(targetKey, ignoreCase = true)
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (selected) theme.cyan.copy(alpha = 0.2f) else theme.inputBg)
+                                    .border(1.dp, if (selected) theme.cyan else theme.border, RoundedCornerShape(8.dp))
+                                    .clickable { studioTaskExecutionTarget = targetKey }
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = targetLabel,
+                                    color = if (selected) theme.cyan else theme.subText,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "RECURRENCE & SCHEDULE TIME",
+                        color = theme.subText,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        freqOptions.forEach { opt ->
+                            val selected = studioTaskFreq.equals(opt, ignoreCase = true)
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (selected) theme.primary else theme.inputBg)
+                                    .border(1.dp, if (selected) theme.primary else theme.border, RoundedCornerShape(8.dp))
+                                    .clickable { studioTaskFreq = opt }
+                                    .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = opt,
+                                    color = if (selected) Color.White else theme.subText,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = studioTaskTime,
+                            onValueChange = { studioTaskTime = it },
+                            modifier = Modifier.weight(0.45f),
+                            singleLine = true,
+                            label = { Text("Time (HH:MM)", color = theme.subText, fontSize = 11.sp) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = theme.text,
+                                unfocusedTextColor = theme.text,
+                                focusedContainerColor = theme.inputBg,
+                                unfocusedContainerColor = theme.inputBg,
+                                focusedBorderColor = theme.primary,
+                                unfocusedBorderColor = theme.border
+                            )
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .weight(0.55f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(theme.inputBg)
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Require HITL Approval",
+                                color = theme.text,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Switch(
+                                checked = studioTaskRequiresApproval,
+                                onCheckedChange = { studioTaskRequiresApproval = it }
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(CircleShape)
+                                .background(theme.primaryGradient)
+                                .clickable {
+                                    val title = studioTaskTitle.trim().ifBlank { "Studio Task" }
+                                    val prompt = studioTaskPrompt.trim()
+                                    if (prompt.isBlank()) {
+                                        showAlert("Missing Prompt", "Please enter instructions for the task.")
+                                        return@clickable
+                                    }
+                                    scope.launch {
+                                        try {
+                                            if (editingStudioTaskId == null) {
+                                                AeginBridge.createTask(
+                                                    title = title,
+                                                    prompt = prompt,
+                                                    frequency = studioTaskFreq.lowercase(),
+                                                    scheduleTime = studioTaskTime.ifBlank { "08:00" },
+                                                    requiresApproval = studioTaskRequiresApproval,
+                                                    intent = studioTaskIntent,
+                                                    executionTarget = studioTaskExecutionTarget
+                                                )
+                                                showAlert("Task Created", "Saved '$title' to tasks folder.")
+                                            } else {
+                                                AeginBridge.updateTask(
+                                                    taskId = editingStudioTaskId!!,
+                                                    title = title,
+                                                    prompt = prompt,
+                                                    frequency = studioTaskFreq.lowercase(),
+                                                    scheduleTime = studioTaskTime.ifBlank { "08:00" },
+                                                    enabled = true,
+                                                    intent = studioTaskIntent,
+                                                    requiresApproval = studioTaskRequiresApproval,
+                                                    executionTarget = studioTaskExecutionTarget
+                                                )
+                                                showAlert("Task Updated", "Updated '$title' in tasks folder.")
+                                            }
+                                            editingStudioTaskId = null
+                                            studioTaskTitle = ""
+                                            studioTaskIntent = "auto"
+                                            studioTaskExecutionTarget = "auto"
+                                            studioTaskPrompt = ""
+                                            refreshStudioTasks()
+                                        } catch (e: Exception) {
+                                            showAlert("Error", "Failed to save task: ${e.message}")
+                                        }
+                                    }
+                                }
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (editingStudioTaskId == null) "💾 Save to Tasks Folder" else "💾 Update Task File",
+                                color = Color.White,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        if (editingStudioTaskId == null) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(CircleShape)
+                                    .background(theme.cyan.copy(alpha = 0.18f))
+                                    .border(1.dp, theme.cyan, CircleShape)
+                                    .clickable {
+                                        val title = studioTaskTitle.trim().ifBlank { "Studio Task" }
+                                        val prompt = studioTaskPrompt.trim()
+                                        if (prompt.isBlank()) {
+                                            showAlert("Missing Prompt", "Please enter instructions for the task.")
+                                            return@clickable
+                                        }
+                                        scope.launch {
+                                            try {
+                                                val createdRaw = AeginBridge.createTask(
+                                                    title = title,
+                                                    prompt = prompt,
+                                                    frequency = studioTaskFreq.lowercase(),
+                                                    scheduleTime = studioTaskTime.ifBlank { "08:00" },
+                                                    requiresApproval = false,
+                                                    intent = studioTaskIntent,
+                                                    executionTarget = studioTaskExecutionTarget
+                                                )
+                                                studioTaskTitle = ""
+                                                studioTaskIntent = "auto"
+                                                studioTaskExecutionTarget = "auto"
+                                                studioTaskPrompt = ""
+                                                refreshStudioTasks()
+                                                val createdTask = studioTasks.firstOrNull { it.title == title }
+                                                if (createdTask != null) {
+                                                    AeginBridge.runTaskNow(createdTask.taskId)
+                                                    refreshStudioTasks()
+                                                } else if (createdRaw.contains("taskId")) {
+                                                    refreshStudioTasks()
+                                                }
+                                            } catch (e: Exception) {
+                                                showAlert("Error", "Failed to launch task: ${e.message}")
+                                            }
+                                        }
+                                    }
+                                    .padding(vertical = 12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "⚡ Save & Run Sandbox",
+                                    color = theme.cyan,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Active Sandboxes & Tasks Folder Registry
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Registered Tasks (${studioTasks.size}) • $inProgressCount in sandbox",
+                        color = theme.text,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (inProgressCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(theme.danger)
+                                .clickable {
+                                    scope.launch {
+                                        AeginBridge.setGlobalKillSwitch(true)
+                                        refreshStudioTasks()
+                                    }
+                                }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "⏹ Kill All Sandboxes",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    }
+                }
+
+                if (studioTasks.isEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(theme.card)
+                            .border(1.dp, theme.border, RoundedCornerShape(12.dp))
+                            .padding(16.dp)
+                    ) {
+                        Text(
+                            text = "No task definitions found in tasks folder.",
+                            color = theme.subText,
+                            fontSize = 13.sp
+                        )
+                    }
+                } else {
+                    studioTasks.forEach { task ->
+                        val isRunningTask = task.status == "RUNNING"
+                        val isSuspendedTask = task.status == "SUSPENDED"
+                        val isInProgress = isRunningTask || isSuspendedTask
+                        val badgeColor = when (task.status) {
+                            "RUNNING" -> theme.cyan
+                            "SUSPENDED", "WAITING_APPROVAL" -> theme.warning
+                            "ACTIVE" -> theme.primary
+                            "COMPLETED" -> theme.success
+                            "KILLED", "FAILED" -> theme.danger
+                            else -> theme.subText
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(theme.card)
+                                .border(
+                                    width = 1.dp,
+                                    color = when {
+                                        isRunningTask -> theme.cyan.copy(alpha = 0.7f)
+                                        isSuspendedTask -> theme.warning.copy(alpha = 0.7f)
+                                        else -> theme.border
+                                    },
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                    Text(
+                                        text = task.title,
+                                        color = theme.text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${task.fileName.ifBlank { "${task.taskId}.json" }} • target=${task.executionTarget} • ${task.frequency.uppercase()} @ ${task.scheduleTime}",
+                                        color = theme.subText,
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    val isCloudRoute = task.routeTarget.equals("CLOUD", ignoreCase = true)
+                                    val routeColor = if (isCloudRoute) theme.cyan else theme.success
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .background(routeColor.copy(alpha = 0.16f))
+                                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isCloudRoute) "☁️ ${task.taskCategory}" else "📱 ${task.taskCategory}",
+                                            color = routeColor,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .background(badgeColor.copy(alpha = 0.16f))
+                                            .padding(horizontal = 9.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            text = task.status,
+                                            color = badgeColor,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black
+                                        )
+                                    }
+                                }
+                            }
+
+                            Text(
+                                text = task.prompt,
+                                color = theme.subText,
+                                fontSize = 12.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+
+                            if (task.routingReason.isNotBlank()) {
+                                Text(
+                                    text = task.routingReason,
+                                    color = theme.subText,
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            if (isInProgress) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (isRunningTask) theme.cyan.copy(alpha = 0.12f)
+                                            else theme.warning.copy(alpha = 0.12f)
+                                        )
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (isRunningTask) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(13.dp),
+                                            strokeWidth = 2.dp,
+                                            color = theme.cyan
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        if (task.sandboxId.isNotBlank()) {
+                                            Text(
+                                                text = "SANDBOX • ${task.sandboxId}",
+                                                color = if (isRunningTask) theme.cyan else theme.warning,
+                                                fontSize = 9.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Black
+                                            )
+                                        }
+                                        Text(
+                                            text = task.currentStep.ifBlank { "Running in isolated sandbox..." },
+                                            color = theme.text,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Per-task Sandbox & Lifecycle Controls
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (isInProgress) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (isRunningTask) theme.warning.copy(alpha = 0.18f)
+                                                else theme.success.copy(alpha = 0.18f)
+                                            )
+                                            .border(
+                                                1.dp,
+                                                if (isRunningTask) theme.warning else theme.success,
+                                                CircleShape
+                                            )
+                                            .clickable {
+                                                scope.launch {
+                                                    if (isRunningTask) {
+                                                        AeginBridge.pauseTask(task.taskId)
+                                                    } else {
+                                                        AeginBridge.resumeTask(task.taskId)
+                                                    }
+                                                    refreshStudioTasks()
+                                                }
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isRunningTask) "⏸ Suspend" else "▶ Resume",
+                                            color = if (isRunningTask) theme.warning else theme.success,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .background(theme.danger.copy(alpha = 0.18f))
+                                            .border(1.dp, theme.danger, CircleShape)
+                                            .clickable {
+                                                scope.launch {
+                                                    AeginBridge.killTask(task.taskId)
+                                                    refreshStudioTasks()
+                                                }
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = "⏹ Kill",
+                                            color = theme.danger,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                    }
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .background(theme.primaryGradient)
+                                            .clickable {
+                                                scope.launch {
+                                                    AeginBridge.runTaskNow(task.taskId)
+                                                    refreshStudioTasks()
+                                                }
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = "▶ Run in Sandbox",
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .background(theme.inputBg)
+                                            .border(1.dp, theme.border, CircleShape)
+                                            .clickable {
+                                                editingStudioTaskId = task.taskId
+                                                studioTaskTitle = task.title
+                                                studioTaskIntent = task.intent.ifBlank { "auto" }
+                                                studioTaskExecutionTarget = task.executionTarget.ifBlank { "auto" }
+                                                studioTaskPrompt = task.prompt
+                                                studioTaskFreq = task.frequency.uppercase()
+                                                studioTaskTime = task.scheduleTime
+                                                studioTaskRequiresApproval = task.requiresApproval
+                                            }
+                                            .padding(horizontal = 11.dp, vertical = 6.dp)
+                                    ) {
+                                        Text("Edit", color = theme.text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .background(theme.inputBg)
+                                            .border(1.dp, theme.border, CircleShape)
+                                            .clickable {
+                                                scope.launch {
+                                                    if (task.status == "ACTIVE") {
+                                                        AeginBridge.pauseTask(task.taskId)
+                                                    } else {
+                                                        AeginBridge.resumeTask(task.taskId)
+                                                    }
+                                                    refreshStudioTasks()
+                                                }
+                                            }
+                                            .padding(horizontal = 11.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = if (task.status == "ACTIVE") "Pause" else "Resume",
+                                            color = if (task.status == "ACTIVE") theme.warning else theme.success,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.weight(1f))
+
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .background(theme.inputBg)
+                                            .clickable {
+                                                scope.launch {
+                                                    AeginBridge.deleteTask(task.taskId)
+                                                    refreshStudioTasks()
+                                                }
+                                            }
+                                            .padding(horizontal = 11.dp, vertical = 6.dp)
+                                    ) {
+                                        Text("Delete", color = theme.danger, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1222,13 +2001,13 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "Inference Documents Index Sync",
+                        text = "Reference Documents Index Sync",
                         color = theme.text,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Force-trigger an explicit re-indexing pass across the active Inference Documents Folder to refresh vector embeddings.",
+                        text = "Force-trigger an explicit re-indexing pass across the active Reference Documents Folder to refresh vector embeddings.",
                         color = theme.subText,
                         fontSize = 13.sp,
                         lineHeight = 18.sp
@@ -1236,8 +2015,8 @@ fun SettingsScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF0F172A))
+                            .clip(CircleShape)
+                            .background(theme.cloudGradient)
                             .clickable {
                                 scope.launch {
                                     try {
@@ -1246,7 +2025,7 @@ fun SettingsScreen(
                                         val stats = AeginBridge.getVaultStats()
                                         vaultDocCount = stats.documentCount
                                         vaultChunkCount = stats.chunkCount
-                                        showAlert("Index Sync", "Inference Documents scan and embedding refresh completed successfully.")
+                                        showAlert("Index Sync", "Reference Documents scan and embedding refresh completed successfully.")
                                     } catch (e: Exception) {
                                         showAlert("Scan Failed", e.message ?: "Error triggering scan")
                                     }
@@ -1256,7 +2035,7 @@ fun SettingsScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "FORCE RE-SCAN NOW",
+                            text = "Force Re-Scan Now",
                             color = Color.White,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 13.sp
@@ -1350,6 +2129,7 @@ fun SettingsScreen(
                     .clip(RoundedCornerShape(16.dp))
                     .background(theme.card)
                     .border(1.dp, theme.border, RoundedCornerShape(16.dp))
+                    .verticalScroll(rememberScrollState())
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -1523,6 +2303,86 @@ fun SettingsScreen(
                     )
                 }
 
+                // Multi-Select 6 Predefined Task Intents ("Intent.Options" in llm.json)
+                val intentMetadata = listOf(
+                    "LOCAL_TEXT_TRANSFORM" to "Summarize, rewrite, or format local text",
+                    "LOCAL_STRUCTURED_EXTRACT" to "Extract entities, tags, or classify fields",
+                    "LOCAL_DEVICE_ACTION" to "Single-step local action or vault query",
+                    "CLOUD_LIVE_RETRIEVAL" to "Latest news, web search, weather, live prices",
+                    "CLOUD_DEEP_REASONING" to "Multi-step planning, coding, deep analysis",
+                    "CLOUD_MULTI_STEP_AGENT" to "Autonomous multi-turn tool orchestration"
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "SUPPORTED TASK INTENTS (Intent.Options)",
+                        color = theme.text,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        text = "Select one or more of the 6 predefined intents this LLM handles. On-Device Model has higher preference when both match.",
+                        color = theme.subText,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+
+                    intentMetadata.forEach { (intentKey, intentDesc) ->
+                        val isSelected = editData.intentOptions.any { it.equals(intentKey, ignoreCase = true) }
+                        val isCloudIntent = intentKey.startsWith("CLOUD_")
+                        val accentColor = if (isCloudIntent) theme.cyan else theme.success
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (isSelected) accentColor.copy(alpha = 0.14f)
+                                    else theme.inputBg
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isSelected) accentColor else theme.border,
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .clickable {
+                                    val updated = if (isSelected) {
+                                        editData.intentOptions.filterNot { it.equals(intentKey, ignoreCase = true) }
+                                    } else {
+                                        editData.intentOptions + intentKey
+                                    }
+                                    editData = editData.copy(intentOptions = updated)
+                                }
+                                .padding(horizontal = 12.dp, vertical = 9.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Text(
+                                    text = intentKey,
+                                    color = if (isSelected) accentColor else theme.text,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Text(
+                                    text = intentDesc,
+                                    color = theme.subText,
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Text(
+                                text = if (isSelected) "✓" else "+",
+                                color = if (isSelected) accentColor else theme.subText,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                    }
+                }
+
                 // Save / Cancel Action Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -1531,8 +2391,8 @@ fun SettingsScreen(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF0F172A))
+                            .clip(CircleShape)
+                            .background(theme.primaryGradient)
                             .clickable { handleSaveProviderEdit() }
                             .padding(12.dp),
                         contentAlignment = Alignment.Center
@@ -1542,8 +2402,8 @@ fun SettingsScreen(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .border(1.dp, theme.border, RoundedCornerShape(8.dp))
+                            .clip(CircleShape)
+                            .border(1.dp, theme.border, CircleShape)
                             .clickable { isEditModalVisible = false }
                             .padding(12.dp),
                         contentAlignment = Alignment.Center

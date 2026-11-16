@@ -16,11 +16,19 @@ data class PreflightCheckResult(
  * Unified hardware-tier model catalog across Android, Desktop, iOS, and Web.
  */
 object ModelTierCatalog {
+    const val MODEL_0_5B = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
     const val MODEL_1_5B = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+    const val MODEL_GEMMA_2B = "gemma-2-2b-it-q4_k_m.gguf"
     const val MODEL_3B = "qwen2.5-3b-instruct-q4_k_m.gguf"
     const val MODEL_7B = "qwen2.5-7b-instruct-q4_k_m.gguf"
 
-    val standardProfiles: List<String> = listOf(MODEL_1_5B, MODEL_3B, MODEL_7B)
+    val standardProfiles: List<String> = listOf(
+        MODEL_0_5B,
+        MODEL_1_5B,
+        MODEL_GEMMA_2B,
+        MODEL_3B,
+        MODEL_7B
+    )
 
     fun resolveTier(totalRamGb: Double): Triple<String, String, Int> = when {
         totalRamGb < 5.5 -> Triple(

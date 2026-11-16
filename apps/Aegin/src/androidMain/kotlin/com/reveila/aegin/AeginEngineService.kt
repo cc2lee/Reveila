@@ -53,7 +53,7 @@ class AeginEngineService : Service() {
                 nm?.createNotificationChannel(channel)
                 val notification = Notification.Builder(this, channelId)
                     .setContentTitle("Aegin Sovereign AI")
-                    .setContentText("Reveila Core Engine & Inference Documents active")
+                    .setContentText("Reveila Core Engine & Reference Documents active")
                     .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
                     .build()
                 startForeground(1001, notification)

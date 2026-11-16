@@ -128,7 +128,7 @@ fun SetupWizard(
     fun handleStartScan() {
         scope.launch {
             isScanning = true
-            scanProgressMsg = "Registering Inference Documents Folder with Reveila Service..."
+            scanProgressMsg = "Registering Reference Documents Folder with Reveila Service..."
             try {
                 scanProgressMsg = "Scanning reference documents & refreshing embeddings database..."
                 val result = AeginBridge.setVaultFolder(folderPath, focusKeywords)
@@ -149,7 +149,7 @@ fun SetupWizard(
                     entitiesFound = 3,
                     chunkCount = 2
                 )
-                scanProgressMsg = "Inference Documents Folder configured with local storage."
+                scanProgressMsg = "Reference Documents Folder configured with local storage."
             } finally {
                 isScanning = false
             }
@@ -389,7 +389,7 @@ fun SetupWizard(
                     }
                 }
 
-                // STEP 2: Choose / Create Inference Documents Folder
+                // STEP 2: Choose / Create Reference Documents Folder
                 if (step == 2) {
                     Column(
                         modifier = Modifier
@@ -401,7 +401,7 @@ fun SetupWizard(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            text = "Inference Documents Folder",
+                            text = "Reference Documents Folder",
                             color = theme.text,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Black

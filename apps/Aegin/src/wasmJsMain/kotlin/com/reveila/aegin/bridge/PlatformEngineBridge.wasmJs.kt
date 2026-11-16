@@ -79,7 +79,7 @@ actual object PlatformEngineBridge {
             "AgenticFabric" -> {
                 val prompt = params.firstOrNull() ?: ""
                 val sessionId = params.getOrNull(1)?.ifBlank { null } ?: "web-session-1"
-                """{"answer":"Sovereign Web Agent Response: Processed \"$prompt\" against local Inference Documents ($chunkCount vector chunks).","sessionId":"$sessionId"}"""
+                """{"answer":"Sovereign Web Agent Response: Processed \"$prompt\" against local Reference Documents ($chunkCount vector chunks).","sessionId":"$sessionId"}"""
             }
             else -> "{}"
         }

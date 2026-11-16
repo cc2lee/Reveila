@@ -38,4 +38,8 @@ open class TrackedLlmProvider(
     override fun isEnabled(): Boolean = delegate.isEnabled()
     override fun isConfigured(): Boolean = delegate.isConfigured()
     override fun getName(): String = delegate.getName()
+    override fun getSupportedIntents(): List<String> = delegate.getSupportedIntents()
+    override fun supportsIntent(intentCategory: String): Boolean = delegate.supportsIntent(intentCategory)
+
+    fun unwrapDelegate(): LlmProvider = delegate
 }

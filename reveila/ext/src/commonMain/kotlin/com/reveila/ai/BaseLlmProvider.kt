@@ -14,6 +14,7 @@ abstract class BaseLlmProvider : SystemComponent(), LlmProvider {
     var endpoint: String? = null
     var model: String? = null
     var temperature: Double = 0.7
+    var intentOptions: List<String> = emptyList()
     @Volatile
     var enabled: Boolean = true
     private var providerName: String? = null
@@ -89,6 +90,8 @@ abstract class BaseLlmProvider : SystemComponent(), LlmProvider {
     }
 
     override fun getName(): String = providerName ?: ""
+
+    override fun getSupportedIntents(): List<String> = intentOptions
 
     open fun setName(name: String?) {
         require(!name.isNullOrBlank()) { "Argument 'name' cannot be null or empty." }

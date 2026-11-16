@@ -29,9 +29,9 @@ node_modules/
 bin/
 
 # Local compiled classes and builds
-build/
-api/build/
-reveila/build/
+**/build/
+**/.cxx/
+**/.externalNativeBuild/
 
 # Maven
 target/

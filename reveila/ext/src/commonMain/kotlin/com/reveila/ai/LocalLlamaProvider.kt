@@ -50,13 +50,18 @@ open class LocalLlamaProvider : BaseLlmProvider() {
     @Throws(LlmException::class)
     override fun buildRequestBody(request: LlmRequest): String {
         val (formattedPrompt, stopToken) = formatMessages(request.messages, model)
+        val maxTokens = (request.metadata["max_tokens"] as? Number)?.toInt() ?: 256
+        val grammar = (request.metadata["gbnf_grammar"] as? String)?.trim() ?: ""
 
         val json = buildJsonObject {
             put("prompt", formattedPrompt)
-            put("temperature", temperature)
-            put("n_predict", 256)
+            put("temperature", request.temperature ?: temperature)
+            put("n_predict", maxTokens)
             put("stream", false)
             put("stop", buildJsonArray { add(JsonPrimitive(stopToken)) })
+            if (grammar.isNotEmpty()) {
+                put("grammar", grammar)
+            }
         }
 
         return json.toString()
@@ -98,8 +103,13 @@ open class LocalLlamaProvider : BaseLlmProvider() {
         if (delegate != null && delegate.isModelLoaded()) {
             try {
                 val (formattedPrompt, stopToken) = formatMessages(request.messages, model)
-                val rawText = delegate.generateBlocking(formattedPrompt, stopToken, 256).trim()
+                val maxTokens = (request.metadata["max_tokens"] as? Number)?.toInt() ?: 256
+                val grammar = (request.metadata["gbnf_grammar"] as? String)?.trim() ?: ""
+                val rawText = delegate.generateBlocking(formattedPrompt, stopToken, maxTokens, grammar).trim()
                 if (rawText.isNotEmpty()) {
+                    if (grammar.isNotEmpty()) {
+                        return LlmResponse().apply { content = rawText }
+                    }
                     val jsonResult = buildJsonObject {
                         put("status", "COMPLETED")
                         put("reasoning", "Executed in-process native GGUF inference.")
@@ -178,7 +188,7 @@ open class LocalLlamaProvider : BaseLlmProvider() {
 
         val jsonResult = buildJsonObject {
             put("status", "COMPLETED")
-            put("reasoning", "Synthesized response from user prompt and indexed Inference Documents.")
+            put("reasoning", "Synthesized response from user prompt and indexed Reference Documents.")
             put("result", answerText)
             put("confidence-score", 0.95)
         }
@@ -239,13 +249,43 @@ open class LocalLlamaProvider : BaseLlmProvider() {
         }
 
         // Check if greeting
-        val isGreeting = promptLower in setOf("hi", "hello", "hey", "greetings", "good morning", "good afternoon", "good evening")
+        val normalizedPrompt = promptLower.replace(Regex("[^a-z0-9\\s]"), " ").replace(Regex("\\s+"), " ").trim()
+        val isGreeting = normalizedPrompt in setOf(
+            "hi", "hello", "hey", "greetings", "good morning", "good afternoon", "good evening"
+        )
         if (isGreeting) {
             return if (excerpts.isNotEmpty()) {
                 val docNames = excerpts.map { it.fileName }.distinct().joinToString(", ")
-                "Hello! I have ${excerpts.map { it.fileName }.distinct().size} reference document(s) indexed ($docNames). What would you like to analyze or ask about?"
+                "Hello! I'm Aegin, your sovereign on-device AI assistant. I currently have ${excerpts.map { it.fileName }.distinct().size} reference document(s) indexed ($docNames). What would you like to analyze or ask about?"
             } else {
-                "Hello! Ask me a question or add documents to Documents/Reveila to analyze them."
+                "Hello! I'm Aegin, your sovereign on-device AI assistant. Ask me a question or add documents to Documents/Reveila to analyze them."
+            }
+        }
+
+        // Check if identity / self-introduction / capability intent
+        val isIdentityQuestion = normalizedPrompt in setOf(
+            "who are you", "what are you", "who is aegin", "what is aegin",
+            "tell me about yourself", "introduce yourself", "your name", "what is your name"
+        ) || normalizedPrompt.startsWith("who are you ") || normalizedPrompt.startsWith("what are you ")
+        if (isIdentityQuestion) {
+            val docCount = excerpts.map { it.fileName }.distinct().size
+            return buildString {
+                append("I am Aegin, your sovereign AI assistant powered by Reveila. ")
+                append("I run privately on your device to help you search and synthesize your Knowledge Vault, answer questions, and automate tasks—with optional Cloud AI support when you choose.")
+                if (docCount > 0) {
+                    append(" ($docCount reference document(s) currently indexed.)")
+                }
+            }
+        }
+
+        val isCapabilityQuestion = normalizedPrompt in setOf(
+            "what can you do", "how can you help", "how do you work", "help", "how are you"
+        )
+        if (isCapabilityQuestion) {
+            return if (normalizedPrompt == "how are you") {
+                "I'm running smoothly on-device and ready to help! Ask me about your indexed documents or launch a workflow in Spaces."
+            } else {
+                "I can search and summarize documents in your Knowledge Vault, answer questions using on-device or cloud AI, and run scheduled automations in Spaces with Human-in-the-Loop approval."
             }
         }
 
@@ -255,8 +295,14 @@ open class LocalLlamaProvider : BaseLlmProvider() {
         }
 
         // Check if the user is asking to list/summarize all documents
-        val isSummaryOrListIntent = queryTokens.isEmpty() ||
-            queryTokens.any { it in setOf("summarize", "summary", "documents", "files", "folder", "list", "overview", "all", "content", "contents") }
+        val isSummaryOrListIntent = queryTokens.any {
+            it in setOf("summarize", "summary", "documents", "files", "folder", "list", "overview", "all", "content", "contents")
+        }
+
+        if (queryTokens.isEmpty() && !isSummaryOrListIntent) {
+            val docNames = excerpts.map { it.fileName }.distinct().joinToString(", ")
+            return "Could you share a bit more detail about what you'd like to know? I can answer questions or search your indexed documents ($docNames)."
+        }
 
         // Extract and score individual lines/sentences from all excerpts against queryTokens
         data class ScoredLine(
@@ -300,7 +346,7 @@ open class LocalLlamaProvider : BaseLlmProvider() {
 
         return buildString {
             if (directMatches.isNotEmpty() && !isSummaryOrListIntent) {
-                appendLine("Based on your Inference Documents for \"$userPrompt\":")
+                appendLine("Based on your Reference Documents for \"$userPrompt\":")
                 appendLine()
                 for (match in directMatches) {
                     appendLine("• [${match.fileName}] ${match.text}")
@@ -329,7 +375,7 @@ open class LocalLlamaProvider : BaseLlmProvider() {
                 val docNames = excerpts.map { it.fileName }.distinct().joinToString(", ")
                 appendLine("No exact match for \"$userPrompt\" was found in the indexed documents ($docNames).")
                 appendLine()
-                appendLine("Closest available context from your Inference Documents Folder:")
+                appendLine("Closest available context from your Reference Documents Folder:")
                 for (ex in excerpts.take(2)) {
                     val preview = ex.body.lines()
                         .map { it.trim().removePrefix("#").trim() }

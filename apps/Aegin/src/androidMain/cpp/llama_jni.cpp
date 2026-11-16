@@ -39,7 +39,7 @@ Java_com_reveila_aegin_bridge_LlamaJniBridge_nativeInitModel(
     }
 
     llama_model_params params = llama_model_default_params();
-    params.use_mmap = (useMmap == JNI_TRUE);
+    params.load_mode = (useMmap == JNI_TRUE) ? LLAMA_LOAD_MODE_MMAP : LLAMA_LOAD_MODE_NONE;
 
     llama_model *model = llama_model_load_from_file(cPath, params);
     env->ReleaseStringUTFChars(modelPath, cPath);
@@ -87,6 +87,7 @@ Java_com_reveila_aegin_bridge_LlamaJniBridge_nativeGenerateTokens(
         jlong modelPtr,
         jstring prompt,
         jint maxTokens,
+        jstring grammar,
         jobject callback) {
     if (contextPtr == 0L || modelPtr == 0L || prompt == nullptr || callback == nullptr) {
         LOGE("nativeGenerateTokens called with invalid/null arguments");
@@ -107,6 +108,15 @@ Java_com_reveila_aegin_bridge_LlamaJniBridge_nativeGenerateTokens(
     }
     std::string promptStr(cPrompt);
     env->ReleaseStringUTFChars(prompt, cPrompt);
+
+    std::string grammarStr;
+    if (grammar != nullptr) {
+        const char *cGrammar = env->GetStringUTFChars(grammar, nullptr);
+        if (cGrammar != nullptr) {
+            grammarStr.assign(cGrammar);
+            env->ReleaseStringUTFChars(grammar, cGrammar);
+        }
+    }
 
     // Clear KV/memory cache for a clean single-turn evaluation
     llama_memory_clear(llama_get_memory(ctx), true);
@@ -136,6 +146,15 @@ Java_com_reveila_aegin_bridge_LlamaJniBridge_nativeGenerateTokens(
     if (sampler == nullptr) {
         LOGE("llama_sampler_chain_init failed");
         return;
+    }
+    if (!grammarStr.empty()) {
+        llama_sampler *grammarSampler = llama_sampler_init_grammar(vocab, grammarStr.c_str(), "root");
+        if (grammarSampler != nullptr) {
+            llama_sampler_chain_add(sampler, grammarSampler);
+            LOGI("Attached GBNF grammar sampler constraint (%zu bytes)", grammarStr.size());
+        } else {
+            LOGE("Failed to parse GBNF grammar; continuing with greedy sampler");
+        }
     }
     llama_sampler_chain_add(sampler, llama_sampler_init_greedy());
 

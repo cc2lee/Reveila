@@ -20,16 +20,33 @@ import kotlinx.serialization.json.longOrNull
 data class TaskItem(
     val taskId: String,
     val title: String = "",
-    val intent: String = "autonomous.task",
+    val intent: String = "auto",
     val prompt: String = "",
     val frequency: String = "daily",
     val scheduleTime: String = "08:00",
+    val executionTarget: String = "auto",
     val enabled: Boolean = true,
     val status: String = "ACTIVE",
     val requiresApproval: Boolean = false,
     val approvalReason: String = "",
+    val sandboxId: String = "",
+    val currentStep: String = "",
+    val fileName: String = "",
+    val routeTarget: String = "LOCAL",
+    val taskCategory: String = "LOCAL_TEXT_TRANSFORM",
+    val routingReason: String = "",
     val lastRunAt: Long = 0L,
     val lastResult: String = ""
+)
+
+@Serializable
+data class TaskNotificationItem(
+    val eventId: String,
+    val taskId: String,
+    val title: String = "",
+    val status: String = "",
+    val summary: String = "",
+    val timestamp: Long = 0L
 )
 
 @Serializable
@@ -52,6 +69,7 @@ data class TasksDashboardState(
     val tasksDir: String = "",
     val killSwitchEngaged: Boolean = false,
     val tasks: List<TaskItem> = emptyList(),
+    val notifications: List<TaskNotificationItem> = emptyList(),
     val activeSessions: List<ActiveSessionItem> = emptyList(),
     val auditLogs: List<AuditLogItem> = emptyList(),
     val error: String = ""
@@ -96,7 +114,8 @@ data class LlmProviderConfig(
     val model: String = "",
     val modelOptions: List<String> = emptyList(),
     val temperature: Double = 0.7,
-    val apiKey: String = ""
+    val apiKey: String = "",
+    val intentOptions: List<String> = emptyList()
 )
 
 @Serializable
@@ -157,6 +176,27 @@ expect object PlatformEngineBridge {
  * AeginBridge: The Universal Multiplatform Runtime Interface (Kotlin equivalent of ReveilaBridge.js).
  */
 object AeginBridge {
+    val PREDEFINED_TASK_INTENTS: List<String> = listOf(
+        "LOCAL_TEXT_TRANSFORM",
+        "LOCAL_STRUCTURED_EXTRACT",
+        "LOCAL_DEVICE_ACTION",
+        "CLOUD_LIVE_RETRIEVAL",
+        "CLOUD_DEEP_REASONING",
+        "CLOUD_MULTI_STEP_AGENT"
+    )
+
+    val DEFAULT_LOCAL_INTENTS: List<String> = listOf(
+        "LOCAL_TEXT_TRANSFORM",
+        "LOCAL_STRUCTURED_EXTRACT",
+        "LOCAL_DEVICE_ACTION"
+    )
+
+    val DEFAULT_CLOUD_INTENTS: List<String> = listOf(
+        "CLOUD_LIVE_RETRIEVAL",
+        "CLOUD_DEEP_REASONING",
+        "CLOUD_MULTI_STEP_AGENT"
+    )
+
     val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
@@ -351,7 +391,8 @@ object AeginBridge {
                 model = defaultLocalModel,
                 modelOptions = ModelTierCatalog.standardProfiles,
                 temperature = 0.7,
-                apiKey = ""
+                apiKey = "",
+                intentOptions = DEFAULT_LOCAL_INTENTS
             ),
             LlmProviderConfig(
                 name = "Google Gemini",
@@ -361,7 +402,8 @@ object AeginBridge {
                 model = "gemini-1.5-flash",
                 modelOptions = listOf("gemini-1.5-flash", "gemini-2.0-flash", "gemini-3-flash"),
                 temperature = 0.1,
-                apiKey = ""
+                apiKey = "",
+                intentOptions = DEFAULT_CLOUD_INTENTS
             ),
             LlmProviderConfig(
                 name = "OpenAI",
@@ -371,7 +413,8 @@ object AeginBridge {
                 model = "gpt-4o-mini",
                 modelOptions = listOf("gpt-4o-mini", "gpt-4o"),
                 temperature = 0.7,
-                apiKey = ""
+                apiKey = "",
+                intentOptions = DEFAULT_CLOUD_INTENTS
             ),
             LlmProviderConfig(
                 name = "DeepSeek",
@@ -381,7 +424,8 @@ object AeginBridge {
                 model = "deepseek-chat",
                 modelOptions = listOf("deepseek-chat", "deepseek-reasoner"),
                 temperature = 0.7,
-                apiKey = ""
+                apiKey = "",
+                intentOptions = DEFAULT_CLOUD_INTENTS
             ),
             LlmProviderConfig(
                 name = "Qwen",
@@ -391,7 +435,8 @@ object AeginBridge {
                 model = "qwen-plus",
                 modelOptions = listOf("qwen-plus", "qwen-turbo", "qwen-max"),
                 temperature = 0.7,
-                apiKey = ""
+                apiKey = "",
+                intentOptions = DEFAULT_CLOUD_INTENTS
             )
         )
 
@@ -426,6 +471,18 @@ object AeginBridge {
                     val options = optionsArr?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
                     val temp = (p["Temperature"] ?: p["temperature"])?.jsonPrimitive?.doubleOrNull ?: 0.7
                     val apiKey = (p["Api.Key"] ?: p["api.key"] ?: p["apiKey"])?.jsonPrimitive?.contentOrNull ?: ""
+                    val intentArr = (p["Intent.Options"] ?: p["intent.options"] ?: p["intent_options"])?.jsonArray
+                    val parsedIntents = intentArr
+                        ?.mapNotNull { it.jsonPrimitive.contentOrNull?.trim() }
+                        ?.filter { it.isNotEmpty() }
+                        .orEmpty()
+                    val effectiveIntents = if (parsedIntents.isNotEmpty()) {
+                        parsedIntents
+                    } else if (isLocal) {
+                        DEFAULT_LOCAL_INTENTS
+                    } else {
+                        DEFAULT_CLOUD_INTENTS
+                    }
                     parsedList.add(
                         LlmProviderConfig(
                             name = name,
@@ -435,7 +492,8 @@ object AeginBridge {
                             model = model,
                             modelOptions = options,
                             temperature = temp,
-                            apiKey = if (isLocal) "" else apiKey
+                            apiKey = if (isLocal) "" else apiKey,
+                            intentOptions = effectiveIntents
                         )
                     )
                 }
@@ -476,6 +534,10 @@ object AeginBridge {
             val isLocal = p.type.equals("Local", ignoreCase = true) || p.name == "On-Device Model"
             val typeVal = if (isLocal) "Local" else "Cloud"
             val opts = p.modelOptions.joinToString(",") { "\"${escapeJson(it)}\"" }
+            val intentList = p.intentOptions.ifEmpty {
+                if (isLocal) DEFAULT_LOCAL_INTENTS else DEFAULT_CLOUD_INTENTS
+            }
+            val intentOpts = intentList.joinToString(",") { "\"${escapeJson(it)}\"" }
             val providerLine = if (!isLocal && p.provider.isNotBlank()) {
                 "\n              \"Provider\": \"${escapeJson(p.provider)}\","
             } else ""
@@ -490,7 +552,8 @@ object AeginBridge {
               "Endpoint": "${escapeJson(p.endpoint)}",
               "Model": "${escapeJson(p.model)}",
               "Model.Options": [$opts],
-              "Temperature": ${p.temperature}$apiKeyLine
+              "Temperature": ${p.temperature}$apiKeyLine,
+              "Intent.Options": [$intentOpts]
             }
             """.trimIndent()
         }
@@ -529,16 +592,41 @@ object AeginBridge {
                     TaskItem(
                         taskId = taskId,
                         title = obj["title"]?.jsonPrimitive?.contentOrNull ?: taskId,
-                        intent = obj["intent"]?.jsonPrimitive?.contentOrNull ?: "autonomous.task",
+                        intent = obj["intent"]?.jsonPrimitive?.contentOrNull ?: "auto",
                         prompt = obj["prompt"]?.jsonPrimitive?.contentOrNull ?: "",
                         frequency = obj["frequency"]?.jsonPrimitive?.contentOrNull ?: "daily",
                         scheduleTime = obj["scheduleTime"]?.jsonPrimitive?.contentOrNull ?: "08:00",
+                        executionTarget = obj["executionTarget"]?.jsonPrimitive?.contentOrNull ?: "auto",
                         enabled = obj["enabled"]?.jsonPrimitive?.booleanOrNull ?: true,
                         status = obj["status"]?.jsonPrimitive?.contentOrNull ?: "ACTIVE",
                         requiresApproval = obj["requiresApproval"]?.jsonPrimitive?.booleanOrNull ?: false,
                         approvalReason = obj["approvalReason"]?.jsonPrimitive?.contentOrNull ?: "",
+                        sandboxId = obj["sandboxId"]?.jsonPrimitive?.contentOrNull ?: "",
+                        currentStep = obj["currentStep"]?.jsonPrimitive?.contentOrNull ?: "",
+                        fileName = obj["fileName"]?.jsonPrimitive?.contentOrNull ?: "$taskId.json",
+                        routeTarget = obj["routeTarget"]?.jsonPrimitive?.contentOrNull ?: "LOCAL",
+                        taskCategory = obj["taskCategory"]?.jsonPrimitive?.contentOrNull ?: "LOCAL_TEXT_TRANSFORM",
+                        routingReason = obj["routingReason"]?.jsonPrimitive?.contentOrNull ?: "",
                         lastRunAt = obj["lastRunAt"]?.jsonPrimitive?.longOrNull ?: 0L,
                         lastResult = obj["lastResult"]?.jsonPrimitive?.contentOrNull ?: ""
+                    )
+                } catch (_: Exception) {
+                    null
+                }
+            } ?: emptyList()
+
+            val notificationsArr = root["notifications"]?.jsonArray
+            val notifications = notificationsArr?.mapNotNull { el ->
+                try {
+                    val obj = el.jsonObject
+                    val eventId = obj["eventId"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    TaskNotificationItem(
+                        eventId = eventId,
+                        taskId = obj["taskId"]?.jsonPrimitive?.contentOrNull ?: "",
+                        title = obj["title"]?.jsonPrimitive?.contentOrNull ?: "",
+                        status = obj["status"]?.jsonPrimitive?.contentOrNull ?: "",
+                        summary = obj["summary"]?.jsonPrimitive?.contentOrNull ?: "",
+                        timestamp = obj["timestamp"]?.jsonPrimitive?.longOrNull ?: 0L
                     )
                 } catch (_: Exception) {
                     null
@@ -579,6 +667,7 @@ object AeginBridge {
                 tasksDir = tasksDir,
                 killSwitchEngaged = killSwitchEngaged,
                 tasks = tasks,
+                notifications = notifications,
                 activeSessions = sessions,
                 auditLogs = logs
             )
@@ -592,12 +681,14 @@ object AeginBridge {
         prompt: String,
         frequency: String,
         scheduleTime: String,
-        requiresApproval: Boolean
+        requiresApproval: Boolean,
+        intent: String = "auto",
+        executionTarget: String = "auto"
     ): String {
         return invoke(
             "AutonomousAgent",
-            "createTask",
-            listOf(title, prompt, frequency, scheduleTime, requiresApproval.toString())
+            "createTaskWithIntent",
+            listOf(title, intent, prompt, frequency, scheduleTime, requiresApproval.toString(), executionTarget)
         )
     }
 
@@ -607,12 +698,25 @@ object AeginBridge {
         prompt: String,
         frequency: String,
         scheduleTime: String,
-        enabled: Boolean
+        enabled: Boolean,
+        intent: String = "",
+        requiresApproval: Boolean = false,
+        executionTarget: String = "auto"
     ): String {
         return invoke(
             "AutonomousAgent",
-            "updateTask",
-            listOf(taskId, title, prompt, frequency, scheduleTime, enabled.toString())
+            "updateTaskWithIntent",
+            listOf(
+                taskId,
+                title,
+                intent,
+                prompt,
+                frequency,
+                scheduleTime,
+                enabled.toString(),
+                requiresApproval.toString(),
+                executionTarget
+            )
         )
     }
 

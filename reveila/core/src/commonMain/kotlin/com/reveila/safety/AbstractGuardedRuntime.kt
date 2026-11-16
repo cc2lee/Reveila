@@ -16,6 +16,9 @@ abstract class AbstractGuardedRuntime : SystemComponent(), GuardedRuntime {
     @JvmField
     protected var isSuspended: Boolean = false
 
+    private val suspendedSandboxes: MutableSet<String> = mutableSetOf()
+    private val killedSandboxes: MutableSet<String> = mutableSetOf()
+
     fun isSuspended(): Boolean = isSuspended
 
     protected open fun validateRequest(plugin: Plugin, perimeter: SecurityPerimeter) {
@@ -31,6 +34,14 @@ abstract class AbstractGuardedRuntime : SystemComponent(), GuardedRuntime {
         if (isSuspended) {
             return InvocationResult.error("Runtime is currently suspended.")
         }
+        val sandboxId = (arguments["_sandbox_id"] as? String)
+            ?: plugin.sessionId.ifBlank { plugin.name }
+        if (isSandboxKilled(sandboxId) || isSandboxKilled(plugin.sessionId)) {
+            return InvocationResult.error("Task sandbox [$sandboxId] was terminated by user.")
+        }
+        if (isSandboxSuspended(sandboxId) || isSandboxSuspended(plugin.sessionId)) {
+            return InvocationResult.error("Task sandbox [$sandboxId] is currently suspended.")
+        }
         validateRequest(plugin, perimeter)
         return onExecute(plugin, perimeter, arguments, jitCredentials)
     }
@@ -43,6 +54,34 @@ abstract class AbstractGuardedRuntime : SystemComponent(), GuardedRuntime {
     override fun resume(jitCredentials: Map<String, String>?): Boolean {
         isSuspended = false
         return true
+    }
+
+    override fun suspendSandbox(sandboxId: String): Boolean {
+        if (sandboxId.isBlank()) return false
+        suspendedSandboxes.add(sandboxId)
+        return true
+    }
+
+    override fun resumeSandbox(sandboxId: String): Boolean {
+        if (sandboxId.isBlank()) return false
+        suspendedSandboxes.remove(sandboxId)
+        killedSandboxes.remove(sandboxId)
+        return true
+    }
+
+    override fun killSandbox(sandboxId: String): Boolean {
+        if (sandboxId.isBlank()) return false
+        suspendedSandboxes.remove(sandboxId)
+        killedSandboxes.add(sandboxId)
+        return true
+    }
+
+    override fun isSandboxSuspended(sandboxId: String): Boolean {
+        return sandboxId.isNotBlank() && suspendedSandboxes.contains(sandboxId)
+    }
+
+    override fun isSandboxKilled(sandboxId: String): Boolean {
+        return sandboxId.isNotBlank() && killedSandboxes.contains(sandboxId)
     }
 
     protected abstract fun onExecute(

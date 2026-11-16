@@ -8,6 +8,22 @@ import com.reveila.util.json.JsonUtil
 
 open class LlmProviderFactory : SystemComponent() {
 
+    companion object {
+        val DEFAULT_LOCAL_INTENTS: List<String> = listOf(
+            TaskRoutingCategory.LOCAL_TEXT_TRANSFORM.name,
+            TaskRoutingCategory.LOCAL_STRUCTURED_EXTRACT.name,
+            TaskRoutingCategory.LOCAL_DEVICE_ACTION.name
+        )
+
+        val DEFAULT_CLOUD_INTENTS: List<String> = listOf(
+            TaskRoutingCategory.CLOUD_LIVE_RETRIEVAL.name,
+            TaskRoutingCategory.CLOUD_DEEP_REASONING.name,
+            TaskRoutingCategory.CLOUD_MULTI_STEP_AGENT.name
+        )
+
+        val ALL_PREDEFINED_INTENTS: List<String> = TaskRoutingCategory.entries.map { it.name }
+    }
+
     private val providers: MutableMap<String, LlmProvider> = mutableMapOf()
     private var activeProvider: LlmProvider? = null
 
@@ -57,6 +73,7 @@ open class LlmProviderFactory : SystemComponent() {
                     endpoint = context?.properties?.getProperty("ai.llm.endpoint") ?: "local://on-device"
                     model = context?.properties?.getProperty("ai.llm.model.name") ?: "auto"
                     temperature = 0.7
+                    intentOptions = DEFAULT_LOCAL_INTENTS
                 }
                 startAndAddProvider("On-Device Model", p)
             }
@@ -68,6 +85,7 @@ open class LlmProviderFactory : SystemComponent() {
                     model = "gemini-1.5-flash"
                     temperature = 0.1
                     apiKey = "REF:GEMINI_KEY"
+                    intentOptions = DEFAULT_CLOUD_INTENTS
                 }
                 startAndAddProvider("Google Gemini", p)
             }
@@ -79,6 +97,7 @@ open class LlmProviderFactory : SystemComponent() {
                     model = "gpt-4o-mini"
                     temperature = 0.7
                     apiKey = "REF:OPENAI_KEY"
+                    intentOptions = DEFAULT_CLOUD_INTENTS
                 }
                 startAndAddProvider("OpenAI", p)
             }
@@ -90,6 +109,7 @@ open class LlmProviderFactory : SystemComponent() {
                     model = "deepseek-chat"
                     temperature = 0.7
                     apiKey = "REF:DEEPSEEK_KEY"
+                    intentOptions = DEFAULT_CLOUD_INTENTS
                 }
                 startAndAddProvider("DeepSeek", p)
             }
@@ -101,6 +121,7 @@ open class LlmProviderFactory : SystemComponent() {
                     model = "qwen-plus"
                     temperature = 0.7
                     apiKey = "REF:QWEN_KEY"
+                    intentOptions = DEFAULT_CLOUD_INTENTS
                 }
                 startAndAddProvider("Qwen", p)
             }
@@ -275,20 +296,87 @@ open class LlmProviderFactory : SystemComponent() {
         return p.isConfigured()
     }
 
+    private fun isLocalProvider(provider: LlmProvider): Boolean {
+        val unwrapped = (provider as? TrackedLlmProvider)?.unwrapDelegate() ?: provider
+        return unwrapped is LocalLlamaProvider ||
+            provider.getName().equals("On-Device Model", ignoreCase = true)
+    }
+
     open fun getConfiguredCloudProvider(): String? {
         val priorityList = listOf("Google Gemini", "OpenAI", "DeepSeek", "Qwen", "Anthropic")
         for (name in priorityList) {
             val p = getProvider(name)
-            if (p != null && p !is LocalLlamaProvider && p.isConfigured()) {
+            if (p != null && !isLocalProvider(p) && p.isConfigured()) {
                 return p.getName()
             }
         }
         for ((_, p) in providers) {
-            if (p !is LocalLlamaProvider && p.isConfigured()) {
+            if (!isLocalProvider(p) && p.isConfigured()) {
                 return p.getName()
             }
         }
         return null
+    }
+
+    /**
+     * Selects a configured [LlmProvider] capable of handling [intentCategory] based on each
+     * provider's configured `Intent.Options` array in `llm.json`.
+     *
+     * Preference Order:
+     * 1. Local On-Device LLM (`LocalLlamaProvider`) if enabled, configured, and its `Intent.Options` includes [intentCategory].
+     * 2. Active worker Cloud LLM if configured and its `Intent.Options` includes [intentCategory].
+     * 3. Any other configured Cloud LLM whose `Intent.Options` includes [intentCategory].
+     * 4. Fallback to any configured Cloud LLM (for `CLOUD_*` intents) or active provider.
+     */
+    open fun getProviderForIntent(intentCategory: String?): LlmProvider? {
+        val targetCategory = TaskRoutingCategory.fromRawOrSafeDefault(intentCategory).name
+
+        // 1. Highest Preference: Local On-Device LLM that declares support for targetCategory
+        val onDevice = getProvider("On-Device Model")
+        if (onDevice != null && onDevice.isEnabled() && onDevice.isConfigured() && onDevice.supportsIntent(targetCategory)) {
+            return onDevice
+        }
+        for ((_, p) in providers) {
+            if (isLocalProvider(p) && p.isEnabled() && p.isConfigured() && p.supportsIntent(targetCategory)) {
+                return p
+            }
+        }
+
+        // 2. Active Worker Provider (if it's a configured Cloud LLM that supports targetCategory)
+        val configuredWorkerName = context?.properties?.getProperty("ai.worker.llm")
+        if (!configuredWorkerName.isNullOrBlank()) {
+            val worker = getProvider(configuredWorkerName)
+            if (worker != null && !isLocalProvider(worker) && worker.isEnabled() && worker.isConfigured() && worker.supportsIntent(targetCategory)) {
+                return worker
+            }
+        }
+
+        // 3. Configured Cloud Providers matching targetCategory in priority order
+        val priorityList = listOf("Google Gemini", "OpenAI", "DeepSeek", "Qwen", "Anthropic")
+        for (name in priorityList) {
+            val p = getProvider(name)
+            if (p != null && !isLocalProvider(p) && p.isEnabled() && p.isConfigured() && p.supportsIntent(targetCategory)) {
+                return p
+            }
+        }
+        for ((_, p) in providers) {
+            if (!isLocalProvider(p) && p.isEnabled() && p.isConfigured() && p.supportsIntent(targetCategory)) {
+                return p
+            }
+        }
+
+        // 4. Fallback if no provider with a matching Intent.Option is currently configured with an API key
+        if (targetCategory.startsWith("CLOUD_")) {
+            val fallbackCloudName = getConfiguredCloudProvider()
+            if (!fallbackCloudName.isNullOrBlank()) {
+                return getProvider(fallbackCloudName)
+            }
+        }
+        return onDevice ?: getActiveProvider()
+    }
+
+    open fun getProviderNameForIntent(intentCategory: String?): String {
+        return getProviderForIntent(intentCategory)?.getName() ?: "On-Device Model"
     }
 
     @Throws(Exception::class)
@@ -337,6 +425,20 @@ open class LlmProviderFactory : SystemComponent() {
         provider.apiKey = (params["api.key"] as? String) ?: (params["apiKey"] as? String) ?: (params["API.Key"] as? String)
         val tempObj = params["temperature"] ?: params["Temperature"] ?: 0.7
         provider.temperature = tempObj.toString().toDouble()
+
+        val rawIntentsObj = params["Intent.Options"] ?: params["intent.options"] ?: params["intent_options"]
+        val parsedIntents = when (rawIntentsObj) {
+            is List<*> -> rawIntentsObj.mapNotNull { it?.toString()?.trim() }.filter { it.isNotEmpty() }
+            is String -> rawIntentsObj.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            else -> emptyList()
+        }
+        provider.intentOptions = if (parsedIntents.isNotEmpty()) {
+            parsedIntents
+        } else if (provider is LocalLlamaProvider) {
+            DEFAULT_LOCAL_INTENTS
+        } else {
+            DEFAULT_CLOUD_INTENTS
+        }
     }
 
     private fun wrapWithTracker(provider: LlmProvider): LlmProvider {

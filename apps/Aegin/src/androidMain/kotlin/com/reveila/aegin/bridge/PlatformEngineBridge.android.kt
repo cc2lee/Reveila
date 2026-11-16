@@ -766,7 +766,7 @@ actual object PlatformEngineBridge {
                         null
                     }
                     val synthesized = buildString {
-                        appendLine("Sovereign On-Device RAG Response (Inference Documents Active):")
+                        appendLine("Sovereign On-Device RAG Response (Reference Documents Active):")
                         if (!ragSnippets.isNullOrBlank() && !ragSnippets.contains("No relevant internal documents")) {
                             appendLine(ragSnippets)
                         } else {
@@ -1035,7 +1035,7 @@ actual object PlatformEngineBridge {
         if (files == null || files.isEmpty()) {
             val overviewContent = """
                 # Reveila Sovereign AI Reference Document
-                This document is indexed in your local Inference Documents vector store on Android.
+                This document is indexed in your local Reference Documents vector store on Android.
                 Physical folder location: ${candidateDir.absolutePath}
                 Focus areas: strategy, confidential architecture, multi-platform roadmap, zero cloud leaks.
             """.trimIndent()

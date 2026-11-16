@@ -96,9 +96,17 @@ object LlamaJniBridge : LocalInferenceEngine, OnDeviceInferenceDelegate {
     }
 
     override fun generateBlocking(formattedPrompt: String, stopToken: String, maxTokens: Int): String =
+        generateBlocking(formattedPrompt, stopToken, maxTokens, "")
+
+    override fun generateBlocking(
+        formattedPrompt: String,
+        stopToken: String,
+        maxTokens: Int,
+        grammar: String
+    ): String =
         runBlocking(nativeDispatcher) {
             val sb = StringBuilder()
-            generateStream(formattedPrompt, maxTokens).collect { chunk ->
+            generateStreamWithGrammar(formattedPrompt, maxTokens, grammar).collect { chunk ->
                 sb.append(chunk)
             }
             if (stopToken.isNotEmpty()) sb.toString().substringBefore(stopToken).trim() else sb.toString().trim()
@@ -107,7 +115,10 @@ object LlamaJniBridge : LocalInferenceEngine, OnDeviceInferenceDelegate {
     override fun generateStream(formattedPrompt: String, stopToken: String, maxTokens: Int): Flow<String> =
         generateStream(formattedPrompt, maxTokens)
 
-    override fun generateStream(prompt: String, maxTokens: Int): Flow<String> = callbackFlow {
+    override fun generateStream(prompt: String, maxTokens: Int): Flow<String> =
+        generateStreamWithGrammar(prompt, maxTokens, "")
+
+    private fun generateStreamWithGrammar(prompt: String, maxTokens: Int, grammar: String): Flow<String> = callbackFlow {
         val mPtr = modelPtr.get()
         val cPtr = contextPtr.get()
         if (mPtr == 0L || cPtr == 0L || !nativeLoaded.get()) {
@@ -123,6 +134,7 @@ object LlamaJniBridge : LocalInferenceEngine, OnDeviceInferenceDelegate {
                 modelPtr = mPtr,
                 prompt = prompt,
                 maxTokens = maxTokens,
+                grammar = grammar,
                 callback = TokenCallback { rawBytes ->
                     if (isCancelled.get()) return@TokenCallback false
                     val combined = if (pendingUtf8.isEmpty()) rawBytes else pendingUtf8 + rawBytes
@@ -200,6 +212,7 @@ object LlamaJniBridge : LocalInferenceEngine, OnDeviceInferenceDelegate {
         modelPtr: Long,
         prompt: String,
         maxTokens: Int,
+        grammar: String,
         callback: TokenCallback
     )
     private external fun nativeFreeContext(contextPtr: Long)

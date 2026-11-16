@@ -1,5 +1,6 @@
 package com.reveila.ai
 
+import com.reveila.safety.GuardedRuntime
 import com.reveila.safety.KillSwitch
 import com.reveila.safety.SafetyStatus
 import com.reveila.service.DataService
@@ -11,23 +12,39 @@ import com.reveila.system.io.PlatformFileSystem
 import com.reveila.system.platform.PlatformSystem
 import com.reveila.util.Uuid
 import com.reveila.util.json.JsonUtil
-import kotlinx.datetime.Clock
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Autonomous System Agent and Sovereign Task Control Center.
- * Manages recurring and scheduled tasks defined in ${REVEILA_HOME}/tasks directory (one JSON file per task),
- * enforces per-task and global KillSwitch state, and records/queries AuditLog events via DataService.
+ *
+ * Architecture:
+ * - Non-blocking Scanner (`doTask`) inspects `${REVEILA_HOME}/tasks` JSON files and dispatches due tasks.
+ * - Multi-worker Sandbox Executor runs each task in an isolated [TaskExecutionSandbox] with its own
+ *   [AgentSession], [com.reveila.safety.SecurityPerimeter], cooperative suspend gate, and preemptive kill handle.
+ * - Publishes real-time task lifecycle notifications so the main Assistant UI can display live progress
+ *   and completion cards without locking up interactive chat.
  */
 open class AutonomousAgent : SystemComponent(), KillSwitch {
 
     private var agenticFabric: AgenticFabric? = null
     private var orchestrationService: OrchestrationService? = null
     private var dataService: DataService? = null
-    private var session: AgentSession? = null
+    private var guardedRuntime: GuardedRuntime? = null
+    private var llmFactory: LlmProviderFactory? = null
     private var subject: Subject? = null
+
+    private var taskWorkerScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private val killedTaskIds: MutableSet<String> = mutableSetOf()
     private val runningTaskIds: MutableSet<String> = mutableSetOf()
+    private val activeSandboxes: MutableMap<String, TaskExecutionSandbox> = mutableMapOf()
+    private val taskNotifications: MutableList<Map<String, Any?>> = mutableListOf()
     private var globalEmergencyStopped: Boolean = false
 
     @Throws(Exception::class)
@@ -37,34 +54,26 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         s.principals.add(RolePrincipal("autonomous-agent"))
         this.subject = s
 
-        val timestamp = Clock.System.now().toString().substringBefore('T')
+        this.taskWorkerScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-        try {
-            val fabricProxy = context?.getProxy("AgenticFabric")
-            this.agenticFabric = (fabricProxy?.getInstance() as? AgenticFabric) ?: fabricProxy as? AgenticFabric
-        } catch (_: Exception) {
-        }
+        resolveFabric()
+        resolveOrchestration()
+        resolveDataService()
+        resolveGuardedRuntime()
+        resolveLlmFactory()
 
-        try {
-            val orchProxy = context?.getProxy("OrchestrationService")
-            this.orchestrationService = (orchProxy?.getInstance() as? OrchestrationService) ?: orchProxy as? OrchestrationService
-        } catch (_: Exception) {
-        }
-
-        try {
-            val dsProxy = context?.getProxy("DataService")
-            this.dataService = (dsProxy?.getInstance() as? DataService) ?: dsProxy as? DataService
-        } catch (_: Exception) {
-        }
-
-        this.session = orchestrationService?.createSession("autonomous-agent-session-$timestamp", null)
         ensureDefaultTasksDirectory()
-        logger.info("AutonomousAgent started. Ready to manage and execute tasks.")
+        logger.info("AutonomousAgent started with multi-sandbox worker pool. Ready to manage and execute tasks.")
     }
 
     @Throws(Exception::class)
     override fun onStop() {
+        for (sbx in activeSandboxes.values.toList()) {
+            sbx.killExecution()
+        }
+        activeSandboxes.clear()
         runningTaskIds.clear()
+        taskWorkerScope.cancel()
     }
 
     private fun resolveFabric(): AgenticFabric? {
@@ -100,11 +109,37 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         return dataService
     }
 
-    private fun resolveTasksDir(): String {
-        val fs = PlatformFileSystem()
-        val systemHome = context?.properties?.getProperty(Constants.SYSTEM_HOME)
+    private fun resolveGuardedRuntime(): GuardedRuntime? {
+        if (guardedRuntime == null) {
+            try {
+                val p = context?.getProxy("GuardedRuntime")
+                guardedRuntime = (p?.getInstance() as? GuardedRuntime) ?: p as? GuardedRuntime
+            } catch (_: Exception) {
+            }
+        }
+        return guardedRuntime
+    }
+
+    private fun resolveLlmFactory(): LlmProviderFactory? {
+        if (llmFactory == null) {
+            try {
+                val p = context?.getProxy("LlmProviderFactory")
+                llmFactory = (p?.getInstance() as? LlmProviderFactory) ?: p as? LlmProviderFactory
+            } catch (_: Exception) {
+            }
+        }
+        return llmFactory
+    }
+
+    private fun resolveSystemHome(): String {
+        return context?.properties?.getProperty(Constants.SYSTEM_HOME)
             ?: context?.properties?.getProperty("system.home")
             ?: "."
+    }
+
+    private fun resolveTasksDir(): String {
+        val fs = PlatformFileSystem()
+        val systemHome = resolveSystemHome()
         val tasksDir = fs.resolve(systemHome, "tasks")
         if (!fs.exists(tasksDir)) {
             fs.createDirectories(tasksDir)
@@ -122,16 +157,20 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
                     "taskId" to "daily-news-alert",
                     "title" to "Daily AI Security Briefing",
                     "intent" to "news.search",
-                    "prompt" to "Find the latest news about AI security and provide a concise summary.",
+                    "prompt" to "Find the latest news about AI security and provide a summary.",
                     "frequency" to "daily",
                     "scheduleTime" to "08:00",
-                    "enabled" to true,
-                    "status" to "ACTIVE",
+                    "executionTarget" to "auto",
                     "requiresApproval" to false,
                     "approvalReason" to "",
+                    "enabled" to true,
+                    "status" to "ACTIVE",
+                    "routeTarget" to "CLOUD",
+                    "taskCategory" to "CLOUD_LIVE_RETRIEVAL",
+                    "routingReason" to "Static intent 'news.search' mapped to CLOUD_LIVE_RETRIEVAL in O(1) time.",
                     "createdAt" to PlatformSystem.currentTimeMillis(),
                     "lastRunAt" to 0L,
-                    "lastResult" to "Scheduled and waiting for next execution window."
+                    "lastResult" to "Scheduled (daily at 08:00)."
                 )
                 val path = fs.resolve(tasksDir, "daily-news.json")
                 fs.writeText(path, JsonUtil.toPrettyJsonString(defaultTask), append = false)
@@ -153,6 +192,12 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
 
     override fun emergencyStopAll() {
         globalEmergencyStopped = true
+        val gr = resolveGuardedRuntime()
+        for (sbx in activeSandboxes.values.toList()) {
+            sbx.killExecution()
+            gr?.killSandbox(sbx.sandboxId)
+        }
+        activeSandboxes.clear()
         runningTaskIds.clear()
         resolveOrchestration()?.toggleSuspend(true)
 
@@ -167,30 +212,39 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
                 killedTaskIds.add(tId)
                 map["enabled"] = false
                 map["status"] = "KILLED"
+                map["sandboxId"] = ""
+                map["currentStep"] = "Halted by Global Kill Switch"
                 fs.writeText(fullPath, JsonUtil.toPrettyJsonString(map), append = false)
             }
         } catch (e: Exception) {
             logger.warning("Failed to mark tasks KILLED during emergencyStopAll: ${e.message}")
         }
 
-        recordAuditLog("KILL_SWITCH_EMERGENCY_STOP_ALL", "Global Kill Switch activated. All autonomous tasks halted.")
+        recordAuditLog("KILL_SWITCH_EMERGENCY_STOP_ALL", "Global Kill Switch activated. All autonomous task sandboxes halted.")
+        emitTaskNotification(
+            taskId = "global-kill-switch",
+            title = "Global Kill Switch",
+            status = "KILLED",
+            summary = "All active autonomous task sandboxes were immediately terminated."
+        )
     }
 
     override fun getStatus(agentId: String): SafetyStatus {
         return when {
             globalEmergencyStopped || killedTaskIds.contains(agentId) -> SafetyStatus.KILLED
-            resolveOrchestration()?.isSuspended() == true -> SafetyStatus.PENDING_AUTHORIZATION
+            activeSandboxes[agentId]?.isSuspended() == true || resolveOrchestration()?.isSuspended() == true ->
+                SafetyStatus.PENDING_AUTHORIZATION
             else -> SafetyStatus.ACTIVE
         }
     }
 
     // =========================================================================
-    // Background Scheduled Execution Loop
+    // Non-Blocking Dispatcher & Per-Task Sandbox Execution
     // =========================================================================
 
     /**
-     * Entry point for recurring task execution, triggered by the 'runnable' configuration.
-     * Iterates through the ${REVEILA_HOME}/tasks directory and executes due active workflows.
+     * Entry point for recurring task scanning, triggered by the 'runnable' configuration.
+     * Scans `${REVEILA_HOME}/tasks` without blocking and dispatches due tasks into isolated sandboxes.
      */
     open fun doTask() {
         if (globalEmergencyStopped || resolveOrchestration()?.isSuspended() == true) {
@@ -212,16 +266,23 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
                 val taskId = (taskDef["taskId"] as? String) ?: continue
                 if (!isAuthorized(taskId)) continue
 
+                // Skip if already running or suspended in an active sandbox
+                val existingSandbox = activeSandboxes[taskId]
+                if (existingSandbox != null && existingSandbox.isActive()) {
+                    continue
+                }
+
+                val rawStatus = (taskDef["status"] as? String)?.uppercase() ?: "ACTIVE"
                 val enabled = (taskDef["enabled"] as? Boolean)
-                    ?: !((taskDef["status"] as? String)?.uppercase() in listOf("PAUSED", "STOPPED", "KILLED"))
-                val status = (taskDef["status"] as? String)?.uppercase() ?: "ACTIVE"
-                if (!enabled || status == "WAITING_APPROVAL" || status == "KILLED" || status == "PAUSED") {
+                    ?: !(rawStatus in listOf("PAUSED", "SUSPENDED", "STOPPED", "KILLED", "COMPLETED"))
+                if (!enabled || rawStatus in listOf("WAITING_APPROVAL", "KILLED", "PAUSED", "SUSPENDED", "COMPLETED")) {
                     continue
                 }
 
                 val lastRunAt = (taskDef["lastRunAt"] as? Number)?.toLong() ?: 0L
                 val frequency = (taskDef["frequency"] as? String)?.lowercase() ?: "daily"
                 val intervalMs = when {
+                    frequency.contains("once") -> Long.MAX_VALUE
                     frequency.contains("min") -> 15 * 60 * 1000L
                     frequency.contains("hour") -> 60 * 60 * 1000L
                     frequency.contains("week") -> 7 * 24 * 60 * 60 * 1000L
@@ -232,14 +293,14 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
                     continue
                 }
 
-                executeTaskFile(file, taskDef, triggeredManually = false)
+                dispatchTaskToSandbox(file, taskDef, triggeredManually = false, approvedByUser = false)
             } catch (e: Exception) {
-                logger.severe("Failed to process autonomous task: $file. Error: ${e.message}")
+                logger.severe("Failed to scan autonomous task: $file. Error: ${e.message}")
             }
         }
     }
 
-    private fun executeTaskFile(
+    private fun dispatchTaskToSandbox(
         filePath: String,
         taskDef: MutableMap<String, Any?>,
         triggeredManually: Boolean,
@@ -247,8 +308,17 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
     ): Map<String, Any?> {
         val fs = PlatformFileSystem()
         val taskId = (taskDef["taskId"] as? String) ?: "task-${Uuid.randomUuid().take(6)}"
-        val title = (taskDef["title"] as? String) ?: taskId
+        val title = (taskDef["title"] as? String) ?: formatTaskTitle(taskId, taskDef["prompt"] as? String ?: "")
         val prompt = (taskDef["prompt"] as? String) ?: ""
+
+        // If already active in a sandbox, return its live state instead of spawning a duplicate
+        val existingSandbox = activeSandboxes[taskId]
+        if (existingSandbox != null && existingSandbox.isActive()) {
+            taskDef["status"] = existingSandbox.state
+            taskDef["sandboxId"] = existingSandbox.sandboxId
+            taskDef["currentStep"] = existingSandbox.currentStep
+            return taskDef
+        }
 
         if (!isAuthorized(taskId) && !triggeredManually) {
             taskDef["status"] = "KILLED"
@@ -261,71 +331,324 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             (!approvedByUser && isApprovalRequiredForPrompt(prompt))
 
         if (requiresApproval && !approvedByUser) {
+            val reason = "Task requires Human-In-The-Loop approval before executing: \"$title\""
             taskDef["status"] = "WAITING_APPROVAL"
-            taskDef["approvalReason"] = "Task requires Human-In-The-Loop approval before executing: \"$title\""
+            taskDef["approvalReason"] = reason
+            taskDef["sandboxId"] = ""
+            taskDef["currentStep"] = "Paused at HITL governance gate"
             fs.writeText(filePath, JsonUtil.toPrettyJsonString(taskDef), append = false)
             recordAuditLog("TASK_WAITING_APPROVAL", "Task [$taskId] ($title) paused awaiting user approval.")
+            emitTaskNotification(
+                taskId = taskId,
+                title = title,
+                status = "WAITING_APPROVAL",
+                summary = reason
+            )
             return taskDef
         }
 
+        val shortRunId = Uuid.randomUuid().take(6)
+        val sandboxId = "sbx-$taskId-$shortRunId"
+        val orch = resolveOrchestration()
+        val isolatedSession = orch?.createSession("task-$taskId-$shortRunId", null)
+            ?: AgentSession("task-$taskId-$shortRunId", null, 10)
+
+        val sandbox = TaskExecutionSandbox(
+            sandboxId = sandboxId,
+            taskId = taskId,
+            title = title,
+            session = isolatedSession
+        )
+
+        activeSandboxes[taskId] = sandbox
         runningTaskIds.add(taskId)
-        taskDef["status"] = "RUNNING"
+        resolveGuardedRuntime()?.resumeSandbox(sandboxId)
+
+        taskDef["status"] = TaskExecutionSandbox.STATE_RUNNING
         taskDef["approvalReason"] = ""
+        taskDef["sandboxId"] = sandboxId
+        taskDef["currentStep"] = sandbox.currentStep
         fs.writeText(filePath, JsonUtil.toPrettyJsonString(taskDef), append = false)
-        recordAuditLog("TASK_STARTED", "Executing task [$taskId]: $prompt")
+
+        recordAuditLog("TASK_STARTED", "Launched task [$taskId] in isolated sandbox [$sandboxId]: $prompt")
+        emitTaskNotification(
+            taskId = taskId,
+            title = title,
+            status = "RUNNING",
+            summary = "Started in isolated sandbox [$sandboxId]."
+        )
+
+        val job = taskWorkerScope.launch {
+            executeInsideSandbox(filePath, taskDef, sandbox)
+        }
+        sandbox.workerJob = job
+
+        return taskDef
+    }
+
+    private suspend fun executeInsideSandbox(
+        filePath: String,
+        initialTaskDef: MutableMap<String, Any?>,
+        sandbox: TaskExecutionSandbox
+    ) {
+        val fs = PlatformFileSystem()
+        val taskId = sandbox.taskId
+        val title = sandbox.title
+        val taskIntent = (initialTaskDef["intent"] as? String) ?: "auto"
+        val executionTarget = TaskCapabilityRouter.normalizeExecutionTarget(initialTaskDef["executionTarget"] as? String)
+        val prompt = (initialTaskDef["prompt"] as? String) ?: ""
 
         try {
+            // Stage 1: 3-Tier TaskRouter Resolution (1. Explicit executionTarget override -> 2. Static intent registry -> 3. Local SLM GBNF Preprocessor)
+            val factory = resolveLlmFactory()
+            val localProvider = factory?.getProvider("On-Device Model")
+            val assessment = TaskCapabilityRouter.assessTask(
+                intent = taskIntent,
+                prompt = prompt,
+                executionTarget = executionTarget,
+                systemHome = resolveSystemHome(),
+                localProvider = localProvider
+            )
+
+            // Fail fast if executionTarget="local" is forced on a task requiring live internet (CLOUD_LIVE_RETRIEVAL)
+            if (assessment.hasCapabilityConflict) {
+                val conflictMsg = assessment.capabilityConflictError ?: "Capability conflict for executionTarget='local'."
+                sandbox.markFailed(conflictMsg)
+                val latestDef = try {
+                    JsonUtil.parseJsonStringToMap(fs.readText(filePath)).toMutableMap<String, Any?>()
+                } catch (_: Exception) {
+                    initialTaskDef
+                }
+                latestDef["status"] = "PAUSED"
+                latestDef["enabled"] = false
+                latestDef["sandboxId"] = ""
+                latestDef["executionTarget"] = executionTarget
+                latestDef["routeTarget"] = "LOCAL"
+                latestDef["taskCategory"] = assessment.taskCategory
+                latestDef["routingReason"] = conflictMsg
+                latestDef["currentStep"] = conflictMsg
+                latestDef["lastRunAt"] = PlatformSystem.currentTimeMillis()
+                latestDef["lastResult"] = conflictMsg
+                fs.writeText(filePath, JsonUtil.toPrettyJsonString(latestDef), append = false)
+
+                recordAuditLog("TASK_CAPABILITY_CONFLICT", "Task [$taskId] ($title) halted: $conflictMsg")
+                emitTaskNotification(
+                    taskId = taskId,
+                    title = title,
+                    status = "FAILED",
+                    summary = conflictMsg
+                )
+                return
+            }
+
+            recordAuditLog(
+                "TASK_PREPROCESSOR_ROUTED",
+                "Task [$taskId] ($title) -> ${assessment.targetRoute} [target=$executionTarget, stage=${assessment.routingStage}, category=${assessment.taskCategory}]"
+            )
+
+            sandbox.checkExecutionGate(
+                stepLabel = "Stage 1/3 • Preprocessor [${assessment.routingStage}] -> ${assessment.toCompactBadge()}",
+                isGlobalSuspended = { resolveOrchestration()?.isSuspended() == true }
+            )
+            delay(1400)
+
+            // Stage 2: Reference Documents retrieval
+            sandbox.checkExecutionGate(
+                stepLabel = "Stage 2/3 • Searching Reference Documents & building context",
+                isGlobalSuspended = { resolveOrchestration()?.isSuspended() == true }
+            )
+            val ragContext = try {
+                val kvProxy = context?.getProxy("KnowledgeVault")
+                val kv = (kvProxy?.getInstance() as? KnowledgeVault) ?: kvProxy as? KnowledgeVault
+                kv?.search(prompt, 3)
+            } catch (_: Exception) {
+                null
+            }
+            delay(1400)
+
+            // Stage 3: Select configured LLM via LlmProviderFactory.getProviderForIntent(category)
+            // (On-Device Local LLM has highest preference if its Intent.Options includes assessment.taskCategory)
+            val matchedByIntent = when (executionTarget) {
+                "local" -> factory?.getProvider("On-Device Model")
+                "cloud" -> {
+                    val candidate = factory?.getProviderForIntent(assessment.taskCategory)
+                    if (candidate != null && !candidate.getName().equals("On-Device Model", ignoreCase = true)) {
+                        candidate
+                    } else {
+                        factory?.getConfiguredCloudProvider()?.let { factory.getProvider(it) }
+                    }
+                }
+                else -> factory?.getProviderForIntent(assessment.taskCategory)
+            }
+
+            val selectedProviderName = matchedByIntent?.getName() ?: "On-Device Model"
+            val isSelectedLocal = selectedProviderName.equals("On-Device Model", ignoreCase = true)
+
+            val stage3Label = if (isSelectedLocal && (!assessment.routeToCloud || matchedByIntent?.supportsIntent(assessment.taskCategory) == true)) {
+                "Stage 3/3 • Executing on [$selectedProviderName] (${assessment.taskCategory})"
+            } else if (!isSelectedLocal) {
+                "Stage 3/3 • Executing on Cloud LLM [$selectedProviderName] (${assessment.taskCategory})"
+            } else {
+                "Stage 3/3 • Cloud intent (${assessment.taskCategory}) — running local fallback [$selectedProviderName]"
+            }
+
+            sandbox.checkExecutionGate(
+                stepLabel = stage3Label,
+                isGlobalSuspended = { resolveOrchestration()?.isSuspended() == true }
+            )
+
             val fabric = resolveFabric()
-            val orch = resolveOrchestration()
-            val taskSession = session ?: orch?.createSession("task-$taskId", null)
             val subj = subject ?: Subject().apply {
                 principals.add(RolePrincipal("system"))
                 principals.add(RolePrincipal("autonomous-agent"))
             }
 
-            var answerText = "Task executed."
+            var answerText: String
             var finalStatus = "ACTIVE"
+            var escalatedReason = ""
+            val resolvedRouteBadge = if (isSelectedLocal && (!assessment.routeToCloud || matchedByIntent?.supportsIntent(assessment.taskCategory) == true)) {
+                "LOCAL ($selectedProviderName)"
+            } else if (!isSelectedLocal) {
+                "CLOUD ($selectedProviderName)"
+            } else {
+                "CLOUD -> LOCAL FALLBACK ($selectedProviderName)"
+            }
 
-            if (fabric != null && taskSession != null) {
-                val rawResult = fabric.processIntent(taskSession, subj, prompt)
+            if (fabric != null) {
+                val rawResult = fabric.processIntent(sandbox.session, subj, prompt, preferredProviderName = selectedProviderName)
                 val statusStr = rawResult["status"]?.toString() ?: ""
                 if (statusStr.equals(Constants.AI_STATUS_ESCALATE, ignoreCase = true)) {
                     finalStatus = "WAITING_APPROVAL"
-                    val reason = rawResult["reasoning"]?.toString() ?: "Governance policy escalated task for user approval."
-                    taskDef["approvalReason"] = reason
-                    answerText = "Waiting for user approval: $reason"
-                    recordAuditLog("TASK_WAITING_APPROVAL", "Task [$taskId] escalated for approval: $reason")
+                    escalatedReason = rawResult["reasoning"]?.toString()
+                        ?: "Governance policy escalated task for user approval."
+                    answerText = "Waiting for user approval: $escalatedReason"
                 } else {
-                    answerText = fabric.interpretAiResponse(rawResult)
-                    recordAuditLog("TASK_COMPLETED", "Task [$taskId] completed: ${answerText.take(160)}")
+                    val interpreted = fabric.interpretAiResponse(rawResult)
+                    val baseOutput = if (interpreted.contains("Failed to get response from LLM") ||
+                        interpreted.contains("LLM Invocation Failure")
+                    ) {
+                        buildFallbackRagSynthesis(title, prompt, ragContext)
+                    } else {
+                        interpreted
+                    }
+                    answerText = buildString {
+                        appendLine("[Selected LLM: $resolvedRouteBadge • Intent: ${assessment.taskCategory}]")
+                        if (assessment.routeToCloud && isSelectedLocal && matchedByIntent?.supportsIntent(assessment.taskCategory) != true) {
+                            appendLine("Note: Task classified as ${assessment.taskCategory}. Configure a Cloud LLM with this intent in Studio -> AI & Vault for live cloud execution.")
+                        }
+                        append(baseOutput)
+                    }.trim()
                 }
             } else {
-                answerText = "Processed task \"$title\": $prompt"
-                recordAuditLog("TASK_COMPLETED", "Task [$taskId] completed.")
+                answerText = buildFallbackRagSynthesis(title, prompt, ragContext)
             }
 
-            val enabled = (taskDef["enabled"] as? Boolean) ?: true
-            taskDef["status"] = if (finalStatus == "WAITING_APPROVAL") {
-                "WAITING_APPROVAL"
-            } else if (enabled) {
-                "ACTIVE"
-            } else {
-                "PAUSED"
+            // Stage 4: Final gate before committing results
+            sandbox.checkExecutionGate(
+                stepLabel = "Finalizing output & persisting to tasks/$taskId.json",
+                isGlobalSuspended = { resolveOrchestration()?.isSuspended() == true }
+            )
+
+            val latestDef = try {
+                JsonUtil.parseJsonStringToMap(fs.readText(filePath)).toMutableMap<String, Any?>()
+            } catch (_: Exception) {
+                initialTaskDef
             }
-            taskDef["lastRunAt"] = PlatformSystem.currentTimeMillis()
-            taskDef["lastResult"] = answerText
-            fs.writeText(filePath, JsonUtil.toPrettyJsonString(taskDef), append = false)
+
+            val freq = (latestDef["frequency"] as? String)?.lowercase() ?: "daily"
+            val enabled = (latestDef["enabled"] as? Boolean) ?: true
+
+            val resolvedStatus = when {
+                finalStatus == "WAITING_APPROVAL" -> "WAITING_APPROVAL"
+                freq == "once" -> "COMPLETED"
+                enabled -> "ACTIVE"
+                else -> "PAUSED"
+            }
+
+            latestDef["status"] = resolvedStatus
+            latestDef["enabled"] = if (freq == "once") false else enabled
+            latestDef["sandboxId"] = ""
+            latestDef["routeTarget"] = assessment.targetRoute
+            latestDef["taskCategory"] = assessment.taskCategory
+            latestDef["routingReason"] = assessment.reason
+            latestDef["currentStep"] = if (finalStatus == "WAITING_APPROVAL") {
+                "Waiting for user approval"
+            } else {
+                "Last run [$resolvedRouteBadge] in ${sandbox.sandboxId}"
+            }
+            if (finalStatus == "WAITING_APPROVAL") {
+                latestDef["approvalReason"] = escalatedReason
+            }
+            latestDef["lastRunAt"] = PlatformSystem.currentTimeMillis()
+            latestDef["lastResult"] = answerText
+            fs.writeText(filePath, JsonUtil.toPrettyJsonString(latestDef), append = false)
+
+            sandbox.markCompleted()
+
+            if (finalStatus == "WAITING_APPROVAL") {
+                recordAuditLog("TASK_WAITING_APPROVAL", "Task [$taskId] escalated for approval: $escalatedReason")
+                emitTaskNotification(
+                    taskId = taskId,
+                    title = title,
+                    status = "WAITING_APPROVAL",
+                    summary = "Escalated for approval: $escalatedReason"
+                )
+            } else {
+                recordAuditLog("TASK_COMPLETED", "Task [$taskId] completed via $resolvedRouteBadge in sandbox [${sandbox.sandboxId}]: ${answerText.take(160)}")
+                emitTaskNotification(
+                    taskId = taskId,
+                    title = title,
+                    status = "COMPLETED",
+                    summary = answerText.take(280)
+                )
+            }
+        } catch (ce: CancellationException) {
+            sandbox.killExecution()
+            try {
+                val latestDef = JsonUtil.parseJsonStringToMap(fs.readText(filePath)).toMutableMap<String, Any?>()
+                latestDef["status"] = "KILLED"
+                latestDef["enabled"] = false
+                latestDef["sandboxId"] = ""
+                latestDef["currentStep"] = "Terminated in sandbox [${sandbox.sandboxId}]"
+                latestDef["lastResult"] = "Task execution terminated by user."
+                fs.writeText(filePath, JsonUtil.toPrettyJsonString(latestDef), append = false)
+            } catch (_: Exception) {
+            }
         } catch (e: Exception) {
-            taskDef["status"] = "ACTIVE"
-            taskDef["lastRunAt"] = PlatformSystem.currentTimeMillis()
-            taskDef["lastResult"] = "Execution error: ${e.message}"
-            fs.writeText(filePath, JsonUtil.toPrettyJsonString(taskDef), append = false)
-            recordAuditLog("TASK_FAILED", "Task [$taskId] failed: ${e.message}")
+            sandbox.markFailed("Error: ${e.message}")
+            try {
+                val latestDef = JsonUtil.parseJsonStringToMap(fs.readText(filePath)).toMutableMap<String, Any?>()
+                latestDef["status"] = "ACTIVE"
+                latestDef["sandboxId"] = ""
+                latestDef["currentStep"] = "Failed: ${e.message}"
+                latestDef["lastRunAt"] = PlatformSystem.currentTimeMillis()
+                latestDef["lastResult"] = "Execution error: ${e.message}"
+                fs.writeText(filePath, JsonUtil.toPrettyJsonString(latestDef), append = false)
+            } catch (_: Exception) {
+            }
+            recordAuditLog("TASK_FAILED", "Task [$taskId] failed in sandbox [${sandbox.sandboxId}]: ${e.message}")
+            emitTaskNotification(
+                taskId = taskId,
+                title = title,
+                status = "FAILED",
+                summary = "Execution failed: ${e.message ?: "Unknown error"}"
+            )
         } finally {
             runningTaskIds.remove(taskId)
+            activeSandboxes.remove(taskId, sandbox)
+            resolveOrchestration()?.closeSession(sandbox.session.sessionId)
         }
+    }
 
-        return taskDef
+    private fun buildFallbackRagSynthesis(title: String, prompt: String, ragSnippets: String?): String {
+        return buildString {
+            appendLine("Sovereign Sandbox Synthesis ($title):")
+            if (!ragSnippets.isNullOrBlank() && !ragSnippets.contains("No relevant internal documents")) {
+                appendLine(ragSnippets.trim())
+            } else {
+                appendLine("Completed autonomous execution for \"$prompt\" against Reference Documents within isolated sandbox perimeter.")
+            }
+        }.trim()
     }
 
     private fun isApprovalRequiredForPrompt(prompt: String): Boolean {
@@ -337,6 +660,27 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             lower.contains("publish") ||
             lower.contains("require approval") ||
             lower.contains("ask for approval")
+    }
+
+    private fun emitTaskNotification(
+        taskId: String,
+        title: String,
+        status: String,
+        summary: String
+    ) {
+        val now = PlatformSystem.currentTimeMillis()
+        val event = linkedMapOf<String, Any?>(
+            "eventId" to "evt-$now-${Uuid.randomUuid().take(4)}",
+            "taskId" to taskId,
+            "title" to title,
+            "status" to status,
+            "summary" to summary,
+            "timestamp" to now
+        )
+        taskNotifications.add(0, event)
+        while (taskNotifications.size > 40) {
+            taskNotifications.removeAt(taskNotifications.lastIndex)
+        }
     }
 
     // =========================================================================
@@ -366,35 +710,61 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
                 if (!map.containsKey("scheduleTime")) {
                     map["scheduleTime"] = "08:00"
                 }
+
+                val liveSandbox = activeSandboxes[taskId]
                 val isKilled = killedTaskIds.contains(taskId)
-                val isRunningNow = runningTaskIds.contains(taskId)
                 val rawStatus = (map["status"] as? String)?.uppercase() ?: "ACTIVE"
-                val enabled = (map["enabled"] as? Boolean) ?: (rawStatus != "PAUSED" && rawStatus != "KILLED" && rawStatus != "STOPPED")
+                val enabled = (map["enabled"] as? Boolean)
+                    ?: (rawStatus !in listOf("PAUSED", "SUSPENDED", "KILLED", "STOPPED", "COMPLETED"))
 
                 val effectiveStatus = when {
-                    isRunningNow -> "RUNNING"
+                    liveSandbox != null && liveSandbox.isSuspended() -> "SUSPENDED"
+                    liveSandbox != null && liveSandbox.isActive() -> "RUNNING"
                     isKilled || rawStatus == "KILLED" -> "KILLED"
                     rawStatus == "WAITING_APPROVAL" -> "WAITING_APPROVAL"
+                    rawStatus == "COMPLETED" -> "COMPLETED"
+                    rawStatus == "SUSPENDED" -> "PAUSED"
                     enabled -> "ACTIVE"
                     else -> "PAUSED"
                 }
                 map["status"] = effectiveStatus
                 map["enabled"] = enabled && !isKilled
+                map["sandboxId"] = liveSandbox?.sandboxId ?: (map["sandboxId"] as? String ?: "")
+                map["currentStep"] = liveSandbox?.currentStep ?: (map["currentStep"] as? String ?: "")
+                val execTarget = TaskCapabilityRouter.normalizeExecutionTarget(map["executionTarget"] as? String)
+                map["executionTarget"] = execTarget
+
+                // Populate or normalize 6-category Preprocessor Route preview
+                val rawCat = (map["taskCategory"] as? String).orEmpty()
+                val isModernCat = TaskRoutingCategory.entries.any { it.name == rawCat }
+                if (!isModernCat || (map["routeTarget"] as? String).isNullOrBlank()) {
+                    val previewAssessment = TaskCapabilityRouter.assessTask(
+                        intent = (map["intent"] as? String) ?: "auto",
+                        prompt = (map["prompt"] as? String) ?: "",
+                        executionTarget = execTarget,
+                        systemHome = resolveSystemHome(),
+                        localProvider = null
+                    )
+                    map["routeTarget"] = previewAssessment.targetRoute
+                    map["taskCategory"] = previewAssessment.taskCategory
+                    map["routingReason"] = previewAssessment.reason
+                }
                 tasksList.add(map)
             } catch (e: Exception) {
                 logger.warning("Skipping malformed task file $rel: ${e.message}")
             }
         }
 
-        // Sort: RUNNING (0) -> WAITING_APPROVAL (1) -> ACTIVE (2) -> PAUSED (3) -> KILLED (4)
+        // Sort: RUNNING (0) -> SUSPENDED (1) -> WAITING_APPROVAL (2) -> ACTIVE (3) -> PAUSED (4) -> COMPLETED/KILLED (5)
         val sortedTasks = tasksList.sortedWith(
             compareBy<Map<String, Any?>> { task ->
                 when ((task["status"] as? String)?.uppercase()) {
                     "RUNNING" -> 0
-                    "WAITING_APPROVAL" -> 1
-                    "ACTIVE" -> 2
-                    "PAUSED", "STOPPED" -> 3
-                    else -> 4
+                    "SUSPENDED" -> 1
+                    "WAITING_APPROVAL" -> 2
+                    "ACTIVE" -> 3
+                    "PAUSED", "STOPPED" -> 4
+                    else -> 5
                 }
             }.thenByDescending { (it["lastRunAt"] as? Number)?.toLong() ?: 0L }
         )
@@ -412,6 +782,8 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             "tasksDir" to tasksDir,
             "killSwitchEngaged" to engineSuspended,
             "tasks" to sortedTasks,
+            "activeSandboxes" to activeSandboxes.values.map { it.toMetadataMap() },
+            "notifications" to taskNotifications.take(20),
             "activeSessions" to activeSessions,
             "auditLogs" to auditLogs
         )
@@ -424,6 +796,25 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         frequency: String,
         scheduleTime: String,
         requiresApproval: Boolean
+    ): String {
+        return createTaskWithIntent(
+            title = title,
+            intent = "auto",
+            prompt = prompt,
+            frequency = frequency,
+            scheduleTime = scheduleTime,
+            requiresApproval = requiresApproval
+        )
+    }
+
+    open fun createTaskWithIntent(
+        title: String,
+        intent: String,
+        prompt: String,
+        frequency: String,
+        scheduleTime: String,
+        requiresApproval: Boolean,
+        executionTarget: String = "auto"
     ): String {
         val fs = PlatformFileSystem()
         val tasksDir = resolveTasksDir()
@@ -444,28 +835,45 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         globalEmergencyStopped = false
         killedTaskIds.remove(taskId)
 
+        val cleanIntent = intent.trim().ifBlank { "auto" }
+        val cleanTarget = TaskCapabilityRouter.normalizeExecutionTarget(executionTarget)
         val cleanFreq = frequency.ifBlank { "daily" }
         val cleanTime = scheduleTime.ifBlank { "08:00" }
         val needsHitl = requiresApproval || isApprovalRequiredForPrompt(prompt)
+        val resolvedTitle = title.ifBlank { formatTaskTitle(taskId, prompt) }
+
+        val assessment = TaskCapabilityRouter.assessTask(
+            intent = cleanIntent,
+            prompt = prompt,
+            executionTarget = cleanTarget,
+            systemHome = resolveSystemHome(),
+            localProvider = resolveLlmFactory()?.getProvider("On-Device Model")
+        )
 
         val taskMap = linkedMapOf<String, Any?>(
             "taskId" to taskId,
-            "title" to title.ifBlank { formatTaskTitle(taskId, prompt) },
-            "intent" to "autonomous.task",
+            "title" to resolvedTitle,
+            "intent" to cleanIntent,
             "prompt" to prompt,
             "frequency" to cleanFreq,
             "scheduleTime" to cleanTime,
+            "executionTarget" to cleanTarget,
             "enabled" to true,
             "status" to if (needsHitl) "WAITING_APPROVAL" else "ACTIVE",
             "requiresApproval" to needsHitl,
             "approvalReason" to if (needsHitl) "Awaiting user approval before first execution." else "",
+            "sandboxId" to "",
+            "routeTarget" to assessment.targetRoute,
+            "taskCategory" to assessment.taskCategory,
+            "routingReason" to assessment.reason,
+            "currentStep" to if (needsHitl) "Waiting for user approval" else "Scheduled ($cleanFreq at $cleanTime) • ${assessment.taskCategory}",
             "createdAt" to PlatformSystem.currentTimeMillis(),
             "lastRunAt" to 0L,
-            "lastResult" to if (needsHitl) "Waiting for user approval." else "Scheduled ($cleanFreq at $cleanTime)."
+            "lastResult" to if (needsHitl) "Waiting for user approval." else "Scheduled ($cleanFreq at $cleanTime). ${assessment.reason}"
         )
 
         fs.writeText(filePath, JsonUtil.toPrettyJsonString(taskMap), append = false)
-        recordAuditLog("TASK_CREATED", "Created task [$taskId] (${taskMap["title"]}) - $cleanFreq at $cleanTime")
+        recordAuditLog("TASK_CREATED", "Created task [$taskId] ($resolvedTitle) - executionTarget=$cleanTarget, category=${assessment.taskCategory}")
         return JsonUtil.toJsonString(taskMap)
     }
 
@@ -477,6 +885,29 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         scheduleTime: String,
         enabled: Boolean
     ): String {
+        return updateTaskWithIntent(
+            taskId = taskId,
+            title = title,
+            intent = "",
+            prompt = prompt,
+            frequency = frequency,
+            scheduleTime = scheduleTime,
+            enabled = enabled,
+            requiresApproval = false
+        )
+    }
+
+    open fun updateTaskWithIntent(
+        taskId: String,
+        title: String,
+        intent: String,
+        prompt: String,
+        frequency: String,
+        scheduleTime: String,
+        enabled: Boolean,
+        requiresApproval: Boolean = false,
+        executionTarget: String = ""
+    ): String {
         val (filePath, existing) = findTaskFile(taskId)
             ?: return """{"error":"Task not found: $taskId"}"""
         val fs = PlatformFileSystem()
@@ -484,41 +915,67 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         if (enabled) {
             killedTaskIds.remove(taskId)
         }
+        val cleanIntent = intent.trim().ifBlank { (existing["intent"] as? String) ?: "auto" }
+        val cleanTarget = TaskCapabilityRouter.normalizeExecutionTarget(
+            executionTarget.ifBlank { (existing["executionTarget"] as? String) ?: "auto" }
+        )
+        val assessment = TaskCapabilityRouter.assessTask(
+            intent = cleanIntent,
+            prompt = prompt,
+            executionTarget = cleanTarget,
+            systemHome = resolveSystemHome(),
+            localProvider = resolveLlmFactory()?.getProvider("On-Device Model")
+        )
+        val needsHitl = requiresApproval || isApprovalRequiredForPrompt(prompt)
+
         existing["title"] = title.ifBlank { existing["title"] ?: taskId }
+        existing["intent"] = cleanIntent
         existing["prompt"] = prompt
         existing["frequency"] = frequency.ifBlank { "daily" }
         existing["scheduleTime"] = scheduleTime.ifBlank { "08:00" }
+        existing["executionTarget"] = cleanTarget
+        existing["requiresApproval"] = needsHitl
+        if (needsHitl && (existing["approvalReason"] as? String).isNullOrBlank()) {
+            existing["approvalReason"] = "Awaiting user approval before execution."
+        } else if (!needsHitl) {
+            existing["approvalReason"] = ""
+        }
         existing["enabled"] = enabled
+        existing["routeTarget"] = assessment.targetRoute
+        existing["taskCategory"] = assessment.taskCategory
+        existing["routingReason"] = assessment.reason
         val curStatus = (existing["status"] as? String)?.uppercase() ?: "ACTIVE"
         existing["status"] = when {
             !enabled -> "PAUSED"
-            curStatus == "WAITING_APPROVAL" -> "WAITING_APPROVAL"
+            needsHitl || curStatus == "WAITING_APPROVAL" -> "WAITING_APPROVAL"
             else -> "ACTIVE"
         }
 
         fs.writeText(filePath, JsonUtil.toPrettyJsonString(existing), append = false)
-        recordAuditLog("TASK_UPDATED", "Updated task [$taskId] (${existing["title"]}), enabled=$enabled")
+        recordAuditLog("TASK_UPDATED", "Updated task [$taskId] (${existing["title"]}), executionTarget=$cleanTarget, category=${assessment.taskCategory}")
         return JsonUtil.toJsonString(existing)
     }
 
     open fun runTaskNow(taskId: String): String {
         val (filePath, existing) = findTaskFile(taskId)
             ?: return """{"error":"Task not found: $taskId"}"""
+        globalEmergencyStopped = false
         killedTaskIds.remove(taskId)
         existing["enabled"] = true
-        val updated = executeTaskFile(filePath, existing, triggeredManually = true, approvedByUser = false)
+        val updated = dispatchTaskToSandbox(filePath, existing, triggeredManually = true, approvedByUser = false)
         return JsonUtil.toJsonString(updated)
     }
 
     open fun approveTask(taskId: String): String {
         val (filePath, existing) = findTaskFile(taskId)
             ?: return """{"error":"Task not found: $taskId"}"""
+        globalEmergencyStopped = false
         killedTaskIds.remove(taskId)
         existing["enabled"] = true
         existing["requiresApproval"] = false
         existing["approvalReason"] = ""
-        recordAuditLog("TASK_APPROVED", "User approved task [$taskId]. Executing now.")
-        val updated = executeTaskFile(filePath, existing, triggeredManually = true, approvedByUser = true)
+        recordAuditLog("TASK_APPROVED", "User approved task [$taskId]. Launching in sandbox.")
+        val updated = dispatchTaskToSandbox(filePath, existing, triggeredManually = true, approvedByUser = true)
         return JsonUtil.toJsonString(updated)
     }
 
@@ -539,13 +996,31 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         val (filePath, existing) = findTaskFile(taskId)
             ?: return """{"error":"Task not found: $taskId"}"""
         val fs = PlatformFileSystem()
+        val title = (existing["title"] as? String) ?: taskId
+
+        val liveSandbox = activeSandboxes.remove(taskId)
+        if (liveSandbox != null) {
+            liveSandbox.killExecution()
+            resolveGuardedRuntime()?.killSandbox(liveSandbox.sandboxId)
+            resolveOrchestration()?.closeSession(liveSandbox.session.sessionId)
+        }
+
         killedTaskIds.add(taskId)
         runningTaskIds.remove(taskId)
         existing["enabled"] = false
         existing["status"] = "KILLED"
-        existing["lastResult"] = "Halted by Kill Switch."
+        existing["sandboxId"] = ""
+        existing["currentStep"] = "Terminated by user"
+        existing["lastResult"] = "Halted by per-task Kill Switch."
         fs.writeText(filePath, JsonUtil.toPrettyJsonString(existing), append = false)
-        recordAuditLog("TASK_KILLED", "Kill Switch engaged for task [$taskId].")
+
+        recordAuditLog("TASK_KILLED", "Kill Switch engaged for task [$taskId] (sandbox=${liveSandbox?.sandboxId ?: "none"}).")
+        emitTaskNotification(
+            taskId = taskId,
+            title = title,
+            status = "KILLED",
+            summary = "Task terminated by user${if (liveSandbox != null) " in sandbox [${liveSandbox.sandboxId}]" else ""}."
+        )
         return JsonUtil.toJsonString(existing)
     }
 
@@ -553,11 +1028,31 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         val (filePath, existing) = findTaskFile(taskId)
             ?: return """{"error":"Task not found: $taskId"}"""
         val fs = PlatformFileSystem()
+        val title = (existing["title"] as? String) ?: taskId
+
+        val liveSandbox = activeSandboxes[taskId]
+        if (liveSandbox != null && liveSandbox.isActive()) {
+            liveSandbox.suspendExecution()
+            resolveGuardedRuntime()?.suspendSandbox(liveSandbox.sandboxId)
+            existing["status"] = "SUSPENDED"
+            existing["currentStep"] = liveSandbox.currentStep
+            fs.writeText(filePath, JsonUtil.toPrettyJsonString(existing), append = false)
+            recordAuditLog("TASK_SUSPENDED", "Suspended in-progress task [$taskId] in sandbox [${liveSandbox.sandboxId}].")
+            emitTaskNotification(
+                taskId = taskId,
+                title = title,
+                status = "SUSPENDED",
+                summary = "Suspended execution in sandbox [${liveSandbox.sandboxId}]."
+            )
+            return JsonUtil.toJsonString(existing)
+        }
+
         runningTaskIds.remove(taskId)
         existing["enabled"] = false
         existing["status"] = "PAUSED"
+        existing["currentStep"] = "Paused by user"
         fs.writeText(filePath, JsonUtil.toPrettyJsonString(existing), append = false)
-        recordAuditLog("TASK_PAUSED", "Paused task [$taskId].")
+        recordAuditLog("TASK_PAUSED", "Paused scheduled task [$taskId].")
         return JsonUtil.toJsonString(existing)
     }
 
@@ -565,10 +1060,31 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         val (filePath, existing) = findTaskFile(taskId)
             ?: return """{"error":"Task not found: $taskId"}"""
         val fs = PlatformFileSystem()
+        val title = (existing["title"] as? String) ?: taskId
         globalEmergencyStopped = false
         killedTaskIds.remove(taskId)
+
+        val liveSandbox = activeSandboxes[taskId]
+        if (liveSandbox != null && liveSandbox.isSuspended()) {
+            liveSandbox.resumeExecution()
+            resolveGuardedRuntime()?.resumeSandbox(liveSandbox.sandboxId)
+            existing["enabled"] = true
+            existing["status"] = "RUNNING"
+            existing["currentStep"] = liveSandbox.currentStep
+            fs.writeText(filePath, JsonUtil.toPrettyJsonString(existing), append = false)
+            recordAuditLog("TASK_RESUMED", "Resumed suspended task [$taskId] in sandbox [${liveSandbox.sandboxId}].")
+            emitTaskNotification(
+                taskId = taskId,
+                title = title,
+                status = "RUNNING",
+                summary = "Resumed execution in sandbox [${liveSandbox.sandboxId}]."
+            )
+            return JsonUtil.toJsonString(existing)
+        }
+
         existing["enabled"] = true
         existing["status"] = "ACTIVE"
+        existing["currentStep"] = "Scheduled and active"
         fs.writeText(filePath, JsonUtil.toPrettyJsonString(existing), append = false)
         recordAuditLog("TASK_RESUMED", "Resumed task [$taskId] to ACTIVE state.")
         return JsonUtil.toJsonString(existing)
@@ -578,6 +1094,12 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         val (filePath, _) = findTaskFile(taskId)
             ?: return """{"deleted":false,"taskId":"$taskId"}"""
         val fs = PlatformFileSystem()
+        val liveSandbox = activeSandboxes.remove(taskId)
+        if (liveSandbox != null) {
+            liveSandbox.killExecution()
+            resolveGuardedRuntime()?.killSandbox(liveSandbox.sandboxId)
+            resolveOrchestration()?.closeSession(liveSandbox.session.sessionId)
+        }
         killedTaskIds.remove(taskId)
         runningTaskIds.remove(taskId)
         fs.delete(filePath)

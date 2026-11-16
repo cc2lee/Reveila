@@ -8,6 +8,12 @@ import kotlinx.coroutines.flow.Flow
  */
 interface OnDeviceInferenceDelegate {
     fun isModelLoaded(): Boolean
+    fun generateBlocking(
+        formattedPrompt: String,
+        stopToken: String,
+        maxTokens: Int = 256,
+        grammar: String = ""
+    ): String = generateBlocking(formattedPrompt, stopToken, maxTokens)
     fun generateBlocking(formattedPrompt: String, stopToken: String, maxTokens: Int = 256): String
     fun generateStream(formattedPrompt: String, stopToken: String, maxTokens: Int = 256): Flow<String>
     fun scheduleRelease()

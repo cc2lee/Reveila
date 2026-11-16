@@ -286,11 +286,20 @@ open class AgenticFabric : SystemComponent() {
      * Executes the comprehensive Agentic AI loop for a given intent and session.
      */
     open fun processIntent(session: AgentSession, subject: Subject, intent: String): Map<String, Any?> {
+        return processIntent(session, subject, intent, preferredProviderName = null)
+    }
+
+    open fun processIntent(
+        session: AgentSession,
+        subject: Subject,
+        intent: String,
+        preferredProviderName: String?
+    ): Map<String, Any?> {
         val traceId = session.parentTraceId ?: Uuid.randomUuid()
         TraceContextHolder.setTraceId(traceId)
         val dummyPlugin = Plugin(session.sessionId, "AgenticFabric", "default-tenant", traceId)
 
-        logger.info("[Fabric] Processing intent (trace: $traceId): $intent")
+        logger.info("[Fabric] Processing intent (trace: $traceId, preferredProvider=${preferredProviderName ?: "default"}): $intent")
 
         // 1. Subject Principal Authorization
         val principals = subject.principals
@@ -371,7 +380,7 @@ open class AgenticFabric : SystemComponent() {
 
             var rawResponse: String?
             try {
-                rawResponse = askAi(session, intentBuffer)
+                rawResponse = askAi(session, intentBuffer, preferredProviderName)
             } catch (e: LlmException) {
                 val errMsg = "ERROR: Failed to get response from LLM: ${e.message}"
                 logger.severe(errMsg)
@@ -814,8 +823,16 @@ open class AgenticFabric : SystemComponent() {
     }
 
     @Throws(LlmException::class)
-    private fun askAi(session: AgentSession, userPrompt: String): String {
-        val worker = llmFactory?.getActiveProvider()
+    private fun askAi(
+        session: AgentSession,
+        userPrompt: String,
+        preferredProviderName: String? = null
+    ): String {
+        val worker = if (!preferredProviderName.isNullOrBlank()) {
+            llmFactory?.getProvider(preferredProviderName) ?: llmFactory?.getActiveProvider()
+        } else {
+            llmFactory?.getActiveProvider()
+        }
         if (worker == null) {
             val msg = "System Error: No active LLM Provider found."
             logger.severe(msg)

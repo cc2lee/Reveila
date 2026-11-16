@@ -231,7 +231,7 @@ actual object PlatformEngineBridge {
                         null
                     }
                     val synthesized = buildString {
-                        appendLine("Sovereign On-Device RAG Response (Inference Documents Active):")
+                        appendLine("Sovereign On-Device RAG Response (Reference Documents Active):")
                         if (!ragSnippets.isNullOrBlank() && !ragSnippets.contains("No relevant internal documents")) {
                             appendLine(ragSnippets)
                         } else {
@@ -358,7 +358,7 @@ actual object PlatformEngineBridge {
             var chosen: String? = null
             javax.swing.SwingUtilities.invokeAndWait {
                 val chooser = javax.swing.JFileChooser().apply {
-                    dialogTitle = "Select or Create Inference Documents Folder"
+                    dialogTitle = "Select or Create Reference Documents Folder"
                     fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
                     isAcceptAllFileFilterUsed = false
                     currentDirectory = File(System.getProperty("user.home"), "Documents").apply { mkdirs() }
@@ -446,7 +446,7 @@ actual object PlatformEngineBridge {
                 File(dir, "Reveila_Sovereign_Overview.md").writeText(
                     """
                     # Reveila Sovereign AI Reference Document
-                    This document is indexed in your local Inference Documents vector store.
+                    This document is indexed in your local Reference Documents vector store.
                     Physical folder location: ${dir.absolutePath}
                     Focus areas: strategy, confidential architecture, multi-platform roadmap, zero cloud leaks.
                     """.trimIndent()
