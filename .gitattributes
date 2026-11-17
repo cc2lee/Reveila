@@ -1,3 +1,12 @@
+# Auto-detect text files and normalize to LF in the Git index
+* text=auto
+
+# Enforce LF line endings on checkout for POSIX shell scripts and Git hooks
+.scripts/git-hooks/* text eol=lf
 *.sh text eol=lf
+gradlew text eol=lf
+
+# Keep Windows scripts as CRLF
 *.bat text eol=crlf
+*.cmd text eol=crlf
 *.ps1 text eol=crlf
