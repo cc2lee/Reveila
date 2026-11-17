@@ -63,6 +63,8 @@ fun AeginApp() {
     var isDark by remember { mutableStateOf(true) }
     var currentRoute by remember { mutableStateOf(AeginRoute.HOME) }
     var previousRoute by remember { mutableStateOf(AeginRoute.HOME) }
+    var activeSpaceId by remember { mutableStateOf("main-space") }
+    var activeSpaceName by remember { mutableStateOf("Main Space") }
     var pendingSpacePrompt by remember { mutableStateOf<String?>(null) }
 
     // Non-blocking startup activation of the Reveila background engine
@@ -93,6 +95,12 @@ fun AeginApp() {
                             onNavigateToSettings = { currentRoute = AeginRoute.SETTINGS },
                             onNavigateToExplore = { currentRoute = AeginRoute.EXPLORE },
                             onToggleTheme = { isDark = !isDark },
+                            activeSpaceId = activeSpaceId,
+                            activeSpaceName = activeSpaceName,
+                            onSelectSpace = { sid, sname ->
+                                activeSpaceId = sid
+                                activeSpaceName = sname
+                            },
                             initialPrompt = pendingSpacePrompt,
                             onConsumedInitialPrompt = { pendingSpacePrompt = null }
                         )
@@ -109,7 +117,9 @@ fun AeginApp() {
                                 previousRoute = AeginRoute.EXPLORE
                                 currentRoute = AeginRoute.SECURITY_MODAL
                             },
-                            onLaunchSpaceInChat = { prompt ->
+                            onLaunchSpaceInChat = { spaceId, spaceName, prompt ->
+                                activeSpaceId = spaceId
+                                activeSpaceName = spaceName
                                 pendingSpacePrompt = prompt
                                 currentRoute = AeginRoute.HOME
                             }

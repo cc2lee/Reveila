@@ -1,5 +1,7 @@
 package com.reveila.aegin.bridge
 
+import com.reveila.aegin.model.DesktopModelDownloadManager
+import com.reveila.aegin.model.ResumableModelDownloader
 import com.reveila.system.DefaultPlatformAdapter
 import com.reveila.system.Properties
 import com.reveila.system.Reveila
@@ -8,6 +10,7 @@ import com.reveila.system.Subject
 import com.reveila.util.json.JsonUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
@@ -22,6 +25,7 @@ actual object PlatformEngineBridge {
     private val engine = Reveila()
     private val isStarted = AtomicBoolean(false)
     private val isStarting = AtomicBoolean(false)
+    private val desktopDownloadManager = DesktopModelDownloadManager()
     private val storageMap = ConcurrentHashMap<String, String>()
     private var activeSystemHome: File = resolveWritableSystemHome()
     private var storageFile: File = File(activeSystemHome, "data/aegin_prefs.properties")
@@ -61,6 +65,7 @@ actual object PlatformEngineBridge {
             "configs/settings/security.properties",
             "configs/settings/identity.properties",
             "configs/templates/intent_validation_prompt.md",
+            "models/manifest.json",
             "ReveilaVault/Reveila_Sovereign_Architecture.md"
         )
         val loader = PlatformEngineBridge::class.java.classLoader
@@ -221,7 +226,7 @@ actual object PlatformEngineBridge {
 
             // If askAgent encountered a local LLM connection error (e.g. llama-server not running on port 8080/8888),
             // synthesize a sovereign RAG response directly from KnowledgeVault vector search.
-            if (component == "AgenticFabric" && method == "askAgent" && result is Map<*, *>) {
+            if (component == "AgenticFabric" && (method == "askAgent" || method == "askAgentWithMode" || method == "askAgentInSpace") && result is Map<*, *>) {
                 val answer = result["answer"]?.toString() ?: ""
                 if (answer.contains("Failed to get response from LLM") || answer.contains("LLM Invocation Failure")) {
                     val userPrompt = params.firstOrNull() ?: ""
@@ -572,8 +577,130 @@ actual object PlatformEngineBridge {
             )
         }
 
-    actual fun streamAgent(prompt: String, sessionId: String?, prevSummary: String?): Flow<String> = flow {
-        emit(invoke("AgenticFabric", "askAgent", listOf(prompt, sessionId ?: "", prevSummary ?: "")))
+    private fun readDesktopModelManifest(): LocalModelManifest {
+        val file = File(activeSystemHome, "models/manifest.json")
+        val raw = try {
+            if (file.exists()) {
+                file.readText(Charsets.UTF_8)
+            } else {
+                PlatformEngineBridge::class.java.classLoader
+                    ?.getResourceAsStream("reveila/models/manifest.json")
+                    ?.bufferedReader()
+                    ?.use { it.readText() }
+                    ?: "{}"
+            }
+        } catch (_: Exception) {
+            "{}"
+        }
+        return AeginBridge.parseModelManifest(raw)
+    }
+
+    private fun readDesktopDownloadBaseUrl(): String {
+        return try {
+            val propFile = File(activeSystemHome, "configs/reveila.properties")
+            if (propFile.exists()) {
+                val p = java.util.Properties()
+                propFile.inputStream().use { p.load(it) }
+                p.getProperty("download.base.url")?.trim().orEmpty()
+            } else {
+                ""
+            }
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    actual suspend fun checkLocalModelAvailability(modelName: String): LocalModelCheckResult =
+        withContext(Dispatchers.IO) {
+            val manifest = readDesktopModelManifest()
+            val entry = AeginBridge.resolveManifestEntry(manifest, modelName)
+            val effectiveName = modelName.trim().ifBlank {
+                entry?.effectiveFilename() ?: ModelTierCatalog.MODEL_GEMMA_2B
+            }
+            val modelsDir = File(activeSystemHome, "models").apply { mkdirs() }
+            val exact = File(modelsDir, effectiveName)
+            val matched = if (ResumableModelDownloader.hasValidGgufHeader(exact)) {
+                exact
+            } else {
+                modelsDir.listFiles { _, n -> n.equals(effectiveName, ignoreCase = true) }
+                    ?.firstOrNull { ResumableModelDownloader.hasValidGgufHeader(it) }
+            }
+            val partFile = File(modelsDir, "$effectiveName.part")
+            val partialBytes = if (partFile.exists()) partFile.length() else 0L
+            val manifestUrl = entry?.let { AeginBridge.buildManifestDownloadUrl(manifest, it) }.orEmpty()
+            val fallbackBase = readDesktopDownloadBaseUrl().trimEnd('/')
+            val downloadUrl = manifestUrl.ifBlank {
+                if (fallbackBase.isNotEmpty()) "$fallbackBase/llms/$effectiveName" else ""
+            }
+            val approxBytes = entry?.approxSizeBytes ?: when {
+                effectiveName.contains("0.5b", ignoreCase = true) -> 491_400_000L
+                effectiveName.contains("1.5b", ignoreCase = true) -> 1_100_000_000L
+                effectiveName.contains("gemma-2-2b", ignoreCase = true) -> 1_708_582_752L
+                else -> 1_500_000_000L
+            }
+            LocalModelCheckResult(
+                modelName = effectiveName,
+                existsLocally = matched != null && matched.exists(),
+                localPath = matched?.absolutePath.orEmpty(),
+                partialBytes = partialBytes,
+                downloadUrl = downloadUrl,
+                approxSizeBytes = approxBytes,
+                sha256 = entry?.sha256.orEmpty(),
+                isWifiConnected = true,
+                isMeteredNetwork = false,
+                requiresAuthToken = entry?.requiresAuthToken ?: false
+            )
+        }
+
+    actual suspend fun downloadLocalModel(modelName: String): Boolean {
+        val check = checkLocalModelAvailability(modelName)
+        val modelsDir = withContext(Dispatchers.IO) {
+            File(activeSystemHome, "models").apply { mkdirs() }
+        }
+        val targetFile = File(modelsDir, check.modelName)
+        val candidateUrls = buildList {
+            if (check.downloadUrl.isNotBlank()) add(check.downloadUrl)
+            val base = readDesktopDownloadBaseUrl().trimEnd('/')
+            if (base.isNotEmpty()) add("$base/llms/${check.modelName}")
+            add("http://127.0.0.1:8000/llms/${check.modelName}")
+        }.distinct()
+
+        return desktopDownloadManager.downloadAndAwait(
+            modelName = check.modelName,
+            candidateUrls = candidateUrls,
+            targetFile = targetFile,
+            expectedSha256 = check.sha256,
+            approxSizeBytes = check.approxSizeBytes
+        )
+    }
+
+    actual suspend fun pauseLocalModelDownload(modelName: String) {
+        desktopDownloadManager.pauseActiveDownload(modelName)
+    }
+
+    actual fun observeLocalModelDownloadState(): StateFlow<LocalModelDownloadState> =
+        desktopDownloadManager.state
+
+    actual fun streamAgent(
+        prompt: String,
+        sessionId: String?,
+        prevSummary: String?,
+        assistantMode: String?,
+        spaceId: String?,
+        spaceName: String?
+    ): Flow<String> = flow {
+        val raw = if (!spaceId.isNullOrBlank()) {
+            invoke(
+                "AgenticFabric",
+                "askAgentInSpace",
+                listOf(prompt, spaceId, spaceName ?: "", sessionId ?: "", prevSummary ?: "", assistantMode ?: "")
+            )
+        } else if (!assistantMode.isNullOrBlank()) {
+            invoke("AgenticFabric", "askAgentWithMode", listOf(prompt, sessionId ?: "", prevSummary ?: "", assistantMode))
+        } else {
+            invoke("AgenticFabric", "askAgent", listOf(prompt, sessionId ?: "", prevSummary ?: ""))
+        }
+        emit(raw)
     }.flowOn(Dispatchers.IO)
 
     actual suspend fun releaseLocalModel() {

@@ -255,6 +255,7 @@ abstract class PrepareSlimSystemHomeTask : DefaultTask() {
             "configs/settings/security.properties",
             "configs/settings/identity.properties",
             "configs/templates/intent_validation_prompt.md",
+            "models/manifest.json",
             "tasks/daily-news.json"
         )
         for (relPath in essentialConfigFiles) {

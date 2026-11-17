@@ -1,48 +1,117 @@
-# Compiled class file
+# ==============================================================================
+# Reveila-Suite Unified .gitignore
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Gradle, Kotlin Multiplatform (KMP), Java & Maven
+# ------------------------------------------------------------------------------
+.gradle/
+**/build/
+!**/src/**/build/
+.kotlin/
+kotlin-js-store/
+target/
 *.class
-
-# Log file
-*.log
-build_log.txt
-
-# BlueJ files
 *.ctxt
-
-# Mobile Tools for Java (J2ME)
 .mtj.tmp/
-
-# Package Files #
 *.jar
 *.war
 *.ear
+*.hprof
+*.jfr
 
-# Gradle
-.gradle/
+# Local configurations & signing secrets
+local.properties
+*.keystore
+*.jks
+google-services.json
 
-# node_modules
-node_modules/
-
-# IDE
-.idea*/
-.vscode/
-.vscode-logs/
-bin/
-
-# Local compiled classes and builds
-**/build/
+# ------------------------------------------------------------------------------
+# 2. Android NDK, CMake & Native JNI Builds (llama.cpp / Aegin)
+# ------------------------------------------------------------------------------
 **/.cxx/
 **/.externalNativeBuild/
+**/cmake-build-*/
+**/obj/
+**/out/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Makefile
+*.a
+*.so
+*.dylib
+*.dll
+*.lib
+*.exp
+*.pdb
+*.o
+*.lo
+*.la
 
-# Maven
-target/
-
-# Local configurations
-local.properties
-
-# IDE module files
-*.iml
-
-# Sovereign Data (Local Persistence)
+# ------------------------------------------------------------------------------
+# 3. Sovereign Data, Local Persistence & LLM Model Weights
+# ------------------------------------------------------------------------------
 **/infrastructure/data/postgres/
 scratch/
 *.gguf
+*.ggml
+*.bin
+*.safetensors
+*.onnx
+*.pte
+*.tflite
+**/models/*.json
+!**/system-home/**/models/*.json
+
+# Local runtime databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ------------------------------------------------------------------------------
+# 4. Logs & Temp Artifacts
+# ------------------------------------------------------------------------------
+*.log
+build_log.txt
+logs/
+tmp/
+temp/
+
+# ------------------------------------------------------------------------------
+# 5. Expo / React Native / Node
+# ------------------------------------------------------------------------------
+node_modules/
+.expo/
+.expo-shared/
+dist/
+web-build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.metro-health-check*
+
+# ------------------------------------------------------------------------------
+# 6. IDEs & Operating Systems (Windows 11, Android Studio, VS Code)
+# ------------------------------------------------------------------------------
+.idea*/
+*.iml
+*.ipr
+*.iws
+captures/
+.navigation/
+.vscode/
+.vscode-logs/
+bin/
+*.code-workspace
+
+# Windows & macOS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+.DS_Store

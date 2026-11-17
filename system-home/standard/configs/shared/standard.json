@@ -72,7 +72,10 @@
             "name": "AgentSessionManager",
             "class": "com.reveila.ai.AgentSessionManager",
             "description": "Manages agentic sessions and context persistence.",
-            "thread-safe": true
+            "thread-safe": true,
+            "dependencies": [
+                "DataService"
+            ]
         }
     },
     {
@@ -80,7 +83,11 @@
             "name": "OrchestrationService",
             "class": "com.reveila.ai.OrchestrationService",
             "description": "Orchestrates multi-agent workflows.",
-            "thread-safe": true
+            "thread-safe": true,
+            "dependencies": [
+                "AgentSessionManager",
+                "DataService"
+            ]
         }
     },
     {

@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.reveila.aegin.bridge.AeginBridge
 import com.reveila.aegin.bridge.AuditLogItem
+import com.reveila.aegin.bridge.SpaceThreadSummary
 import com.reveila.aegin.bridge.TaskItem
 import com.reveila.aegin.ui.PlatformBackHandler
 import com.reveila.aegin.ui.theme.AeginIconType
@@ -81,16 +82,20 @@ private data class CuratedSpaceTemplate(
 fun ExploreScreen(
     onBack: () -> Unit,
     onOpenSecurityPortal: () -> Unit,
-    onLaunchSpaceInChat: (String) -> Unit = {}
+    onLaunchSpaceInChat: (spaceId: String, spaceName: String, initialPrompt: String?) -> Unit = { _, _, _ -> }
 ) {
     val theme = LocalAeginColors.current
     val scope = rememberCoroutineScope()
 
     val tasks = remember { mutableStateListOf<TaskItem>() }
+    val persistedSpaces = remember { mutableStateListOf<SpaceThreadSummary>() }
     val auditLogs = remember { mutableStateListOf<AuditLogItem>() }
     var isLoading by remember { mutableStateOf(false) }
     var busyTaskId by remember { mutableStateOf<String?>(null) }
     var activeFilter by remember { mutableStateOf("Overview") } // "Overview" | "Approvals" | "Automations" | "Audit"
+
+    var showNewSpaceDialog by remember { mutableStateOf(false) }
+    var newSpaceNameInput by remember { mutableStateOf("") }
 
     // Create / Edit Task Dialog State
     var showTaskDialog by remember { mutableStateOf(false) }
@@ -150,8 +155,11 @@ fun ExploreScreen(
         if (!silent) isLoading = true
         try {
             val dashboard = AeginBridge.getTasksDashboard()
+            val spacesList = AeginBridge.listSpaces()
             tasks.clear()
             tasks.addAll(dashboard.tasks)
+            persistedSpaces.clear()
+            persistedSpaces.addAll(spacesList)
             auditLogs.clear()
             auditLogs.addAll(dashboard.auditLogs)
         } catch (_: Exception) {
@@ -271,6 +279,7 @@ fun ExploreScreen(
 
     PlatformBackHandler {
         when {
+            showNewSpaceDialog -> showNewSpaceDialog = false
             showTaskDialog -> showTaskDialog = false
             showKillAllConfirm -> showKillAllConfirm = false
             else -> onBack()
@@ -549,8 +558,150 @@ fun ExploreScreen(
                 }
             }
 
-            // 1. CURATED MUSE-STYLE SPACES CAROUSEL (Shown in Overview)
+            // 1. PERSISTED CONVERSATION SPACES & CURATED SPACES (Shown in Overview)
             if (activeFilter == "Overview") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "CONVERSATION SPACES (${persistedSpaces.size})",
+                            color = theme.subText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 0.9.sp
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(theme.cyan.copy(alpha = 0.14f))
+                                .border(1.dp, theme.cyan.copy(alpha = 0.45f), CircleShape)
+                                .clickable {
+                                    newSpaceNameInput = ""
+                                    showNewSpaceDialog = true
+                                }
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "+ New Space",
+                                color = theme.cyan,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    if (persistedSpaces.isEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(theme.card)
+                                .border(1.dp, theme.glassBorder, RoundedCornerShape(16.dp))
+                                .clickable { onLaunchSpaceInChat("main-space", "Main Space", null) }
+                                .padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Main Space",
+                                    color = theme.text,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Text(
+                                    text = "Start a conversation or tap + New Space to organize threads by topic.",
+                                    color = theme.subText,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Text(
+                                text = "Open →",
+                                color = theme.cyan,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        persistedSpaces.forEach { spaceItem ->
+                            val subtitleText = spaceItem.summary.ifBlank {
+                                spaceItem.lastMessagePreview.ifBlank { "Persisted conversation thread" }
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .background(theme.card)
+                                    .border(1.dp, theme.glassBorder, RoundedCornerShape(18.dp))
+                                    .clickable {
+                                        onLaunchSpaceInChat(spaceItem.spaceId, spaceItem.spaceName, null)
+                                    }
+                                    .padding(14.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f).padding(end = 10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = spaceItem.spaceName,
+                                            color = theme.text,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(CircleShape)
+                                                .background(theme.cyan.copy(alpha = 0.14f))
+                                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "${spaceItem.messageCount} msgs",
+                                                color = theme.cyan,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = subtitleText,
+                                        color = theme.subText,
+                                        fontSize = 12.sp,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(CircleShape)
+                                        .background(theme.primaryGradient)
+                                        .clickable {
+                                            onLaunchSpaceInChat(spaceItem.spaceId, spaceItem.spaceName, null)
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 7.dp)
+                                ) {
+                                    Text(
+                                        text = "Continue",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -579,6 +730,10 @@ fun ExploreScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         curatedSpaces.forEach { space ->
+                            val curatedSpaceId = AeginBridge.normalizeSpaceId(space.title)
+                            val hasExistingHistory = persistedSpaces.any {
+                                it.spaceId == curatedSpaceId && it.messageCount > 0
+                            }
                             Column(
                                 modifier = Modifier
                                     .width(245.dp)
@@ -649,12 +804,18 @@ fun ExploreScreen(
                                             .weight(1f)
                                             .clip(CircleShape)
                                             .background(space.accentColor)
-                                            .clickable { onLaunchSpaceInChat(space.prompt) }
+                                            .clickable {
+                                                onLaunchSpaceInChat(
+                                                    curatedSpaceId,
+                                                    space.title,
+                                                    if (hasExistingHistory) null else space.prompt
+                                                )
+                                            }
                                             .padding(vertical = 8.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
-                                            text = "Open in Chat",
+                                            text = if (hasExistingHistory) "Continue Chat" else "Open in Chat",
                                             color = Color.White,
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.ExtraBold
@@ -1115,6 +1276,46 @@ fun ExploreScreen(
                 }
             }
         }
+    }
+
+    // CREATE NEW SPACE MODAL
+    if (showNewSpaceDialog) {
+        AlertDialog(
+            onDismissRequest = { showNewSpaceDialog = false },
+            title = { Text("Create Conversation Space") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Conversations in each Space stay isolated and include that Space's history/summary when chatting with AI.",
+                        fontSize = 12.sp
+                    )
+                    OutlinedTextField(
+                        value = newSpaceNameInput,
+                        onValueChange = { newSpaceNameInput = it },
+                        singleLine = true,
+                        placeholder = { Text("e.g., Q4 Strategy Review") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val cleanedName = newSpaceNameInput.trim().ifBlank { "Main Space" }
+                        val cleanedId = AeginBridge.normalizeSpaceId(cleanedName)
+                        showNewSpaceDialog = false
+                        onLaunchSpaceInChat(cleanedId, cleanedName, null)
+                    }
+                ) {
+                    Text("Open Space", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewSpaceDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     // KILL ALL CONFIRMATION DIALOG

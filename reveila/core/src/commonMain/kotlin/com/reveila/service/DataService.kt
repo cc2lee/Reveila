@@ -7,6 +7,7 @@ import com.reveila.data.Repository
 import com.reveila.system.PlatformAdapter
 import com.reveila.system.SystemComponent
 import com.reveila.system.concurrency.PlatformLock
+import com.reveila.system.io.PlatformFileSystem
 
 /**
  * Types of mutations emitted during entity lifecycle events.
@@ -177,7 +178,17 @@ open class DataService : SystemComponent() {
         dynamicRepositories[normalizedType]?.let { return it }
 
         // 3. Auto-spawn a self-contained Sovereign Edge repository (Hexagonal Architecture)
-        val dataDir = context?.properties?.getProperty("data.dir", "./data") ?: "./data"
+        val configuredDataDir = context?.properties?.getProperty("data.dir")?.trim()
+        val dataDir = if (!configuredDataDir.isNullOrBlank()) {
+            configuredDataDir
+        } else {
+            val sysHome = context?.properties?.getProperty("system.home")?.trim()
+            if (!sysHome.isNullOrBlank()) {
+                PlatformFileSystem().resolve(sysHome, "data")
+            } else {
+                "./data"
+            }
+        }
         val sovereignRepo = JsonFileRepository(dataDir, entityType)
         dynamicRepositories[normalizedType] = sovereignRepo
         logger.info("Auto-spawned sovereign edge repository for entity [$entityType] at: $dataDir")

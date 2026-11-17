@@ -93,6 +93,39 @@ abstract class BaseLlmProvider : SystemComponent(), LlmProvider {
 
     override fun getSupportedIntents(): List<String> = intentOptions
 
+    /**
+     * Probes the configured provider endpoint with a lightweight completion request to verify
+     * reachability, credentials, and model availability.
+     */
+    open fun testConnection(timeoutSeconds: Long = 15L): Pair<Boolean, String> {
+        val url = endpoint?.trim().orEmpty()
+        if (url.isBlank()) {
+            return false to "Endpoint URL is required."
+        }
+        return try {
+            val probeRequest = LlmRequest.builder()
+                .addMessage(ReveilaMessage.user("Reply with OK."))
+                .also { builder -> if (!model.isNullOrBlank()) builder.modelId(model) }
+                .build()
+            val body = buildRequestBody(probeRequest)
+            val headers = getHeaders()
+            val shortClient = HttpClientService().apply {
+                readTimeout = timeoutSeconds
+            }
+            val responseJson = shortClient.invokeRest(url, "POST", body, HttpClientService.JSON, headers)
+                ?: return false to "Empty response received from endpoint: $url"
+            val parsed = parseResponse(responseJson)
+            val reply = parsed.content?.trim().orEmpty()
+            if (reply.isNotEmpty() || responseJson.isNotBlank()) {
+                true to "Connection verified for ${getName().ifBlank { url }} (${model.orEmpty().ifBlank { "default" }})."
+            } else {
+                false to "Endpoint returned an empty completion payload."
+            }
+        } catch (e: Exception) {
+            false to (e.message ?: "Connection failed")
+        }
+    }
+
     open fun setName(name: String?) {
         require(!name.isNullOrBlank()) { "Argument 'name' cannot be null or empty." }
         this.providerName = name

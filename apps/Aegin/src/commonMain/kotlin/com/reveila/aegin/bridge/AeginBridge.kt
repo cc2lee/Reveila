@@ -1,6 +1,7 @@
 package com.reveila.aegin.bridge
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -115,13 +116,41 @@ data class LlmProviderConfig(
     val modelOptions: List<String> = emptyList(),
     val temperature: Double = 0.7,
     val apiKey: String = "",
-    val intentOptions: List<String> = emptyList()
+    val intentOptions: List<String> = emptyList(),
+    val tested: Boolean = false,
+    val testedFingerprint: String = ""
+)
+
+@Serializable
+data class ConnectionTestResult(
+    val ok: Boolean,
+    val message: String,
+    val fingerprint: String = ""
 )
 
 @Serializable
 data class ChatMessage(
     val role: String,
     val content: String
+)
+
+@Serializable
+data class SpaceThreadSummary(
+    val spaceId: String,
+    val spaceName: String,
+    val latestSessionId: String = "",
+    val summary: String = "",
+    val messageCount: Int = 0,
+    val lastMessagePreview: String = "",
+    val updatedAt: Long = 0L
+)
+
+@Serializable
+data class SpaceMessageEntry(
+    val role: String,
+    val content: String,
+    val spaceId: String = "main-space",
+    val timestamp: Long = 0L
 )
 
 @Serializable
@@ -144,6 +173,53 @@ data class DeviceCapabilityReport(
     val statusSummary: String = "Hardware verified for local GGUF inference."
 )
 
+@Serializable
+data class LocalModelManifestEntry(
+    val modelId: String = "",
+    val filename: String = "",
+    val role: String = "",
+    val repoPath: String = "",
+    val approxSizeBytes: Long = 0L,
+    val sha256: String = "",
+    val requiresAuthToken: Boolean = false
+) {
+    fun effectiveFilename(): String {
+        val fromPath = repoPath.substringAfterLast('/').substringBefore('?')
+        return filename.ifBlank { fromPath.ifBlank { if (modelId.endsWith(".gguf", ignoreCase = true)) modelId else "$modelId.gguf" } }
+    }
+}
+
+@Serializable
+data class LocalModelManifest(
+    val downloadBaseUrl: String = "https://huggingface.co",
+    val models: List<LocalModelManifestEntry> = emptyList()
+)
+
+@Serializable
+data class LocalModelCheckResult(
+    val modelName: String = "",
+    val existsLocally: Boolean = false,
+    val localPath: String = "",
+    val partialBytes: Long = 0L,
+    val downloadUrl: String = "",
+    val approxSizeBytes: Long = 0L,
+    val sha256: String = "",
+    val isWifiConnected: Boolean = true,
+    val isMeteredNetwork: Boolean = false,
+    val requiresAuthToken: Boolean = false
+)
+
+@Serializable
+data class LocalModelDownloadState(
+    val status: String = "IDLE",
+    val modelName: String = "",
+    val downloadedBytes: Long = 0L,
+    val totalBytes: Long = 0L,
+    val percent: Int = 0,
+    val sourceUrl: String = "",
+    val message: String = ""
+)
+
 /**
  * Multiplatform expect declaration for connecting the Compose UI to the underlying
  * Reveila Sovereign Engine (JVM Desktop, Android Service, iOS Native, or Web Wasm).
@@ -153,8 +229,19 @@ expect object PlatformEngineBridge {
     suspend fun getEngineStatus(): EngineStatus
     suspend fun getDeviceCapabilities(): DeviceCapabilityReport
     suspend fun verifyModelPreflight(modelSizeBytes: Long): PreflightCheckResult
+    suspend fun checkLocalModelAvailability(modelName: String): LocalModelCheckResult
+    suspend fun downloadLocalModel(modelName: String): Boolean
+    suspend fun pauseLocalModelDownload(modelName: String = "")
+    fun observeLocalModelDownloadState(): StateFlow<LocalModelDownloadState>
     suspend fun invoke(component: String, method: String, params: List<String> = emptyList()): String
-    fun streamAgent(prompt: String, sessionId: String? = null, prevSummary: String? = null): Flow<String>
+    fun streamAgent(
+        prompt: String,
+        sessionId: String? = null,
+        prevSummary: String? = null,
+        assistantMode: String? = null,
+        spaceId: String? = null,
+        spaceName: String? = null
+    ): Flow<String>
     suspend fun releaseLocalModel()
     suspend fun authenticateBiometric(): Boolean
     fun saveSensitiveData(data: String)
@@ -219,6 +306,71 @@ object AeginBridge {
         return PlatformEngineBridge.verifyModelPreflight(modelSizeBytes)
     }
 
+    suspend fun checkLocalModelAvailability(modelName: String): LocalModelCheckResult {
+        return PlatformEngineBridge.checkLocalModelAvailability(modelName)
+    }
+
+    suspend fun downloadLocalModel(modelName: String): Boolean {
+        return PlatformEngineBridge.downloadLocalModel(modelName)
+    }
+
+    suspend fun pauseLocalModelDownload(modelName: String = "") {
+        PlatformEngineBridge.pauseLocalModelDownload(modelName)
+    }
+
+    fun observeLocalModelDownloadState(): StateFlow<LocalModelDownloadState> {
+        return PlatformEngineBridge.observeLocalModelDownloadState()
+    }
+
+    fun parseModelManifest(rawJson: String): LocalModelManifest {
+        return try {
+            json.decodeFromString<LocalModelManifest>(rawJson)
+        } catch (_: Exception) {
+            LocalModelManifest()
+        }
+    }
+
+    fun resolveManifestEntry(manifest: LocalModelManifest, modelNameOrId: String): LocalModelManifestEntry? {
+        val target = modelNameOrId.trim()
+        if (target.isEmpty()) return null
+        val targetNoExt = target.removeSuffix(".gguf").removeSuffix(".GGUF")
+        return manifest.models.firstOrNull { entry ->
+            val fname = entry.effectiveFilename()
+            fname.equals(target, ignoreCase = true) ||
+                entry.modelId.equals(target, ignoreCase = true) ||
+                entry.modelId.equals(targetNoExt, ignoreCase = true) ||
+                fname.removeSuffix(".gguf").equals(targetNoExt, ignoreCase = true)
+        }
+    }
+
+    fun buildManifestDownloadUrl(manifest: LocalModelManifest, entry: LocalModelManifestEntry): String {
+        val repoPath = entry.repoPath.trim()
+        val rawUrl = if (repoPath.startsWith("http://", ignoreCase = true) || repoPath.startsWith("https://", ignoreCase = true)) {
+            repoPath
+        } else {
+            val base = manifest.downloadBaseUrl.trim().trimEnd('/')
+            val path = repoPath.trimStart('/')
+            if (base.isNotEmpty() && path.isNotEmpty()) "$base/$path" else ""
+        }
+        if (rawUrl.isEmpty()) return ""
+        return if (rawUrl.contains("huggingface.co", ignoreCase = true) && !rawUrl.contains("download=")) {
+            if (rawUrl.contains('?')) "$rawUrl&download=true" else "$rawUrl?download=true"
+        } else {
+            rawUrl
+        }
+    }
+
+    fun formatByteSize(bytes: Long): String {
+        if (bytes <= 0L) return "Unknown size"
+        val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+        if (gb >= 1.0) {
+            val tenths = ((gb * 10.0) + 0.5).toLong()
+            return "${tenths / 10}.${tenths % 10} GB"
+        }
+        val mb = (bytes + (512L * 1024L)) / (1024L * 1024L)
+        return "$mb MB"
+    }
+
     suspend fun releaseLocalModel() {
         PlatformEngineBridge.releaseLocalModel()
     }
@@ -227,14 +379,109 @@ object AeginBridge {
         return PlatformEngineBridge.invoke(component, method, params)
     }
 
+    fun normalizeSpaceId(raw: String?): String {
+        val trimmed = raw?.trim().orEmpty()
+        if (trimmed.isEmpty()) return "main-space"
+        val unprefixed = when {
+            trimmed.startsWith("space:", ignoreCase = true) -> trimmed.substring(6).trim()
+            trimmed.startsWith("space-", ignoreCase = true) && trimmed.length > 6 -> trimmed.substring(6).trim()
+            else -> trimmed
+        }
+        val slug = buildString {
+            var prevDash = false
+            for (ch in unprefixed.lowercase()) {
+                if (ch in 'a'..'z' || ch in '0'..'9') {
+                    append(ch)
+                    prevDash = false
+                } else if (!prevDash && isNotEmpty()) {
+                    append('-')
+                    prevDash = true
+                }
+            }
+        }.trim('-')
+        return slug.ifEmpty { "main-space" }
+    }
+
+    suspend fun getSpaceHistory(spaceId: String, limit: Int = 100): List<SpaceMessageEntry> {
+        return try {
+            val raw = invoke(
+                "OrchestrationService",
+                "getSpaceHistoryJson",
+                listOf(spaceId, limit.toString())
+            )
+            if (raw.isBlank() || raw == "null") return emptyList()
+            val arr = json.parseToJsonElement(raw).jsonArray
+            arr.mapNotNull { elem ->
+                try {
+                    val obj = elem.jsonObject
+                    val role = obj["role"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    val content = obj["content"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val msgSpace = obj["spaceId"]?.jsonPrimitive?.contentOrNull ?: normalizeSpaceId(spaceId)
+                    val ts = obj["timestamp"]?.jsonPrimitive?.longOrNull ?: 0L
+                    SpaceMessageEntry(role = role, content = content, spaceId = msgSpace, timestamp = ts)
+                } catch (_: Exception) {
+                    null
+                }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun listSpaces(): List<SpaceThreadSummary> {
+        return try {
+            val raw = invoke("OrchestrationService", "listSpacesJson", emptyList())
+            if (raw.isBlank() || raw == "null") return emptyList()
+            val arr = json.parseToJsonElement(raw).jsonArray
+            arr.mapNotNull { elem ->
+                try {
+                    val obj = elem.jsonObject
+                    val sid = obj["spaceId"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                    SpaceThreadSummary(
+                        spaceId = sid,
+                        spaceName = obj["spaceName"]?.jsonPrimitive?.contentOrNull ?: sid,
+                        latestSessionId = obj["latestSessionId"]?.jsonPrimitive?.contentOrNull ?: "",
+                        summary = obj["summary"]?.jsonPrimitive?.contentOrNull ?: "",
+                        messageCount = obj["messageCount"]?.jsonPrimitive?.intOrNull ?: 0,
+                        lastMessagePreview = obj["lastMessagePreview"]?.jsonPrimitive?.contentOrNull ?: "",
+                        updatedAt = obj["updatedAt"]?.jsonPrimitive?.longOrNull ?: 0L
+                    )
+                } catch (_: Exception) {
+                    null
+                }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun getSpaceSummary(spaceId: String): String {
+        return try {
+            val raw = invoke("AgentSessionManager", "getSpaceSummary", listOf(spaceId))
+            if (raw == "null") "" else raw
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    suspend fun clearSpace(spaceId: String) {
+        try {
+            invoke("OrchestrationService", "clearSpace", listOf(spaceId))
+        } catch (_: Exception) {
+        }
+    }
+
     fun streamPrompt(
         prompt: String,
         sessionId: String?,
         prevSummary: String?,
+        assistantMode: String? = null,
+        spaceId: String? = null,
+        spaceName: String? = null,
         onSessionId: (String) -> Unit = {}
     ): Flow<String> = flow {
         var emitted = false
-        PlatformEngineBridge.streamAgent(prompt, sessionId, prevSummary).collect { chunk ->
+        PlatformEngineBridge.streamAgent(prompt, sessionId, prevSummary, assistantMode, spaceId, spaceName).collect { chunk ->
             val trimmed = chunk.trimStart()
             if (trimmed.startsWith("{") && trimmed.contains("\"__session_meta__\"")) {
                 val (_, newSessionId) = parseAgentResponse(chunk, sessionId)
@@ -254,7 +501,11 @@ object AeginBridge {
             }
         }
         if (!emitted) {
-            val (answer, newSessionId) = askAgent(prompt, sessionId, prevSummary)
+            val (answer, newSessionId) = if (!spaceId.isNullOrBlank()) {
+                askAgentInSpace(prompt, spaceId, spaceName, sessionId, prevSummary, assistantMode)
+            } else {
+                askAgent(prompt, sessionId, prevSummary, assistantMode)
+            }
             if (!newSessionId.isNullOrBlank()) {
                 onSessionId(newSessionId)
             }
@@ -262,21 +513,60 @@ object AeginBridge {
         }
     }
 
-    suspend fun askAgent(prompt: String, sessionId: String?, prevSummary: String?): Pair<String, String?> {
+    suspend fun askAgentInSpace(
+        prompt: String,
+        spaceId: String,
+        spaceName: String? = null,
+        sessionId: String? = null,
+        prevSummary: String? = null,
+        assistantMode: String? = null
+    ): Pair<String, String?> {
         val raw = invoke(
             "AgenticFabric",
-            "askAgent",
-            listOf(prompt, sessionId ?: "", prevSummary ?: "")
+            "askAgentInSpace",
+            listOf(
+                prompt,
+                spaceId,
+                spaceName ?: "",
+                sessionId ?: "",
+                prevSummary ?: "",
+                assistantMode ?: ""
+            )
         )
         return parseAgentResponse(raw, sessionId)
     }
+
+    suspend fun askAgent(
+        prompt: String,
+        sessionId: String?,
+        prevSummary: String?,
+        assistantMode: String? = null
+    ): Pair<String, String?> {
+        val raw = if (!assistantMode.isNullOrBlank()) {
+            invoke(
+                "AgenticFabric",
+                "askAgentWithMode",
+                listOf(prompt, sessionId ?: "", prevSummary ?: "", assistantMode)
+            )
+        } else {
+            invoke(
+                "AgenticFabric",
+                "askAgent",
+                listOf(prompt, sessionId ?: "", prevSummary ?: "")
+            )
+        }
+        return parseAgentResponse(raw, sessionId)
+    }
+
+    fun parseAgentReplyText(raw: String): Pair<String, String?> = parseAgentResponse(raw, null)
 
     private fun parseAgentResponse(raw: String, fallbackSessionId: String?): Pair<String, String?> {
         return try {
             val element = json.parseToJsonElement(raw)
             val obj = parsePossiblyNestedObject(element)
-            val answer = obj["answer"]?.jsonPrimitive?.contentOrNull
-                ?: obj["result"]?.jsonPrimitive?.contentOrNull
+            val answer = obj["answer"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+                ?: obj["result"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+                ?: obj["reasoning"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
                 ?: raw
             val newSessionId = obj["sessionId"]?.jsonPrimitive?.contentOrNull ?: fallbackSessionId
             Pair(answer, newSessionId)
@@ -451,13 +741,22 @@ object AeginBridge {
                     val name = (p["Name"] ?: p["name"])?.jsonPrimitive?.contentOrNull ?: continue
                     val rawType = (p["Type"] ?: p["type"])?.jsonPrimitive?.contentOrNull ?: ""
                     var providerField = (p["Provider"] ?: p["provider"])?.jsonPrimitive?.contentOrNull ?: ""
-                    val isLocal = rawType.equals("local", ignoreCase = true) ||
-                        rawType.contains("llama", ignoreCase = true) ||
-                        rawType.contains("ondevice", ignoreCase = true) ||
-                        name == "On-Device Model"
-                    val type = if (isLocal) "Local" else "Cloud"
+                    val isSelfHosted = rawType.equals("self-hosted", ignoreCase = true) ||
+                        rawType.equals("selfhosted", ignoreCase = true)
+                    val isLocal = !isSelfHosted && (
+                        rawType.equals("local", ignoreCase = true) ||
+                            rawType.contains("llama", ignoreCase = true) ||
+                            rawType.contains("ondevice", ignoreCase = true) ||
+                            name == "On-Device Model"
+                        )
+                    val type = when {
+                        isLocal -> "Local"
+                        isSelfHosted -> "Self-Hosted"
+                        else -> "Cloud"
+                    }
                     if (providerField.isBlank() && !isLocal) {
                         providerField = when {
+                            isSelfHosted -> "OpenAI"
                             rawType.contains("gemini", ignoreCase = true) || name.contains("gemini", ignoreCase = true) -> "Gemini"
                             rawType.contains("deepseek", ignoreCase = true) || name.contains("deepseek", ignoreCase = true) -> "DeepSeek"
                             rawType.contains("qwen", ignoreCase = true) || name.contains("qwen", ignoreCase = true) -> "Qwen"
@@ -478,11 +777,13 @@ object AeginBridge {
                         .orEmpty()
                     val effectiveIntents = if (parsedIntents.isNotEmpty()) {
                         parsedIntents
-                    } else if (isLocal) {
+                    } else if (isLocal || isSelfHosted) {
                         DEFAULT_LOCAL_INTENTS
                     } else {
                         DEFAULT_CLOUD_INTENTS
                     }
+                    val tested = (p["Tested"] ?: p["tested"])?.jsonPrimitive?.booleanOrNull ?: false
+                    val testedFp = (p["Tested.Fingerprint"] ?: p["tested.fingerprint"])?.jsonPrimitive?.contentOrNull ?: ""
                     parsedList.add(
                         LlmProviderConfig(
                             name = name,
@@ -493,16 +794,22 @@ object AeginBridge {
                             modelOptions = options,
                             temperature = temp,
                             apiKey = if (isLocal) "" else apiKey,
-                            intentOptions = effectiveIntents
+                            intentOptions = effectiveIntents,
+                            tested = tested,
+                            testedFingerprint = testedFp
                         )
                     )
                 }
             }
 
-            for (def in defaultStandard) {
-                if (parsedList.none { it.name.equals(def.name, ignoreCase = true) }) {
-                    parsedList.add(def)
+            if (onboardedArr == null) {
+                for (def in defaultStandard) {
+                    if (parsedList.none { it.name.equals(def.name, ignoreCase = true) }) {
+                        parsedList.add(def)
+                    }
                 }
+            } else if (parsedList.none { it.name.equals("On-Device Model", ignoreCase = true) }) {
+                parsedList.add(0, defaultStandard.first())
             }
 
             val legacyWorkerMap = mapOf(
@@ -525,27 +832,42 @@ object AeginBridge {
         }
     }
 
-    fun buildLlmSettingsJson(
-        providers: List<LlmProviderConfig>,
-        workerProvider: String,
-        governanceProvider: String
-    ): String {
-        val providersJson = providers.filter { it.name != "Custom" }.joinToString(",\n") { p ->
-            val isLocal = p.type.equals("Local", ignoreCase = true) || p.name == "On-Device Model"
-            val typeVal = if (isLocal) "Local" else "Cloud"
-            val opts = p.modelOptions.joinToString(",") { "\"${escapeJson(it)}\"" }
-            val intentList = p.intentOptions.ifEmpty {
-                if (isLocal) DEFAULT_LOCAL_INTENTS else DEFAULT_CLOUD_INTENTS
-            }
-            val intentOpts = intentList.joinToString(",") { "\"${escapeJson(it)}\"" }
-            val providerLine = if (!isLocal && p.provider.isNotBlank()) {
-                "\n              \"Provider\": \"${escapeJson(p.provider)}\","
-            } else ""
-            val apiKeyLine = if (!isLocal) {
-                ",\n              \"api.key\": \"${escapeJson(p.apiKey)}\""
-            } else ""
+    fun extractAssistantLlm(rawJson: String): String {
+        return try {
+            val root = json.parseToJsonElement(rawJson).jsonObject
+            root["ai.assistant.llm"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+    }
 
-            """
+    fun providerToConfigJson(
+        p: LlmProviderConfig,
+        localModelReadyHint: Boolean? = null
+    ): String {
+        val isLocal = p.type.equals("Local", ignoreCase = true) || p.name == "On-Device Model"
+        val isSelfHosted = p.type.equals("Self-Hosted", ignoreCase = true)
+        val typeVal = when {
+            isLocal -> "Local"
+            isSelfHosted -> "Self-Hosted"
+            else -> "Cloud"
+        }
+        val opts = p.modelOptions.joinToString(",") { "\"${escapeJson(it)}\"" }
+        val intentList = p.intentOptions.ifEmpty {
+            if (isLocal || isSelfHosted) DEFAULT_LOCAL_INTENTS else DEFAULT_CLOUD_INTENTS
+        }
+        val intentOpts = intentList.joinToString(",") { "\"${escapeJson(it)}\"" }
+        val providerLine = if (!isLocal && p.provider.isNotBlank()) {
+            "\n              \"Provider\": \"${escapeJson(p.provider)}\","
+        } else ""
+        val apiKeyLine = if (!isLocal) {
+            ",\n              \"api.key\": \"${escapeJson(p.apiKey)}\""
+        } else ""
+        val localReadyLine = if (localModelReadyHint != null) {
+            ",\n              \"localModelReady\": $localModelReadyHint"
+        } else ""
+
+        return """
             {
               "Name": "${escapeJson(p.name)}",
               "Type": "$typeVal",$providerLine
@@ -553,15 +875,53 @@ object AeginBridge {
               "Model": "${escapeJson(p.model)}",
               "Model.Options": [$opts],
               "Temperature": ${p.temperature}$apiKeyLine,
-              "Intent.Options": [$intentOpts]
+              "Tested": ${p.tested},
+              "Tested.Fingerprint": "${escapeJson(p.testedFingerprint)}",
+              "Intent.Options": [$intentOpts]$localReadyLine
             }
-            """.trimIndent()
+        """.trimIndent()
+    }
+
+    suspend fun testProviderConnection(config: LlmProviderConfig): ConnectionTestResult {
+        val isLocal = config.type.equals("Local", ignoreCase = true) || config.name == "On-Device Model"
+        val localCheck = if (isLocal) checkLocalModelAvailability(config.model) else null
+        val payloadJson = providerToConfigJson(
+            p = config,
+            localModelReadyHint = localCheck?.existsLocally
+        )
+        return try {
+            val raw = invoke("LlmProviderFactory", "testProviderConfigJson", listOf(payloadJson))
+            val obj = json.parseToJsonElement(raw).jsonObject
+            ConnectionTestResult(
+                ok = obj["ok"]?.jsonPrimitive?.booleanOrNull ?: false,
+                message = obj["message"]?.jsonPrimitive?.contentOrNull ?: raw,
+                fingerprint = obj["fingerprint"]?.jsonPrimitive?.contentOrNull ?: ""
+            )
+        } catch (e: Exception) {
+            ConnectionTestResult(
+                ok = false,
+                message = e.message ?: "Unable to verify model service."
+            )
+        }
+    }
+
+    fun buildLlmSettingsJson(
+        providers: List<LlmProviderConfig>,
+        workerProvider: String,
+        governanceProvider: String,
+        assistantProvider: String? = null
+    ): String {
+        val providersJson = providers.filter { it.name != "Custom" }.joinToString(",\n") { p ->
+            providerToConfigJson(p)
         }
         val govVal = if (governanceProvider == "Disable") "" else governanceProvider
+        val assistantLine = if (!assistantProvider.isNullOrBlank()) {
+            "\n          \"ai.assistant.llm\": \"${escapeJson(assistantProvider)}\","
+        } else ""
         return """
         {
           "ai.worker.llm": "${escapeJson(workerProvider)}",
-          "ai.governance.llm": "${escapeJson(govVal)}",
+          "ai.governance.llm": "${escapeJson(govVal)}",$assistantLine
           "onboarded.providers": [
             $providersJson
           ]

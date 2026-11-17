@@ -53,7 +53,8 @@ androidJvmTarget = "17"
 androidGradlePlugin = "8.7.2" # Android Gradle Plugin version
 androidxCore = "1.15.0"
 androidxBiometric = "1.2.0-alpha05"
-androidxWork = "2.9.0"
+androidxWork = "2.9.1"
+ktor = "2.3.12"
 pdfbox = "2.0.27.0"
 room = "2.6.1"
 ksp = "2.1.20-2.0.1" # Must align with the Kotlin version
@@ -96,6 +97,7 @@ node = { id = "com.github.node-gradle.node", version = "7.1.0" }
 # Kotlin Multiplatform Foundation Libraries
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinx-datetime" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 kotlinx-io-core = { module = "org.jetbrains.kotlinx:kotlinx-io-core", version.ref = "kotlinx-io" }
@@ -130,6 +132,7 @@ org-json = { module = "org.json:json", version.ref = "json" }
 
 # Networking and Logging
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 

@@ -391,4 +391,38 @@ open class LocalLlamaProvider : BaseLlmProvider() {
     override fun isConfigured(): Boolean {
         return endpoint != null
     }
+
+    override fun testConnection(timeoutSeconds: Long): Pair<Boolean, String> {
+        val modelName = model?.trim().orEmpty()
+        if (modelName.isBlank()) {
+            return false to "Embedded GGUF model name is required."
+        }
+        if (nativeDelegate?.isModelLoaded() == true) {
+            return true to "On-device native GGUF runtime loaded ($modelName)."
+        }
+        val sysHome = context?.properties?.getProperty("system.home")?.trim().orEmpty()
+        if (sysHome.isNotEmpty()) {
+            val fs = com.reveila.system.io.PlatformFileSystem()
+            val modelPath = fs.resolve(sysHome, "models/$modelName")
+            if (fs.exists(modelPath)) {
+                return true to "Local GGUF model '$modelName' verified at $modelPath."
+            }
+        }
+        val ep = endpoint?.trim().orEmpty()
+        if (ep.startsWith("http://") || ep.startsWith("https://")) {
+            val targetUrl = when {
+                ep.endsWith("/completion") || ep.endsWith("/v1/chat/completions") -> ep
+                ep.endsWith("/") -> "${ep}completion"
+                else -> "$ep/completion"
+            }
+            val originalEndpoint = this.endpoint
+            return try {
+                this.endpoint = targetUrl
+                super.testConnection(timeoutSeconds)
+            } finally {
+                this.endpoint = originalEndpoint
+            }
+        }
+        return false to "GGUF model '$modelName' is not downloaded locally and no local llama-server responded."
+    }
 }

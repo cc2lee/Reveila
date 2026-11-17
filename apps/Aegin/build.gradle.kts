@@ -112,7 +112,15 @@ kotlin {
             implementation(kotlin("test"))
         }
 
+        val jvmSharedMain by creating {
+            dependsOn(commonMain.get())
+            dependencies {
+                implementation(libs.ktor.client.okhttp)
+            }
+        }
+
         val desktopMain by getting {
+            dependsOn(jvmSharedMain)
             resources.srcDir(layout.buildDirectory.dir("generated/resources/desktopMain"))
             dependencies {
                 implementation(compose.desktop.currentOs)
@@ -122,11 +130,16 @@ kotlin {
             }
         }
 
-        androidMain.dependencies {
-            implementation(libs.androidx.core.ktx)
-            implementation(libs.androidx.activity.compose)
-            // Consumes the bytecode-sliced Reveila Core JAR instead of the full capability suite
-            implementation(files(tasks.named("sliceCapabilityJars")))
+        androidMain {
+            dependsOn(jvmSharedMain)
+            dependencies {
+                implementation(libs.androidx.core.ktx)
+                implementation(libs.androidx.activity.compose)
+                implementation(libs.androidx.work.runtime.ktx)
+                implementation(libs.kotlinx.coroutines.android)
+                // Consumes the bytecode-sliced Reveila Core JAR instead of the full capability suite
+                implementation(files(tasks.named("sliceCapabilityJars")))
+            }
         }
     }
 }

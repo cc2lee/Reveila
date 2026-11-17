@@ -1,15 +1,18 @@
 package com.reveila.aegin
 
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import androidx.compose.ui.Alignment
 import com.reveila.aegin.bridge.AeginBridge
 import com.reveila.aegin.ui.AeginApp
 import kotlinx.coroutines.runBlocking
+import org.jetbrains.skia.Image as SkiaImage
 
 fun main(args: Array<String>) {
     // Support headless verification mode for CI / build validation on Windows & macOS
@@ -45,6 +48,10 @@ fun main(args: Array<String>) {
             size = DpSize(1024.dp, 760.dp),
             position = WindowPosition(Alignment.Center)
         )
+        val windowIcon = Thread.currentThread().contextClassLoader
+            ?.getResourceAsStream("aegin_icon.png")
+            ?.use { it.readBytes() }
+            ?.let { bytes -> BitmapPainter(SkiaImage.makeFromEncoded(bytes).toComposeImageBitmap()) }
         Window(
             onCloseRequest = {
                 runBlocking {
@@ -53,7 +60,8 @@ fun main(args: Array<String>) {
                 exitApplication()
             },
             state = windowState,
-            title = "Aegin — Reveila Sovereign AI"
+            title = "Aegin — Reveila Sovereign AI",
+            icon = windowIcon
         ) {
             AeginApp()
         }

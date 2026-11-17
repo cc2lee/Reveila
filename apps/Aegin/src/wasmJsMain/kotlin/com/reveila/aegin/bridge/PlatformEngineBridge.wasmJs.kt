@@ -1,9 +1,13 @@
 package com.reveila.aegin.bridge
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 
 actual object PlatformEngineBridge {
+    private val modelDownloadState = MutableStateFlow(LocalModelDownloadState())
     private val memoryStorage = mutableMapOf<String, String>()
     private var initialized = false
     private var suspended = false
@@ -74,6 +78,7 @@ actual object PlatformEngineBridge {
                     if (params.size > 1) llmSettingsJson = params[1]
                     "true"
                 }
+                "testProviderConfigJson" -> """{"ok":true,"message":"Verified (simulated Web bridge).","fingerprint":"web-verified"}"""
                 else -> "{}"
             }
             "AgenticFabric" -> {
@@ -165,8 +170,36 @@ actual object PlatformEngineBridge {
         )
     }
 
-    actual fun streamAgent(prompt: String, sessionId: String?, prevSummary: String?): Flow<String> = flow {
-        emit(invoke("AgenticFabric", "askAgent", listOf(prompt, sessionId ?: "", prevSummary ?: "")))
+    actual suspend fun checkLocalModelAvailability(modelName: String): LocalModelCheckResult {
+        val target = modelName.ifBlank { ModelTierCatalog.MODEL_0_5B }
+        return LocalModelCheckResult(
+            modelName = target,
+            existsLocally = false,
+            downloadUrl = ""
+        )
+    }
+
+    actual suspend fun downloadLocalModel(modelName: String): Boolean = false
+
+    actual suspend fun pauseLocalModelDownload(modelName: String) {
+    }
+
+    actual fun observeLocalModelDownloadState(): StateFlow<LocalModelDownloadState> =
+        modelDownloadState.asStateFlow()
+
+    actual fun streamAgent(
+        prompt: String,
+        sessionId: String?,
+        prevSummary: String?,
+        assistantMode: String?,
+        spaceId: String?,
+        spaceName: String?
+    ): Flow<String> = flow {
+        if (!spaceId.isNullOrBlank()) {
+            emit(invoke("AgenticFabric", "askAgentInSpace", listOf(prompt, spaceId, spaceName ?: "", sessionId ?: "", prevSummary ?: "", assistantMode ?: "")))
+        } else {
+            emit(invoke("AgenticFabric", "askAgent", listOf(prompt, sessionId ?: "", prevSummary ?: "")))
+        }
     }
 
     actual suspend fun releaseLocalModel() {

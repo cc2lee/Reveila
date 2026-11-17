@@ -4,13 +4,20 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import android.provider.DocumentsContract
 import android.util.Log
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import com.reveila.aegin.AeginEngineService
+import com.reveila.aegin.model.AeginModelLoader
+import com.reveila.aegin.model.ModelDownloadWorker
+import com.reveila.aegin.model.ResumableModelDownloader
 import com.reveila.system.DefaultPlatformAdapter
 import com.reveila.system.Properties
 import com.reveila.system.Reveila
@@ -20,14 +27,17 @@ import com.reveila.util.json.JsonUtil
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import java.io.BufferedInputStream
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URI
@@ -43,6 +53,8 @@ actual object PlatformEngineBridge {
     private val engine = Reveila()
     private val isStarting = AtomicBoolean(false)
     private val llmStarting = AtomicBoolean(false)
+    private val modelDownloadInProgress = AtomicBoolean(false)
+    private val modelDownloadState = MutableStateFlow(LocalModelDownloadState())
     private val llmLock = Any()
     private val llmExecutor = Executors.newSingleThreadExecutor { r ->
         Thread(r, "aegin-llama-control").apply { isDaemon = true }
@@ -238,21 +250,28 @@ actual object PlatformEngineBridge {
 
                 if (modelFile == null || !modelFile.exists()) {
                     val downloadTarget = File(modelDir, targetModelName)
-                    val candidateBaseUrls = buildList {
-                        add("http://127.0.0.1:8000")
-                        add("http://10.0.2.2:8000")
+                    val (_, expectedSha) = resolveManifestCandidates(targetModelName)
+                    // Startup only checks local LAN/dev asset servers; public Hugging Face downloads
+                    // are initiated explicitly via Studio after the user reviews size and Wi-Fi warnings.
+                    val candidateUrls = buildList {
+                        add("http://127.0.0.1:8000/llms/$targetModelName")
+                        add("http://10.0.2.2:8000/llms/$targetModelName")
                         if (!baseUrl.isNullOrBlank()) {
-                            add(baseUrl.trim().trimEnd('/'))
+                            add("${baseUrl.trim().trimEnd('/')}/llms/$targetModelName")
                         }
                     }.distinct()
 
-                    for (candidateBase in candidateBaseUrls) {
-                        val fullUrl = "$candidateBase/llms/$targetModelName"
-                        Log.i(TAG, "Attempting to download GGUF model [$targetModelName] from: $fullUrl")
-                        if (downloadModelFromUrl(fullUrl, downloadTarget)) {
-                            modelFile = downloadTarget
-                            break
-                        }
+                    Log.i(TAG, "Attempting startup GGUF download [$targetModelName] from ${candidateUrls.size} endpoint(s)...")
+                    val outcome = runBlocking {
+                        ResumableModelDownloader.downloadWithResume(
+                            urls = candidateUrls,
+                            targetFile = downloadTarget,
+                            expectedSha256 = expectedSha,
+                            userAgent = "Aegin-Reveila-Startup/1.0"
+                        )
+                    }
+                    if (outcome.succeeded) {
+                        modelFile = downloadTarget
                     }
                 }
 
@@ -267,9 +286,15 @@ actual object PlatformEngineBridge {
                     return@execute
                 }
 
-                // Primary path: in-process JNI mmap() via LlamaJniBridge
-                if (LlamaJniBridge.loadModelBlocking(modelFile.absolutePath)) {
-                    Log.i(TAG, "Loaded local GGUF model via in-process JNI mmap: ${modelFile.name}")
+                // Primary path: safe JNI mmap() gate via AeginModelLoader -> LlamaJniBridge
+                val loadedViaJni = try {
+                    AeginModelLoader(modelDir).loadVerifiedFileBlocking(modelFile)
+                } catch (e: Exception) {
+                    Log.w(TAG, "AeginModelLoader skipped JNI mmap for ${modelFile.name}: ${e.message}")
+                    false
+                }
+                if (loadedViaJni) {
+                    Log.i(TAG, "Loaded verified local GGUF model via in-process JNI mmap: ${modelFile.name}")
                     return@execute
                 }
 
@@ -436,60 +461,340 @@ actual object PlatformEngineBridge {
         return null
     }
 
-    private fun downloadModelFromUrl(urlStr: String, targetFile: File): Boolean {
-        var conn: HttpURLConnection? = null
-        val tempFile = File(targetFile.parentFile, "${targetFile.name}.tmp")
-        return try {
-            val url = URI(urlStr).toURL()
-            conn = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 4000
-                readTimeout = 30000
-                requestMethod = "GET"
-            }
-            val code = conn.responseCode
-            if (code !in 200..299) {
-                Log.w(TAG, "GGUF download HTTP $code from $urlStr")
-                return false
-            }
-            val contentLength = conn.contentLengthLong
-            BufferedInputStream(conn.inputStream).use { input ->
-                FileOutputStream(tempFile).use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    var total = 0L
-                    var lastLoggedPct = -10
-                    var read = input.read(buffer)
-                    while (read != -1) {
-                        output.write(buffer, 0, read)
-                        total += read
-                        if (contentLength > 0) {
-                            val pct = ((total * 100) / contentLength).toInt()
-                            if (pct >= lastLoggedPct + 10) {
-                                lastLoggedPct = pct
-                                Log.i(TAG, "Downloading ${targetFile.name}: $pct% (${total / (1024 * 1024)} MB / ${contentLength / (1024 * 1024)} MB)")
-                            }
-                        }
-                        read = input.read(buffer)
-                    }
-                    output.flush()
-                }
-            }
-            if (tempFile.exists() && tempFile.length() > 0) {
-                if (targetFile.exists()) targetFile.delete()
-                tempFile.renameTo(targetFile)
-                Log.i(TAG, "GGUF model download complete: ${targetFile.absolutePath} (${targetFile.length() / (1024 * 1024)} MB)")
-                true
+    private fun readModelManifest(): LocalModelManifest {
+        val sysHomeFile = File(resolveSystemHomeDir(), "models/manifest.json")
+        val rawJson = try {
+            if (sysHomeFile.exists()) {
+                sysHomeFile.readText(Charsets.UTF_8)
             } else {
-                tempFile.delete()
-                false
+                appContext?.assets?.open("reveila/models/manifest.json")?.bufferedReader()?.use { it.readText() } ?: "{}"
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "GGUF download from $urlStr failed: ${e.message}")
-            if (tempFile.exists()) tempFile.delete()
-            false
-        } finally {
-            conn?.disconnect()
+        } catch (_: Exception) {
+            "{}"
+        }
+        return AeginBridge.parseModelManifest(rawJson)
+    }
+
+    private fun resolveManifestCandidates(modelName: String): Pair<List<String>, String> {
+        val manifest = readModelManifest()
+        val entry = AeginBridge.resolveManifestEntry(manifest, modelName)
+        val urls = buildList {
+            if (entry != null) {
+                val manifestUrl = AeginBridge.buildManifestDownloadUrl(manifest, entry)
+                if (manifestUrl.isNotBlank()) add(manifestUrl)
+            }
+        }
+        return Pair(urls, entry?.sha256.orEmpty().trim())
+    }
+
+    private fun isWifiOrUnmeteredConnected(): Boolean {
+        val ctx = appContext ?: return true
+        return try {
+            val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return true
+            val network = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(network) ?: return false
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+        } catch (_: Exception) {
+            true
         }
     }
+
+    private fun isMeteredCellular(): Boolean {
+        val ctx = appContext ?: return false
+        return try {
+            val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+            val network = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(network) ?: return false
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) &&
+                !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun findExactModelFile(modelDir: File, requestedModelName: String): File? {
+        val target = requestedModelName.trim()
+        if (target.isEmpty()) return null
+        val candidatesDirs = buildList {
+            add(modelDir)
+            appContext?.getExternalFilesDir("llms")?.let { add(it) }
+            add(File("/data/local/tmp"))
+        }
+        for (dir in candidatesDirs) {
+            val exact = File(dir, target)
+            if (ResumableModelDownloader.hasValidGgufHeader(exact)) return exact
+            val matched = dir.listFiles { _, name -> name.equals(target, ignoreCase = true) }?.firstOrNull()
+            if (matched != null && ResumableModelDownloader.hasValidGgufHeader(matched)) return matched
+        }
+        return null
+    }
+
+    actual suspend fun checkLocalModelAvailability(modelName: String): LocalModelCheckResult =
+        withContext(Dispatchers.IO) {
+            val manifest = readModelManifest()
+            val entry = AeginBridge.resolveManifestEntry(manifest, modelName)
+            val effectiveName = modelName.trim().ifBlank {
+                entry?.effectiveFilename() ?: readLlmDownloadConfig().second
+            }
+            val modelDir = resolveModelsStagingDir()
+            val existing = findExactModelFile(modelDir, effectiveName)
+            val partFile = File(modelDir, "$effectiveName.part")
+            val partialBytes = if (partFile.exists()) partFile.length() else 0L
+            val manifestUrl = entry?.let { AeginBridge.buildManifestDownloadUrl(manifest, it) }.orEmpty()
+            val fallbackBase = readLlmDownloadConfig().first?.trim()?.trimEnd('/').orEmpty()
+            val downloadUrl = manifestUrl.ifBlank {
+                if (fallbackBase.isNotEmpty()) "$fallbackBase/llms/$effectiveName" else ""
+            }
+            val approxBytes = entry?.approxSizeBytes ?: when {
+                effectiveName.contains("0.5b", ignoreCase = true) -> 491_400_000L
+                effectiveName.contains("1.5b", ignoreCase = true) -> 1_100_000_000L
+                effectiveName.contains("gemma-2-2b", ignoreCase = true) -> 1_708_582_752L
+                effectiveName.contains("3b", ignoreCase = true) -> 2_200_000_000L
+                effectiveName.contains("7b", ignoreCase = true) -> 4_400_000_000L
+                else -> 1_500_000_000L
+            }
+            LocalModelCheckResult(
+                modelName = effectiveName,
+                existsLocally = existing != null && existing.exists(),
+                localPath = existing?.absolutePath.orEmpty(),
+                partialBytes = partialBytes,
+                downloadUrl = downloadUrl,
+                approxSizeBytes = approxBytes,
+                sha256 = entry?.sha256.orEmpty(),
+                isWifiConnected = isWifiOrUnmeteredConnected(),
+                isMeteredNetwork = isMeteredCellular(),
+                requiresAuthToken = entry?.requiresAuthToken ?: false
+            )
+        }
+
+    actual suspend fun downloadLocalModel(modelName: String): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!modelDownloadInProgress.compareAndSet(false, true)) {
+                return@withContext false
+            }
+            try {
+                val check = checkLocalModelAvailability(modelName)
+                if (check.existsLocally) {
+                    modelDownloadState.value = LocalModelDownloadState(
+                        status = "COMPLETED",
+                        modelName = check.modelName,
+                        downloadedBytes = File(check.localPath).length(),
+                        totalBytes = File(check.localPath).length(),
+                        percent = 100,
+                        sourceUrl = check.downloadUrl,
+                        message = "Model already staged locally."
+                    )
+                    return@withContext true
+                }
+
+                val modelDir = resolveModelsStagingDir()
+                val downloadTarget = File(modelDir, check.modelName)
+                val (manifestUrls, expectedSha) = resolveManifestCandidates(check.modelName)
+                val (baseUrl, _) = readLlmDownloadConfig()
+                val candidateUrls = buildList {
+                    addAll(manifestUrls)
+                    if (!baseUrl.isNullOrBlank()) {
+                        add("${baseUrl.trim().trimEnd('/')}/llms/${check.modelName}")
+                    }
+                    add("http://127.0.0.1:8000/llms/${check.modelName}")
+                    add("http://10.0.2.2:8000/llms/${check.modelName}")
+                }.distinct()
+
+                if (candidateUrls.isEmpty()) {
+                    modelDownloadState.value = LocalModelDownloadState(
+                        status = "FAILED",
+                        modelName = check.modelName,
+                        message = "No download URL configured for ${check.modelName} in models/manifest.json."
+                    )
+                    return@withContext false
+                }
+
+                modelDownloadState.value = LocalModelDownloadState(
+                    status = "DOWNLOADING",
+                    modelName = check.modelName,
+                    downloadedBytes = 0L,
+                    totalBytes = check.approxSizeBytes,
+                    percent = 0,
+                    sourceUrl = candidateUrls.first(),
+                    message = "Connecting to ${candidateUrls.first()}..."
+                )
+
+                val ctx = appContext
+                if (ctx != null) {
+                    val primaryUrl = candidateUrls.first()
+                    val fallbackList = candidateUrls.drop(1)
+                    Log.i(TAG, "Enqueuing WorkManager resumable GGUF download [${check.modelName}] from: $primaryUrl")
+                    ModelDownloadWorker.enqueue(
+                        context = ctx,
+                        modelId = check.modelName,
+                        downloadUrl = primaryUrl,
+                        expectedSha256 = expectedSha,
+                        targetFile = downloadTarget,
+                        fallbackUrls = fallbackList,
+                        approxSizeBytes = check.approxSizeBytes
+                    )
+
+                    var finalSuccess = false
+                    val uniqueName = ModelDownloadWorker.uniqueWorkName(check.modelName)
+                    WorkManager.getInstance(ctx).getWorkInfosForUniqueWorkFlow(uniqueName).first { infos ->
+                        val info = infos.firstOrNull() ?: return@first false
+                        when (info.state) {
+                            WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> {
+                                modelDownloadState.value = LocalModelDownloadState(
+                                    status = "DOWNLOADING",
+                                    modelName = check.modelName,
+                                    downloadedBytes = 0L,
+                                    totalBytes = check.approxSizeBytes,
+                                    percent = 0,
+                                    sourceUrl = primaryUrl,
+                                    message = "Queued resumable download for ${check.modelName}..."
+                                )
+                                false
+                            }
+                            WorkInfo.State.RUNNING -> {
+                                val phase = info.progress.getString(ModelDownloadWorker.KEY_STATUS_PHASE) ?: "DOWNLOADING"
+                                val pct = info.progress.getInt(ModelDownloadWorker.KEY_PROGRESS_PCT, 0)
+                                val dlBytes = info.progress.getLong(ModelDownloadWorker.KEY_DOWNLOADED_BYTES, 0L)
+                                val totBytes = info.progress.getLong(ModelDownloadWorker.KEY_TOTAL_BYTES, check.approxSizeBytes)
+                                val srcUrl = info.progress.getString(ModelDownloadWorker.KEY_SOURCE_URL) ?: primaryUrl
+                                val msg = info.progress.getString(ModelDownloadWorker.KEY_STATUS_MSG)
+                                    ?: "Downloading ${check.modelName} ($pct%)"
+                                modelDownloadState.value = LocalModelDownloadState(
+                                    status = phase,
+                                    modelName = check.modelName,
+                                    downloadedBytes = dlBytes,
+                                    totalBytes = totBytes,
+                                    percent = pct,
+                                    sourceUrl = srcUrl,
+                                    message = msg
+                                )
+                                false
+                            }
+                            WorkInfo.State.SUCCEEDED -> {
+                                val srcUrl = info.outputData.getString(ModelDownloadWorker.KEY_SOURCE_URL) ?: primaryUrl
+                                val loaded = try {
+                                    AeginModelLoader(modelDir).loadVerifiedFileBlocking(
+                                        ggufFile = downloadTarget,
+                                        expectedSha256 = expectedSha
+                                    )
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "AeginModelLoader gate blocked load after download: ${e.message}")
+                                    false
+                                }
+                                modelDownloadState.value = LocalModelDownloadState(
+                                    status = "COMPLETED",
+                                    modelName = check.modelName,
+                                    downloadedBytes = downloadTarget.length(),
+                                    totalBytes = downloadTarget.length(),
+                                    percent = 100,
+                                    sourceUrl = srcUrl,
+                                    message = if (loaded) {
+                                        "${check.modelName} downloaded, verified, and loaded via AeginModelLoader."
+                                    } else {
+                                        "${check.modelName} downloaded and verified at ${downloadTarget.absolutePath}."
+                                    }
+                                )
+                                finalSuccess = true
+                                true
+                            }
+                            WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> {
+                                val errMsg = info.outputData.getString(ModelDownloadWorker.KEY_ERROR_MSG)
+                                    ?: "Resumable download ${info.state.name.lowercase()}."
+                                modelDownloadState.value = LocalModelDownloadState(
+                                    status = "FAILED",
+                                    modelName = check.modelName,
+                                    sourceUrl = primaryUrl,
+                                    message = errMsg
+                                )
+                                finalSuccess = false
+                                true
+                            }
+                        }
+                    }
+                    return@withContext finalSuccess
+                }
+
+                val fallbackOutcome = ResumableModelDownloader.downloadWithResume(
+                    urls = candidateUrls,
+                    targetFile = downloadTarget,
+                    expectedSha256 = expectedSha,
+                    approxSizeBytes = check.approxSizeBytes,
+                    onProgress = { phase, dlBytes, totBytes, pct, activeUrl, msg ->
+                        modelDownloadState.value = LocalModelDownloadState(
+                            status = phase,
+                            modelName = check.modelName,
+                            downloadedBytes = dlBytes,
+                            totalBytes = if (totBytes > 0L) totBytes else check.approxSizeBytes,
+                            percent = pct.coerceAtLeast(0),
+                            sourceUrl = activeUrl,
+                            message = msg
+                        )
+                    }
+                )
+                if (fallbackOutcome.succeeded) {
+                    val loaded = try {
+                        AeginModelLoader(modelDir).loadVerifiedFileBlocking(
+                            ggufFile = downloadTarget,
+                            expectedSha256 = expectedSha
+                        )
+                    } catch (_: Exception) {
+                        false
+                    }
+                    modelDownloadState.value = LocalModelDownloadState(
+                        status = "COMPLETED",
+                        modelName = check.modelName,
+                        downloadedBytes = fallbackOutcome.bytesDownloaded,
+                        totalBytes = fallbackOutcome.bytesDownloaded,
+                        percent = 100,
+                        sourceUrl = fallbackOutcome.usedUrl,
+                        message = if (loaded) {
+                            "${check.modelName} downloaded, verified, and loaded into JNI runtime."
+                        } else {
+                            "${check.modelName} downloaded and verified at ${downloadTarget.absolutePath}."
+                        }
+                    )
+                    return@withContext true
+                }
+                modelDownloadState.value = LocalModelDownloadState(
+                    status = "FAILED",
+                    modelName = check.modelName,
+                    sourceUrl = fallbackOutcome.usedUrl,
+                    message = fallbackOutcome.errorMessage ?: "Unable to download ${check.modelName}."
+                )
+                false
+            } finally {
+                modelDownloadInProgress.set(false)
+            }
+        }
+
+    actual suspend fun pauseLocalModelDownload(modelName: String) {
+        val ctx = appContext ?: return
+        val targetName = modelName.ifBlank { modelDownloadState.value.modelName }
+        if (targetName.isNotBlank()) {
+            WorkManager.getInstance(ctx).cancelUniqueWork(ModelDownloadWorker.uniqueWorkName(targetName))
+            val modelDir = resolveModelsStagingDir()
+            val partFile = File(modelDir, "$targetName.part")
+            val partial = if (partFile.exists()) partFile.length() else 0L
+            modelDownloadState.value = LocalModelDownloadState(
+                status = "PAUSED",
+                modelName = targetName,
+                downloadedBytes = partial,
+                totalBytes = modelDownloadState.value.totalBytes,
+                percent = modelDownloadState.value.percent,
+                sourceUrl = modelDownloadState.value.sourceUrl,
+                message = if (partial > 0L) {
+                    "Paused at ${partial / (1024 * 1024)} MB (.part kept for resume)."
+                } else {
+                    "Download paused."
+                }
+            )
+        }
+    }
+
+    actual fun observeLocalModelDownloadState(): StateFlow<LocalModelDownloadState> =
+        modelDownloadState.asStateFlow()
 
     private fun isLlmServerHealthy(healthUrl: String): Boolean {
         var conn: HttpURLConnection? = null
@@ -682,22 +987,60 @@ actual object PlatformEngineBridge {
             verifyModelPreflightBlocking(modelSizeBytes)
         }
 
-    actual fun streamAgent(prompt: String, sessionId: String?, prevSummary: String?): Flow<String> = flow {
-        val isLocalMode = (getStorageItem("selected_llm_mode") ?: "local") == "local"
-        if (isLocalMode && LlamaJniBridge.isModelLoaded()) {
+    actual fun streamAgent(
+        prompt: String,
+        sessionId: String?,
+        prevSummary: String?,
+        assistantMode: String?,
+        spaceId: String?,
+        spaceName: String?
+    ): Flow<String> = flow {
+        val effectiveMode = assistantMode?.trim()?.takeIf { it.isNotEmpty() } ?: when (getStorageItem("selected_llm_mode")) {
+            "auto" -> "Auto"
+            "local" -> "On-Device Model"
+            else -> getStorageItem("selected_llm_provider")?.takeIf { it.isNotBlank() } ?: "On-Device Model"
+        }
+        val canTryLocalStream = effectiveMode == "On-Device Model" || effectiveMode.equals("Auto", ignoreCase = true)
+        if (canTryLocalStream && LlamaJniBridge.isModelLoaded()) {
             if (!engine.isRunning()) {
                 ensureStartedBlocking()
             }
             val prep = try {
-                engine.invoke(
-                    "AgenticFabric",
-                    "prepareStreamingTurn",
-                    arrayOf<Any?>(prompt, sessionId ?: "", prevSummary ?: ""),
-                    "127.0.0.1",
-                    uiSubject
-                ) as? Map<*, *>
+                if (!spaceId.isNullOrBlank()) {
+                    engine.invoke(
+                        "AgenticFabric",
+                        "prepareStreamingTurnInSpace",
+                        arrayOf<Any?>(prompt, spaceId, spaceName ?: "", sessionId ?: "", prevSummary ?: "", effectiveMode),
+                        "127.0.0.1",
+                        uiSubject
+                    ) as? Map<*, *>
+                } else {
+                    engine.invoke(
+                        "AgenticFabric",
+                        "prepareStreamingTurnWithMode",
+                        arrayOf<Any?>(prompt, sessionId ?: "", prevSummary ?: "", effectiveMode),
+                        "127.0.0.1",
+                        uiSubject
+                    ) as? Map<*, *>
+                }
             } catch (_: Exception) {
                 null
+            }
+
+            val prepError = prep?.get("error")?.toString()
+            if (!prepError.isNullOrBlank()) {
+                emit(prepError)
+                return@flow
+            }
+            val routeToCloud = prep?.get("routeToCloud")?.toString()?.equals("true", ignoreCase = true) == true
+            if (routeToCloud) {
+                val raw = if (!spaceId.isNullOrBlank()) {
+                    invoke("AgenticFabric", "askAgentInSpace", listOf(prompt, spaceId, spaceName ?: "", sessionId ?: "", prevSummary ?: "", effectiveMode))
+                } else {
+                    invoke("AgenticFabric", "askAgentWithMode", listOf(prompt, sessionId ?: "", prevSummary ?: "", effectiveMode))
+                }
+                emit(raw)
+                return@flow
             }
 
             val actualSessionId = prep?.get("sessionId")?.toString()?.takeIf { it.isNotBlank() }
@@ -724,7 +1067,7 @@ actual object PlatformEngineBridge {
                     engine.invoke(
                         "AgenticFabric",
                         "commitStreamingTurn",
-                        arrayOf<Any?>(actualSessionId, prompt, finalAnswer),
+                        arrayOf<Any?>(actualSessionId, prompt, finalAnswer, spaceId ?: "", spaceName ?: ""),
                         "127.0.0.1",
                         uiSubject
                     )
@@ -732,7 +1075,11 @@ actual object PlatformEngineBridge {
                 }
             }
         } else {
-            val raw = invoke("AgenticFabric", "askAgent", listOf(prompt, sessionId ?: "", prevSummary ?: ""))
+            val raw = if (!spaceId.isNullOrBlank()) {
+                invoke("AgenticFabric", "askAgentInSpace", listOf(prompt, spaceId, spaceName ?: "", sessionId ?: "", prevSummary ?: "", effectiveMode))
+            } else {
+                invoke("AgenticFabric", "askAgentWithMode", listOf(prompt, sessionId ?: "", prevSummary ?: "", effectiveMode))
+            }
             emit(raw)
         }
     }.flowOn(Dispatchers.IO)
@@ -756,7 +1103,7 @@ actual object PlatformEngineBridge {
 
             val result = engine.invoke(component, method, typedParams, "127.0.0.1", uiSubject)
 
-            if (component == "AgenticFabric" && method == "askAgent" && result is Map<*, *>) {
+            if (component == "AgenticFabric" && (method == "askAgent" || method == "askAgentWithMode" || method == "askAgentInSpace") && result is Map<*, *>) {
                 val answer = result["answer"]?.toString() ?: ""
                 if (answer.contains("Failed to get response from LLM") || answer.contains("LLM Invocation Failure")) {
                     val userPrompt = params.firstOrNull() ?: ""

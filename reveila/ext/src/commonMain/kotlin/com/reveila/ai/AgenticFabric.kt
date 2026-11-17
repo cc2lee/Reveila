@@ -114,6 +114,15 @@ open class AgenticFabric : SystemComponent() {
     }
 
     open fun askAgent(userIntent: String, sessionId: String?, systemPrompt: String?): Map<String, Any?> {
+        return askAgentWithMode(userIntent, sessionId, systemPrompt, assistantMode = null)
+    }
+
+    open fun askAgentWithMode(
+        userIntent: String,
+        sessionId: String?,
+        systemPrompt: String?,
+        assistantMode: String?
+    ): Map<String, Any?> {
         var actualSessionId = sessionId
         if (actualSessionId.isNullOrBlank()) {
             actualSessionId = Uuid.randomUuid()
@@ -123,7 +132,12 @@ open class AgenticFabric : SystemComponent() {
         if (session == null) {
             session = orchestrationService?.createSession(actualSessionId, actualSessionId)
             if (!systemPrompt.isNullOrBlank()) {
-                session?.chatMemory?.add(ReveilaMessage.system("Context carried over from previous session: $systemPrompt"))
+                session?.addMessage(
+                    ReveilaMessage.system(
+                        "Context carried over from previous session: $systemPrompt",
+                        spaceId = session.spaceId
+                    )
+                )
             }
         }
 
@@ -131,8 +145,9 @@ open class AgenticFabric : SystemComponent() {
         val subject = Subject()
         subject.principals.add(principal)
 
+        val modeOverride = assistantMode?.trim()?.takeIf { it.isNotEmpty() }
         val jsonResponse = if (session != null) {
-            processIntent(session, subject, userIntent)
+            processIntent(session, subject, userIntent, preferredProviderName = modeOverride)
         } else {
             buildErrorResponse("OrchestrationService is not available")
         }
@@ -140,6 +155,8 @@ open class AgenticFabric : SystemComponent() {
         val uiResponse = mutableMapOf<String, Any?>()
         uiResponse["answer"] = interpretation
         uiResponse["sessionId"] = session?.sessionId ?: actualSessionId
+        uiResponse["spaceId"] = session?.spaceId ?: AgentSession.DEFAULT_SPACE_ID
+        uiResponse["spaceName"] = session?.spaceName ?: AgentSession.DEFAULT_SPACE_NAME
 
         if (isDebug) {
             logger.info("Final response to UI client: $uiResponse")
@@ -157,13 +174,65 @@ open class AgenticFabric : SystemComponent() {
         sessionId: String?,
         systemPrompt: String?
     ): Map<String, String> {
+        return prepareStreamingTurnWithMode(userIntent, sessionId, systemPrompt, assistantMode = null)
+    }
+
+    open fun prepareStreamingTurnWithMode(
+        userIntent: String,
+        sessionId: String?,
+        systemPrompt: String?,
+        assistantMode: String?
+    ): Map<String, String> {
+        val systemHome = context?.properties?.getProperty("system.home")
+        val assessment = TaskCapabilityRouter.assessTask(
+            intent = "auto",
+            prompt = userIntent,
+            executionTarget = "auto",
+            systemHome = systemHome,
+            localProvider = llmFactory?.getProvider("On-Device Model")
+        )
+        val govSel = llmFactory?.resolveGovernanceProviderForIntent(assessment.taskCategory)
+        if (govSel != null && !govSel.isCapable) {
+            return mapOf(
+                "error" to "⚠️ ${govSel.errorMessage}",
+                "sessionId" to (sessionId ?: Uuid.randomUuid())
+            )
+        }
+        val effectiveMode = assistantMode?.trim()?.takeIf { it.isNotEmpty() }
+            ?: llmFactory?.getConfiguredAssistantName()
+            ?: "Auto"
+        val workerSel = when {
+            effectiveMode.equals("Auto", ignoreCase = true) ->
+                llmFactory?.resolveWorkerProviderForIntent(assessment.taskCategory, forceAuto = true)
+            else ->
+                llmFactory?.resolveExplicitProviderForIntent(effectiveMode, assessment.taskCategory)
+        }
+        if (workerSel != null && !workerSel.isCapable) {
+            return mapOf(
+                "error" to "⚠️ ${workerSel.errorMessage}",
+                "sessionId" to (sessionId ?: Uuid.randomUuid())
+            )
+        }
+        if (workerSel != null && !workerSel.providerName.equals("On-Device Model", ignoreCase = true)) {
+            // Auto mode or explicit Cloud selection routed to a Cloud LLM -> signal bridge to use askAgent instead of local GGUF stream
+            return mapOf(
+                "routeToCloud" to "true",
+                "providerName" to workerSel.providerName,
+                "taskCategory" to assessment.taskCategory,
+                "sessionId" to (sessionId ?: Uuid.randomUuid())
+            )
+        }
+
         val actualSessionId = if (sessionId.isNullOrBlank()) Uuid.randomUuid() else sessionId
         var session = orchestrationService?.getSession(actualSessionId)
         if (session == null) {
             session = orchestrationService?.createSession(actualSessionId, actualSessionId)
             if (!systemPrompt.isNullOrBlank()) {
-                session?.chatMemory?.add(
-                    ReveilaMessage.system("Context carried over from previous session: $systemPrompt")
+                session?.addMessage(
+                    ReveilaMessage.system(
+                        "Context carried over from previous session: $systemPrompt",
+                        spaceId = session.spaceId
+                    )
                 )
             }
         }
@@ -172,8 +241,9 @@ open class AgenticFabric : SystemComponent() {
         }
 
         val ragSnippets = searchKnowledgeVault(userIntent)
+        val activeSpaceName = session?.spaceName?.takeIf { it.isNotBlank() } ?: AgentSession.DEFAULT_SPACE_NAME
         val sysText = buildString {
-            append("You are Aegin, a sovereign on-device AI assistant. Answer concisely and accurately.")
+            append("You are Aegin, a sovereign on-device AI assistant in the '$activeSpaceName' Space. Answer concisely and accurately.")
             if (ragSnippets.isNotBlank() && !ragSnippets.contains("No relevant internal documents")) {
                 append("\n\nRelated Documents:\n").append(ragSnippets)
             }
@@ -181,25 +251,100 @@ open class AgenticFabric : SystemComponent() {
 
         val messages = mutableListOf<ReveilaMessage>()
         messages.add(ReveilaMessage.system(sysText))
-        session?.chatMemory?.messages()?.takeLast(6)?.forEach { messages.add(it) }
-        messages.add(ReveilaMessage.user(userIntent))
+        if (session != null) {
+            messages.addAll(buildSpaceContextMessages(session, maxHistoryMessages = 6))
+        }
+        messages.add(ReveilaMessage.user(userIntent, spaceId = session?.spaceId))
 
         val activeModel = (llmFactory?.getActiveProvider() as? BaseLlmProvider)?.model
         val (formattedPrompt, stopToken) = LocalLlamaProvider.formatMessages(messages, activeModel)
         return mapOf(
             "sessionId" to (session?.sessionId ?: actualSessionId),
+            "spaceId" to (session?.spaceId ?: AgentSession.DEFAULT_SPACE_ID),
+            "spaceName" to activeSpaceName,
             "formattedPrompt" to formattedPrompt,
             "stopToken" to stopToken
+        )
+    }
+
+    @kotlin.jvm.JvmOverloads
+    open fun askAgentInSpace(
+        userIntent: String,
+        spaceId: String,
+        spaceName: String? = null,
+        sessionId: String? = null,
+        systemPrompt: String? = null,
+        assistantMode: String? = null
+    ): Map<String, Any?> {
+        val normalizedSpaceId = AgentSession.normalizeSpaceId(spaceId)
+        val resolvedSpaceName = AgentSession.displayNameForSpace(normalizedSpaceId, spaceName ?: spaceId)
+        val session = orchestrationService?.getOrCreateSpaceSession(
+            spaceId = normalizedSpaceId,
+            spaceName = resolvedSpaceName,
+            preferredSessionId = sessionId
+        )
+        if (session != null && !systemPrompt.isNullOrBlank() && session.summary.isBlank() && session.chatMemory.messages().isEmpty()) {
+            session.updateSummary(systemPrompt)
+        }
+        val response = askAgentWithMode(
+            userIntent,
+            session?.sessionId ?: sessionId ?: AgentSession.sessionIdForSpace(normalizedSpaceId),
+            systemPrompt,
+            assistantMode
+        ).toMutableMap()
+        response["spaceId"] = normalizedSpaceId
+        response["spaceName"] = resolvedSpaceName
+        return response
+    }
+
+    @kotlin.jvm.JvmOverloads
+    open fun prepareStreamingTurnInSpace(
+        userIntent: String,
+        spaceId: String,
+        spaceName: String? = null,
+        sessionId: String? = null,
+        systemPrompt: String? = null,
+        assistantMode: String? = null
+    ): Map<String, Any?> {
+        val normalizedSpaceId = AgentSession.normalizeSpaceId(spaceId)
+        val resolvedSpaceName = AgentSession.displayNameForSpace(normalizedSpaceId, spaceName ?: spaceId)
+        val session = orchestrationService?.getOrCreateSpaceSession(
+            spaceId = normalizedSpaceId,
+            spaceName = resolvedSpaceName,
+            preferredSessionId = sessionId
+        )
+        if (session != null && !systemPrompt.isNullOrBlank() && session.summary.isBlank() && session.chatMemory.messages().isEmpty()) {
+            session.updateSummary(systemPrompt)
+        }
+        return prepareStreamingTurnWithMode(
+            userIntent,
+            session?.sessionId ?: sessionId ?: AgentSession.sessionIdForSpace(normalizedSpaceId),
+            systemPrompt,
+            assistantMode
         )
     }
 
     /**
      * Commits a completed streaming turn into the session's chat memory and persists the session.
      */
-    open fun commitStreamingTurn(sessionId: String, userIntent: String, assistantAnswer: String): Boolean {
-        val session = orchestrationService?.getSession(sessionId) ?: return false
-        session.chatMemory.add(ReveilaMessage.user(userIntent))
-        session.chatMemory.add(ReveilaMessage.assistant(assistantAnswer))
+    @kotlin.jvm.JvmOverloads
+    open fun commitStreamingTurn(
+        sessionId: String,
+        userIntent: String,
+        assistantAnswer: String,
+        spaceId: String? = null,
+        spaceName: String? = null
+    ): Boolean {
+        var session = orchestrationService?.getSession(sessionId)
+        if (session == null && !spaceId.isNullOrBlank()) {
+            session = orchestrationService?.getOrCreateSpaceSession(spaceId, spaceName, sessionId)
+        }
+        if (session == null) return false
+        if (!spaceId.isNullOrBlank()) {
+            session.assignSpace(spaceId, spaceName)
+        }
+        session.addMessage(ReveilaMessage.user(userIntent, spaceId = session.spaceId))
+        session.addMessage(ReveilaMessage.assistant(assistantAnswer, spaceId = session.spaceId))
         sessionManager?.saveSession(session.sessionId, session)
         return true
     }
@@ -368,6 +513,59 @@ open class AgenticFabric : SystemComponent() {
             }
         }
 
+        // 2c. Resolve Worker & Governance LLM capability against the 6-category taxonomy
+        val factory = llmFactory
+        val effectivePreferredProvider: String? = if (factory != null) {
+            val systemHome = context?.properties?.getProperty("system.home")
+            val assessment = TaskCapabilityRouter.assessTask(
+                intent = "auto",
+                prompt = intent,
+                executionTarget = "auto",
+                systemHome = systemHome,
+                localProvider = factory.getProvider("On-Device Model")
+            )
+
+            val govSel = factory.resolveGovernanceProviderForIntent(assessment.taskCategory)
+            if (!govSel.isCapable) {
+                val alertMsg = "⚠️ ${govSel.errorMessage}"
+                recordAuditLog("GOVERNANCE_LLM_INCOMPATIBLE", alertMsg)
+                return buildErrorResponse(alertMsg)
+            }
+
+            if (!preferredProviderName.isNullOrBlank()) {
+                val explicitSel = if (preferredProviderName.equals("Auto", ignoreCase = true)) {
+                    factory.resolveWorkerProviderForIntent(assessment.taskCategory, forceAuto = true)
+                } else {
+                    factory.resolveExplicitProviderForIntent(preferredProviderName, assessment.taskCategory)
+                }
+                if (!explicitSel.isCapable) {
+                    val alertMsg = "⚠️ ${explicitSel.errorMessage}"
+                    recordAuditLog("ASSISTANT_LLM_UNAVAILABLE", alertMsg)
+                    return buildErrorResponse(alertMsg)
+                }
+                explicitSel.providerName
+            } else {
+                val defaultMode = if (isAutonomousCaller) {
+                    null
+                } else {
+                    factory.getConfiguredAssistantName()
+                }
+                val workerSel = when {
+                    defaultMode.isNullOrBlank() -> factory.resolveWorkerProviderForIntent(assessment.taskCategory)
+                    defaultMode.equals("Auto", ignoreCase = true) -> factory.resolveWorkerProviderForIntent(assessment.taskCategory, forceAuto = true)
+                    else -> factory.resolveExplicitProviderForIntent(defaultMode, assessment.taskCategory)
+                }
+                if (!workerSel.isCapable) {
+                    val alertMsg = "⚠️ ${workerSel.errorMessage}"
+                    recordAuditLog("WORKER_LLM_INCOMPATIBLE", alertMsg)
+                    return buildErrorResponse(alertMsg)
+                }
+                workerSel.providerName
+            }
+        } else {
+            preferredProviderName
+        }
+
         var intentBuffer = intent
         val responseValidator = AiResponseValidator(governancePolicy)
 
@@ -380,7 +578,7 @@ open class AgenticFabric : SystemComponent() {
 
             var rawResponse: String?
             try {
-                rawResponse = askAi(session, intentBuffer, preferredProviderName)
+                rawResponse = askAi(session, intentBuffer, effectivePreferredProvider)
             } catch (e: LlmException) {
                 val errMsg = "ERROR: Failed to get response from LLM: ${e.message}"
                 logger.severe(errMsg)
@@ -499,6 +697,7 @@ open class AgenticFabric : SystemComponent() {
                         hitlResponse[RESULT] = "Paused awaiting Human-In-The-Loop approval."
                         hitlResponse[CONFIDENCE_SCORE] = 1.0
                         hitlResponse[TOOL_CALL] = toolCallObj
+                        sessionManager?.saveSession(session.sessionId, session)
                         return hitlResponse
                     }
                 }
@@ -549,17 +748,17 @@ open class AgenticFabric : SystemComponent() {
 
     /**
      * Sliding context window management: compacts or summarizes older messages
-     * when message limit is approached, keeping recent turns intact.
+     * for the session's active Space when message limit is approached, keeping recent turns intact.
      */
     private fun enforceSlidingWindow(session: AgentSession) {
         val worker = llmFactory?.getActiveProvider()
         val isOnDevice = worker?.getName()?.contains("On-Device", ignoreCase = true) == true
         val maxMsgs = if (isOnDevice) 6 else (orchestrationService?.getMaxMessages() ?: 20)
-        val messages = session.chatMemory.messages()
+        val spaceId = session.spaceId
+        val messages = session.messagesForSpace(spaceId)
 
         if (messages.size > maxMsgs) {
             try {
-                val worker = llmFactory?.getActiveProvider()
                 if (worker != null) {
                     val toSummarize = messages.take(messages.size - 6)
                     val historyDump = toSummarize.joinToString("\n") { "${it.role().name}: ${it.content()}" }
@@ -572,15 +771,89 @@ open class AgenticFabric : SystemComponent() {
                     val summary = worker.invoke(summaryReq).content ?: "Context summary preserved."
                     val recentTurns = messages.takeLast(6)
 
+                    session.updateSummary(summary)
                     session.chatMemory.clear()
-                    session.chatMemory.add(ReveilaMessage.system("Earlier conversation summary: $summary"))
-                    recentTurns.forEach { session.chatMemory.add(it) }
-                    logger.info("[Fabric] Sliding context window activated: compacted ${toSummarize.size} turns into concise summary.")
+                    session.addMessage(ReveilaMessage.system("Earlier conversation summary: $summary", spaceId = spaceId))
+                    recentTurns.forEach { session.addMessage(it.withSpace(spaceId)) }
+                    sessionManager?.saveSession(session.sessionId, session)
+                    logger.info("[Fabric] Sliding context window activated for space [$spaceId]: compacted ${toSummarize.size} turns into concise summary.")
                 }
             } catch (e: Exception) {
                 logger.warning("[Fabric] Could not compact context window: ${e.message}")
             }
         }
+    }
+
+    /**
+     * Builds the Space-filtered chat history and Space summary for LLM prompt context.
+     * Guarantees messages from unrelated Spaces are excluded before invoking any LLM.
+     */
+    private fun buildSpaceContextMessages(session: AgentSession, maxHistoryMessages: Int): List<ReveilaMessage> {
+        val targetSpaceId = AgentSession.normalizeSpaceId(session.spaceId)
+        val priorSpaceMessages = sessionManager
+            ?.getFilteredMessagesForSpace(
+                spaceId = targetSpaceId,
+                excludeSessionId = session.sessionId,
+                maxMessages = 40
+            )
+            .orEmpty()
+        val currentSpaceMessages = session.messagesForSpace(targetSpaceId)
+
+        val allFiltered = (priorSpaceMessages + currentSpaceMessages).filter { msg ->
+            msg.spaceId == null || AgentSession.normalizeSpaceId(msg.spaceId) == targetSpaceId
+        }
+
+        val persistedSummary = session.summary.ifBlank {
+            sessionManager?.getSpaceSummary(targetSpaceId).orEmpty()
+        }
+
+        val conversationTurns = allFiltered.filterNot { msg ->
+            msg.role == LlmRole.SYSTEM && msg.content.startsWith("Earlier conversation summary:", ignoreCase = true)
+        }
+        val embeddedSummary = allFiltered.lastOrNull { msg ->
+            msg.role == LlmRole.SYSTEM && msg.content.startsWith("Earlier conversation summary:", ignoreCase = true)
+        }?.content
+
+        val recentTurns: List<ReveilaMessage>
+        val olderTurns: List<ReveilaMessage>
+        if (maxHistoryMessages > 0 && conversationTurns.size > maxHistoryMessages) {
+            olderTurns = conversationTurns.dropLast(maxHistoryMessages)
+            recentTurns = conversationTurns.takeLast(maxHistoryMessages)
+        } else {
+            olderTurns = emptyList()
+            recentTurns = conversationTurns
+        }
+
+        val effectiveSummary = when {
+            persistedSummary.isNotBlank() -> persistedSummary
+            !embeddedSummary.isNullOrBlank() -> embeddedSummary.removePrefix("Earlier conversation summary:").trim()
+            olderTurns.isNotEmpty() -> buildExtractiveSpaceSummary(session.spaceName, olderTurns)
+            else -> ""
+        }
+
+        val contextMessages = mutableListOf<ReveilaMessage>()
+        if (effectiveSummary.isNotBlank()) {
+            contextMessages.add(
+                ReveilaMessage.system(
+                    "Earlier conversation summary for Space '${session.spaceName}': $effectiveSummary",
+                    spaceId = targetSpaceId
+                )
+            )
+        }
+        contextMessages.addAll(recentTurns)
+        return contextMessages
+    }
+
+    private fun buildExtractiveSpaceSummary(spaceName: String, olderTurns: List<ReveilaMessage>): String {
+        return olderTurns
+            .filter { it.role == LlmRole.USER || it.role == LlmRole.ASSISTANT }
+            .takeLast(6)
+            .joinToString(" | ") { msg ->
+                val prefix = if (msg.role == LlmRole.USER) "User" else "Assistant"
+                val clipped = msg.content.replace('\n', ' ').trim().take(120)
+                "$prefix: $clipped"
+            }
+            .ifBlank { "Continued session in $spaceName" }
     }
 
     open fun delegate(parent: Plugin, targetIntent: String, taskArguments: Map<String, Any?>): Any? {
@@ -720,7 +993,7 @@ open class AgenticFabric : SystemComponent() {
             val taskId = createdMap["taskId"]?.toString() ?: "scheduled-task"
             val statusStr = createdMap["status"]?.toString() ?: "ACTIVE"
 
-            session.chatMemory.add(ReveilaMessage.user(intent))
+            session.addMessage(ReveilaMessage.user(intent, spaceId = session.spaceId))
             val summaryMsg = buildString {
                 appendLine("Created repeating task in \${REVEILA_HOME}/tasks/$taskId.json:")
                 appendLine("• Title: $titleWords")
@@ -730,7 +1003,7 @@ open class AgenticFabric : SystemComponent() {
                 appendLine("• Prompt: \"$actionPrompt\"")
                 append("Open the Tasks tab to monitor, run, edit, approve, or stop this task.")
             }
-            session.chatMemory.add(ReveilaMessage.assistant(summaryMsg))
+            session.addMessage(ReveilaMessage.assistant(summaryMsg, spaceId = session.spaceId))
             sessionManager?.saveSession(session.sessionId, session)
             recordAuditLog("TASK_CREATED_FROM_CHAT", "Task [$taskId] ($titleWords) scheduled $frequency at $scheduleTime")
 
@@ -865,14 +1138,12 @@ open class AgenticFabric : SystemComponent() {
         }
 
         val systemInstructions = Prompt.getSystemPrompt(
-            "Reveila Sovereign AI Agent",
+            "Reveila Sovereign AI Agent (Space: ${session.spaceName})",
             "Available Tools: " +
                 tools.joinToString(", ") { it.name ?: "" } +
                 "\n\nRelated Documents: " + searchKnowledgeVault(userPrompt),
             "Always follow governance policy boundaries and preserve confidentiality."
         )
-
-        session.chatMemory.add(ReveilaMessage.user(userPrompt))
 
         val requestBuilder = LlmRequest.builder().tools(tools)
         requestBuilder.addMessage(ReveilaMessage.system(systemInstructions))
@@ -882,15 +1153,16 @@ open class AgenticFabric : SystemComponent() {
         }
 
         val isOnDevice = worker.getName().contains("On-Device", ignoreCase = true)
-        val history = if (isOnDevice) {
-            session.chatMemory.messages().takeLast(6)
-        } else {
-            session.chatMemory.messages()
-        }
+        val maxWindow = if (isOnDevice) 6 else (orchestrationService?.getMaxMessages() ?: 20)
+        val filteredSpaceHistory = buildSpaceContextMessages(session, maxHistoryMessages = maxWindow)
 
-        for (msg in history) {
+        for (msg in filteredSpaceHistory) {
             requestBuilder.addMessage(msg)
         }
+
+        val currentUserMsg = ReveilaMessage.user(userPrompt, spaceId = session.spaceId)
+        session.addMessage(currentUserMsg)
+        requestBuilder.addMessage(currentUserMsg)
 
         val request = requestBuilder.build()
         var response: String? = null
@@ -913,7 +1185,8 @@ open class AgenticFabric : SystemComponent() {
             throw LlmException("LLM Invocation Failure, caused by: $ec")
         } finally {
             try {
-                session.chatMemory.add(ReveilaMessage.assistant(response ?: "No response received from LLM."))
+                session.addMessage(ReveilaMessage.assistant(response ?: "No response received from LLM.", spaceId = session.spaceId))
+                sessionManager?.saveSession(session.sessionId, session)
             } catch (e: Exception) {
                 logger.severe("Error recording response in chat memory: ${e.message}")
             }

@@ -1,5 +1,6 @@
 package com.reveila.ai
 
+import com.reveila.crypto.PlatformCryptographer
 import com.reveila.error.ConfigurationException
 import com.reveila.system.Properties
 import com.reveila.system.SystemComponent
@@ -8,7 +9,27 @@ import com.reveila.util.json.JsonUtil
 
 open class LlmProviderFactory : SystemComponent() {
 
+    private data class ProviderMeta(
+        val name: String,
+        val type: String,
+        val providerField: String,
+        val endpoint: String,
+        val model: String,
+        val apiKey: String
+    )
+
+    data class ProviderSelectionResult(
+        val provider: LlmProvider?,
+        val providerName: String,
+        val isAutoMode: Boolean,
+        val isCapable: Boolean,
+        val intentCategory: String,
+        val errorMessage: String? = null
+    )
+
     companion object {
+        const val AUTO_PROVIDER: String = "Auto"
+
         val DEFAULT_LOCAL_INTENTS: List<String> = listOf(
             TaskRoutingCategory.LOCAL_TEXT_TRANSFORM.name,
             TaskRoutingCategory.LOCAL_STRUCTURED_EXTRACT.name,
@@ -25,6 +46,9 @@ open class LlmProviderFactory : SystemComponent() {
     }
 
     private val providers: MutableMap<String, LlmProvider> = mutableMapOf()
+    private val providerMeta: MutableMap<String, ProviderMeta> = mutableMapOf()
+    private val testedFlags: MutableMap<String, Boolean> = mutableMapOf()
+    private val testedFingerprints: MutableMap<String, String> = mutableMapOf()
     private var activeProvider: LlmProvider? = null
 
     open fun setActiveProvider(name: String?) {
@@ -38,8 +62,14 @@ open class LlmProviderFactory : SystemComponent() {
         loadProviders()
     }
 
+    private var cachedAssistantLlm: String = ""
+
     open fun loadProviders() {
         providers.clear()
+        providerMeta.clear()
+        testedFlags.clear()
+        testedFingerprints.clear()
+        cachedAssistantLlm = ""
         activeProvider = null
 
         try {
@@ -47,6 +77,7 @@ open class LlmProviderFactory : SystemComponent() {
 
             if (jsonConfig.isNotBlank()) {
                 val configMap = JsonUtil.parseJsonStringToMap(jsonConfig)
+                cachedAssistantLlm = (configMap["ai.assistant.llm"] as? String)?.trim().orEmpty()
 
                 @Suppress("UNCHECKED_CAST")
                 val onboarded = configMap["onboarded.providers"] as? List<Map<String, Any>>
@@ -54,30 +85,64 @@ open class LlmProviderFactory : SystemComponent() {
                 if (onboarded != null) {
                     for (p in onboarded) {
                         val rawType = (p["type"] as? String) ?: (p["Type"] as? String) ?: "Cloud"
-                        val providerField = (p["provider"] as? String) ?: (p["Provider"] as? String)
+                        val providerField = (p["provider"] as? String) ?: (p["Provider"] as? String) ?: ""
                         val name = (p["name"] as? String) ?: (p["Name"] as? String)
                         if (!name.isNullOrBlank()) {
-                            val provider = createProviderInstance(rawType, providerField, name)
+                            val endpoint = ((p["endpoint"] ?: p["Endpoint"]) as? String)?.trim().orEmpty()
+                            val model = ((p["model"] ?: p["Model"]) as? String)?.trim().orEmpty()
+                            val rawKey = ((p["api.key"] ?: p["apiKey"] ?: p["API.Key"]) as? String)?.trim().orEmpty()
+                            val normType = normalizeType(rawType, name)
+                            val testedFlag = (p["Tested"] ?: p["tested"])?.let {
+                                it == true || it.toString().equals("true", ignoreCase = true)
+                            } ?: false
+                            val testedFp = ((p["Tested.Fingerprint"] ?: p["tested.fingerprint"]) as? String)?.trim().orEmpty()
+
+                            val provider = createProviderInstance(normType, providerField, name)
                             configureProvider(provider, p)
                             startAndAddProvider(name, provider)
-                            logger.info("Registered LLM Provider: '$name' (type=$rawType, provider=$providerField)")
+
+                            val keyLower = name.lowercase()
+                            providerMeta[keyLower] = ProviderMeta(
+                                name = name,
+                                type = normType,
+                                providerField = providerField,
+                                endpoint = endpoint,
+                                model = model,
+                                apiKey = rawKey
+                            )
+                            testedFlags[keyLower] = testedFlag
+                            testedFingerprints[keyLower] = testedFp
+                            logger.info("Registered LLM Provider: '$name' (type=$normType, provider=$providerField, tested=$testedFlag)")
                         }
                     }
                 }
             }
 
             if (!providers.containsKey("on-device model")) {
+                val ep = context?.properties?.getProperty("ai.llm.endpoint") ?: "local://on-device"
+                val mdl = context?.properties?.getProperty("ai.llm.model.name") ?: "auto"
                 val p = LocalLlamaProvider().apply {
                     this.context = this@LlmProviderFactory.context
                     setName("On-Device Model")
-                    endpoint = context?.properties?.getProperty("ai.llm.endpoint") ?: "local://on-device"
-                    model = context?.properties?.getProperty("ai.llm.model.name") ?: "auto"
+                    endpoint = ep
+                    model = mdl
                     temperature = 0.7
                     intentOptions = DEFAULT_LOCAL_INTENTS
                 }
                 startAndAddProvider("On-Device Model", p)
+                providerMeta["on-device model"] = ProviderMeta(
+                    name = "On-Device Model",
+                    type = "Local",
+                    providerField = "",
+                    endpoint = ep,
+                    model = mdl,
+                    apiKey = ""
+                )
             }
-            if (!providers.containsKey("google gemini")) {
+            val parsedConfig = if (jsonConfig.isNotBlank()) JsonUtil.parseJsonStringToMap(jsonConfig) else emptyMap()
+            val hasExplicitOnboarded = parsedConfig.containsKey("onboarded.providers")
+            if (!hasExplicitOnboarded) {
+                if (!providers.containsKey("google gemini")) {
                 val p = GeminiLlmProvider().apply {
                     this.context = this@LlmProviderFactory.context
                     setName("Google Gemini")
@@ -125,6 +190,7 @@ open class LlmProviderFactory : SystemComponent() {
                 }
                 startAndAddProvider("Qwen", p)
             }
+            }
         } catch (e: Exception) {
             logger.severe("Critical error loading llm.json: ${e.message}")
         }
@@ -149,6 +215,7 @@ open class LlmProviderFactory : SystemComponent() {
             val configMap: MutableMap<String, Any?> = JsonUtil.parseJsonStringToMap(jsonContent).toMutableMap()
             val workerLlm = context?.properties?.getProperty("ai.worker.llm")
             val govLlm = context?.properties?.getProperty("ai.governance.llm")
+            val assistantLlm = context?.properties?.getProperty("ai.assistant.llm")
             val maxMsgs = context?.properties?.getProperty("ai.session.maxMessages")
 
             if (!workerLlm.isNullOrBlank()) {
@@ -156,6 +223,9 @@ open class LlmProviderFactory : SystemComponent() {
             }
             if (govLlm != null) {
                 configMap["ai.governance.llm"] = govLlm
+            }
+            if (!assistantLlm.isNullOrBlank()) {
+                configMap["ai.assistant.llm"] = assistantLlm
             }
             if (maxMsgs != null) {
                 configMap["ai.session.maxMessages"] = maxMsgs
@@ -207,14 +277,20 @@ open class LlmProviderFactory : SystemComponent() {
                 @Suppress("UNCHECKED_CAST")
                 val providersList = onboardedObj as List<MutableMap<String, Any?>>
                 for (p in providersList) {
-                    val pName = p["name"] as? String
-                    val pKey = p["api.key"] as? String
-                    val pEndpoint = p["endpoint"] as? String
+                    val pName = (p["name"] as? String) ?: (p["Name"] as? String)
+                    val rawType = (p["type"] as? String) ?: (p["Type"] as? String) ?: "Cloud"
+                    val normType = normalizeType(rawType, pName)
+                    val pField = (p["provider"] as? String) ?: (p["Provider"] as? String) ?: ""
+                    val pKey = (p["api.key"] as? String) ?: (p["apiKey"] as? String) ?: (p["API.Key"] as? String)
+                    val pEndpoint = ((p["endpoint"] ?: p["Endpoint"]) as? String)?.trim().orEmpty()
+                    val pModel = ((p["model"] ?: p["Model"]) as? String)?.trim().orEmpty()
 
                     if (!pName.isNullOrBlank() && !pKey.isNullOrBlank() && !pKey.startsWith("REF:")) {
                         val sKey = pName.replace("\\s+".toRegex(), "_").uppercase() + "_API_KEY"
                         try {
                             context?.getProxy("SecretManager")?.invoke("storeSecret", arrayOf<Any?>(sKey, pKey))
+                            p.remove("apiKey")
+                            p.remove("API.Key")
                             p["api.key"] = "REF:$sKey"
                             modifiedConfig = true
                         } catch (e: Exception) {
@@ -222,7 +298,26 @@ open class LlmProviderFactory : SystemComponent() {
                         }
                     }
 
-                    if (pName != null && pEndpoint != null) {
+                    val effectiveKey = (p["api.key"] as? String) ?: pKey
+                    val isTestedFlag = (p["Tested"] ?: p["tested"])?.let {
+                        it == true || it.toString().equals("true", ignoreCase = true)
+                    } ?: false
+                    val expectedFp = computeConfigSignature(
+                        name = pName.orEmpty(),
+                        type = normType,
+                        providerField = pField,
+                        endpoint = pEndpoint,
+                        model = pModel,
+                        rawOrRefKey = effectiveKey
+                    )
+                    val incomingFp = ((p["Tested.Fingerprint"] ?: p["tested.fingerprint"]) as? String)?.trim().orEmpty()
+                    if (isTestedFlag && incomingFp != expectedFp) {
+                        p["Tested"] = false
+                        p["Tested.Fingerprint"] = ""
+                        modifiedConfig = true
+                    }
+
+                    if (pName != null && pEndpoint.isNotEmpty()) {
                         if (pName.startsWith("Gemma") || pName.equals("Ollama", ignoreCase = true)) {
                             configMap["plugin.OnDeviceProvider.apiUrl"] = pEndpoint
                         }
@@ -265,12 +360,228 @@ open class LlmProviderFactory : SystemComponent() {
         logger.info("Saved and reloaded settings for tab: $tab")
     }
 
+    open fun getConfiguredWorkerName(): String {
+        val raw = context?.properties?.getProperty("ai.worker.llm")?.trim()
+        return if (raw.isNullOrBlank()) "On-Device Model" else raw
+    }
+
+    open fun getConfiguredGovernanceName(): String {
+        val raw = context?.properties?.getProperty("ai.governance.llm")?.trim()
+        return if (raw.isNullOrBlank()) "Disable" else raw
+    }
+
+    open fun getConfiguredAssistantName(): String {
+        val raw = context?.properties?.getProperty("ai.assistant.llm")?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: cachedAssistantLlm.takeIf { it.isNotEmpty() }
+        return if (raw.isNullOrBlank()) getConfiguredWorkerName() else raw
+    }
+
+    open fun isProviderTested(name: String?): Boolean {
+        if (name.isNullOrBlank() || name.equals("Disable", ignoreCase = true) || name.equals("Custom", ignoreCase = true)) {
+            return false
+        }
+        if (name.equals(AUTO_PROVIDER, ignoreCase = true)) return true
+        val key = name.lowercase()
+        val p = providers[key] ?: return false
+        if (!p.isConfigured()) return false
+        if (testedFlags[key] != true) return false
+        val meta = providerMeta[key] ?: return false
+        val expectedFp = computeConfigSignature(
+            name = meta.name,
+            type = meta.type,
+            providerField = meta.providerField,
+            endpoint = meta.endpoint,
+            model = meta.model,
+            rawOrRefKey = meta.apiKey
+        )
+        return testedFingerprints[key] == expectedFp
+    }
+
+    /**
+     * Tests a single provider configuration JSON object live and returns a JSON payload:
+     * `{"ok": boolean, "message": string, "fingerprint": string}`.
+     */
+    open fun testProviderConfigJson(providerJson: String): String {
+        return try {
+            val params = JsonUtil.parseJsonStringToMap(providerJson)
+            val name = ((params["name"] ?: params["Name"]) as? String)?.trim().orEmpty()
+            val rawType = ((params["type"] ?: params["Type"]) as? String)?.trim() ?: "Cloud"
+            val normType = normalizeType(rawType, name)
+            val providerField = ((params["provider"] ?: params["Provider"]) as? String)?.trim().orEmpty()
+            val endpoint = ((params["endpoint"] ?: params["Endpoint"]) as? String)?.trim().orEmpty()
+            val model = ((params["model"] ?: params["Model"]) as? String)?.trim().orEmpty()
+            val rawKey = ((params["api.key"] ?: params["apiKey"] ?: params["API.Key"]) as? String)?.trim().orEmpty()
+            val localReadyHint = (params["localModelReady"] ?: params["local_model_ready"])?.let {
+                it == true || it.toString().equals("true", ignoreCase = true)
+            } ?: false
+
+            val fingerprint = computeConfigSignature(
+                name = name,
+                type = normType,
+                providerField = providerField,
+                endpoint = endpoint,
+                model = model,
+                rawOrRefKey = rawKey
+            )
+
+            if (normType == "Local") {
+                if (model.isBlank()) {
+                    return JsonUtil.toJsonString(
+                        mapOf("ok" to false, "message" to "Embedded GGUF model filename is required.", "fingerprint" to "")
+                    )
+                }
+                if (localReadyHint) {
+                    return JsonUtil.toJsonString(
+                        mapOf("ok" to true, "message" to "On-device GGUF model '$model' is downloaded and ready.", "fingerprint" to fingerprint)
+                    )
+                }
+                val instance = createProviderInstance(normType, providerField, name)
+                configureProvider(instance, params)
+                val (ok, msg) = instance.testConnection(timeoutSeconds = 10L)
+                return JsonUtil.toJsonString(
+                    mapOf("ok" to ok, "message" to msg, "fingerprint" to if (ok) fingerprint else "")
+                )
+            }
+
+            if (endpoint.isBlank()) {
+                return JsonUtil.toJsonString(
+                    mapOf("ok" to false, "message" to "Endpoint URL is required.", "fingerprint" to "")
+                )
+            }
+            if (model.isBlank()) {
+                return JsonUtil.toJsonString(
+                    mapOf("ok" to false, "message" to "Model name is required.", "fingerprint" to "")
+                )
+            }
+            val resolvedKey = resolveSecretOrRawKey(name, normType, rawKey)
+            if (normType != "Self-Hosted" && resolvedKey.isBlank()) {
+                return JsonUtil.toJsonString(
+                    mapOf("ok" to false, "message" to "API key is required for $name.", "fingerprint" to "")
+                )
+            }
+
+            val instance = createProviderInstance(normType, providerField, name)
+            configureProvider(instance, params)
+            val (ok, msg) = instance.testConnection(timeoutSeconds = 15L)
+            JsonUtil.toJsonString(
+                mapOf("ok" to ok, "message" to msg, "fingerprint" to if (ok) fingerprint else "")
+            )
+        } catch (e: Exception) {
+            JsonUtil.toJsonString(
+                mapOf("ok" to false, "message" to (e.message ?: "Connection test failed"), "fingerprint" to "")
+            )
+        }
+    }
+
+    open fun resolveExplicitProviderForIntent(
+        providerName: String,
+        intentCategory: String?
+    ): ProviderSelectionResult {
+        val targetCategory = TaskRoutingCategory.fromRawOrSafeDefault(intentCategory).name
+        if (providerName.equals(AUTO_PROVIDER, ignoreCase = true)) {
+            return resolveWorkerProviderForIntent(targetCategory, forceAuto = true)
+        }
+        val explicit = providers[providerName.lowercase()]
+        if (explicit == null || !explicit.isConfigured()) {
+            return ProviderSelectionResult(
+                provider = explicit,
+                providerName = providerName,
+                isAutoMode = false,
+                isCapable = false,
+                intentCategory = targetCategory,
+                errorMessage = "Selected LLM '$providerName' is not configured yet. Please configure and test it in Studio -> Configuration."
+            )
+        }
+        return ProviderSelectionResult(
+            provider = explicit,
+            providerName = explicit.getName(),
+            isAutoMode = false,
+            isCapable = true,
+            intentCategory = targetCategory
+        )
+    }
+
+    private fun normalizeType(rawType: String, name: String?): String {
+        val norm = rawType.lowercase().trim()
+        val isSelfHosted = norm == "self-hosted" || norm == "selfhosted"
+        val isLocal = !isSelfHosted && (
+            norm == "local" ||
+                norm.contains("llama") ||
+                norm.contains("ondevice") ||
+                name.equals("On-Device Model", ignoreCase = true)
+            )
+        return when {
+            isLocal -> "Local"
+            isSelfHosted -> "Self-Hosted"
+            else -> "Cloud"
+        }
+    }
+
+    private fun resolveSecretOrRawKey(name: String, normType: String, rawApiKey: String?): String {
+        if (normType == "Local") return ""
+        val key = rawApiKey?.trim().orEmpty()
+        if (key.isEmpty()) return ""
+        if (!key.startsWith("REF:")) return key
+        val secretKey = key.substring(4)
+        var sec = try {
+            context?.getProxy("SecretManager")?.invoke("getSecret", arrayOf(secretKey)) as? String
+        } catch (_: Exception) {
+            null
+        }
+        if (sec.isNullOrBlank()) {
+            val altKey = when {
+                secretKey.contains("GEMINI") -> "GOOGLE_GEMINI_API_KEY"
+                secretKey.contains("DEEPSEEK") -> "DEEPSEEK_API_KEY"
+                secretKey.contains("QWEN") -> "QWEN_API_KEY"
+                else -> "OPENAI_API_KEY"
+            }
+            sec = try {
+                context?.getProxy("SecretManager")?.invoke("getSecret", arrayOf(altKey)) as? String
+            } catch (_: Exception) {
+                null
+            }
+        }
+        return sec?.trim().orEmpty()
+    }
+
+    private fun computeConfigSignature(
+        name: String,
+        type: String,
+        providerField: String,
+        endpoint: String,
+        model: String,
+        rawOrRefKey: String?
+    ): String {
+        val normType = normalizeType(type, name)
+        val normProvider = when (normType) {
+            "Local" -> ""
+            "Self-Hosted" -> "OpenAI"
+            else -> providerField.trim()
+        }
+        val resolvedKey = resolveSecretOrRawKey(name, normType, rawOrRefKey)
+        val canonical = "${normType}|${normProvider}|${endpoint.trim()}|${model.trim()}|${resolvedKey}"
+        val crypto = PlatformCryptographer()
+        return crypto.base64Encode(crypto.sha256(canonical.encodeToByteArray()))
+    }
+
+    open fun isAutoWorker(): Boolean = getConfiguredWorkerName().equals(AUTO_PROVIDER, ignoreCase = true)
+
+    open fun isAutoGovernance(): Boolean = getConfiguredGovernanceName().equals(AUTO_PROVIDER, ignoreCase = true)
+
     open fun getActiveProvider(): LlmProvider? {
         val configured = context?.properties?.getProperty("ai.worker.llm")
-        if (!configured.isNullOrBlank()) {
+        if (!configured.isNullOrBlank() && !configured.equals(AUTO_PROVIDER, ignoreCase = true)) {
             val matched = getProvider(configured)
             if (matched != null) {
                 activeProvider = matched
+                return activeProvider
+            }
+        }
+        if (configured?.equals(AUTO_PROVIDER, ignoreCase = true) == true) {
+            val autoDefault = getProviderForIntent(TaskRoutingCategory.LOCAL_TEXT_TRANSFORM.name)
+            if (autoDefault != null) {
+                activeProvider = autoDefault
                 return activeProvider
             }
         }
@@ -287,12 +598,17 @@ open class LlmProviderFactory : SystemComponent() {
     }
 
     open fun getProvider(name: String?): LlmProvider? {
-        return if (name == null) null else providers[name.lowercase()]
+        if (name.isNullOrBlank()) return null
+        if (name.equals(AUTO_PROVIDER, ignoreCase = true)) {
+            return getProviderForIntent(TaskRoutingCategory.LOCAL_TEXT_TRANSFORM.name)
+        }
+        return providers[name.lowercase()]
     }
 
     open fun isProviderConfigured(name: String?): Boolean {
         if (name.isNullOrBlank()) return false
-        val p = getProvider(name) ?: return false
+        if (name.equals(AUTO_PROVIDER, ignoreCase = true)) return true
+        val p = providers[name.lowercase()] ?: return false
         return p.isConfigured()
     }
 
@@ -379,6 +695,132 @@ open class LlmProviderFactory : SystemComponent() {
         return getProviderForIntent(intentCategory)?.getName() ?: "On-Device Model"
     }
 
+    /**
+     * Resolves the Worker LLM for [intentCategory]:
+     * - When `ai.worker.llm` is `"Auto"` (or [forceAuto] is true), automatically selects the
+     *   best configured LLM using the local-first rule ([getProviderForIntent]).
+     * - When an explicit Worker LLM is selected, that exact provider MUST be used; if it is not
+     *   configured or its `Intent.Options` does not support [intentCategory], returns `isCapable = false`
+     *   with an actionable alert message prompting the user to choose a different LLM.
+     */
+    open fun resolveWorkerProviderForIntent(
+        intentCategory: String?,
+        forceAuto: Boolean = false
+    ): ProviderSelectionResult {
+        val targetCategory = TaskRoutingCategory.fromRawOrSafeDefault(intentCategory).name
+        val configuredName = getConfiguredWorkerName()
+
+        if (forceAuto || configuredName.equals(AUTO_PROVIDER, ignoreCase = true)) {
+            val selected = getProviderForIntent(targetCategory)
+            val selectedName = selected?.getName() ?: "On-Device Model"
+            return ProviderSelectionResult(
+                provider = selected,
+                providerName = selectedName,
+                isAutoMode = true,
+                isCapable = selected != null,
+                intentCategory = targetCategory
+            )
+        }
+
+        val explicit = providers[configuredName.lowercase()]
+        if (explicit == null || !explicit.isConfigured()) {
+            return ProviderSelectionResult(
+                provider = explicit,
+                providerName = configuredName,
+                isAutoMode = false,
+                isCapable = false,
+                intentCategory = targetCategory,
+                errorMessage = "Selected Worker LLM '$configuredName' is not configured yet. Please configure it or select 'Auto' in Studio -> Configuration."
+            )
+        }
+
+        val supported = explicit.getSupportedIntents()
+        if (supported.isNotEmpty() && !explicit.supportsIntent(targetCategory)) {
+            return ProviderSelectionResult(
+                provider = explicit,
+                providerName = explicit.getName(),
+                isAutoMode = false,
+                isCapable = false,
+                intentCategory = targetCategory,
+                errorMessage = "Selected Worker LLM '${explicit.getName()}' cannot handle task type '$targetCategory' (supported: ${supported.joinToString(", ")}). Please choose a different LLM or select 'Auto' in Studio -> Configuration."
+            )
+        }
+
+        return ProviderSelectionResult(
+            provider = explicit,
+            providerName = explicit.getName(),
+            isAutoMode = false,
+            isCapable = true,
+            intentCategory = targetCategory
+        )
+    }
+
+    /**
+     * Resolves the Governance LLM for [intentCategory]:
+     * - When `ai.governance.llm` is `"Disable"` or blank, governance LLM is disabled (`isCapable = true`, `provider = null`).
+     * - When `ai.governance.llm` is `"Auto"`, automatically selects the best configured LLM using local-first rule.
+     * - When an explicit Governance LLM is selected, that exact provider MUST be used; if it is not configured
+     *   or cannot handle [intentCategory], returns `isCapable = false` with an alert message.
+     */
+    open fun resolveGovernanceProviderForIntent(intentCategory: String?): ProviderSelectionResult {
+        val targetCategory = TaskRoutingCategory.fromRawOrSafeDefault(intentCategory).name
+        val configuredName = getConfiguredGovernanceName()
+
+        if (configuredName.isBlank() || configuredName.equals("Disable", ignoreCase = true)) {
+            return ProviderSelectionResult(
+                provider = null,
+                providerName = "Disable",
+                isAutoMode = false,
+                isCapable = true,
+                intentCategory = targetCategory
+            )
+        }
+
+        if (configuredName.equals(AUTO_PROVIDER, ignoreCase = true)) {
+            val selected = getProviderForIntent(targetCategory)
+            val selectedName = selected?.getName() ?: "On-Device Model"
+            return ProviderSelectionResult(
+                provider = selected,
+                providerName = selectedName,
+                isAutoMode = true,
+                isCapable = selected != null,
+                intentCategory = targetCategory
+            )
+        }
+
+        val explicit = providers[configuredName.lowercase()]
+        if (explicit == null || !explicit.isConfigured()) {
+            return ProviderSelectionResult(
+                provider = explicit,
+                providerName = configuredName,
+                isAutoMode = false,
+                isCapable = false,
+                intentCategory = targetCategory,
+                errorMessage = "Selected Governance LLM '$configuredName' is not configured yet. Please configure it, select 'Auto', or set to 'Disable' in Studio -> Configuration."
+            )
+        }
+
+        val supported = explicit.getSupportedIntents()
+        if (supported.isNotEmpty() && !explicit.supportsIntent(targetCategory)) {
+            return ProviderSelectionResult(
+                provider = explicit,
+                providerName = explicit.getName(),
+                isAutoMode = false,
+                isCapable = false,
+                intentCategory = targetCategory,
+                errorMessage = "Selected Governance LLM '${explicit.getName()}' cannot handle task type '$targetCategory' (supported: ${supported.joinToString(", ")}). Please choose a different Governance LLM or select 'Auto' in Studio -> Configuration."
+            )
+        }
+
+        return ProviderSelectionResult(
+            provider = explicit,
+            providerName = explicit.getName(),
+            isAutoMode = false,
+            isCapable = true,
+            intentCategory = targetCategory
+        )
+    }
+
     @Throws(Exception::class)
     override fun onStop() {}
 
@@ -395,6 +837,9 @@ open class LlmProviderFactory : SystemComponent() {
         val normType = type.lowercase().trim()
         val normProvider = (providerField ?: name ?: "").lowercase().trim()
         val provider: BaseLlmProvider = when {
+            normType == "self-hosted" || normType == "selfhosted" -> {
+                OpenAiLlmProvider().apply { allowNoApiKey = true }
+            }
             normType == "local" || normType.contains("llama") || normType.contains("ondevice") -> LocalLlamaProvider()
             normType == "cloud" -> {
                 when {

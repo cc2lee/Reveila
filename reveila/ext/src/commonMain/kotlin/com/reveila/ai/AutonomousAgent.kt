@@ -466,22 +466,100 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             }
             delay(1400)
 
-            // Stage 3: Select configured LLM via LlmProviderFactory.getProviderForIntent(category)
-            // (On-Device Local LLM has highest preference if its Intent.Options includes assessment.taskCategory)
-            val matchedByIntent = when (executionTarget) {
-                "local" -> factory?.getProvider("On-Device Model")
-                "cloud" -> {
-                    val candidate = factory?.getProviderForIntent(assessment.taskCategory)
-                    if (candidate != null && !candidate.getName().equals("On-Device Model", ignoreCase = true)) {
-                        candidate
-                    } else {
-                        factory?.getConfiguredCloudProvider()?.let { factory.getProvider(it) }
-                    }
+            // Stage 3: Check Governance LLM & Worker LLM capability against assessment.taskCategory
+            // - When Worker/Governance LLM is "Auto", automatically selects best LLM using local-first rule.
+            // - When an explicit LLM is selected, that LLM must be used; alert user if it cannot handle the category.
+            val govSelection = factory?.resolveGovernanceProviderForIntent(assessment.taskCategory)
+            if (govSelection != null && !govSelection.isCapable) {
+                val alertMsg = govSelection.errorMessage
+                    ?: "Selected Governance LLM '${govSelection.providerName}' cannot handle '${assessment.taskCategory}'."
+                sandbox.markFailed(alertMsg)
+                val latestDef = try {
+                    JsonUtil.parseJsonStringToMap(fs.readText(filePath)).toMutableMap<String, Any?>()
+                } catch (_: Exception) {
+                    initialTaskDef
                 }
-                else -> factory?.getProviderForIntent(assessment.taskCategory)
+                latestDef["status"] = "PAUSED"
+                latestDef["enabled"] = false
+                latestDef["sandboxId"] = ""
+                latestDef["currentStep"] = alertMsg
+                latestDef["lastRunAt"] = PlatformSystem.currentTimeMillis()
+                latestDef["lastResult"] = "⚠️ $alertMsg"
+                fs.writeText(filePath, JsonUtil.toPrettyJsonString(latestDef), append = false)
+                recordAuditLog("TASK_LLM_INCOMPATIBLE", "Task [$taskId] ($title): $alertMsg")
+                emitTaskNotification(
+                    taskId = taskId,
+                    title = title,
+                    status = "FAILED",
+                    summary = "⚠️ $alertMsg"
+                )
+                return
             }
 
-            val selectedProviderName = matchedByIntent?.getName() ?: "On-Device Model"
+            val workerSelection = when (executionTarget) {
+                "local" -> {
+                    val p = factory?.getProvider("On-Device Model")
+                    LlmProviderFactory.ProviderSelectionResult(
+                        provider = p,
+                        providerName = "On-Device Model",
+                        isAutoMode = false,
+                        isCapable = p != null,
+                        intentCategory = assessment.taskCategory
+                    )
+                }
+                "cloud" -> {
+                    val configuredCloud = factory?.getConfiguredCloudProvider()
+                    val p = configuredCloud?.let { factory.getProvider(it) }
+                    if (p == null) {
+                        LlmProviderFactory.ProviderSelectionResult(
+                            provider = null,
+                            providerName = "Cloud LLM",
+                            isAutoMode = false,
+                            isCapable = false,
+                            intentCategory = assessment.taskCategory,
+                            errorMessage = "Task requires a Cloud LLM (executionTarget='cloud'), but no Cloud LLM is configured. Please configure one in Studio -> Configuration."
+                        )
+                    } else {
+                        LlmProviderFactory.ProviderSelectionResult(
+                            provider = p,
+                            providerName = p.getName(),
+                            isAutoMode = false,
+                            isCapable = true,
+                            intentCategory = assessment.taskCategory
+                        )
+                    }
+                }
+                else -> factory?.resolveWorkerProviderForIntent(assessment.taskCategory)
+            }
+
+            if (workerSelection != null && !workerSelection.isCapable) {
+                val alertMsg = workerSelection.errorMessage
+                    ?: "Selected Worker LLM '${workerSelection.providerName}' cannot handle '${assessment.taskCategory}'."
+                sandbox.markFailed(alertMsg)
+                val latestDef = try {
+                    JsonUtil.parseJsonStringToMap(fs.readText(filePath)).toMutableMap<String, Any?>()
+                } catch (_: Exception) {
+                    initialTaskDef
+                }
+                latestDef["status"] = "PAUSED"
+                latestDef["enabled"] = false
+                latestDef["sandboxId"] = ""
+                latestDef["currentStep"] = alertMsg
+                latestDef["lastRunAt"] = PlatformSystem.currentTimeMillis()
+                latestDef["lastResult"] = "⚠️ $alertMsg"
+                fs.writeText(filePath, JsonUtil.toPrettyJsonString(latestDef), append = false)
+                recordAuditLog("TASK_LLM_INCOMPATIBLE", "Task [$taskId] ($title): $alertMsg")
+                emitTaskNotification(
+                    taskId = taskId,
+                    title = title,
+                    status = "FAILED",
+                    summary = "⚠️ $alertMsg"
+                )
+                return
+            }
+
+            val matchedByIntent = workerSelection?.provider
+            val selectedProviderName = workerSelection?.providerName ?: "On-Device Model"
             val isSelectedLocal = selectedProviderName.equals("On-Device Model", ignoreCase = true)
 
             val stage3Label = if (isSelectedLocal && (!assessment.routeToCloud || matchedByIntent?.supportsIntent(assessment.taskCategory) == true)) {
@@ -534,7 +612,7 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
                     answerText = buildString {
                         appendLine("[Selected LLM: $resolvedRouteBadge • Intent: ${assessment.taskCategory}]")
                         if (assessment.routeToCloud && isSelectedLocal && matchedByIntent?.supportsIntent(assessment.taskCategory) != true) {
-                            appendLine("Note: Task classified as ${assessment.taskCategory}. Configure a Cloud LLM with this intent in Studio -> AI & Vault for live cloud execution.")
+                            appendLine("Note: Task classified as ${assessment.taskCategory}. Configure a Cloud LLM with this intent in Studio -> Configuration for live cloud execution.")
                         }
                         append(baseOutput)
                     }.trim()

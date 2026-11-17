@@ -30,6 +30,7 @@ import java.util.logging.Logger
 import java.util.logging.SimpleFormatter
 import com.reveila.crypto.Cryptographer
 import com.reveila.crypto.DefaultCryptographer
+import com.reveila.crypto.PlatformCryptographer
 import com.reveila.data.Entity
 import com.reveila.data.Repository
 import com.reveila.error.ConfigurationException
@@ -62,6 +63,8 @@ open class BasePlatformAdapter @Throws(Exception::class) @JvmOverloads construct
     private var systemHome: SystemHome? = null
     private var classLoader: ClassLoader? = null
     private val repositories: ConcurrentHashMap<String, Repository<Entity, Map<String, Map<String, Any>>>> = ConcurrentHashMap()
+    @Volatile
+    private var cachedCryptographer: Cryptographer? = null
 
     init {
         setupSystemHome(commandLineArgs ?: Properties())
@@ -583,7 +586,43 @@ open class BasePlatformAdapter @Throws(Exception::class) @JvmOverloads construct
 
     override fun getScheduler(): PlatformScheduler? = platformScheduler
 
-    override fun getCryptographer(): Cryptographer? = DefaultCryptographer()
+    override fun getCryptographer(): Cryptographer? {
+        cachedCryptographer?.let { return it }
+        synchronized(this) {
+            cachedCryptographer?.let { return it }
+            val homePath = this.systemHome?.systemHome?.trim().orEmpty()
+            val resolved: Cryptographer = if (homePath.isNotEmpty()) {
+                val pCrypto = PlatformCryptographer()
+                val keyFile = File(fs.resolve(homePath, "data/.vault.key"))
+                val keyBytes = try {
+                    if (keyFile.exists()) {
+                        pCrypto.base64Decode(keyFile.readText(StandardCharsets.UTF_8).trim())
+                            .takeIf { it.size == 32 }
+                    } else {
+                        null
+                    }
+                } catch (_: Exception) {
+                    null
+                } ?: DefaultCryptographer.generateRandomKey().also { fresh ->
+                    try {
+                        keyFile.parentFile?.mkdirs()
+                        keyFile.writeText(pCrypto.base64Encode(fresh), StandardCharsets.UTF_8)
+                        keyFile.setReadable(false, false)
+                        keyFile.setReadable(true, true)
+                        keyFile.setWritable(false, false)
+                        keyFile.setWritable(true, true)
+                    } catch (e: Exception) {
+                        platformLogger.warning("Failed to persist vault key at ${keyFile.absolutePath}: ${e.message}")
+                    }
+                }
+                DefaultCryptographer(keyBytes, pCrypto)
+            } else {
+                DefaultCryptographer()
+            }
+            cachedCryptographer = resolved
+            return resolved
+        }
+    }
 
     @Suppress("UNCHECKED_CAST")
     override fun getRepository(entityType: String): Repository<Entity, @JvmSuppressWildcards Map<String, Map<String, Any>>>? {

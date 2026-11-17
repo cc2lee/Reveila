@@ -1,6 +1,15 @@
 package com.reveila.aegin.ui.theme
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -8,6 +17,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,8 +33,15 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.painterResource
+import reveila_suite.apps.aegin.generated.resources.Res
+import reveila_suite.apps.aegin.generated.resources.aegin_robot_dog
 
 @Immutable
 data class AeginColors(
@@ -121,95 +140,156 @@ val LightAeginColors = AeginColors(
 val LocalAeginColors = staticCompositionLocalOf { DarkAeginColors }
 
 /**
- * Luminous Muse-style AI Presence Orb Avatar.
- * Shifts its core aura subtly based on whether Aegin is running in Sovereign On-Device mode or Cloud mode.
+ * Aegin robotic pup brand avatar across chat, Spaces, and Studio headers.
+ * - When [isThinking] is true: lively trot bounce, head wiggle, and pulsing cyan/indigo aura.
+ * - When idle with [animateIdle] enabled: calm slow breathing punctuated by periodic playful head tilts & hops.
  */
 @Composable
 fun AeginOrbAvatar(
     size: Dp = 36.dp,
     isLocalMode: Boolean = true,
     isThinking: Boolean = false,
-    showStatusDot: Boolean = false
+    showStatusDot: Boolean = false,
+    animateIdle: Boolean = true
 ) {
     val theme = LocalAeginColors.current
+
+    // Smooth active/breathing infinite transition
+    val infiniteTransition = rememberInfiniteTransition(label = "aegin_pup_transition")
+    val activePhase by infiniteTransition.animateFloat(
+        initialValue = -1f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "active_phase"
+    )
+    val haloAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.28f,
+        targetValue = 0.65f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "halo_alpha"
+    )
+    val haloSweepAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1600, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "halo_sweep"
+    )
+    val breathPhase by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "idle_breath"
+    )
+
+    // Periodic playful movement while relaxing in idle state
+    val idleTilt = remember { Animatable(0f) }
+    val idleHop = remember { Animatable(0f) }
+
+    LaunchedEffect(isThinking, animateIdle) {
+        if (isThinking || !animateIdle) {
+            idleTilt.snapTo(0f)
+            idleHop.snapTo(0f)
+            return@LaunchedEffect
+        }
+        while (true) {
+            // Relax calmly between movements
+            delay(3200L)
+            // Curious head tilt + gentle two-step perk bounce
+            launch {
+                idleTilt.animateTo(-7f, tween(340, easing = FastOutSlowInEasing))
+                delay(240L)
+                idleTilt.animateTo(5f, tween(320, easing = FastOutSlowInEasing))
+                idleTilt.animateTo(0f, tween(420, easing = FastOutSlowInEasing))
+            }
+            idleHop.animateTo(-2.5f, tween(170, easing = FastOutSlowInEasing))
+            idleHop.animateTo(0f, tween(170, easing = FastOutSlowInEasing))
+            delay(120L)
+            idleHop.animateTo(-1.8f, tween(150, easing = FastOutSlowInEasing))
+            idleHop.animateTo(0f, tween(220, easing = FastOutSlowInEasing))
+        }
+    }
+
+    val translationYDp: Float
+    val rotationDeg: Float
+    val scaleFactor: Float
+
+    when {
+        isThinking -> {
+            // Brisk excited trot & ear/head wiggle
+            val bounceRatio = 1f - kotlin.math.abs(activePhase)
+            translationYDp = -3.2f * bounceRatio
+            rotationDeg = activePhase * 5.5f
+            scaleFactor = 0.90f + 0.05f * bounceRatio
+        }
+        animateIdle -> {
+            // Calm breathing + periodic playful gesture
+            translationYDp = idleHop.value - 0.6f * breathPhase
+            rotationDeg = idleTilt.value
+            scaleFactor = 1.0f + 0.018f * breathPhase
+        }
+        else -> {
+            translationYDp = 0f
+            rotationDeg = 0f
+            scaleFactor = 1.0f
+        }
+    }
+
     Box(
         modifier = Modifier.size(size),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.size(size)) {
-            val radius = this.size.minDimension / 2f
-            val center = Offset(this.size.width / 2f, this.size.height / 2f)
-
-            // Outer ambient halo
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = if (isLocalMode) {
-                        listOf(
-                            Color(0xFFFF6B2C).copy(alpha = if (isThinking) 0.55f else 0.35f),
-                            Color(0xFFEC4899).copy(alpha = 0.18f),
+        if (isThinking) {
+            Canvas(modifier = Modifier.size(size)) {
+                val radius = this.size.minDimension / 2f
+                val center = Offset(this.size.width / 2f, this.size.height / 2f)
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFF07DBEC).copy(alpha = haloAlpha),
+                            Color(0xFF6366F1).copy(alpha = haloAlpha * 0.35f),
                             Color.Transparent
-                        )
-                    } else {
-                        listOf(
-                            Color(0xFF6366F1).copy(alpha = if (isThinking) 0.55f else 0.35f),
-                            Color(0xFF06B6D4).copy(alpha = 0.18f),
-                            Color.Transparent
-                        )
-                    },
-                    center = center,
-                    radius = radius * 1.05f
-                ),
-                radius = radius,
-                center = center
-            )
-
-            // Core orb sphere
-            val orbRadius = radius * 0.78f
-            drawCircle(
-                brush = Brush.linearGradient(
-                    colors = if (isLocalMode) {
-                        listOf(
-                            Color(0xFFFF8A4C),
-                            Color(0xFFFF5E3A),
-                            Color(0xFFD946EF)
-                        )
-                    } else {
-                        listOf(
-                            Color(0xFF38BDF8),
-                            Color(0xFF6366F1),
-                            Color(0xFFA855F7)
-                        )
-                    },
-                    start = Offset(0f, 0f),
-                    end = Offset(this.size.width, this.size.height)
-                ),
-                radius = orbRadius,
-                center = center
-            )
-
-            // Inner specular highlight (glassmorphic depth)
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.65f),
-                        Color.White.copy(alpha = 0.12f),
-                        Color.Transparent
+                        ),
+                        center = center,
+                        radius = radius
                     ),
-                    center = Offset(center.x - orbRadius * 0.28f, center.y - orbRadius * 0.32f),
-                    radius = orbRadius * 0.65f
-                ),
-                radius = orbRadius * 0.65f,
-                center = Offset(center.x - orbRadius * 0.2f, center.y - orbRadius * 0.2f)
-            )
-
-            // Subtle inner geometric ring
-            drawCircle(
-                color = Color.White.copy(alpha = 0.28f),
-                radius = orbRadius * 0.88f,
-                center = center,
-                style = Stroke(width = 1.dp.toPx())
-            )
+                    radius = radius,
+                    center = center
+                )
+                drawArc(
+                    color = Color(0xFF07DBEC).copy(alpha = 0.85f),
+                    startAngle = haloSweepAngle,
+                    sweepAngle = 110f,
+                    useCenter = false,
+                    style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round)
+                )
+            }
         }
+
+        Image(
+            painter = painterResource(Res.drawable.aegin_robot_dog),
+            contentDescription = "Aegin",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .size(size)
+                .graphicsLayer {
+                    translationY = translationYDp.dp.toPx()
+                    rotationZ = rotationDeg
+                    scaleX = scaleFactor
+                    scaleY = scaleFactor
+                }
+        )
 
         if (showStatusDot) {
             Box(

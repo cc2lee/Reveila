@@ -1,28 +1,42 @@
 package com.reveila.ai
 
+import kotlin.jvm.JvmOverloads
 import kotlin.jvm.JvmStatic
 
 /**
- * Native message type for Reveila LLM interactions.
+ * Native message type for Reveila LLM interactions, optionally tagged with its owning Space.
  */
 data class ReveilaMessage(
     val role: LlmRole,
-    val content: String
+    val content: String,
+    val spaceId: String? = null,
+    val timestamp: Long = 0L
 ) {
     fun role(): LlmRole = role
     fun content(): String = content
 
+    fun withSpace(spaceId: String, timestamp: Long = this.timestamp): ReveilaMessage =
+        copy(spaceId = AgentSession.normalizeSpaceId(spaceId), timestamp = timestamp)
+
     companion object {
         @JvmStatic
-        fun system(content: String): ReveilaMessage = ReveilaMessage(LlmRole.SYSTEM, content)
+        @JvmOverloads
+        fun system(content: String, spaceId: String? = null, timestamp: Long = 0L): ReveilaMessage =
+            ReveilaMessage(LlmRole.SYSTEM, content, spaceId, timestamp)
 
         @JvmStatic
-        fun user(content: String): ReveilaMessage = ReveilaMessage(LlmRole.USER, content)
+        @JvmOverloads
+        fun user(content: String, spaceId: String? = null, timestamp: Long = 0L): ReveilaMessage =
+            ReveilaMessage(LlmRole.USER, content, spaceId, timestamp)
 
         @JvmStatic
-        fun assistant(content: String): ReveilaMessage = ReveilaMessage(LlmRole.ASSISTANT, content)
+        @JvmOverloads
+        fun assistant(content: String, spaceId: String? = null, timestamp: Long = 0L): ReveilaMessage =
+            ReveilaMessage(LlmRole.ASSISTANT, content, spaceId, timestamp)
 
         @JvmStatic
-        fun tool(content: String): ReveilaMessage = ReveilaMessage(LlmRole.TOOL, content)
+        @JvmOverloads
+        fun tool(content: String, spaceId: String? = null, timestamp: Long = 0L): ReveilaMessage =
+            ReveilaMessage(LlmRole.TOOL, content, spaceId, timestamp)
     }
 }

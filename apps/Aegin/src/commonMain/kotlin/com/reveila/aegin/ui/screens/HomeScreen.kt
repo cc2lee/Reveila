@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
@@ -64,7 +66,7 @@ import androidx.compose.ui.unit.sp
 import com.reveila.aegin.bridge.AeginBridge
 import com.reveila.aegin.bridge.TaskItem
 import com.reveila.aegin.bridge.VaultStats
-import com.reveila.aegin.ui.components.SetupWizard
+import com.reveila.aegin.ui.PlatformBackHandler
 import com.reveila.aegin.ui.theme.AeginIconType
 import com.reveila.aegin.ui.theme.AeginOrbAvatar
 import com.reveila.aegin.ui.theme.AeginVectorIcon
@@ -95,6 +97,9 @@ fun HomeScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToExplore: () -> Unit,
     onToggleTheme: () -> Unit,
+    activeSpaceId: String = "main-space",
+    activeSpaceName: String = "Main Space",
+    onSelectSpace: (String, String) -> Unit = { _, _ -> },
     initialPrompt: String? = null,
     onConsumedInitialPrompt: () -> Unit = {}
 ) {
@@ -104,47 +109,38 @@ fun HomeScreen(
 
     var prompt by remember { mutableStateOf("") }
     var isThinking by remember { mutableStateOf(false) }
-    var showWizard by remember { mutableStateOf(false) }
     var vaultFolder by remember { mutableStateOf("Documents/Reveila") }
     var vaultStats by remember { mutableStateOf(VaultStats(1, 1, "READY")) }
-    var isLocalMode by remember { mutableStateOf(true) }
-    var cloudProviderName by remember { mutableStateOf("Google Gemini") }
+    var activeSelection by remember { mutableStateOf("NONE") } // "NONE" | "AUTO" | "LOCAL" | "CLOUD"
+    var isLocalReady by remember { mutableStateOf(false) }
+    var isCloudReady by remember { mutableStateOf(false) }
+    var isAutoReady by remember { mutableStateOf(false) }
+    var cloudProviderName by remember { mutableStateOf("") }
     var isStatusExpanded by remember { mutableStateOf(false) }
-    var activeProcessNote by remember { mutableStateOf("Idle • Local embeddings & inference ready") }
+    var activeProcessNote by remember { mutableStateOf("Idle • Checking configured AI models...") }
+
+    val isAutoMode = activeSelection == "AUTO"
+    val isLocalMode = activeSelection == "LOCAL"
+    val isCloudMode = activeSelection == "CLOUD"
+    val hasNoActiveModel = activeSelection == "NONE"
 
     // Non-blocking background task telemetry & status reporting
     val inFlightTasks = remember { mutableStateListOf<TaskItem>() }
     val seenTaskEvents = remember { mutableSetOf<String>() }
     var initializedTaskEvents by remember { mutableStateOf(false) }
 
-    // Muse-inspired lightweight conversation threads ("Main Space", "Vault Research", "Side Chat")
-    val threadNames = remember { listOf("Main Space", "Vault Research", "Side Chat") }
-    var activeThread by remember { mutableStateOf("Main Space") }
+    // Active persisted conversation Space & session key
+    val normalizedSpaceId = remember(activeSpaceId) { AeginBridge.normalizeSpaceId(activeSpaceId) }
+    val activeThread = remember(normalizedSpaceId) { "space-$normalizedSpaceId" }
 
     val threadMessagesMap = remember {
         mutableStateMapOf(
-            "Main Space" to listOf(
+            "main-space" to listOf(
                 ChatMessage(
                     id = "init-main",
                     sender = "agent",
-                    text = "Ready. Ask a question, synthesize your Knowledge Vault, or launch an autonomous Space.",
-                    modeBadge = "On-Device GGUF"
-                )
-            ),
-            "Vault Research" to listOf(
-                ChatMessage(
-                    id = "init-vault",
-                    sender = "agent",
-                    text = "Vault Research thread active. Every query here prioritizes semantic retrieval across your indexed documents.",
-                    modeBadge = "Vault RAG"
-                )
-            ),
-            "Side Chat" to listOf(
-                ChatMessage(
-                    id = "init-side",
-                    sender = "agent",
-                    text = "Side Chat open. Use this scratchpad for quick brainstorming without cluttering your main stream.",
-                    modeBadge = "Scratchpad"
+                    text = "Please configure and select an AI mode to begin. Tap \"No AI Model\" at the top-left or open Studio -> Configuration.",
+                    modeBadge = ""
                 )
             )
         )
@@ -152,81 +148,270 @@ fun HomeScreen(
 
     val messages = remember { mutableStateListOf<ChatMessage>() }
 
-    fun syncThreadMessages(thread: String) {
+    fun syncThreadMessages(spaceKey: String) {
         messages.clear()
-        messages.addAll(threadMessagesMap[thread] ?: emptyList())
+        messages.addAll(threadMessagesMap[spaceKey] ?: emptyList())
+    }
+
+    fun buildMainGreetingMessage(spaceLabel: String = activeSpaceName): ChatMessage {
+        return if (activeSelection == "NONE") {
+            ChatMessage(
+                id = "init-$normalizedSpaceId",
+                sender = "agent",
+                text = "Please configure and select an AI mode to begin. Tap \"No AI Model\" at the top-left or open Studio -> Configuration.",
+                modeBadge = ""
+            )
+        } else {
+            val activeBadge = when (activeSelection) {
+                "AUTO" -> "Auto"
+                "LOCAL" -> "Local"
+                else -> cloudProviderName
+            }
+            val intro = if (normalizedSpaceId == "main-space") {
+                "How can I help you?"
+            } else {
+                "Space: $spaceLabel — How can I help you?"
+            }
+            ChatMessage(
+                id = "init-$normalizedSpaceId",
+                sender = "agent",
+                text = intro,
+                modeBadge = activeBadge
+            )
+        }
+    }
+
+    fun formatPersistedDisplayText(role: String, rawContent: String): String {
+        val trimmed = rawContent.trim()
+        if (!role.equals("ASSISTANT", ignoreCase = true) || !trimmed.startsWith("{")) {
+            return rawContent
+        }
+        return try {
+            val (parsed, _) = AeginBridge.parseAgentReplyText(trimmed)
+            parsed.ifBlank { rawContent }
+        } catch (_: Exception) {
+            rawContent
+        }
+    }
+
+    fun refreshMainGreetingCard() {
+        val updated = buildMainGreetingMessage()
+        val currentList = threadMessagesMap[normalizedSpaceId] ?: emptyList()
+        if (currentList.size <= 1 && (currentList.isEmpty() || currentList[0].id.startsWith("init-"))) {
+            threadMessagesMap[normalizedSpaceId] = listOf(updated)
+            syncThreadMessages(normalizedSpaceId)
+        }
     }
 
     fun persistCurrentThreadMessages() {
-        threadMessagesMap[activeThread] = messages.toList()
-    }
-
-    LaunchedEffect(activeThread) {
-        syncThreadMessages(activeThread)
+        threadMessagesMap[normalizedSpaceId] = messages.toList()
     }
 
     suspend fun loadActiveMode() {
         try {
-            val savedMode = AeginBridge.getStorageItem("selected_llm_mode")
             val savedProvider = AeginBridge.getStorageItem("selected_llm_provider")
             val rawLlm = AeginBridge.invoke("LlmProviderFactory", "getSettings", listOf("llm.json"))
-            val (_, wProv, _) = AeginBridge.parseLlmSettingsJson(rawLlm)
+            val (providers, wProv, _) = AeginBridge.parseLlmSettingsJson(rawLlm)
+            val aProv = AeginBridge.extractAssistantLlm(rawLlm)
 
-            if (wProv.isNotBlank()) {
-                if (wProv.equals("On-Device Model", ignoreCase = true) || wProv.contains("Local", ignoreCase = true)) {
-                    isLocalMode = true
-                } else {
-                    isLocalMode = false
-                    cloudProviderName = wProv
+            val localConfig = providers.find {
+                it.name == "On-Device Model" || it.type.equals("Local", ignoreCase = true)
+            }
+            val localCheck = AeginBridge.checkLocalModelAvailability(localConfig?.model.orEmpty())
+            val localBackendTested = try {
+                AeginBridge.invoke("LlmProviderFactory", "isProviderTested", listOf("On-Device Model"))
+                    .trim().equals("true", ignoreCase = true)
+            } catch (_: Exception) {
+                localConfig?.tested == true
+            }
+            val localAvailable = localCheck.existsLocally || (localConfig?.tested == true && localBackendTested)
+
+            val externalProviders = providers.filter {
+                it.name != "On-Device Model" &&
+                    !it.type.equals("Local", ignoreCase = true) &&
+                    it.name != "Disable" &&
+                    it.name != "Custom"
+            }
+
+            val configuredExternals = mutableListOf<Pair<com.reveila.aegin.bridge.LlmProviderConfig, Boolean>>()
+            for (p in externalProviders) {
+                val isConf = try {
+                    AeginBridge.invoke("LlmProviderFactory", "isProviderConfigured", listOf(p.name))
+                        .trim().equals("true", ignoreCase = true)
+                } catch (_: Exception) {
+                    (p.apiKey.isNotBlank() && !p.apiKey.startsWith("REF:")) ||
+                        (p.type.equals("Self-Hosted", ignoreCase = true) && p.endpoint.isNotBlank())
                 }
-            } else if (!savedMode.isNullOrBlank()) {
-                isLocalMode = savedMode == "local"
-                if (!savedProvider.isNullOrBlank() && savedProvider != "On-Device Model") {
-                    cloudProviderName = savedProvider
+                if (isConf) {
+                    val isTested = try {
+                        AeginBridge.invoke("LlmProviderFactory", "isProviderTested", listOf(p.name))
+                            .trim().equals("true", ignoreCase = true)
+                    } catch (_: Exception) {
+                        p.tested
+                    }
+                    configuredExternals.add(p to (isTested || p.tested))
                 }
             }
+
+            fun findConfiguredExternal(candidate: String?): String? {
+                if (candidate.isNullOrBlank()) return null
+                return configuredExternals.firstOrNull {
+                    it.first.name.equals(candidate, ignoreCase = true)
+                }?.first?.name
+            }
+
+            isLocalReady = localAvailable
+            isCloudReady = configuredExternals.isNotEmpty()
+            isAutoReady = localAvailable || configuredExternals.isNotEmpty()
+
+            cloudProviderName = findConfiguredExternal(aProv)
+                ?: findConfiguredExternal(wProv)
+                ?: findConfiguredExternal(savedProvider)
+                ?: configuredExternals.sortedByDescending { it.second }.firstOrNull()?.first?.name
+                ?: ""
+
+            val desiredTarget = aProv.takeIf { it.isNotBlank() && !it.equals("Disable", ignoreCase = true) }
+                ?: wProv.takeIf { it.isNotBlank() && !it.equals("Disable", ignoreCase = true) }
+                ?: ""
+
+            val matchedExternal = findConfiguredExternal(desiredTarget)
+            activeSelection = when {
+                !isAutoReady -> "NONE"
+                desiredTarget.equals("Auto", ignoreCase = true) -> "AUTO"
+                desiredTarget.equals("On-Device Model", ignoreCase = true) ||
+                    desiredTarget.contains("Local", ignoreCase = true) -> if (localAvailable) "LOCAL" else "NONE"
+                matchedExternal != null -> {
+                    cloudProviderName = matchedExternal
+                    "CLOUD"
+                }
+                else -> "NONE"
+            }
+
+            activeProcessNote = when (activeSelection) {
+                "AUTO" -> "Auto • Local-first smart router ready"
+                "LOCAL" -> "Local • Embedded GGUF ready"
+                "CLOUD" -> "External • $cloudProviderName ready"
+                else -> "No AI model configured — open Studio Configuration"
+            }
+            refreshMainGreetingCard()
         } catch (_: Exception) {
+            isLocalReady = false
+            isCloudReady = false
+            isAutoReady = false
+            cloudProviderName = ""
+            activeSelection = "NONE"
+            refreshMainGreetingCard()
         }
     }
 
-    fun toggleQuickMode() {
+    fun selectActiveMode(targetMode: String) {
         scope.launch {
-            val nextLocal = !isLocalMode
-            isLocalMode = nextLocal
-            val targetProvider = if (nextLocal) "On-Device Model" else cloudProviderName
-            val modeLabel = if (nextLocal) "On-Device GGUF (Offline)" else "Cloud AI ($cloudProviderName)"
+            val targetProvider: String
+            val modeKey: String
+            val modeLabel: String
+            val modeBadgeLabel: String
+            when {
+                targetMode.equals("Auto", ignoreCase = true) -> {
+                    if (!isAutoReady) {
+                        isStatusExpanded = false
+                        onNavigateToSettings()
+                        return@launch
+                    }
+                    activeSelection = "AUTO"
+                    targetProvider = "Auto"
+                    modeKey = "auto"
+                    modeLabel = "Auto (Local-First Smart Router)"
+                    modeBadgeLabel = "Auto (Local-First)"
+                }
+                targetMode.equals("On-Device Model", ignoreCase = true) -> {
+                    if (!isLocalReady) {
+                        isStatusExpanded = false
+                        onNavigateToSettings()
+                        return@launch
+                    }
+                    activeSelection = "LOCAL"
+                    targetProvider = "On-Device Model"
+                    modeKey = "local"
+                    modeLabel = "On-Device GGUF (Offline)"
+                    modeBadgeLabel = "Local"
+                }
+                else -> {
+                    if (!isCloudReady || cloudProviderName.isBlank()) {
+                        isStatusExpanded = false
+                        onNavigateToSettings()
+                        return@launch
+                    }
+                    activeSelection = "CLOUD"
+                    targetProvider = cloudProviderName
+                    modeKey = "cloud"
+                    modeLabel = "Cloud AI ($cloudProviderName)"
+                    modeBadgeLabel = cloudProviderName
+                }
+            }
 
-            activeProcessNote = "Switched active engine to $modeLabel"
+            isStatusExpanded = false
+            activeProcessNote = "Switched Assistant mode to $modeLabel"
 
-            AeginBridge.setStorageItem("selected_llm_mode", if (nextLocal) "local" else "cloud")
+            AeginBridge.setStorageItem("selected_llm_mode", modeKey)
             AeginBridge.setStorageItem("selected_llm_provider", targetProvider)
 
             try {
+                // Only update Assistant's own mode; preserve Studio's Worker & Governance AI Model settings intact.
                 val rawLlm = AeginBridge.invoke("LlmProviderFactory", "getSettings", listOf("llm.json"))
-                val (providers, _, gProv) = AeginBridge.parseLlmSettingsJson(rawLlm)
+                val (providers, wProv, gProv) = AeginBridge.parseLlmSettingsJson(rawLlm)
                 val payload = AeginBridge.buildLlmSettingsJson(
                     providers = providers,
-                    workerProvider = targetProvider,
-                    governanceProvider = gProv
+                    workerProvider = wProv,
+                    governanceProvider = gProv,
+                    assistantProvider = targetProvider
                 )
                 AeginBridge.invoke("LlmProviderFactory", "saveSettings", listOf("llm.json", payload))
             } catch (_: Exception) {
             }
 
-            messages.add(
-                ChatMessage(
-                    id = Clock.System.now().toEpochMilliseconds().toString(),
-                    sender = "agent",
-                    text = if (nextLocal) {
-                        "Switched to On-Device Model. Inference now runs 100% locally via the embedded GGUF engine."
-                    } else {
-                        "Switched to Cloud AI ($cloudProviderName). Prompts will route through your configured cloud provider."
-                    },
-                    modeBadge = if (nextLocal) "On-Device GGUF" else cloudProviderName
+            if (messages.size <= 1 && (messages.isEmpty() || messages[0].id.startsWith("init-"))) {
+                refreshMainGreetingCard()
+            } else {
+                messages.add(
+                    ChatMessage(
+                        id = Clock.System.now().toEpochMilliseconds().toString(),
+                        sender = "agent",
+                        text = when (modeKey) {
+                            "auto" -> "Switched Assistant to Auto mode. Interactive chat uses local-first routing while background tasks follow Studio Worker/Governance settings."
+                            "local" -> "Switched Assistant to Local mode. Interactive chat runs via the embedded on-device GGUF engine."
+                            else -> "Switched Assistant to $cloudProviderName. Interactive chat routes through $cloudProviderName while Governance guardrails stay active."
+                        },
+                        modeBadge = modeBadgeLabel
+                    )
                 )
-            )
-            persistCurrentThreadMessages()
+                persistCurrentThreadMessages()
+            }
         }
+    }
+
+    fun toggleQuickMode() {
+        if (!isAutoReady) {
+            onNavigateToSettings()
+            return
+        }
+        val availableModes = buildList {
+            if (isAutoReady) add("Auto")
+            if (isLocalReady) add("On-Device Model")
+            if (isCloudReady && cloudProviderName.isNotBlank()) add(cloudProviderName)
+        }
+        if (availableModes.isEmpty()) {
+            onNavigateToSettings()
+            return
+        }
+        val currentTarget = when {
+            isAutoMode -> "Auto"
+            isLocalMode -> "On-Device Model"
+            isCloudMode -> cloudProviderName
+            else -> ""
+        }
+        val idx = availableModes.indexOfFirst { it.equals(currentTarget, ignoreCase = true) }
+        val next = availableModes[(idx + 1) % availableModes.size]
+        selectActiveMode(next)
     }
 
     suspend fun refreshVaultSummary() {
@@ -245,7 +430,25 @@ fun HomeScreen(
         val trimmed = rawInput.trim()
         if (trimmed.isEmpty() || isThinking) return
 
-        val currentBadge = if (isLocalMode) "On-Device GGUF" else cloudProviderName
+        if (hasNoActiveModel) {
+            isStatusExpanded = true
+            messages.add(
+                ChatMessage(
+                    id = Clock.System.now().toEpochMilliseconds().toString(),
+                    sender = "agent",
+                    text = "No AI model is configured yet. Select a mode above or open Studio -> Configuration to configure an On-Device or external AI model.",
+                    modeBadge = "Setup Required"
+                )
+            )
+            persistCurrentThreadMessages()
+            return
+        }
+
+        val currentBadge = when {
+            isAutoMode -> "Auto"
+            isLocalMode -> "Local"
+            else -> cloudProviderName
+        }
         val userMsg = ChatMessage(
             id = Clock.System.now().toEpochMilliseconds().toString(),
             sender = "user",
@@ -256,7 +459,11 @@ fun HomeScreen(
         persistCurrentThreadMessages()
         prompt = ""
         isThinking = true
-        activeProcessNote = "Retrieving Vault vectors & running ${if (isLocalMode) "local GGUF" else cloudProviderName} inference..."
+        activeProcessNote = when {
+            isAutoMode -> "Auto router evaluating task category (local-first)..."
+            isLocalMode -> "Retrieving Vault vectors & running local GGUF inference..."
+            else -> "Routing prompt via $cloudProviderName..."
+        }
 
         val currentHistory = messages.toList()
 
@@ -305,13 +512,22 @@ fun HomeScreen(
                 }
             }
 
+            val currentAssistantMode = when {
+                isAutoMode -> "Auto"
+                isLocalMode -> "On-Device Model"
+                else -> cloudProviderName
+            }
+
             try {
-                val reply = if (isLocalMode) {
+                val reply = if (isLocalMode || isAutoMode) {
                     val streamedText = StringBuilder()
                     AeginBridge.streamPrompt(
                         prompt = trimmed,
                         sessionId = activeThread,
-                        prevSummary = null
+                        prevSummary = null,
+                        assistantMode = currentAssistantMode,
+                        spaceId = normalizedSpaceId,
+                        spaceName = activeSpaceName
                     ).collect { piece ->
                         streamedText.append(piece)
                         updateBubble(streamedText.toString())
@@ -319,35 +535,41 @@ fun HomeScreen(
                     if (streamedText.isNotEmpty()) {
                         streamedText.toString()
                     } else {
-                        val (ans, _) = AeginBridge.askAgent(trimmed, activeThread, null)
+                        val (ans, _) = AeginBridge.askAgentInSpace(
+                            prompt = trimmed,
+                            spaceId = normalizedSpaceId,
+                            spaceName = activeSpaceName,
+                            sessionId = activeThread,
+                            prevSummary = null,
+                            assistantMode = currentAssistantMode
+                        )
                         ans
                     }
                 } else {
-                    val cloudRes = AeginBridge.invoke(
-                        "OrchestrationService",
-                        "processPrompt",
-                        listOf(contextualPrompt)
+                    val (ans, _) = AeginBridge.askAgentInSpace(
+                        prompt = trimmed,
+                        spaceId = normalizedSpaceId,
+                        spaceName = activeSpaceName,
+                        sessionId = activeThread,
+                        prevSummary = null,
+                        assistantMode = currentAssistantMode
                     )
-                    if (cloudRes.contains("Error", ignoreCase = true) ||
-                        cloudRes.contains("401", ignoreCase = true) ||
-                        cloudRes.contains("API key", ignoreCase = true)
-                    ) {
-                        "⚠️ Cloud AI ($cloudProviderName) returned an error:\n$cloudRes\n\nTip: Configure your API key in Studio → AI & Vault, or tap the mode pill to switch to On-Device mode."
-                    } else {
-                        cloudRes
-                    }
+                    ans
                 }
 
                 updateBubble(reply)
                 activeProcessNote = "Completed via $currentBadge • ${vaultStats.chunkCount} vectors active"
             } catch (e: Exception) {
                 val fallback = try {
-                    if (isLocalMode) {
-                        val (ans, _) = AeginBridge.askAgent(trimmed, activeThread, null)
-                        ans
-                    } else {
-                        "⚠️ Failed to reach Cloud AI ($cloudProviderName): ${e.message ?: "Network error"}."
-                    }
+                    val (ans, _) = AeginBridge.askAgentInSpace(
+                        prompt = trimmed,
+                        spaceId = normalizedSpaceId,
+                        spaceName = activeSpaceName,
+                        sessionId = activeThread,
+                        prevSummary = null,
+                        assistantMode = currentAssistantMode
+                    )
+                    ans
                 } catch (inner: Exception) {
                     "Error processing request: ${inner.message ?: "Engine unavailable"}"
                 }
@@ -426,10 +648,60 @@ fun HomeScreen(
         }
     }
 
-    LaunchedEffect(initialPrompt) {
-        if (!initialPrompt.isNullOrBlank()) {
-            val toRun = initialPrompt
-            onConsumedInitialPrompt()
+    var pendingStarterPrompt by remember { mutableStateOf<String?>(null) }
+    var hydratedSpaceId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(normalizedSpaceId) {
+        val cached = threadMessagesMap[normalizedSpaceId]
+        if (cached != null) {
+            syncThreadMessages(normalizedSpaceId)
+        } else {
+            val initMsg = buildMainGreetingMessage()
+            threadMessagesMap[normalizedSpaceId] = listOf(initMsg)
+            syncThreadMessages(normalizedSpaceId)
+        }
+
+        try {
+            val history = AeginBridge.getSpaceHistory(normalizedSpaceId, 100)
+            val hydrated = history
+                .filter { it.role.equals("USER", ignoreCase = true) || it.role.equals("ASSISTANT", ignoreCase = true) }
+                .mapIndexed { idx, entry ->
+                    ChatMessage(
+                        id = "db-$normalizedSpaceId-$idx-${entry.timestamp}",
+                        sender = if (entry.role.equals("USER", ignoreCase = true)) "user" else "agent",
+                        text = formatPersistedDisplayText(entry.role, entry.content),
+                        modeBadge = activeSpaceName
+                    )
+                }
+            if (hydrated.isNotEmpty() && !isThinking) {
+                threadMessagesMap[normalizedSpaceId] = hydrated
+                syncThreadMessages(normalizedSpaceId)
+            }
+        } catch (_: Exception) {
+        } finally {
+            hydratedSpaceId = normalizedSpaceId
+        }
+    }
+
+    LaunchedEffect(activeSelection, cloudProviderName) {
+        refreshMainGreetingCard()
+    }
+
+    LaunchedEffect(hydratedSpaceId, initialPrompt, pendingStarterPrompt) {
+        if (hydratedSpaceId != normalizedSpaceId) return@LaunchedEffect
+        val toRun = when {
+            !initialPrompt.isNullOrBlank() -> {
+                onConsumedInitialPrompt()
+                initialPrompt
+            }
+            !pendingStarterPrompt.isNullOrBlank() -> {
+                val next = pendingStarterPrompt
+                pendingStarterPrompt = null
+                next
+            }
+            else -> null
+        }
+        if (!toRun.isNullOrBlank()) {
             dispatchPrompt(toRun)
         }
     }
@@ -481,123 +753,102 @@ fun HomeScreen(
             .imePadding()
     ) {
         // ─────────────────────────────────────────────────────────────────────
-        // 1. MUSE-INSPIRED HEADER + LAYER-1 STATUS PILL
+        // 1. TOP HEADER: MODEL PILL (LEFT) • CENTERED ROBOT DOG • TOOLS (RIGHT)
         // ─────────────────────────────────────────────────────────────────────
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    if (isStatusExpanded) isStatusExpanded = false
+                }
+                .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
-            // Brand Identity + Orb
+            // Very Left: AI Model Type Pill (Tap to expand selection card)
             Row(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .widthIn(max = 136.dp)
+                    .clip(CircleShape)
+                    .background(theme.card)
+                    .border(
+                        width = 1.dp,
+                        color = if (isStatusExpanded) theme.primary else theme.glassBorder,
+                        shape = CircleShape
+                    )
+                    .clickable {
+                        val opening = !isStatusExpanded
+                        isStatusExpanded = opening
+                        if (opening) {
+                            scope.launch { loadActiveMode() }
+                        }
+                    }
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.clickable { isStatusExpanded = !isStatusExpanded }
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(7.dp)
+                        .clip(CircleShape)
+                        .background(
+                            when {
+                                isAutoMode -> theme.success
+                                isLocalMode -> theme.primary
+                                isCloudMode -> theme.cyan
+                                else -> theme.warning
+                            }
+                        )
+                )
+                Text(
+                    text = when {
+                        isAutoMode -> "Auto"
+                        isLocalMode -> "Local"
+                        isCloudMode -> cloudProviderName.ifBlank { "Cloud AI" }
+                        else -> "No AI Model"
+                    },
+                    color = if (hasNoActiveModel) theme.subText else theme.text,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                Text(
+                    text = if (isStatusExpanded) "▴" else "▾",
+                    color = theme.subText,
+                    fontSize = 10.sp
+                )
+            }
+
+            // Center Top: Single Animated Robot Dog Mascot
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .clickable {
+                        val opening = !isStatusExpanded
+                        isStatusExpanded = opening
+                        if (opening) {
+                            scope.launch { loadActiveMode() }
+                        }
+                    }
             ) {
                 AeginOrbAvatar(
-                    size = 38.dp,
-                    isLocalMode = isLocalMode,
+                    size = 50.dp,
+                    isLocalMode = isLocalMode || !isCloudMode,
                     isThinking = isThinking,
                     showStatusDot = true
                 )
-                Column {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = "Aegin",
-                            color = theme.text,
-                            fontSize = 19.sp,
-                            fontWeight = FontWeight.Black
-                        )
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(
-                                    if (isLocalMode) theme.primary.copy(alpha = 0.16f)
-                                    else theme.cyan.copy(alpha = 0.16f)
-                                )
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = if (isLocalMode) "SOVEREIGN" else "HYBRID",
-                                color = if (isLocalMode) theme.primary else theme.cyan,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                letterSpacing = 0.6.sp
-                            )
-                        }
-                    }
-                    Text(
-                        text = if (isThinking) "Thinking..." else "$activeThread • ${vaultStats.chunkCount} vectors",
-                        color = theme.subText,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
             }
 
-            // Right Controls: Layer-1 Status Pill + Setup Wizard + Theme Toggle
+            // Right Controls: Theme Toggle
             Row(
+                modifier = Modifier.align(Alignment.CenterEnd),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Layer 1 Essentials Status Pill (Tap to expand Layer 2 & 3)
-                Row(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(theme.card)
-                        .border(
-                            width = 1.dp,
-                            color = if (isStatusExpanded) theme.primary else theme.glassBorder,
-                            shape = CircleShape
-                        )
-                        .clickable { isStatusExpanded = !isStatusExpanded }
-                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .background(if (isLocalMode) theme.primary else theme.cyan)
-                    )
-                    Text(
-                        text = if (isLocalMode) "On-Device" else cloudProviderName.split(" ").last(),
-                        color = theme.text,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = if (isStatusExpanded) "▴" else "▾",
-                        color = theme.subText,
-                        fontSize = 10.sp
-                    )
-                }
-
-                // Quick Setup Wizard Pill
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(theme.card)
-                        .border(1.dp, theme.glassBorder, CircleShape)
-                        .clickable { showWizard = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    AeginVectorIcon(
-                        type = AeginIconType.BOLT,
-                        tint = theme.primary,
-                        size = 15.dp
-                    )
-                }
-
                 // Theme Toggle Button
                 Box(
                     modifier = Modifier
@@ -605,7 +856,10 @@ fun HomeScreen(
                         .clip(CircleShape)
                         .background(theme.card)
                         .border(1.dp, theme.glassBorder, CircleShape)
-                        .clickable { onToggleTheme() },
+                        .clickable {
+                            isStatusExpanded = false
+                            onToggleTheme()
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     AeginVectorIcon(
@@ -617,265 +871,13 @@ fun HomeScreen(
             }
         }
 
-        // ─────────────────────────────────────────────────────────────────────
-        // 2. THREE-LAYER STATUS INSPECTOR (EXPANDABLE DRAWER)
-        // ─────────────────────────────────────────────────────────────────────
-        AnimatedVisibility(
-            visible = isStatusExpanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 10.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(theme.card)
-                    .border(1.dp, theme.glassBorder, RoundedCornerShape(20.dp))
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // Layer 2: Active Process & Mode Switcher
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        AeginVectorIcon(type = AeginIconType.SPARKLES, tint = theme.primary, size = 14.dp)
-                        Text(
-                            text = "ACTIVE INTELLIGENCE LAYER",
-                            color = theme.subText,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 0.8.sp
-                        )
-                    }
-                    Text(
-                        text = "Switch Mode ⇄",
-                        color = theme.primary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable { toggleQuickMode() }
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // On-Device Pill Card
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(
-                                if (isLocalMode) theme.primary.copy(alpha = 0.14f)
-                                else theme.inputBg
-                            )
-                            .border(
-                                width = 1.dp,
-                                color = if (isLocalMode) theme.primary else theme.border,
-                                shape = RoundedCornerShape(14.dp)
-                            )
-                            .clickable { if (!isLocalMode) toggleQuickMode() }
-                            .padding(10.dp)
-                    ) {
-                        Text(
-                            text = "📱 On-Device GGUF",
-                            color = if (isLocalMode) theme.primary else theme.text,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        )
-                        Text(
-                            text = "100% Offline • Zero-Egress",
-                            color = theme.subText,
-                            fontSize = 10.sp
-                        )
-                    }
-
-                    // Cloud AI Pill Card
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(
-                                if (!isLocalMode) theme.cyan.copy(alpha = 0.14f)
-                                else theme.inputBg
-                            )
-                            .border(
-                                width = 1.dp,
-                                color = if (!isLocalMode) theme.cyan else theme.border,
-                                shape = RoundedCornerShape(14.dp)
-                            )
-                            .clickable { if (isLocalMode) toggleQuickMode() }
-                            .padding(10.dp)
-                    ) {
-                        Text(
-                            text = "☁️ $cloudProviderName",
-                            color = if (!isLocalMode) theme.cyan else theme.text,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "Cloud API • Guarded",
-                            color = theme.subText,
-                            fontSize = 10.sp
-                        )
-                    }
-                }
-
-                // Layer 3: Technical Telemetry & Knowledge Vault Strip
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(theme.inputBg)
-                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Vault: $vaultFolder",
-                            color = theme.text,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = activeProcessNote,
-                            color = theme.subText,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(theme.success.copy(alpha = 0.15f))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = "${vaultStats.documentCount} docs • ${vaultStats.chunkCount} vec",
-                                color = theme.success,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(theme.surfaceElevated)
-                                .clickable {
-                                    isStatusExpanded = false
-                                    showWizard = true
-                                }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Text(
-                                text = "Wizard",
-                                color = theme.text,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // ─────────────────────────────────────────────────────────────────────
-        // 3. CONVERSATION THREAD / SIDE-CHAT SWITCHER BAR
-        // ─────────────────────────────────────────────────────────────────────
-        Row(
+        // Body container allowing outside taps anywhere below the pill to dismiss the mode drawer
+        Box(
             modifier = Modifier
+                .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                threadNames.forEach { threadName ->
-                    val isSelected = activeThread == threadName
-                    Row(
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(
-                                if (isSelected) theme.surfaceElevated
-                                else theme.card.copy(alpha = 0.6f)
-                            )
-                            .border(
-                                width = 1.dp,
-                                color = if (isSelected) theme.primary.copy(alpha = 0.5f) else theme.glassBorder,
-                                shape = CircleShape
-                            )
-                            .clickable { activeThread = threadName }
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        AeginVectorIcon(
-                            type = AeginIconType.THREAD,
-                            tint = if (isSelected) theme.primary else theme.subText,
-                            size = 12.dp
-                        )
-                        Text(
-                            text = threadName,
-                            color = if (isSelected) theme.text else theme.subText,
-                            fontSize = 11.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                        )
-                    }
-                }
-            }
-
-            if (!isHeroState) {
-                Box(
-                    modifier = Modifier
-                        .padding(start = 8.dp)
-                        .clip(CircleShape)
-                        .background(theme.card)
-                        .border(1.dp, theme.glassBorder, CircleShape)
-                        .clickable {
-                            val resetMsg = ChatMessage(
-                                id = "init-${Clock.System.now().toEpochMilliseconds()}",
-                                sender = "agent",
-                                text = "Started a fresh conversation in $activeThread.",
-                                modeBadge = if (isLocalMode) "On-Device GGUF" else cloudProviderName
-                            )
-                            messages.clear()
-                            messages.add(resetMsg)
-                            persistCurrentThreadMessages()
-                        }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "New",
-                        color = theme.primary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
+            Column(modifier = Modifier.fillMaxSize()) {
 
         // ─────────────────────────────────────────────────────────────────────
         // 3.5. NON-BLOCKING LIVE BACKGROUND TASK SANDBOX BANNER
@@ -1017,88 +1019,6 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             if (isHeroState) {
-                item(key = "muse_hero_header") {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 6.dp, bottom = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        AeginOrbAvatar(
-                            size = 64.dp,
-                            isLocalMode = isLocalMode,
-                            isThinking = isThinking,
-                            showStatusDot = false
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Text(
-                            text = "What shall we explore today?",
-                            color = theme.text,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Black,
-                            textAlign = TextAlign.Center
-                        )
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Text(
-                            text = "Private document intelligence & autonomous workflows, tailored for you.",
-                            color = theme.subText,
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Center,
-                            lineHeight = 18.sp,
-                            modifier = Modifier.padding(horizontal = 20.dp)
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Compact Vault & Engine Context Pill
-                        Row(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(theme.card)
-                                .border(1.dp, theme.glassBorder, CircleShape)
-                                .clickable { showWizard = true }
-                                .padding(horizontal = 14.dp, vertical = 7.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            AeginVectorIcon(
-                                type = AeginIconType.VAULT,
-                                tint = theme.success,
-                                size = 14.dp
-                            )
-                            Text(
-                                text = vaultFolder,
-                                color = theme.text,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .background(theme.success.copy(alpha = 0.16f))
-                                    .padding(horizontal = 7.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = "${vaultStats.chunkCount} vectors",
-                                    color = theme.success,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Text(
-                                text = "Configure →",
-                                color = theme.primary,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-
                 // 2x2 Grid of Starter Space Cards
                 item(key = "muse_starter_grid") {
                     Column(
@@ -1133,12 +1053,20 @@ fun HomeScreen(
                             StarterSpaceCard(
                                 card = starterCards[0],
                                 modifier = Modifier.weight(1f),
-                                onClick = { dispatchPrompt(starterCards[0].prompt) }
+                                onClick = {
+                                    val sid = AeginBridge.normalizeSpaceId(starterCards[0].title)
+                                    pendingStarterPrompt = starterCards[0].prompt
+                                    onSelectSpace(sid, starterCards[0].title)
+                                }
                             )
                             StarterSpaceCard(
                                 card = starterCards[1],
                                 modifier = Modifier.weight(1f),
-                                onClick = { dispatchPrompt(starterCards[1].prompt) }
+                                onClick = {
+                                    val sid = AeginBridge.normalizeSpaceId(starterCards[1].title)
+                                    pendingStarterPrompt = starterCards[1].prompt
+                                    onSelectSpace(sid, starterCards[1].title)
+                                }
                             )
                         }
 
@@ -1149,12 +1077,20 @@ fun HomeScreen(
                             StarterSpaceCard(
                                 card = starterCards[2],
                                 modifier = Modifier.weight(1f),
-                                onClick = { dispatchPrompt(starterCards[2].prompt) }
+                                onClick = {
+                                    val sid = AeginBridge.normalizeSpaceId(starterCards[2].title)
+                                    pendingStarterPrompt = starterCards[2].prompt
+                                    onSelectSpace(sid, starterCards[2].title)
+                                }
                             )
                             StarterSpaceCard(
                                 card = starterCards[3],
                                 modifier = Modifier.weight(1f),
-                                onClick = { dispatchPrompt(starterCards[3].prompt) }
+                                onClick = {
+                                    val sid = AeginBridge.normalizeSpaceId(starterCards[3].title)
+                                    pendingStarterPrompt = starterCards[3].prompt
+                                    onSelectSpace(sid, starterCards[3].title)
+                                }
                             )
                         }
                     }
@@ -1211,7 +1147,8 @@ fun HomeScreen(
                             size = 28.dp,
                             isLocalMode = isLocalMode,
                             isThinking = false,
-                            showStatusDot = false
+                            showStatusDot = false,
+                            animateIdle = false
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(
@@ -1256,24 +1193,31 @@ fun HomeScreen(
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.ExtraBold
                                     )
-                                    val badgeLabel = msg.modeBadge.ifBlank {
-                                        if (isLocalMode) "On-Device GGUF" else cloudProviderName
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(
-                                                if (isLocalMode) theme.primary.copy(alpha = 0.14f)
-                                                else theme.cyan.copy(alpha = 0.14f)
+                                    val badgeLabel = msg.modeBadge.trim()
+                                    if (badgeLabel.isNotEmpty()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(
+                                                    when {
+                                                        isAutoMode -> theme.success.copy(alpha = 0.14f)
+                                                        isLocalMode -> theme.primary.copy(alpha = 0.14f)
+                                                        else -> theme.cyan.copy(alpha = 0.14f)
+                                                    }
+                                                )
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = badgeLabel,
+                                                color = when {
+                                                    isAutoMode -> theme.success
+                                                    isLocalMode -> theme.primary
+                                                    else -> theme.cyan
+                                                },
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
                                             )
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(
-                                            text = badgeLabel,
-                                            color = if (isLocalMode) theme.primary else theme.cyan,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                        }
                                     }
                                 }
                             }
@@ -1423,14 +1367,23 @@ fun HomeScreen(
                         .size(38.dp)
                         .clip(CircleShape)
                         .background(
-                            if (isLocalMode) theme.primary.copy(alpha = 0.16f)
-                            else theme.cyan.copy(alpha = 0.16f)
+                            when {
+                                isAutoMode -> theme.success.copy(alpha = 0.16f)
+                                isLocalMode -> theme.primary.copy(alpha = 0.16f)
+                                isCloudMode -> theme.cyan.copy(alpha = 0.16f)
+                                else -> theme.warning.copy(alpha = 0.16f)
+                            }
                         )
                         .clickable { toggleQuickMode() },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (isLocalMode) "📱" else "☁️",
+                        text = when {
+                            isAutoMode -> "⚡"
+                            isLocalMode -> "📱"
+                            isCloudMode -> "☁️"
+                            else -> "⚠️"
+                        },
                         fontSize = 15.sp
                     )
                 }
@@ -1438,10 +1391,17 @@ fun HomeScreen(
                 OutlinedTextField(
                     value = prompt,
                     onValueChange = { prompt = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .onFocusChanged { if (it.isFocused) isStatusExpanded = false },
                     placeholder = {
                         Text(
-                            text = if (isLocalMode) "Ask Aegin (On-Device)..." else "Ask Aegin ($cloudProviderName)...",
+                            text = when {
+                                isAutoMode -> "Ask Aegin (Auto)..."
+                                isLocalMode -> "Ask Aegin (Local)..."
+                                isCloudMode -> "Ask Aegin ($cloudProviderName)..."
+                                else -> "Configure AI Model in Studio..."
+                            },
                             color = theme.subText,
                             fontSize = 14.sp,
                             maxLines = 1,
@@ -1488,31 +1448,125 @@ fun HomeScreen(
                     )
                 }
             }
+        } // end Section 5 Column
+        } // end inner content Column
+
+            if (isStatusExpanded) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            isStatusExpanded = false
+                        }
+                )
+            }
+
+            // Floating Mode Selection Card (closes when tapping outside or selecting a mode)
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isStatusExpanded,
+                modifier = Modifier.align(Alignment.TopCenter),
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 10.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(theme.card)
+                        .border(1.dp, theme.glassBorder, RoundedCornerShape(20.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {}
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        AeginVectorIcon(type = AeginIconType.SPARKLES, tint = theme.primary, size = 14.dp)
+                        Text(
+                            text = "ACTIVE INTELLIGENCE LAYER",
+                            color = theme.subText,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 0.8.sp
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        IntelligenceLayerTile(
+                            title = "⚡ Auto",
+                            subtitle = if (isAutoReady) "Local-First Smart" else "Not configured",
+                            accentColor = theme.success,
+                            selected = isAutoMode && isAutoReady,
+                            enabled = isAutoReady,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                if (isAutoReady) {
+                                    if (!isAutoMode) selectActiveMode("Auto")
+                                    else isStatusExpanded = false
+                                } else {
+                                    isStatusExpanded = false
+                                    onNavigateToSettings()
+                                }
+                            }
+                        )
+
+                        IntelligenceLayerTile(
+                            title = "📱 Local",
+                            subtitle = if (isLocalReady) "Offline GGUF" else "Not configured",
+                            accentColor = theme.primary,
+                            selected = isLocalMode && isLocalReady,
+                            enabled = isLocalReady,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                if (isLocalReady) {
+                                    if (!isLocalMode) selectActiveMode("On-Device Model")
+                                    else isStatusExpanded = false
+                                } else {
+                                    isStatusExpanded = false
+                                    onNavigateToSettings()
+                                }
+                            }
+                        )
+
+                        IntelligenceLayerTile(
+                            title = if (isCloudReady && cloudProviderName.isNotBlank()) "☁️ $cloudProviderName" else "☁️ Cloud AI",
+                            subtitle = if (isCloudReady) "External LLM" else "Not configured",
+                            accentColor = theme.cyan,
+                            selected = isCloudMode && isCloudReady,
+                            enabled = isCloudReady && cloudProviderName.isNotBlank(),
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                if (isCloudReady && cloudProviderName.isNotBlank()) {
+                                    if (!isCloudMode) selectActiveMode(cloudProviderName)
+                                    else isStatusExpanded = false
+                                } else {
+                                    isStatusExpanded = false
+                                    onNavigateToSettings()
+                                }
+                            }
+                        )
+                    }
+                }
+            }
         }
     }
 
-    SetupWizard(
-        visible = showWizard,
-        onComplete = {
-            showWizard = false
-            scope.launch {
-                refreshVaultSummary()
-                loadActiveMode()
-            }
-            messages.add(
-                ChatMessage(
-                    id = Clock.System.now().toEpochMilliseconds().toString(),
-                    sender = "agent",
-                    text = "Setup complete. Your Knowledge Vault ($vaultFolder) is indexed and ready.",
-                    modeBadge = if (isLocalMode) "On-Device GGUF" else cloudProviderName
-                )
-            )
-            persistCurrentThreadMessages()
-        },
-        onCancel = {
-            showWizard = false
-        }
-    )
+    PlatformBackHandler(enabled = isStatusExpanded) {
+        isStatusExpanded = false
+    }
 }
 
 @Composable
@@ -1581,6 +1635,60 @@ private fun StarterSpaceCard(
             fontSize = 11.sp,
             lineHeight = 15.sp,
             maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun IntelligenceLayerTile(
+    title: String,
+    subtitle: String,
+    accentColor: Color,
+    selected: Boolean,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val theme = LocalAeginColors.current
+    val bgColor = when {
+        !enabled -> theme.surfaceElevated.copy(alpha = 0.45f)
+        selected -> accentColor.copy(alpha = 0.14f)
+        else -> theme.inputBg
+    }
+    val borderColor = when {
+        !enabled -> theme.border.copy(alpha = 0.4f)
+        selected -> accentColor
+        else -> theme.border
+    }
+    val titleColor = when {
+        !enabled -> theme.subText.copy(alpha = 0.55f)
+        selected -> accentColor
+        else -> theme.text
+    }
+    val subColor = if (!enabled) theme.subText.copy(alpha = 0.5f) else theme.subText
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(bgColor)
+            .border(width = 1.dp, color = borderColor, shape = RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(10.dp)
+    ) {
+        Text(
+            text = title,
+            color = titleColor,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = subtitle,
+            color = subColor,
+            fontSize = 10.sp,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
     }

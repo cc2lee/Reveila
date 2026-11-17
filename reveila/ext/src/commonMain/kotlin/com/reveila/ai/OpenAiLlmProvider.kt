@@ -10,6 +10,8 @@ import kotlinx.serialization.json.put
 
 open class OpenAiLlmProvider : BaseLlmProvider() {
 
+    var allowNoApiKey: Boolean = false
+
     init {
         this.endpoint = "https://api.openai.com/v1/chat/completions"
     }
@@ -50,9 +52,16 @@ open class OpenAiLlmProvider : BaseLlmProvider() {
     override fun getHeaders(): Map<String, String> {
         val headers = mutableMapOf<String, String>()
         try {
-            headers["Authorization"] = "Bearer " + resolveApiKey()
+            val resolvedKey = resolveApiKey()
+            if (!resolvedKey.isNullOrBlank()) {
+                headers["Authorization"] = "Bearer $resolvedKey"
+            } else if (!allowNoApiKey) {
+                headers["Authorization"] = "Bearer "
+            }
         } catch (e: Exception) {
-            throw LlmException("Failed to resolve API key for OpenAI provider: ${e.message}", e)
+            if (!allowNoApiKey) {
+                throw LlmException("Failed to resolve API key for OpenAI provider: ${e.message}", e)
+            }
         }
         headers["Content-Type"] = "application/json"
         return headers
@@ -76,6 +85,7 @@ open class OpenAiLlmProvider : BaseLlmProvider() {
 
     override fun isConfigured(): Boolean {
         if (endpoint.isNullOrBlank()) return false
+        if (allowNoApiKey) return true
         val key = try {
             resolveApiKey()
         } catch (_: Exception) {
