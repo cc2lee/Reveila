@@ -61,6 +61,7 @@ dependencies {
     // ---------------------------------------------------------------------------
     val distributionDir = file("${project.projectDir}/../distribution")
     implementation(files("${distributionDir}/jvm/reveila-core.jar"))
+    implementation(files("${distributionDir}/jvm/reveila-ext.jar"))
 
     // Kotlin Multiplatform runtime dependencies
     implementation(libs.kotlinx.coroutines.core)
@@ -194,11 +195,19 @@ if (isSuiteWorkspace) {
         if (project.rootProject.findProject(":reveila:core") != null) {
             dependsOn(":reveila:core:exportJvmJar")
         }
+        if (project.rootProject.findProject(":reveila:ext") != null) {
+            dependsOn(":reveila:ext:exportJvmJar")
+        }
     }
 
     if (project.rootProject.findProject(":reveila:core") != null) {
         tasks.matching { it.name.contains("JniLibs") || it.name.startsWith("compile") || it.name.contains("Classes") }.configureEach {
             dependsOn(":reveila:core:exportJvmJar")
+        }
+    }
+    if (project.rootProject.findProject(":reveila:ext") != null) {
+        tasks.matching { it.name.contains("JniLibs") || it.name.startsWith("compile") || it.name.contains("Classes") }.configureEach {
+            dependsOn(":reveila:ext:exportJvmJar")
         }
     }
 }

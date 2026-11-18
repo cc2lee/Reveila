@@ -1,7 +1,12 @@
 package com.reveila.aegin.model
 
 import com.sun.net.httpserver.HttpServer
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.net.InetSocketAddress
 import java.security.MessageDigest
@@ -113,6 +118,111 @@ class DesktopModelDownloadManagerTest {
             assertFalse(File("${targetFile.absolutePath}.part").exists())
         } finally {
             server.stop(0)
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testPausePreservesPartAndCancelDeletesPart() {
+        val payload = fakeGgufBytes(16_384)
+        val expectedSha = sha256(payload)
+        val firstChunkSent = CompletableDeferred<Unit>()
+
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val port = server.address.port
+
+        server.createContext("/slow.gguf") { exchange ->
+            val range = exchange.requestHeaders.getFirst("Range")
+            if (range != null && range.startsWith("bytes=")) {
+                val start = range.removePrefix("bytes=").substringBefore('-').toIntOrNull() ?: 0
+                val slice = payload.copyOfRange(start, payload.size)
+                exchange.responseHeaders.add("Content-Range", "bytes $start-${payload.size - 1}/${payload.size}")
+                exchange.sendResponseHeaders(206, slice.size.toLong())
+                exchange.responseBody.use { it.write(slice) }
+            } else {
+                exchange.sendResponseHeaders(200, payload.size.toLong())
+                exchange.responseBody.use { out ->
+                    out.write(payload, 0, 4096)
+                    out.flush()
+                    firstChunkSent.complete(Unit)
+                    try {
+                        Thread.sleep(5000)
+                        out.write(payload, 4096, payload.size - 4096)
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+        }
+
+        server.start()
+        val tempDir = createTempDirectory("aegin-pause-cancel-test").toFile()
+        try {
+            val targetFile = File(tempDir, "model.gguf")
+            val partFile = File("${targetFile.absolutePath}.part")
+            val manager = DesktopModelDownloadManager()
+
+            runBlocking {
+                val dlDeferred = async(Dispatchers.IO) {
+                    manager.downloadAndAwait(
+                        modelName = "model.gguf",
+                        candidateUrls = listOf("http://127.0.0.1:$port/slow.gguf"),
+                        targetFile = targetFile,
+                        expectedSha256 = expectedSha,
+                        approxSizeBytes = payload.size.toLong()
+                    )
+                }
+
+                withTimeout(5000) { firstChunkSent.await() }
+                delay(150)
+                manager.pauseActiveDownload("model.gguf")
+                val pausedOk = dlDeferred.await()
+
+                assertFalse(pausedOk)
+                assertEquals("PAUSED", manager.state.value.status)
+                assertTrue(partFile.exists())
+                assertTrue(partFile.length() > 0L)
+
+                // Resume from paused .part should complete via HTTP 206 Range
+                val resumedOk = manager.downloadAndAwait(
+                    modelName = "model.gguf",
+                    candidateUrls = listOf("http://127.0.0.1:$port/slow.gguf"),
+                    targetFile = targetFile,
+                    expectedSha256 = expectedSha,
+                    approxSizeBytes = payload.size.toLong()
+                )
+                assertTrue(resumedOk)
+                assertEquals("COMPLETED", manager.state.value.status)
+                assertTrue(targetFile.exists())
+                assertFalse(partFile.exists())
+
+                // Cancel removes any partial file and emits CANCELLED
+                partFile.writeBytes(payload.copyOfRange(0, 1024))
+                manager.cancelActiveDownload("model.gguf", targetFile)
+                assertEquals("CANCELLED", manager.state.value.status)
+                assertFalse(partFile.exists())
+            }
+        } finally {
+            server.stop(0)
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testInsufficientStorageFailsImmediatelyAsFatal() {
+        val tempDir = createTempDirectory("aegin-storage-test").toFile()
+        try {
+            val targetFile = File(tempDir, "huge.gguf")
+            val outcome = runBlocking {
+                ResumableModelDownloader.downloadWithResume(
+                    urls = listOf("http://127.0.0.1:1/huge.gguf"),
+                    targetFile = targetFile,
+                    approxSizeBytes = Long.MAX_VALUE / 2
+                )
+            }
+            assertFalse(outcome.succeeded)
+            assertTrue(outcome.fatal)
+            assertTrue(outcome.errorMessage?.contains("Insufficient on-device storage", ignoreCase = true) == true)
+        } finally {
             tempDir.deleteRecursively()
         }
     }

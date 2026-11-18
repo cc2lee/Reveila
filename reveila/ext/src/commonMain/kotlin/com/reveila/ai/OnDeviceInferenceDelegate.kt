@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.Flow
  */
 interface OnDeviceInferenceDelegate {
     fun isModelLoaded(): Boolean
+    fun getLoadedModelPath(): String? = null
+    fun formatChatMessages(messages: List<ReveilaMessage>): Pair<String, String>? = null
     fun generateBlocking(
         formattedPrompt: String,
         stopToken: String,

@@ -2,6 +2,7 @@ package com.reveila.ai
 
 import com.reveila.ai.util.GemmaPromptFormatter
 import com.reveila.ai.util.Llama3PromptFormatter
+import com.reveila.util.json.JsonUtil
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -21,25 +22,161 @@ open class LocalLlamaProvider : BaseLlmProvider() {
             nativeDelegate = delegate
         }
 
-        fun formatMessages(messages: List<ReveilaMessage>, modelName: String?): Pair<String, String> {
-            val activeModel = modelName?.lowercase() ?: ""
-            val isLlama = activeModel.contains("llama-3") || activeModel.contains("llama3")
-            val isQwen = activeModel.contains("qwen") || activeModel.isBlank() || activeModel.contains("on-device") || activeModel == "auto"
-
-            return when {
-                isQwen -> {
-                    val sb = StringBuilder()
-                    for (msg in messages) {
-                        val role = msg.role.name.lowercase()
-                        sb.append("<|im_start|>").append(role).append("\n")
-                        sb.append(msg.content).append("<|im_end|>\n")
-                    }
-                    sb.append("<|im_start|>assistant\n")
-                    sb.toString() to "<|im_end|>"
-                }
-                isLlama -> Llama3PromptFormatter.format(messages) to "<|eot_id|>"
-                else -> GemmaPromptFormatter.format(messages) to "<end_of_turn>"
+        @kotlin.jvm.JvmOverloads
+        fun formatMessages(
+            messages: List<ReveilaMessage>,
+            modelName: String?,
+            systemHome: String? = null
+        ): Pair<String, String> {
+            val trimmed = modelName?.trim().orEmpty()
+            val effectiveModel = if (
+                trimmed.isEmpty() ||
+                trimmed.equals("auto", ignoreCase = true) ||
+                trimmed.contains("on-device", ignoreCase = true)
+            ) {
+                nativeDelegate?.getLoadedModelPath() ?: trimmed
+            } else {
+                trimmed
             }
+
+            val spec = PromptTemplateRegistry.resolveChatFormattingSpec(effectiveModel, systemHome)
+            if (spec.customMarkers != null) {
+                return formatWithCustomMarkers(messages, spec.customMarkers) to spec.stopToken
+            }
+
+            // For unrecognized local GGUF models without a template file, ask the loaded GGUF header first.
+            val hasExplicitTemplate = !spec.matchedTemplateId.startsWith("heuristic:")
+            if (!hasExplicitTemplate &&
+                effectiveModel.isNotBlank() &&
+                PromptTemplateRegistry.inferModelFamily(effectiveModel) == null
+            ) {
+                val delegate = nativeDelegate
+                if (delegate != null && delegate.isModelLoaded()) {
+                    delegate.formatChatMessages(messages)?.let { return it }
+                }
+            }
+
+            return when (spec.chatFormat) {
+                ChatFormat.CHATML -> formatChatMl(messages) to spec.stopToken
+                ChatFormat.LLAMA3 -> Llama3PromptFormatter.format(messages) to spec.stopToken
+                ChatFormat.GEMMA -> GemmaPromptFormatter.format(messages) to spec.stopToken
+                ChatFormat.PHI3 -> formatPhi3(messages) to spec.stopToken
+                ChatFormat.MISTRAL -> formatMistral(messages) to spec.stopToken
+                ChatFormat.CUSTOM -> formatChatMl(messages) to spec.stopToken.ifEmpty { "<|im_end|>" }
+            }
+        }
+
+        private fun formatChatMl(messages: List<ReveilaMessage>): String {
+            val sb = StringBuilder()
+            for (msg in messages) {
+                val role = when (msg.role) {
+                    LlmRole.SYSTEM -> "system"
+                    LlmRole.USER -> "user"
+                    LlmRole.ASSISTANT -> "assistant"
+                    LlmRole.TOOL -> "tool"
+                }
+                sb.append("<|im_start|>").append(role).append("\n")
+                sb.append(msg.content.trim()).append("<|im_end|>\n")
+            }
+            sb.append("<|im_start|>assistant\n")
+            return sb.toString()
+        }
+
+        private fun formatPhi3(messages: List<ReveilaMessage>): String {
+            val sb = StringBuilder()
+            for (msg in messages) {
+                val roleTag = when (msg.role) {
+                    LlmRole.SYSTEM -> "<|system|>"
+                    LlmRole.USER -> "<|user|>"
+                    LlmRole.ASSISTANT -> "<|assistant|>"
+                    LlmRole.TOOL -> "<|user|>"
+                }
+                sb.append(roleTag).append("\n")
+                    .append(msg.content.trim())
+                    .append("<|end|>\n")
+            }
+            sb.append("<|assistant|>\n")
+            return sb.toString()
+        }
+
+        private fun formatMistral(messages: List<ReveilaMessage>): String {
+            val sb = StringBuilder()
+            sb.append("<s>")
+            val pendingUser = mutableListOf<String>()
+            for (msg in messages) {
+                val text = msg.content.trim()
+                if (text.isEmpty()) continue
+                when (msg.role) {
+                    LlmRole.SYSTEM, LlmRole.USER -> pendingUser.add(text)
+                    LlmRole.TOOL -> pendingUser.add("[Tool Result]\n$text")
+                    LlmRole.ASSISTANT -> {
+                        if (pendingUser.isNotEmpty()) {
+                            sb.append("[INST] ").append(pendingUser.joinToString("\n\n")).append(" [/INST]")
+                            pendingUser.clear()
+                        }
+                        sb.append(" ").append(text).append("</s>")
+                    }
+                }
+            }
+            if (pendingUser.isNotEmpty()) {
+                sb.append("[INST] ").append(pendingUser.joinToString("\n\n")).append(" [/INST]")
+            } else {
+                sb.append("[INST] [/INST]")
+            }
+            return sb.toString()
+        }
+
+        private fun formatWithCustomMarkers(
+            messages: List<ReveilaMessage>,
+            markers: CustomChatMarkers
+        ): String {
+            val sb = StringBuilder()
+            if (markers.bos.isNotEmpty()) {
+                sb.append(markers.bos)
+            }
+            val userPre = markers.userPrefix ?: "<|im_start|>user\n"
+            val userSuf = markers.userSuffix ?: "<|im_end|>\n"
+            val sysPre = markers.systemPrefix ?: userPre
+            val sysSuf = markers.systemSuffix ?: userSuf
+            val asstPre = markers.assistantPrefix ?: "<|im_start|>assistant\n"
+            val asstSuf = markers.assistantSuffix ?: "<|im_end|>\n"
+            val genPre = markers.assistantGenerationPrefix ?: asstPre
+
+            if (markers.foldSystemIntoUser) {
+                val pendingUser = mutableListOf<String>()
+                fun flushUser() {
+                    if (pendingUser.isNotEmpty()) {
+                        sb.append(userPre).append(pendingUser.joinToString("\n\n")).append(userSuf)
+                        pendingUser.clear()
+                    }
+                }
+                for (msg in messages) {
+                    val content = msg.content.trim()
+                    if (content.isEmpty()) continue
+                    when (msg.role) {
+                        LlmRole.SYSTEM, LlmRole.USER -> pendingUser.add(content)
+                        LlmRole.TOOL -> pendingUser.add("[Tool Result]\n$content")
+                        LlmRole.ASSISTANT -> {
+                            flushUser()
+                            sb.append(asstPre).append(content).append(asstSuf)
+                        }
+                    }
+                }
+                flushUser()
+            } else {
+                for (msg in messages) {
+                    val content = msg.content.trim()
+                    if (content.isEmpty()) continue
+                    when (msg.role) {
+                        LlmRole.SYSTEM -> sb.append(sysPre).append(content).append(sysSuf)
+                        LlmRole.USER -> sb.append(userPre).append(content).append(userSuf)
+                        LlmRole.ASSISTANT -> sb.append(asstPre).append(content).append(asstSuf)
+                        LlmRole.TOOL -> sb.append(userPre).append("[Tool Result]\n").append(content).append(userSuf)
+                    }
+                }
+            }
+            sb.append(genPre)
+            return sb.toString()
         }
     }
 
@@ -47,9 +184,14 @@ open class LocalLlamaProvider : BaseLlmProvider() {
         this.endpoint = "local://on-device"
     }
 
+    private fun resolveSystemHome(request: LlmRequest): String? {
+        val fromMetadata = request.metadata["system_home"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+        return fromMetadata ?: context?.properties?.getProperty("system.home")?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
     @Throws(LlmException::class)
     override fun buildRequestBody(request: LlmRequest): String {
-        val (formattedPrompt, stopToken) = formatMessages(request.messages, model)
+        val (formattedPrompt, stopToken) = formatMessages(request.messages, model, resolveSystemHome(request))
         val maxTokens = (request.metadata["max_tokens"] as? Number)?.toInt() ?: 256
         val grammar = (request.metadata["gbnf_grammar"] as? String)?.trim() ?: ""
 
@@ -58,7 +200,9 @@ open class LocalLlamaProvider : BaseLlmProvider() {
             put("temperature", request.temperature ?: temperature)
             put("n_predict", maxTokens)
             put("stream", false)
-            put("stop", buildJsonArray { add(JsonPrimitive(stopToken)) })
+            if (stopToken.isNotEmpty()) {
+                put("stop", buildJsonArray { add(JsonPrimitive(stopToken)) })
+            }
             if (grammar.isNotEmpty()) {
                 put("grammar", grammar)
             }
@@ -102,13 +246,28 @@ open class LocalLlamaProvider : BaseLlmProvider() {
         val delegate = nativeDelegate
         if (delegate != null && delegate.isModelLoaded()) {
             try {
-                val (formattedPrompt, stopToken) = formatMessages(request.messages, model)
+                val (formattedPrompt, stopToken) = formatMessages(request.messages, model, resolveSystemHome(request))
                 val maxTokens = (request.metadata["max_tokens"] as? Number)?.toInt() ?: 256
                 val grammar = (request.metadata["gbnf_grammar"] as? String)?.trim() ?: ""
                 val rawText = delegate.generateBlocking(formattedPrompt, stopToken, maxTokens, grammar).trim()
                 if (rawText.isNotEmpty()) {
                     if (grammar.isNotEmpty()) {
                         return LlmResponse().apply { content = rawText }
+                    }
+                    val cleanedCandidate = JsonUtil.clean(rawText)
+                    val isAgenticJsonEnvelope = if (!cleanedCandidate.isNullOrBlank() && cleanedCandidate.startsWith("{")) {
+                        try {
+                            val parsed = JsonUtil.parseJsonStringToMap(cleanedCandidate)
+                            parsed.containsKey("status") &&
+                                (parsed.containsKey("result") || parsed.containsKey("tool-call") || parsed.containsKey("reasoning"))
+                        } catch (_: Exception) {
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                    if (isAgenticJsonEnvelope) {
+                        return LlmResponse().apply { content = cleanedCandidate!! }
                     }
                     val jsonResult = buildJsonObject {
                         put("status", "COMPLETED")
@@ -166,10 +325,18 @@ open class LocalLlamaProvider : BaseLlmProvider() {
         val userMsg = request.messages.lastOrNull { it.role() == LlmRole.USER }?.content()?.trim() ?: ""
         val systemMsg = request.messages.firstOrNull { it.role() == LlmRole.SYSTEM }?.content() ?: ""
 
-        val rawVaultContext = if (systemMsg.contains("Related Documents:")) {
-            systemMsg.substringAfter("Related Documents:").substringBefore("Always follow").trim()
-        } else {
-            ""
+        val rawVaultContext = when {
+            systemMsg.contains("<vault_context>") && systemMsg.contains("</vault_context>") ->
+                systemMsg.substringAfter("<vault_context>").substringBefore("</vault_context>").trim()
+            systemMsg.contains("[Reference Documents]") && systemMsg.contains("[/Reference Documents]") ->
+                systemMsg.substringAfter("[Reference Documents]").substringBefore("[/Reference Documents]").trim()
+            systemMsg.contains("Related Documents:") ->
+                systemMsg.substringAfter("Related Documents:")
+                    .substringBefore("</context_boundary>")
+                    .substringBefore("\n## ")
+                    .substringBefore("Always follow")
+                    .trim()
+            else -> ""
         }
 
         val vaultSnippets = if (rawVaultContext.isNotBlank() && !rawVaultContext.contains("No relevant internal documents found.")) {
@@ -289,14 +456,18 @@ open class LocalLlamaProvider : BaseLlmProvider() {
             }
         }
 
-        // If no documents are indexed at all
-        if (excerpts.isEmpty()) {
-            return "No reference documents are currently indexed for \"$userPrompt\". Place your .md, .txt, .docx, or .json files in Documents/Reveila (or switch to a Cloud LLM in Settings) and ask again."
-        }
-
         // Check if the user is asking to list/summarize all documents
         val isSummaryOrListIntent = queryTokens.any {
-            it in setOf("summarize", "summary", "documents", "files", "folder", "list", "overview", "all", "content", "contents")
+            it in setOf("summarize", "summary", "documents", "files", "folder", "list", "overview", "all", "content", "contents", "vault")
+        }
+
+        // If no relevant documents matched and no local LLM engine is loaded/running
+        if (excerpts.isEmpty()) {
+            return if (isSummaryOrListIntent) {
+                "No reference documents are currently indexed for \"$userPrompt\". Place your .md, .txt, .docx, or .json files in Documents/Reveila (or switch to a Cloud LLM in Settings) and ask again."
+            } else {
+                "No local GGUF model is loaded and no local llama-server is reachable to answer general questions like \"$userPrompt\". Download/load an on-device model or select a Cloud LLM in Settings (or place relevant documents in Documents/Reveila)."
+            }
         }
 
         if (queryTokens.isEmpty() && !isSummaryOrListIntent) {

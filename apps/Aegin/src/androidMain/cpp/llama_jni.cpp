@@ -214,6 +214,111 @@ Java_com_reveila_aegin_bridge_LlamaJniBridge_nativeGenerateTokens(
     llama_sampler_free(sampler);
 }
 
+JNIEXPORT jbyteArray JNICALL
+Java_com_reveila_aegin_bridge_LlamaJniBridge_nativeGetChatTemplate(
+        JNIEnv *env,
+        jobject /* thiz */,
+        jlong modelPtr) {
+    if (modelPtr == 0L) {
+        return nullptr;
+    }
+    auto *model = reinterpret_cast<llama_model *>(modelPtr);
+    const char *tmpl = llama_model_chat_template(model, nullptr);
+    if (tmpl == nullptr || tmpl[0] == '\0') {
+        return nullptr;
+    }
+    std::string tmplStr(tmpl);
+    jbyteArray out = env->NewByteArray(static_cast<jsize>(tmplStr.size()));
+    if (out == nullptr) {
+        return nullptr;
+    }
+    env->SetByteArrayRegion(out, 0, static_cast<jsize>(tmplStr.size()),
+                            reinterpret_cast<const jbyte *>(tmplStr.data()));
+    return out;
+}
+
+JNIEXPORT jbyteArray JNICALL
+Java_com_reveila_aegin_bridge_LlamaJniBridge_nativeFormatChatMessages(
+        JNIEnv *env,
+        jobject /* thiz */,
+        jlong modelPtr,
+        jobjectArray roles,
+        jobjectArray contents) {
+    if (modelPtr == 0L || roles == nullptr || contents == nullptr) {
+        return nullptr;
+    }
+    auto *model = reinterpret_cast<llama_model *>(modelPtr);
+    const char *tmpl = llama_model_chat_template(model, nullptr);
+    if (tmpl == nullptr || tmpl[0] == '\0') {
+        return nullptr;
+    }
+
+    jsize nRoles = env->GetArrayLength(roles);
+    jsize nContents = env->GetArrayLength(contents);
+    if (nRoles <= 0 || nRoles != nContents) {
+        return nullptr;
+    }
+
+    std::vector<std::string> roleStrings;
+    std::vector<std::string> contentStrings;
+    roleStrings.reserve(static_cast<size_t>(nRoles));
+    contentStrings.reserve(static_cast<size_t>(nRoles));
+
+    size_t totalChars = 0;
+    for (jsize i = 0; i < nRoles; ++i) {
+        auto jRole = static_cast<jstring>(env->GetObjectArrayElement(roles, i));
+        auto jContent = static_cast<jstring>(env->GetObjectArrayElement(contents, i));
+        if (jRole == nullptr || jContent == nullptr) {
+            if (jRole != nullptr) env->DeleteLocalRef(jRole);
+            if (jContent != nullptr) env->DeleteLocalRef(jContent);
+            return nullptr;
+        }
+        const char *cRole = env->GetStringUTFChars(jRole, nullptr);
+        const char *cContent = env->GetStringUTFChars(jContent, nullptr);
+        std::string rStr = cRole != nullptr ? cRole : "user";
+        std::string cStr = cContent != nullptr ? cContent : "";
+        if (cRole != nullptr) env->ReleaseStringUTFChars(jRole, cRole);
+        if (cContent != nullptr) env->ReleaseStringUTFChars(jContent, cContent);
+        env->DeleteLocalRef(jRole);
+        env->DeleteLocalRef(jContent);
+
+        totalChars += rStr.size() + cStr.size();
+        roleStrings.push_back(std::move(rStr));
+        contentStrings.push_back(std::move(cStr));
+    }
+
+    std::vector<llama_chat_message> chatMsgs;
+    chatMsgs.reserve(roleStrings.size());
+    for (size_t i = 0; i < roleStrings.size(); ++i) {
+        chatMsgs.push_back(llama_chat_message{roleStrings[i].c_str(), contentStrings[i].c_str()});
+    }
+
+    std::vector<char> buf(totalChars * 2 + 256);
+    int32_t res = llama_chat_apply_template(
+            tmpl, chatMsgs.data(), chatMsgs.size(), true,
+            buf.data(), static_cast<int32_t>(buf.size()));
+    if (res < 0) {
+        return nullptr;
+    }
+    if (res > static_cast<int32_t>(buf.size())) {
+        buf.resize(static_cast<size_t>(res) + 1);
+        res = llama_chat_apply_template(
+                tmpl, chatMsgs.data(), chatMsgs.size(), true,
+                buf.data(), static_cast<int32_t>(buf.size()));
+    }
+    if (res <= 0) {
+        return nullptr;
+    }
+
+    jbyteArray out = env->NewByteArray(static_cast<jsize>(res));
+    if (out == nullptr) {
+        return nullptr;
+    }
+    env->SetByteArrayRegion(out, 0, static_cast<jsize>(res),
+                            reinterpret_cast<const jbyte *>(buf.data()));
+    return out;
+}
+
 JNIEXPORT void JNICALL
 Java_com_reveila_aegin_bridge_LlamaJniBridge_nativeFreeContext(
         JNIEnv * /* env */,

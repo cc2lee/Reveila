@@ -184,6 +184,9 @@ actual object PlatformEngineBridge {
     actual suspend fun pauseLocalModelDownload(modelName: String) {
     }
 
+    actual suspend fun cancelLocalModelDownload(modelName: String) {
+    }
+
     actual fun observeLocalModelDownloadState(): StateFlow<LocalModelDownloadState> =
         modelDownloadState.asStateFlow()
 

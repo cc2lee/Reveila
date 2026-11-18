@@ -175,9 +175,9 @@ fun SettingsScreen(
             } catch (_: Exception) {
             }
             if (!ok) {
-                val msg = AeginBridge.observeLocalModelDownloadState().value.message
-                if (msg.isNotBlank()) {
-                    showAlert("Model Download Failed", msg)
+                val dlState = AeginBridge.observeLocalModelDownloadState().value
+                if (dlState.status == "FAILED" && dlState.message.isNotBlank()) {
+                    showAlert("Model Download Failed", dlState.message)
                 }
             }
         }
@@ -269,7 +269,11 @@ fun SettingsScreen(
     }
 
     LaunchedEffect(modelDownloadState.status) {
-        if (modelDownloadState.status == "COMPLETED" || modelDownloadState.status == "FAILED") {
+        if (modelDownloadState.status == "COMPLETED" ||
+            modelDownloadState.status == "FAILED" ||
+            modelDownloadState.status == "PAUSED" ||
+            modelDownloadState.status == "CANCELLED"
+        ) {
             try {
                 localModelCheck = AeginBridge.checkLocalModelAvailability(activeLocalModelName())
                 capabilities = AeginBridge.getDeviceCapabilities()
@@ -800,6 +804,15 @@ fun SettingsScreen(
                         scope.launch {
                             AeginBridge.pauseLocalModelDownload(modelDownloadState.modelName)
                             localModelCheck = AeginBridge.checkLocalModelAvailability(activeLocalModelName())
+                            refreshConfiguredAndTestedStates()
+                        }
+                    },
+                    onCancelLocalDownload = {
+                        scope.launch {
+                            val target = modelDownloadState.modelName.ifBlank { activeLocalModelName() }
+                            AeginBridge.cancelLocalModelDownload(target)
+                            localModelCheck = AeginBridge.checkLocalModelAvailability(activeLocalModelName())
+                            capabilities = AeginBridge.getDeviceCapabilities()
                             refreshConfiguredAndTestedStates()
                         }
                     },
@@ -2061,6 +2074,17 @@ fun SettingsScreen(
                     refreshConfiguredAndTestedStates()
                 }
             },
+            onCancelLocalDownload = {
+                scope.launch {
+                    val target = modelDownloadState.modelName.ifBlank {
+                        editData.model.ifBlank { capabilities.recommendedModel }
+                    }
+                    AeginBridge.cancelLocalModelDownload(target)
+                    localModelCheck = AeginBridge.checkLocalModelAvailability(activeLocalModelName())
+                    capabilities = AeginBridge.getDeviceCapabilities()
+                    refreshConfiguredAndTestedStates()
+                }
+            },
             onSave = ::handleSaveProviderEdit,
             onRequestDelete = { showConfirmDeleteDialog = true },
             onDismiss = {
@@ -2158,6 +2182,11 @@ fun SettingsScreen(
     val pendingPrompt = pendingModelDownloadPrompt
     if (pendingPrompt != null) {
         val formattedSize = AeginBridge.formatByteSize(pendingPrompt.approxSizeBytes)
+        val remainingBytes = (pendingPrompt.approxSizeBytes - pendingPrompt.partialBytes).coerceAtLeast(0L)
+        val hasInsufficientStorage = pendingPrompt.availableStorageBytes in 0 until remainingBytes
+        val isStorageTight = !hasInsufficientStorage &&
+            pendingPrompt.availableStorageBytes >= 0L &&
+            pendingPrompt.availableStorageBytes < (remainingBytes + 1_500_000_000L)
         val wifiNotice = if (!pendingPrompt.isWifiConnected || pendingPrompt.isMeteredNetwork) {
             "⚠️ You are not currently on an unmetered Wi-Fi network. GGUF model files are very large ($formattedSize) and can consume substantial mobile data. Please consider switching to Wi-Fi before downloading."
         } else {
@@ -2170,12 +2199,29 @@ fun SettingsScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = if (pendingPrompt.partialBytes > 0L) {
-                            "${pendingPrompt.modelName} has a partial download (${AeginBridge.formatByteSize(pendingPrompt.partialBytes)}) ready to resume."
+                            "${pendingPrompt.modelName} has a partial download (${AeginBridge.formatByteSize(pendingPrompt.partialBytes)}) ready to resume (${AeginBridge.formatByteSize(remainingBytes)} remaining)."
                         } else {
                             "${pendingPrompt.modelName} was not found locally on this device."
                         },
                         fontSize = 13.sp
                     )
+                    if (pendingPrompt.availableStorageBytes >= 0L) {
+                        Text(
+                            text = if (hasInsufficientStorage) {
+                                "⚠️ Insufficient on-device storage: needs ${AeginBridge.formatByteSize(remainingBytes)} more, but only ${AeginBridge.formatByteSize(pendingPrompt.availableStorageBytes)} is free."
+                            } else if (isStorageTight) {
+                                "⚠️ Free storage: ${AeginBridge.formatByteSize(pendingPrompt.availableStorageBytes)} (tight for GGUF inference; ${AeginBridge.formatByteSize(remainingBytes + 1_500_000_000L)} recommended with 1.5 GB buffer)."
+                            } else {
+                                "Free on-device storage: ${AeginBridge.formatByteSize(pendingPrompt.availableStorageBytes)}"
+                            },
+                            color = when {
+                                hasInsufficientStorage -> theme.danger
+                                isStorageTight -> Color(0xFFF59E0B)
+                                else -> theme.subText
+                            },
+                            fontSize = 12.sp
+                        )
+                    }
                     Text(
                         text = wifiNotice,
                         color = if (!pendingPrompt.isWifiConnected || pendingPrompt.isMeteredNetwork) Color(0xFFF59E0B) else theme.subText,
@@ -2193,7 +2239,7 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(
-                    enabled = pendingPrompt.downloadUrl.isNotBlank(),
+                    enabled = pendingPrompt.downloadUrl.isNotBlank() && !hasInsufficientStorage,
                     onClick = {
                         val targetModel = pendingPrompt.modelName
                         pendingModelDownloadPrompt = null
@@ -2506,6 +2552,7 @@ private fun UnifiedAiModelsCard(
     onTestConnection: (String) -> Unit,
     onDownloadLocalModel: () -> Unit,
     onPauseLocalDownload: () -> Unit,
+    onCancelLocalDownload: () -> Unit,
     onOpenAddNewModal: () -> Unit
 ) {
     val theme = LocalAeginColors.current
@@ -2678,11 +2725,12 @@ private fun UnifiedAiModelsCard(
                     } else {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
-                    if (modelDownloadState.status == "DOWNLOADING") {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (modelDownloadState.status == "DOWNLOADING") {
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(6.dp))
@@ -2693,8 +2741,31 @@ private fun UnifiedAiModelsCard(
                                 Text("⏸ Pause", color = theme.warning, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .border(1.dp, theme.danger, RoundedCornerShape(6.dp))
+                                .clickable { onCancelLocalDownload() }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Text("✕ Cancel", color = theme.danger, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
+            } else if (isLocal && modelDownloadState.status == "FAILED" && modelDownloadState.message.isNotBlank()) {
+                Text(
+                    text = modelDownloadState.message,
+                    color = theme.danger,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+            } else if (isLocal && modelDownloadState.status == "PAUSED" && modelDownloadState.message.isNotBlank()) {
+                Text(
+                    text = modelDownloadState.message,
+                    color = theme.warning,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
             }
         }
 
@@ -2722,6 +2793,22 @@ private fun UnifiedAiModelsCard(
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
+                }
+                if (partial > 0L) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .border(1.dp, theme.danger, RoundedCornerShape(8.dp))
+                            .clickable { onCancelLocalDownload() }
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = "✕ Cancel",
+                            color = theme.danger,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 
@@ -2844,6 +2931,7 @@ private fun EditProviderDialog(
     onTestConnection: () -> Unit,
     onDownloadLocalModel: () -> Unit,
     onPauseLocalDownload: () -> Unit,
+    onCancelLocalDownload: () -> Unit,
     onSave: () -> Unit,
     onRequestDelete: () -> Unit,
     onDismiss: () -> Unit
@@ -2912,43 +3000,78 @@ private fun EditProviderDialog(
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .border(1.dp, theme.warning, RoundedCornerShape(6.dp))
-                                    .clickable { onPauseLocalDownload() }
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Text("⏸ Pause", color = theme.warning, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (modelDownloadState.status == "DOWNLOADING") {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .border(1.dp, theme.warning, RoundedCornerShape(6.dp))
+                                            .clickable { onPauseLocalDownload() }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("⏸ Pause", color = theme.warning, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .border(1.dp, theme.danger, RoundedCornerShape(6.dp))
+                                        .clickable { onCancelLocalDownload() }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text("✕ Cancel", color = theme.danger, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     } else if (!isReadyLocally) {
                         val targetName = editData.model.ifBlank { recommendedLocalModel }
+                        val partial = localModelCheck?.partialBytes ?: 0L
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Model '$targetName' not found locally.",
+                                text = if (partial > 0L) {
+                                    "Partial '$targetName' (${AeginBridge.formatByteSize(partial)})"
+                                } else {
+                                    "Model '$targetName' not found locally."
+                                },
                                 color = Color(0xFFF59E0B),
                                 fontSize = 11.sp,
                                 modifier = Modifier.weight(1f)
                             )
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(theme.cyan)
-                                    .clickable { onDownloadLocalModel() }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
-                            ) {
-                                val partial = localModelCheck?.partialBytes ?: 0L
-                                Text(
-                                    text = if (partial > 0L) "▶️ Resume" else "⬇️ Download",
-                                    color = Color.White,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(theme.cyan)
+                                        .clickable { onDownloadLocalModel() }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = if (partial > 0L) "▶️ Resume" else "⬇️ Download",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                if (partial > 0L) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .border(1.dp, theme.danger, RoundedCornerShape(6.dp))
+                                            .clickable { onCancelLocalDownload() }
+                                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = "✕ Cancel",
+                                            color = theme.danger,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
                             }
                         }
                     } else {

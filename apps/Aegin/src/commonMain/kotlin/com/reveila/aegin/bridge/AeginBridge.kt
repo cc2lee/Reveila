@@ -203,6 +203,7 @@ data class LocalModelCheckResult(
     val partialBytes: Long = 0L,
     val downloadUrl: String = "",
     val approxSizeBytes: Long = 0L,
+    val availableStorageBytes: Long = -1L,
     val sha256: String = "",
     val isWifiConnected: Boolean = true,
     val isMeteredNetwork: Boolean = false,
@@ -232,6 +233,7 @@ expect object PlatformEngineBridge {
     suspend fun checkLocalModelAvailability(modelName: String): LocalModelCheckResult
     suspend fun downloadLocalModel(modelName: String): Boolean
     suspend fun pauseLocalModelDownload(modelName: String = "")
+    suspend fun cancelLocalModelDownload(modelName: String = "")
     fun observeLocalModelDownloadState(): StateFlow<LocalModelDownloadState>
     suspend fun invoke(component: String, method: String, params: List<String> = emptyList()): String
     fun streamAgent(
@@ -316,6 +318,10 @@ object AeginBridge {
 
     suspend fun pauseLocalModelDownload(modelName: String = "") {
         PlatformEngineBridge.pauseLocalModelDownload(modelName)
+    }
+
+    suspend fun cancelLocalModelDownload(modelName: String = "") {
+        PlatformEngineBridge.cancelLocalModelDownload(modelName)
     }
 
     fun observeLocalModelDownloadState(): StateFlow<LocalModelDownloadState> {

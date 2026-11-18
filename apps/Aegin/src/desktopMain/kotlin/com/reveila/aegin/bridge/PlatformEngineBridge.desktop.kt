@@ -65,6 +65,13 @@ actual object PlatformEngineBridge {
             "configs/settings/security.properties",
             "configs/settings/identity.properties",
             "configs/templates/intent_validation_prompt.md",
+            "configs/templates/prompts/default.md",
+            "configs/templates/prompts/conversational.md",
+            "configs/templates/prompts/models/qwen2.5-0.5b-instruct.md",
+            "configs/templates/prompts/models/gemma-2-2b-it.md",
+            "configs/templates/prompts/families/qwen2.5.md",
+            "configs/templates/prompts/families/gemma.md",
+            "configs/templates/prompts/families/llama3.md",
             "models/manifest.json",
             "ReveilaVault/Reveila_Sovereign_Architecture.md"
         )
@@ -645,6 +652,7 @@ actual object PlatformEngineBridge {
                 partialBytes = partialBytes,
                 downloadUrl = downloadUrl,
                 approxSizeBytes = approxBytes,
+                availableStorageBytes = modelsDir.usableSpace,
                 sha256 = entry?.sha256.orEmpty(),
                 isWifiConnected = true,
                 isMeteredNetwork = false,
@@ -662,7 +670,9 @@ actual object PlatformEngineBridge {
             if (check.downloadUrl.isNotBlank()) add(check.downloadUrl)
             val base = readDesktopDownloadBaseUrl().trimEnd('/')
             if (base.isNotEmpty()) add("$base/llms/${check.modelName}")
-            add("http://127.0.0.1:8000/llms/${check.modelName}")
+            if (check.downloadUrl.isBlank() && base.isEmpty()) {
+                add("http://127.0.0.1:8000/llms/${check.modelName}")
+            }
         }.distinct()
 
         return desktopDownloadManager.downloadAndAwait(
@@ -676,6 +686,15 @@ actual object PlatformEngineBridge {
 
     actual suspend fun pauseLocalModelDownload(modelName: String) {
         desktopDownloadManager.pauseActiveDownload(modelName)
+    }
+
+    actual suspend fun cancelLocalModelDownload(modelName: String) {
+        val targetFile = if (modelName.isNotBlank()) {
+            File(File(activeSystemHome, "models"), modelName)
+        } else {
+            null
+        }
+        desktopDownloadManager.cancelActiveDownload(modelName, targetFile)
     }
 
     actual fun observeLocalModelDownloadState(): StateFlow<LocalModelDownloadState> =

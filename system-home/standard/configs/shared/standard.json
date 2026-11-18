@@ -209,5 +209,18 @@
                 }
             ]
         }
+    },
+    {
+        "component": {
+            "name": "ResumableDownloadManager",
+            "class": "com.reveila.tools.download.ResumableDownloadManager",
+            "description": "Generic resumable download manager with storage preflight, pause/resume/cancel, SHA-256 verification, and periodic temp housekeeping.",
+            "thread-safe": true,
+            "runnable": {
+                "delay.seconds": 60,
+                "interval.seconds": 3600,
+                "method.name": "runHousekeeping"
+            }
+        }
     }
 ]

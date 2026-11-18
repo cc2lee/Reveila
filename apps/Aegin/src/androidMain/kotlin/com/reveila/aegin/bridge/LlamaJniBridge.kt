@@ -2,6 +2,7 @@ package com.reveila.aegin.bridge
 
 import com.reveila.ai.LocalLlamaProvider
 import com.reveila.ai.OnDeviceInferenceDelegate
+import com.reveila.ai.ReveilaMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -15,6 +16,7 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Strictly single-thread-affine JNI bridge to llama.cpp (libllama_jni.so).
@@ -29,6 +31,7 @@ object LlamaJniBridge : LocalInferenceEngine, OnDeviceInferenceDelegate {
     private val nativeLoaded = AtomicBoolean(false)
     private val modelPtr = AtomicLong(0L)
     private val contextPtr = AtomicLong(0L)
+    private val loadedModelPath = AtomicReference<String?>(null)
     private val isCancelled = AtomicBoolean(false)
 
     private val nativeDispatcher: ExecutorCoroutineDispatcher =
@@ -39,6 +42,38 @@ object LlamaJniBridge : LocalInferenceEngine, OnDeviceInferenceDelegate {
     private val nativeScope = CoroutineScope(nativeDispatcher)
 
     override fun isModelLoaded(): Boolean = modelPtr.get() != 0L && contextPtr.get() != 0L
+
+    override fun getLoadedModelPath(): String? = loadedModelPath.get()
+
+    override fun formatChatMessages(messages: List<ReveilaMessage>): Pair<String, String>? {
+        val mPtr = modelPtr.get()
+        if (mPtr == 0L || !nativeLoaded.get() || messages.isEmpty()) return null
+        return runBlocking(nativeDispatcher) {
+            val activePtr = modelPtr.get()
+            if (activePtr == 0L || !nativeLoaded.get()) return@runBlocking null
+            val roles = messages.map { it.role.name.lowercase() }.toTypedArray()
+            val contents = messages.map { it.content }.toTypedArray()
+            val formattedBytes = nativeFormatChatMessages(activePtr, roles, contents) ?: return@runBlocking null
+            val formatted = formattedBytes.decodeToString()
+            if (formatted.isBlank()) return@runBlocking null
+
+            val rawTemplate = nativeGetChatTemplate(activePtr)?.decodeToString().orEmpty()
+            val stopToken = inferStopTokenFromTemplate(rawTemplate, formatted)
+            formatted to stopToken
+        }
+    }
+
+    private fun inferStopTokenFromTemplate(template: String, formatted: String): String {
+        val combined = "$template\n$formatted"
+        return when {
+            combined.contains("<|im_end|>") -> "<|im_end|>"
+            combined.contains("<end_of_turn>") -> "<end_of_turn>"
+            combined.contains("<|eot_id|>") -> "<|eot_id|>"
+            combined.contains("<|end|>") -> "<|end|>"
+            combined.contains("[/INST]") -> "</s>"
+            else -> ""
+        }
+    }
 
     fun loadModelBlocking(modelPath: String, contextSize: Int = 2048, threads: Int = 4): Boolean =
         runBlocking(nativeDispatcher) {
@@ -91,6 +126,7 @@ object LlamaJniBridge : LocalInferenceEngine, OnDeviceInferenceDelegate {
         }
         modelPtr.set(mPtr)
         contextPtr.set(cPtr)
+        loadedModelPath.set(modelPath)
         LocalLlamaProvider.registerNativeDelegate(this)
         return true
     }
@@ -106,19 +142,24 @@ object LlamaJniBridge : LocalInferenceEngine, OnDeviceInferenceDelegate {
     ): String =
         runBlocking(nativeDispatcher) {
             val sb = StringBuilder()
-            generateStreamWithGrammar(formattedPrompt, maxTokens, grammar).collect { chunk ->
+            generateStreamWithGrammar(formattedPrompt, maxTokens, grammar, stopToken).collect { chunk ->
                 sb.append(chunk)
             }
             if (stopToken.isNotEmpty()) sb.toString().substringBefore(stopToken).trim() else sb.toString().trim()
         }
 
     override fun generateStream(formattedPrompt: String, stopToken: String, maxTokens: Int): Flow<String> =
-        generateStream(formattedPrompt, maxTokens)
+        generateStreamWithGrammar(formattedPrompt, maxTokens, "", stopToken)
 
     override fun generateStream(prompt: String, maxTokens: Int): Flow<String> =
-        generateStreamWithGrammar(prompt, maxTokens, "")
+        generateStreamWithGrammar(prompt, maxTokens, "", "")
 
-    private fun generateStreamWithGrammar(prompt: String, maxTokens: Int, grammar: String): Flow<String> = callbackFlow {
+    private fun generateStreamWithGrammar(
+        prompt: String,
+        maxTokens: Int,
+        grammar: String,
+        stopToken: String
+    ): Flow<String> = callbackFlow {
         val mPtr = modelPtr.get()
         val cPtr = contextPtr.get()
         if (mPtr == 0L || cPtr == 0L || !nativeLoaded.get()) {
@@ -128,6 +169,35 @@ object LlamaJniBridge : LocalInferenceEngine, OnDeviceInferenceDelegate {
 
         isCancelled.set(false)
         var pendingUtf8 = ByteArray(0)
+        val pendingStopBuffer = StringBuilder()
+        var stopMatched = false
+
+        fun emitFilteredText(text: String): Boolean {
+            if (text.isEmpty()) return true
+            if (stopToken.isEmpty()) {
+                return trySend(text).isSuccess
+            }
+            pendingStopBuffer.append(text)
+            val hitIdx = pendingStopBuffer.indexOf(stopToken)
+            if (hitIdx >= 0) {
+                val safePrefix = pendingStopBuffer.substring(0, hitIdx)
+                pendingStopBuffer.clear()
+                stopMatched = true
+                if (safePrefix.isNotEmpty()) {
+                    trySend(safePrefix)
+                }
+                return false
+            }
+            val holdLen = longestSuffixPrefixLength(pendingStopBuffer, stopToken)
+            val safeEnd = pendingStopBuffer.length - holdLen
+            if (safeEnd > 0) {
+                val safeText = pendingStopBuffer.substring(0, safeEnd)
+                pendingStopBuffer.delete(0, safeEnd)
+                if (!trySend(safeText).isSuccess) return false
+            }
+            return true
+        }
+
         try {
             nativeGenerateTokens(
                 contextPtr = cPtr,
@@ -146,13 +216,20 @@ object LlamaJniBridge : LocalInferenceEngine, OnDeviceInferenceDelegate {
                     }
                     if (validEnd > 0) {
                         val text = combined.decodeToString(startIndex = 0, endIndex = validEnd)
-                        if (!trySend(text).isSuccess) return@TokenCallback false
+                        if (!emitFilteredText(text)) return@TokenCallback false
                     }
                     true
                 }
             )
-            if (pendingUtf8.isNotEmpty() && !isCancelled.get()) {
-                trySend(pendingUtf8.decodeToString())
+            if (pendingUtf8.isNotEmpty() && !isCancelled.get() && !stopMatched) {
+                emitFilteredText(pendingUtf8.decodeToString())
+            }
+            if (!stopMatched && pendingStopBuffer.isNotEmpty() && !isCancelled.get()) {
+                val tail = pendingStopBuffer.toString()
+                val cleanedTail = if (stopToken.isNotEmpty()) tail.substringBefore(stopToken) else tail
+                if (cleanedTail.isNotEmpty()) {
+                    trySend(cleanedTail)
+                }
             }
             close()
         } catch (t: Throwable) {
@@ -164,6 +241,23 @@ object LlamaJniBridge : LocalInferenceEngine, OnDeviceInferenceDelegate {
         }
     }.flowOn(nativeDispatcher)
 
+    private fun longestSuffixPrefixLength(buffer: CharSequence, target: String): Int {
+        if (target.length <= 1 || buffer.isEmpty()) return 0
+        val maxCheck = minOf(buffer.length, target.length - 1)
+        for (len in maxCheck downTo 1) {
+            val bufStart = buffer.length - len
+            var matched = true
+            for (i in 0 until len) {
+                if (buffer[bufStart + i] != target[i]) {
+                    matched = false
+                    break
+                }
+            }
+            if (matched) return len
+        }
+        return 0
+    }
+
     override suspend fun release() {
         withContext(nativeDispatcher) {
             requestCancel()
@@ -173,6 +267,7 @@ object LlamaJniBridge : LocalInferenceEngine, OnDeviceInferenceDelegate {
 
     private fun releaseInternal() {
         LocalLlamaProvider.registerNativeDelegate(null)
+        loadedModelPath.set(null)
         val cPtr = contextPtr.getAndSet(0L)
         if (cPtr != 0L && nativeLoaded.get()) {
             nativeFreeContext(cPtr)
@@ -207,6 +302,12 @@ object LlamaJniBridge : LocalInferenceEngine, OnDeviceInferenceDelegate {
 
     private external fun nativeInitModel(modelPath: String, useMmap: Boolean): Long
     private external fun nativeInitContext(modelPtr: Long, nCtx: Int, nThreads: Int): Long
+    private external fun nativeGetChatTemplate(modelPtr: Long): ByteArray?
+    private external fun nativeFormatChatMessages(
+        modelPtr: Long,
+        roles: Array<String>,
+        contents: Array<String>
+    ): ByteArray?
     private external fun nativeGenerateTokens(
         contextPtr: Long,
         modelPtr: Long,

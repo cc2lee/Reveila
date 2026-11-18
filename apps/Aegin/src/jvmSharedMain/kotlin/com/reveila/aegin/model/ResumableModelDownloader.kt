@@ -8,17 +8,18 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
-import io.ktor.utils.io.core.isNotEmpty
-import io.ktor.utils.io.core.readAvailable
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.net.ConnectException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 data class ResumableDownloadOutcome(
     val succeeded: Boolean,
     val stopped: Boolean = false,
+    val fatal: Boolean = false,
     val usedUrl: String = "",
     val bytesDownloaded: Long = 0L,
     val errorMessage: String? = null
@@ -69,6 +70,22 @@ object ResumableModelDownloader {
         return computeSha256Hex(file) == cleanSha
     }
 
+    private fun isInsufficientStorageError(t: Throwable): Boolean {
+        var cur: Throwable? = t
+        while (cur != null) {
+            val msg = cur.message?.lowercase().orEmpty()
+            if (msg.contains("no space left") ||
+                msg.contains("enospc") ||
+                msg.contains("disk full") ||
+                msg.contains("not enough space")
+            ) {
+                return true
+            }
+            cur = cur.cause
+        }
+        return false
+    }
+
     suspend fun downloadWithResume(
         urls: List<String>,
         targetFile: File,
@@ -102,17 +119,36 @@ object ResumableModelDownloader {
         if (candidateUrls.isEmpty()) {
             return ResumableDownloadOutcome(
                 succeeded = false,
+                fatal = true,
                 errorMessage = "No download URL configured for ${targetFile.name}."
             )
         }
 
         val partFile = File("${targetFile.absolutePath}.part")
+        val existingPartial = if (partFile.exists()) partFile.length() else 0L
+        if (approxSizeBytes > 0L) {
+            val neededBytes = (approxSizeBytes - existingPartial).coerceAtLeast(0L)
+            val parentDir = partFile.parentFile
+            if (neededBytes > 0L && parentDir != null && parentDir.exists()) {
+                val freeBytes = parentDir.usableSpace
+                if (freeBytes < neededBytes) {
+                    return ResumableDownloadOutcome(
+                        succeeded = false,
+                        fatal = true,
+                        usedUrl = candidateUrls.first(),
+                        bytesDownloaded = existingPartial,
+                        errorMessage = "Insufficient on-device storage: need ${neededBytes / (1024 * 1024)} MB more, only ${freeBytes / (1024 * 1024)} MB free."
+                    )
+                }
+            }
+        }
+
         val client = HttpClient(OkHttp) {
             followRedirects = true
             engine {
                 config {
                     connectTimeout(30, TimeUnit.SECONDS)
-                    readTimeout(60, TimeUnit.SECONDS)
+                    readTimeout(30, TimeUnit.SECONDS)
                     retryOnConnectionFailure(true)
                 }
             }
@@ -120,9 +156,15 @@ object ResumableModelDownloader {
 
         return try {
             var lastErrorMsg: String? = null
+            var primaryErrorMsg: String? = null
             for (url in candidateUrls) {
                 if (shouldStop()) {
-                    return ResumableDownloadOutcome(succeeded = false, stopped = true, usedUrl = url)
+                    return ResumableDownloadOutcome(
+                        succeeded = false,
+                        stopped = true,
+                        usedUrl = url,
+                        bytesDownloaded = if (partFile.exists()) partFile.length() else 0L
+                    )
                 }
                 try {
                     val outcome = downloadFromSingleEndpoint(
@@ -136,22 +178,56 @@ object ResumableModelDownloader {
                         shouldStop = shouldStop,
                         onProgress = onProgress
                     )
-                    if (outcome.succeeded || outcome.stopped) {
+                    if (outcome.succeeded || outcome.stopped || outcome.fatal) {
                         return outcome
                     }
+                    if (primaryErrorMsg == null && !outcome.errorMessage.isNullOrBlank()) {
+                        primaryErrorMsg = outcome.errorMessage
+                    }
                     lastErrorMsg = outcome.errorMessage
+                } catch (ce: CancellationException) {
+                    if (shouldStop()) {
+                        return ResumableDownloadOutcome(
+                            succeeded = false,
+                            stopped = true,
+                            usedUrl = url,
+                            bytesDownloaded = if (partFile.exists()) partFile.length() else 0L
+                        )
+                    }
+                    throw ce
                 } catch (e: Exception) {
                     if (shouldStop()) {
-                        return ResumableDownloadOutcome(succeeded = false, stopped = true, usedUrl = url)
+                        return ResumableDownloadOutcome(
+                            succeeded = false,
+                            stopped = true,
+                            usedUrl = url,
+                            bytesDownloaded = if (partFile.exists()) partFile.length() else 0L
+                        )
                     }
-                    lastErrorMsg = e.message ?: "Download failed"
+                    if (isInsufficientStorageError(e)) {
+                        return ResumableDownloadOutcome(
+                            succeeded = false,
+                            fatal = true,
+                            usedUrl = url,
+                            bytesDownloaded = if (partFile.exists()) partFile.length() else 0L,
+                            errorMessage = "Insufficient on-device storage while writing ${targetFile.name}: ${e.message ?: "disk full"}"
+                        )
+                    }
+                    val err = e.message ?: "Download failed"
+                    if (primaryErrorMsg == null) {
+                        primaryErrorMsg = err
+                    }
+                    // Do not mask an earlier remote/stream error with a local fallback ConnectException
+                    if (e !is ConnectException || lastErrorMsg == null) {
+                        lastErrorMsg = err
+                    }
                 }
             }
             ResumableDownloadOutcome(
                 succeeded = false,
                 usedUrl = candidateUrls.first(),
                 bytesDownloaded = if (partFile.exists()) partFile.length() else 0L,
-                errorMessage = lastErrorMsg ?: "Unable to download ${targetFile.name}."
+                errorMessage = primaryErrorMsg ?: lastErrorMsg ?: "Unable to download ${targetFile.name}."
             )
         } finally {
             client.close()
@@ -174,6 +250,7 @@ object ResumableModelDownloader {
 
         for (attempt in 0..1) {
             var retryFromZero = false
+            var fatalOutcome: ResumableDownloadOutcome? = null
             val existingBytes = if (partFile.exists()) partFile.length() else 0L
 
             client.prepareGet(url) {
@@ -202,25 +279,58 @@ object ResumableModelDownloader {
                     else -> -1L
                 }
 
+                val bytesNeeded = if (totalBytes > 0L) (totalBytes - startOffset).coerceAtLeast(0L) else 0L
+                val parentDir = partFile.parentFile
+                if (bytesNeeded > 0L && parentDir != null && parentDir.exists()) {
+                    val freeBytes = parentDir.usableSpace
+                    if (freeBytes < bytesNeeded) {
+                        fatalOutcome = ResumableDownloadOutcome(
+                            succeeded = false,
+                            fatal = true,
+                            usedUrl = url,
+                            bytesDownloaded = startOffset,
+                            errorMessage = "Insufficient on-device storage: need ${bytesNeeded / (1024 * 1024)} MB more, only ${freeBytes / (1024 * 1024)} MB free."
+                        )
+                        return@execute
+                    }
+                }
+
                 val channel = response.bodyAsChannel()
                 var bytesDownloaded = startOffset
-                var lastNotifyTime = 0L
+                val initialPct = if (totalBytes > 0L) {
+                    ((bytesDownloaded * 100L) / totalBytes).toInt().coerceIn(0, 99)
+                } else {
+                    -1
+                }
+                val initialMb = bytesDownloaded / (1024 * 1024)
+                val initialStatusText = if (totalBytes > 0L) {
+                    "$initialMb MB / ${totalBytes / (1024 * 1024)} MB"
+                } else {
+                    "$initialMb MB downloaded"
+                }
+                onProgress(
+                    "DOWNLOADING",
+                    bytesDownloaded,
+                    totalBytes.coerceAtLeast(0L),
+                    initialPct,
+                    url,
+                    "${if (isResuming) "Resuming" else "Downloading"} ${targetFile.name} ($initialStatusText)"
+                )
+                var lastNotifyTime = System.currentTimeMillis()
 
                 FileOutputStream(partFile, isResuming).use { fos ->
                     val buffer = ByteArray(BUFFER_SIZE)
-                    while (!channel.isClosedForRead) {
+                    while (true) {
                         if (shouldStop()) {
                             bytesTransferred = bytesDownloaded
                             return@execute
                         }
 
-                        val packet = channel.readRemaining(BUFFER_SIZE.toLong())
-                        while (packet.isNotEmpty) {
-                            val read = packet.readAvailable(buffer)
-                            if (read > 0) {
-                                fos.write(buffer, 0, read)
-                                bytesDownloaded += read
-                            }
+                        val read = channel.readAvailable(buffer, 0, buffer.size)
+                        if (read < 0) break
+                        if (read > 0) {
+                            fos.write(buffer, 0, read)
+                            bytesDownloaded += read
                         }
 
                         val now = System.currentTimeMillis()
@@ -250,6 +360,10 @@ object ResumableModelDownloader {
                     fos.fd.sync()
                     bytesTransferred = bytesDownloaded
                 }
+            }
+
+            if (fatalOutcome != null) {
+                return fatalOutcome!!
             }
 
             if (shouldStop()) {
@@ -286,6 +400,7 @@ object ResumableModelDownloader {
             partFile.delete()
             return ResumableDownloadOutcome(
                 succeeded = false,
+                fatal = true,
                 usedUrl = url,
                 errorMessage = "Integrity verification failed for ${targetFile.name} (invalid GGUF header or SHA-256 mismatch)."
             )

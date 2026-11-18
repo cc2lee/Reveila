@@ -54,6 +54,8 @@ actual object PlatformEngineBridge {
     private val isStarting = AtomicBoolean(false)
     private val llmStarting = AtomicBoolean(false)
     private val modelDownloadInProgress = AtomicBoolean(false)
+    private val modelDownloadPauseRequested = AtomicBoolean(false)
+    private val modelDownloadCancelRequested = AtomicBoolean(false)
     private val modelDownloadState = MutableStateFlow(LocalModelDownloadState())
     private val llmLock = Any()
     private val llmExecutor = Executors.newSingleThreadExecutor { r ->
@@ -555,6 +557,15 @@ actual object PlatformEngineBridge {
                 effectiveName.contains("7b", ignoreCase = true) -> 4_400_000_000L
                 else -> 1_500_000_000L
             }
+            val availStorageBytes = try {
+                StatFs(modelDir.absolutePath).availableBytes
+            } catch (_: Exception) {
+                try {
+                    StatFs(Environment.getDataDirectory().path).availableBytes
+                } catch (_: Exception) {
+                    -1L
+                }
+            }
             LocalModelCheckResult(
                 modelName = effectiveName,
                 existsLocally = existing != null && existing.exists(),
@@ -562,6 +573,7 @@ actual object PlatformEngineBridge {
                 partialBytes = partialBytes,
                 downloadUrl = downloadUrl,
                 approxSizeBytes = approxBytes,
+                availableStorageBytes = availStorageBytes,
                 sha256 = entry?.sha256.orEmpty(),
                 isWifiConnected = isWifiOrUnmeteredConnected(),
                 isMeteredNetwork = isMeteredCellular(),
@@ -574,6 +586,8 @@ actual object PlatformEngineBridge {
             if (!modelDownloadInProgress.compareAndSet(false, true)) {
                 return@withContext false
             }
+            modelDownloadPauseRequested.set(false)
+            modelDownloadCancelRequested.set(false)
             try {
                 val check = checkLocalModelAvailability(modelName)
                 if (check.existsLocally) {
@@ -591,6 +605,27 @@ actual object PlatformEngineBridge {
 
                 val modelDir = resolveModelsStagingDir()
                 val downloadTarget = File(modelDir, check.modelName)
+                val partFile = File(modelDir, "${check.modelName}.part")
+                val existingPartial = if (partFile.exists()) partFile.length() else 0L
+                val existingPct = if (check.approxSizeBytes > 0L && existingPartial > 0L) {
+                    ((existingPartial * 100L) / check.approxSizeBytes).toInt().coerceIn(0, 99)
+                } else {
+                    0
+                }
+                val remainingBytes = (check.approxSizeBytes - existingPartial).coerceAtLeast(0L)
+                if (remainingBytes > 0L && check.availableStorageBytes in 0 until remainingBytes) {
+                    modelDownloadState.value = LocalModelDownloadState(
+                        status = "FAILED",
+                        modelName = check.modelName,
+                        downloadedBytes = existingPartial,
+                        totalBytes = check.approxSizeBytes,
+                        percent = existingPct,
+                        sourceUrl = check.downloadUrl,
+                        message = "Insufficient on-device storage: need ${AeginBridge.formatByteSize(remainingBytes)} more, only ${AeginBridge.formatByteSize(check.availableStorageBytes)} free."
+                    )
+                    return@withContext false
+                }
+
                 val (manifestUrls, expectedSha) = resolveManifestCandidates(check.modelName)
                 val (baseUrl, _) = readLlmDownloadConfig()
                 val candidateUrls = buildList {
@@ -598,8 +633,10 @@ actual object PlatformEngineBridge {
                     if (!baseUrl.isNullOrBlank()) {
                         add("${baseUrl.trim().trimEnd('/')}/llms/${check.modelName}")
                     }
-                    add("http://127.0.0.1:8000/llms/${check.modelName}")
-                    add("http://10.0.2.2:8000/llms/${check.modelName}")
+                    if (manifestUrls.isEmpty() && baseUrl.isNullOrBlank()) {
+                        add("http://127.0.0.1:8000/llms/${check.modelName}")
+                        add("http://10.0.2.2:8000/llms/${check.modelName}")
+                    }
                 }.distinct()
 
                 if (candidateUrls.isEmpty()) {
@@ -614,11 +651,15 @@ actual object PlatformEngineBridge {
                 modelDownloadState.value = LocalModelDownloadState(
                     status = "DOWNLOADING",
                     modelName = check.modelName,
-                    downloadedBytes = 0L,
+                    downloadedBytes = existingPartial,
                     totalBytes = check.approxSizeBytes,
-                    percent = 0,
+                    percent = existingPct,
                     sourceUrl = candidateUrls.first(),
-                    message = "Connecting to ${candidateUrls.first()}..."
+                    message = if (existingPartial > 0L) {
+                        "Resuming ${check.modelName} from ${AeginBridge.formatByteSize(existingPartial)}..."
+                    } else {
+                        "Connecting to ${candidateUrls.first()}..."
+                    }
                 )
 
                 val ctx = appContext
@@ -626,7 +667,7 @@ actual object PlatformEngineBridge {
                     val primaryUrl = candidateUrls.first()
                     val fallbackList = candidateUrls.drop(1)
                     Log.i(TAG, "Enqueuing WorkManager resumable GGUF download [${check.modelName}] from: $primaryUrl")
-                    ModelDownloadWorker.enqueue(
+                    val workId = ModelDownloadWorker.enqueue(
                         context = ctx,
                         modelId = check.modelName,
                         downloadUrl = primaryUrl,
@@ -639,28 +680,55 @@ actual object PlatformEngineBridge {
                     var finalSuccess = false
                     val uniqueName = ModelDownloadWorker.uniqueWorkName(check.modelName)
                     WorkManager.getInstance(ctx).getWorkInfosForUniqueWorkFlow(uniqueName).first { infos ->
-                        val info = infos.firstOrNull() ?: return@first false
+                        val info = infos.firstOrNull { it.id == workId } ?: return@first false
                         when (info.state) {
                             WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> {
+                                val partialNow = if (partFile.exists()) partFile.length() else existingPartial
+                                val pctNow = if (check.approxSizeBytes > 0L && partialNow > 0L) {
+                                    ((partialNow * 100L) / check.approxSizeBytes).toInt().coerceIn(0, 99)
+                                } else {
+                                    0
+                                }
                                 modelDownloadState.value = LocalModelDownloadState(
                                     status = "DOWNLOADING",
                                     modelName = check.modelName,
-                                    downloadedBytes = 0L,
+                                    downloadedBytes = partialNow,
                                     totalBytes = check.approxSizeBytes,
-                                    percent = 0,
+                                    percent = pctNow,
                                     sourceUrl = primaryUrl,
-                                    message = "Queued resumable download for ${check.modelName}..."
+                                    message = if (partialNow > 0L) {
+                                        "Queued resume for ${check.modelName} (${AeginBridge.formatByteSize(partialNow)})..."
+                                    } else {
+                                        "Queued resumable download for ${check.modelName}..."
+                                    }
                                 )
                                 false
                             }
                             WorkInfo.State.RUNNING -> {
                                 val phase = info.progress.getString(ModelDownloadWorker.KEY_STATUS_PHASE) ?: "DOWNLOADING"
-                                val pct = info.progress.getInt(ModelDownloadWorker.KEY_PROGRESS_PCT, 0)
-                                val dlBytes = info.progress.getLong(ModelDownloadWorker.KEY_DOWNLOADED_BYTES, 0L)
+                                val rawDl = info.progress.getLong(ModelDownloadWorker.KEY_DOWNLOADED_BYTES, -1L)
+                                val dlBytes = if (rawDl >= 0L) {
+                                    rawDl
+                                } else if (partFile.exists()) {
+                                    partFile.length()
+                                } else {
+                                    existingPartial
+                                }
                                 val totBytes = info.progress.getLong(ModelDownloadWorker.KEY_TOTAL_BYTES, check.approxSizeBytes)
+                                val pct = if (rawDl >= 0L) {
+                                    info.progress.getInt(ModelDownloadWorker.KEY_PROGRESS_PCT, existingPct)
+                                } else if (totBytes > 0L && dlBytes > 0L) {
+                                    ((dlBytes * 100L) / totBytes).toInt().coerceIn(0, 99)
+                                } else {
+                                    existingPct
+                                }
                                 val srcUrl = info.progress.getString(ModelDownloadWorker.KEY_SOURCE_URL) ?: primaryUrl
                                 val msg = info.progress.getString(ModelDownloadWorker.KEY_STATUS_MSG)
-                                    ?: "Downloading ${check.modelName} ($pct%)"
+                                    ?: if (dlBytes > 0L) {
+                                        "Downloading ${check.modelName} ($pct%)"
+                                    } else {
+                                        "Connecting to $srcUrl..."
+                                    }
                                 modelDownloadState.value = LocalModelDownloadState(
                                     status = phase,
                                     modelName = check.modelName,
@@ -699,12 +767,75 @@ actual object PlatformEngineBridge {
                                 finalSuccess = true
                                 true
                             }
-                            WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> {
+                            WorkInfo.State.CANCELLED -> {
+                                val partialNow = if (partFile.exists()) partFile.length() else 0L
+                                val pctNow = if (check.approxSizeBytes > 0L && partialNow > 0L) {
+                                    ((partialNow * 100L) / check.approxSizeBytes).toInt().coerceIn(0, 99)
+                                } else {
+                                    0
+                                }
+                                when {
+                                    modelDownloadCancelRequested.get() -> {
+                                        partFile.delete()
+                                        modelDownloadState.value = LocalModelDownloadState(
+                                            status = "CANCELLED",
+                                            modelName = check.modelName,
+                                            downloadedBytes = 0L,
+                                            totalBytes = check.approxSizeBytes,
+                                            percent = 0,
+                                            sourceUrl = primaryUrl,
+                                            message = "Download cancelled."
+                                        )
+                                    }
+                                    modelDownloadPauseRequested.get() -> {
+                                        modelDownloadState.value = LocalModelDownloadState(
+                                            status = "PAUSED",
+                                            modelName = check.modelName,
+                                            downloadedBytes = partialNow,
+                                            totalBytes = check.approxSizeBytes,
+                                            percent = pctNow,
+                                            sourceUrl = primaryUrl,
+                                            message = if (partialNow > 0L) {
+                                                "Paused at ${AeginBridge.formatByteSize(partialNow)} (.part kept for resume)."
+                                            } else {
+                                                "Download paused."
+                                            }
+                                        )
+                                    }
+                                    else -> {
+                                        modelDownloadState.value = LocalModelDownloadState(
+                                            status = "PAUSED",
+                                            modelName = check.modelName,
+                                            downloadedBytes = partialNow,
+                                            totalBytes = check.approxSizeBytes,
+                                            percent = pctNow,
+                                            sourceUrl = primaryUrl,
+                                            message = if (partialNow > 0L) {
+                                                "Download interrupted at ${AeginBridge.formatByteSize(partialNow)} (.part kept for resume)."
+                                            } else {
+                                                "Download interrupted."
+                                            }
+                                        )
+                                    }
+                                }
+                                finalSuccess = false
+                                true
+                            }
+                            WorkInfo.State.FAILED -> {
                                 val errMsg = info.outputData.getString(ModelDownloadWorker.KEY_ERROR_MSG)
-                                    ?: "Resumable download ${info.state.name.lowercase()}."
+                                    ?: "Resumable download failed."
+                                val partialNow = if (partFile.exists()) partFile.length() else 0L
+                                val pctNow = if (check.approxSizeBytes > 0L && partialNow > 0L) {
+                                    ((partialNow * 100L) / check.approxSizeBytes).toInt().coerceIn(0, 99)
+                                } else {
+                                    0
+                                }
                                 modelDownloadState.value = LocalModelDownloadState(
                                     status = "FAILED",
                                     modelName = check.modelName,
+                                    downloadedBytes = partialNow,
+                                    totalBytes = check.approxSizeBytes,
+                                    percent = pctNow,
                                     sourceUrl = primaryUrl,
                                     message = errMsg
                                 )
@@ -721,6 +852,7 @@ actual object PlatformEngineBridge {
                     targetFile = downloadTarget,
                     expectedSha256 = expectedSha,
                     approxSizeBytes = check.approxSizeBytes,
+                    shouldStop = { modelDownloadPauseRequested.get() || modelDownloadCancelRequested.get() },
                     onProgress = { phase, dlBytes, totBytes, pct, activeUrl, msg ->
                         modelDownloadState.value = LocalModelDownloadState(
                             status = phase,
@@ -757,6 +889,33 @@ actual object PlatformEngineBridge {
                     )
                     return@withContext true
                 }
+                if (modelDownloadCancelRequested.get()) {
+                    partFile.delete()
+                    modelDownloadState.value = LocalModelDownloadState(
+                        status = "CANCELLED",
+                        modelName = check.modelName,
+                        sourceUrl = fallbackOutcome.usedUrl,
+                        message = "Download cancelled."
+                    )
+                    return@withContext false
+                }
+                if (fallbackOutcome.stopped || modelDownloadPauseRequested.get()) {
+                    val partialNow = if (partFile.exists()) partFile.length() else 0L
+                    modelDownloadState.value = LocalModelDownloadState(
+                        status = "PAUSED",
+                        modelName = check.modelName,
+                        downloadedBytes = partialNow,
+                        totalBytes = check.approxSizeBytes,
+                        percent = existingPct,
+                        sourceUrl = fallbackOutcome.usedUrl,
+                        message = if (partialNow > 0L) {
+                            "Paused at ${AeginBridge.formatByteSize(partialNow)} (.part kept for resume)."
+                        } else {
+                            "Download paused."
+                        }
+                    )
+                    return@withContext false
+                }
                 modelDownloadState.value = LocalModelDownloadState(
                     status = "FAILED",
                     modelName = check.modelName,
@@ -773,22 +932,54 @@ actual object PlatformEngineBridge {
         val ctx = appContext ?: return
         val targetName = modelName.ifBlank { modelDownloadState.value.modelName }
         if (targetName.isNotBlank()) {
+            modelDownloadCancelRequested.set(false)
+            modelDownloadPauseRequested.set(true)
             WorkManager.getInstance(ctx).cancelUniqueWork(ModelDownloadWorker.uniqueWorkName(targetName))
             val modelDir = resolveModelsStagingDir()
             val partFile = File(modelDir, "$targetName.part")
             val partial = if (partFile.exists()) partFile.length() else 0L
+            val tot = modelDownloadState.value.totalBytes
+            val pct = if (tot > 0L && partial > 0L) ((partial * 100L) / tot).toInt().coerceIn(0, 99) else modelDownloadState.value.percent
             modelDownloadState.value = LocalModelDownloadState(
                 status = "PAUSED",
                 modelName = targetName,
                 downloadedBytes = partial,
-                totalBytes = modelDownloadState.value.totalBytes,
-                percent = modelDownloadState.value.percent,
+                totalBytes = tot,
+                percent = pct,
                 sourceUrl = modelDownloadState.value.sourceUrl,
                 message = if (partial > 0L) {
-                    "Paused at ${partial / (1024 * 1024)} MB (.part kept for resume)."
+                    "Paused at ${AeginBridge.formatByteSize(partial)} (.part kept for resume)."
                 } else {
                     "Download paused."
                 }
+            )
+        }
+    }
+
+    actual suspend fun cancelLocalModelDownload(modelName: String) {
+        val ctx = appContext
+        val targetName = modelName.ifBlank { modelDownloadState.value.modelName }
+        if (targetName.isNotBlank()) {
+            modelDownloadPauseRequested.set(false)
+            modelDownloadCancelRequested.set(true)
+            if (ctx != null) {
+                WorkManager.getInstance(ctx).cancelUniqueWork(ModelDownloadWorker.uniqueWorkName(targetName))
+            }
+            withContext(Dispatchers.IO) {
+                val modelDir = resolveModelsStagingDir()
+                val partFile = File(modelDir, "$targetName.part")
+                if (partFile.exists()) {
+                    partFile.delete()
+                }
+            }
+            modelDownloadState.value = LocalModelDownloadState(
+                status = "CANCELLED",
+                modelName = targetName,
+                downloadedBytes = 0L,
+                totalBytes = modelDownloadState.value.totalBytes,
+                percent = 0,
+                sourceUrl = modelDownloadState.value.sourceUrl,
+                message = "Download cancelled and partial file removed."
             )
         }
     }
@@ -1053,11 +1244,10 @@ actual object PlatformEngineBridge {
             emit("""{"__session_meta__":true,"sessionId":"$actualSessionId"}""")
 
             val answerBuilder = StringBuilder()
-            LlamaJniBridge.generateStream(formattedPrompt, 256).collect { token ->
-                val cleaned = if (stopToken.isNotEmpty()) token.substringBefore(stopToken) else token
-                if (cleaned.isNotEmpty()) {
-                    answerBuilder.append(cleaned)
-                    emit(cleaned)
+            LlamaJniBridge.generateStream(formattedPrompt, stopToken, 256).collect { token ->
+                if (token.isNotEmpty()) {
+                    answerBuilder.append(token)
+                    emit(token)
                 }
             }
 

@@ -35,7 +35,11 @@ class DesktopModelDownloadManager {
     @Volatile
     private var activeModelName: String = ""
 
+    @Volatile
+    private var activeTargetFile: File? = null
+
     private val pauseRequested = AtomicBoolean(false)
+    private val cancelRequested = AtomicBoolean(false)
 
     suspend fun downloadAndAwait(
         modelName: String,
@@ -45,7 +49,9 @@ class DesktopModelDownloadManager {
         approxSizeBytes: Long
     ): Boolean = queueMutex.withLock {
         pauseRequested.set(false)
+        cancelRequested.set(false)
         activeModelName = modelName
+        activeTargetFile = targetFile
 
         val completion = CompletableDeferred<Boolean>()
         val job = scope.launch {
@@ -54,6 +60,11 @@ class DesktopModelDownloadManager {
                 var backoffMs = 2000L
 
                 for (attempt in 1..maxAttempts) {
+                    if (cancelRequested.get()) {
+                        emitCancelled(modelName, targetFile, approxSizeBytes, candidateUrls.firstOrNull().orEmpty())
+                        completion.complete(false)
+                        return@launch
+                    }
                     if (!isActive || pauseRequested.get()) {
                         emitPaused(modelName, targetFile, approxSizeBytes, candidateUrls.firstOrNull().orEmpty())
                         completion.complete(false)
@@ -66,7 +77,7 @@ class DesktopModelDownloadManager {
                         expectedSha256 = expectedSha256,
                         approxSizeBytes = approxSizeBytes,
                         userAgent = "Aegin-Desktop-Downloader/1.0",
-                        shouldStop = { !isActive || pauseRequested.get() },
+                        shouldStop = { !isActive || pauseRequested.get() || cancelRequested.get() },
                         onProgress = { phase, dlBytes, totBytes, pct, activeUrl, msg ->
                             _state.value = LocalModelDownloadState(
                                 status = phase,
@@ -94,25 +105,19 @@ class DesktopModelDownloadManager {
                         return@launch
                     }
 
+                    if (cancelRequested.get()) {
+                        emitCancelled(modelName, targetFile, approxSizeBytes, outcome.usedUrl)
+                        completion.complete(false)
+                        return@launch
+                    }
+
                     if (outcome.stopped || pauseRequested.get()) {
                         emitPaused(modelName, targetFile, approxSizeBytes, outcome.usedUrl)
                         completion.complete(false)
                         return@launch
                     }
 
-                    if (attempt < maxAttempts) {
-                        _state.value = LocalModelDownloadState(
-                            status = "DOWNLOADING",
-                            modelName = modelName,
-                            downloadedBytes = outcome.bytesDownloaded,
-                            totalBytes = approxSizeBytes,
-                            percent = if (approxSizeBytes > 0L) ((outcome.bytesDownloaded * 100L) / approxSizeBytes).toInt().coerceIn(0, 99) else 0,
-                            sourceUrl = outcome.usedUrl,
-                            message = "Retrying $modelName (attempt ${attempt + 1}/$maxAttempts)..."
-                        )
-                        delay(backoffMs)
-                        backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
-                    } else {
+                    if (outcome.fatal || attempt >= maxAttempts) {
                         _state.value = LocalModelDownloadState(
                             status = "FAILED",
                             modelName = modelName,
@@ -125,9 +130,25 @@ class DesktopModelDownloadManager {
                         completion.complete(false)
                         return@launch
                     }
+
+                    _state.value = LocalModelDownloadState(
+                        status = "DOWNLOADING",
+                        modelName = modelName,
+                        downloadedBytes = outcome.bytesDownloaded,
+                        totalBytes = approxSizeBytes,
+                        percent = if (approxSizeBytes > 0L) ((outcome.bytesDownloaded * 100L) / approxSizeBytes).toInt().coerceIn(0, 99) else 0,
+                        sourceUrl = outcome.usedUrl,
+                        message = "Retrying $modelName (attempt ${attempt + 1}/$maxAttempts)..."
+                    )
+                    delay(backoffMs)
+                    backoffMs = (backoffMs * 2).coerceAtMost(30_000L)
                 }
             } catch (_: CancellationException) {
-                emitPaused(modelName, targetFile, approxSizeBytes, candidateUrls.firstOrNull().orEmpty())
+                if (cancelRequested.get()) {
+                    emitCancelled(modelName, targetFile, approxSizeBytes, candidateUrls.firstOrNull().orEmpty())
+                } else {
+                    emitPaused(modelName, targetFile, approxSizeBytes, candidateUrls.firstOrNull().orEmpty())
+                }
                 completion.complete(false)
             } catch (e: Exception) {
                 _state.value = LocalModelDownloadState(
@@ -147,9 +168,45 @@ class DesktopModelDownloadManager {
 
     fun pauseActiveDownload(modelName: String = activeModelName) {
         if (modelName.isBlank() || activeModelName.equals(modelName, ignoreCase = true)) {
+            cancelRequested.set(false)
             pauseRequested.set(true)
             activeJob?.cancel()
         }
+    }
+
+    fun cancelActiveDownload(modelName: String = activeModelName, fallbackTargetFile: File? = null) {
+        val targetName = modelName.ifBlank { activeModelName }
+        if (targetName.isBlank() || activeModelName.equals(targetName, ignoreCase = true) || activeJob == null) {
+            pauseRequested.set(false)
+            cancelRequested.set(true)
+            activeJob?.cancel()
+            val target = fallbackTargetFile ?: activeTargetFile
+            if (target != null) {
+                File("${target.absolutePath}.part").delete()
+            }
+            _state.value = LocalModelDownloadState(
+                status = "CANCELLED",
+                modelName = targetName,
+                downloadedBytes = 0L,
+                totalBytes = _state.value.totalBytes,
+                percent = 0,
+                sourceUrl = _state.value.sourceUrl,
+                message = "Download cancelled and partial file removed."
+            )
+        }
+    }
+
+    private fun emitCancelled(modelName: String, targetFile: File, approxSizeBytes: Long, sourceUrl: String) {
+        File("${targetFile.absolutePath}.part").delete()
+        _state.value = LocalModelDownloadState(
+            status = "CANCELLED",
+            modelName = modelName,
+            downloadedBytes = 0L,
+            totalBytes = approxSizeBytes,
+            percent = 0,
+            sourceUrl = sourceUrl,
+            message = "Download cancelled and partial file removed."
+        )
     }
 
     private fun emitPaused(modelName: String, targetFile: File, approxSizeBytes: Long, sourceUrl: String) {

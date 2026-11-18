@@ -17,6 +17,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -83,7 +84,7 @@ class ModelDownloadWorker(
 
             WorkManager.getInstance(context).enqueueUniqueWork(
                 uniqueWorkName(modelId),
-                ExistingWorkPolicy.KEEP,
+                ExistingWorkPolicy.REPLACE,
                 request
             )
             return request.id
@@ -141,6 +142,8 @@ class ModelDownloadWorker(
                 }
                 try {
                     setForeground(createForegroundInfo(notificationId, modelId, pct, notifText))
+                } catch (ce: CancellationException) {
+                    throw ce
                 } catch (_: Exception) {
                 }
             }
@@ -162,7 +165,26 @@ class ModelDownloadWorker(
             )
         }
 
+        if (outcome.fatal) {
+            return@withContext failure(outcome.errorMessage ?: "Download failed.")
+        }
+
         if (runAttemptCount < 4) {
+            val pct = if (approxSizeBytes > 0L && outcome.bytesDownloaded > 0L) {
+                ((outcome.bytesDownloaded * 100L) / approxSizeBytes).toInt().coerceIn(0, 99)
+            } else {
+                0
+            }
+            setProgress(
+                workDataOf(
+                    KEY_STATUS_PHASE to "DOWNLOADING",
+                    KEY_PROGRESS_PCT to pct,
+                    KEY_DOWNLOADED_BYTES to outcome.bytesDownloaded,
+                    KEY_TOTAL_BYTES to approxSizeBytes,
+                    KEY_SOURCE_URL to outcome.usedUrl,
+                    KEY_STATUS_MSG to "Stalled (${outcome.errorMessage ?: "network error"}); retrying..."
+                )
+            )
             Result.retry()
         } else {
             failure("Download failed after ${runAttemptCount + 1} attempts: ${outcome.errorMessage ?: "Unknown error"}")

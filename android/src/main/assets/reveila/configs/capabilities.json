@@ -1,0 +1,98 @@
+{
+  "version": "2.0.0",
+  "description": "Closed 6-category routing taxonomy and static O(1) intent registry for Reveila TaskCapabilityRouter.",
+  "categories": [
+    "LOCAL_TEXT_TRANSFORM",
+    "LOCAL_STRUCTURED_EXTRACT",
+    "LOCAL_DEVICE_ACTION",
+    "CLOUD_LIVE_RETRIEVAL",
+    "CLOUD_DEEP_REASONING",
+    "CLOUD_MULTI_STEP_AGENT"
+  ],
+  "intents": {
+    "news.search": {
+      "requiredCapabilities": ["web_search", "live_data"],
+      "taskCategory": "CLOUD_LIVE_RETRIEVAL",
+      "route": "CLOUD",
+      "reason": "Intent 'news.search' maps to CLOUD_LIVE_RETRIEVAL (requires fresh real-time news/web search)."
+    },
+    "web.search": {
+      "requiredCapabilities": ["web_search", "live_data"],
+      "taskCategory": "CLOUD_LIVE_RETRIEVAL",
+      "route": "CLOUD",
+      "reason": "Intent 'web.search' maps to CLOUD_LIVE_RETRIEVAL (requires live web access)."
+    },
+    "market.watch": {
+      "requiredCapabilities": ["web_search", "live_data"],
+      "taskCategory": "CLOUD_LIVE_RETRIEVAL",
+      "route": "CLOUD",
+      "reason": "Intent 'market.watch' maps to CLOUD_LIVE_RETRIEVAL (requires live market prices)."
+    },
+    "cloud.research": {
+      "requiredCapabilities": ["deep_reasoning"],
+      "taskCategory": "CLOUD_DEEP_REASONING",
+      "route": "CLOUD",
+      "reason": "Intent 'cloud.research' maps to CLOUD_DEEP_REASONING (multi-step synthesis and deep analysis)."
+    },
+    "agent.workflow": {
+      "requiredCapabilities": ["multi_step_agent", "web_search"],
+      "taskCategory": "CLOUD_MULTI_STEP_AGENT",
+      "route": "CLOUD",
+      "reason": "Intent 'agent.workflow' maps to CLOUD_MULTI_STEP_AGENT (multi-turn tool orchestration)."
+    },
+    "vault.summarize": {
+      "requiredCapabilities": ["local_text"],
+      "taskCategory": "LOCAL_TEXT_TRANSFORM",
+      "route": "LOCAL",
+      "reason": "Intent 'vault.summarize' maps to LOCAL_TEXT_TRANSFORM (operates on local Reference Documents)."
+    },
+    "local.summarize": {
+      "requiredCapabilities": ["local_text"],
+      "taskCategory": "LOCAL_TEXT_TRANSFORM",
+      "route": "LOCAL",
+      "reason": "Intent 'local.summarize' maps to LOCAL_TEXT_TRANSFORM (on-device summarization)."
+    },
+    "local.rewrite": {
+      "requiredCapabilities": ["local_text"],
+      "taskCategory": "LOCAL_TEXT_TRANSFORM",
+      "route": "LOCAL",
+      "reason": "Intent 'local.rewrite' maps to LOCAL_TEXT_TRANSFORM (on-device text formatting/rewriting)."
+    },
+    "local.extract": {
+      "requiredCapabilities": ["local_text"],
+      "taskCategory": "LOCAL_STRUCTURED_EXTRACT",
+      "route": "LOCAL",
+      "reason": "Intent 'local.extract' maps to LOCAL_STRUCTURED_EXTRACT (on-device entity/field extraction)."
+    },
+    "local.classify": {
+      "requiredCapabilities": ["local_text"],
+      "taskCategory": "LOCAL_STRUCTURED_EXTRACT",
+      "route": "LOCAL",
+      "reason": "Intent 'local.classify' maps to LOCAL_STRUCTURED_EXTRACT (on-device tagging/classification)."
+    },
+    "device.action": {
+      "requiredCapabilities": ["local_device"],
+      "taskCategory": "LOCAL_DEVICE_ACTION",
+      "route": "LOCAL",
+      "reason": "Intent 'device.action' maps to LOCAL_DEVICE_ACTION (single-step deterministic local action/query)."
+    },
+    "vault.query": {
+      "requiredCapabilities": ["local_device"],
+      "taskCategory": "LOCAL_DEVICE_ACTION",
+      "route": "LOCAL",
+      "reason": "Intent 'vault.query' maps to LOCAL_DEVICE_ACTION (local Reference Documents vector query)."
+    },
+    "autonomous.task": {
+      "requiredCapabilities": ["auto_classify"],
+      "taskCategory": "AUTO",
+      "route": "PREPROCESSOR",
+      "reason": "Evaluated by On-Device SLM Preprocessor into the 6-category routing taxonomy."
+    },
+    "auto": {
+      "requiredCapabilities": ["auto_classify"],
+      "taskCategory": "AUTO",
+      "route": "PREPROCESSOR",
+      "reason": "Evaluated by On-Device SLM Preprocessor into the 6-category routing taxonomy."
+    }
+  }
+}

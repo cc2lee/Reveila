@@ -267,6 +267,13 @@ abstract class PrepareSlimSystemHomeTask : DefaultTask() {
             }
         }
 
+        // Copy all editable model/family/default prompt templates cleanly
+        val srcPromptsDir = File(srcHome, "configs/templates/prompts")
+        if (srcPromptsDir.exists() && srcPromptsDir.isDirectory) {
+            val dstPromptsDir = File(outHome, "configs/templates/prompts")
+            srcPromptsDir.copyRecursively(dstPromptsDir, overwrite = true)
+        }
+
         // Ensure empty runtime directories exist as lightweight placeholders
         listOf("logs", "data", "temp", "plugins", "libs", "tasks").forEach { dirName ->
             File(outHome, dirName).mkdirs()

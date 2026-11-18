@@ -420,7 +420,16 @@ object TaskCapabilityRouter {
         val delegate = LocalLlamaProvider.nativeDelegate
         if (delegate != null && delegate.isModelLoaded()) {
             return try {
-                val (formatted, stopToken) = LocalLlamaProvider.formatMessages(messages, "qwen2.5")
+                var unwrapped: LlmProvider? = localProvider
+                while (unwrapped is TrackedLlmProvider) {
+                    unwrapped = unwrapped.unwrapDelegate()
+                }
+                val modelName = (unwrapped as? BaseLlmProvider)?.model
+                    ?.takeIf { it.isNotBlank() }
+                    ?: delegate.getLoadedModelPath()
+                    ?: "qwen2.5"
+                val systemHome = (unwrapped as? BaseLlmProvider)?.context?.properties?.getProperty("system.home")
+                val (formatted, stopToken) = LocalLlamaProvider.formatMessages(messages, modelName, systemHome)
                 delegate.generateBlocking(
                     formattedPrompt = formatted,
                     stopToken = stopToken,

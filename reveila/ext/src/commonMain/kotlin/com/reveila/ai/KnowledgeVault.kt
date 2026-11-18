@@ -243,6 +243,12 @@ open class KnowledgeVault(
             .split(Regex("[^a-z0-9_-]+"))
             .filter { it.length >= 2 && it !in stopWords }
 
+        val overviewKeywords = setOf(
+            "vault", "document", "documents", "doc", "docs", "file", "files",
+            "folder", "indexed", "overview", "summarize", "summary", "list", "contents"
+        )
+        val isVaultOverviewQuery = queryTokens.any { it in overviewKeywords }
+
         val activeKeywords: List<String> = lock.withLock {
             focusKeywords.toList()
         }
@@ -250,7 +256,9 @@ open class KnowledgeVault(
         data class RankedChunk(
             val match: VectorMatch,
             val combinedScore: Double,
-            val isPriorityKeywordMatch: Boolean
+            val isPriorityKeywordMatch: Boolean,
+            val matchedQueryTokens: Int,
+            val passesRelevanceGate: Boolean
         )
 
         val ranked = allMatches.map { match ->
@@ -267,21 +275,32 @@ open class KnowledgeVault(
             }
 
             val hasPriorityKeyword = activeKeywords.any { kw -> kw.isNotBlank() && payloadLower.contains(kw) }
-            val priorityBoost = if (hasPriorityKeyword) 0.20 else 0.0
+            val queryMentionsPriority = activeKeywords.any { kw -> kw.isNotBlank() && query.lowercase().contains(kw) }
+            val passesGate = isVaultOverviewQuery ||
+                matchedQueryTokens >= 1 ||
+                match.score >= 0.40 ||
+                (hasPriorityKeyword && queryMentionsPriority)
+
+            val priorityBoost = if (hasPriorityKeyword && (passesGate || isVaultOverviewQuery)) 0.20 else 0.0
 
             val combined = (match.score.coerceAtLeast(0.0) + lexicalBoost + priorityBoost).coerceAtMost(0.99)
-            RankedChunk(match, combined, hasPriorityKeyword)
+            RankedChunk(match, combined, hasPriorityKeyword, matchedQueryTokens, passesGate)
         }.sortedByDescending { it.combinedScore }
 
+        val relevantRanked = ranked.filter { it.passesRelevanceGate }
+        if (relevantRanked.isEmpty()) {
+            return "No relevant internal documents found."
+        }
+
         val selected = mutableListOf<RankedChunk>()
-        // 1. Take top ranked matches up to limit
-        for (item in ranked) {
+        // 1. Take top relevant ranked matches up to limit
+        for (item in relevantRanked) {
             if (selected.size < limit) {
                 selected.add(item)
             }
         }
-        // 2. Ensure documents containing Priority Focus Keywords are always included
-        for (item in ranked) {
+        // 2. Ensure relevant (or overview) documents containing Priority Focus Keywords are included
+        for (item in relevantRanked) {
             if (item.isPriorityKeywordMatch && selected.none { it.match.id == item.match.id } && selected.size < limit + 2) {
                 selected.add(item)
             }

@@ -8,7 +8,12 @@
             "Model": "gpt-4o",
             "Model.Options": ["gpt-4o"],
             "Temperature": 0.7,
-            "api.key": "REF:OPENAI_KEY"
+            "api.key": "REF:OPENAI_KEY",
+            "Intent.Options": [
+                "CLOUD_LIVE_RETRIEVAL",
+                "CLOUD_DEEP_REASONING",
+                "CLOUD_MULTI_STEP_AGENT"
+            ]
         },
         {
             "Name": "Google Gemini",
@@ -18,7 +23,12 @@
             "Model": "gemini-3-flash",
             "Model.Options": ["gemini-3-flash"],
             "Temperature": 0.1,
-            "api.key": "REF:GEMINI_KEY"
+            "api.key": "REF:GEMINI_KEY",
+            "Intent.Options": [
+                "CLOUD_LIVE_RETRIEVAL",
+                "CLOUD_DEEP_REASONING",
+                "CLOUD_MULTI_STEP_AGENT"
+            ]
         },
         {
             "Name": "DeepSeek",
@@ -28,7 +38,12 @@
             "Model": "deepseek-chat",
             "Model.Options": ["deepseek-chat", "deepseek-reasoner"],
             "Temperature": 0.7,
-            "api.key": "REF:DEEPSEEK_KEY"
+            "api.key": "REF:DEEPSEEK_KEY",
+            "Intent.Options": [
+                "CLOUD_LIVE_RETRIEVAL",
+                "CLOUD_DEEP_REASONING",
+                "CLOUD_MULTI_STEP_AGENT"
+            ]
         },
         {
             "Name": "Qwen",
@@ -38,15 +53,25 @@
             "Model": "qwen-plus",
             "Model.Options": ["qwen-plus", "qwen-turbo", "qwen-max"],
             "Temperature": 0.7,
-            "api.key": "REF:QWEN_KEY"
+            "api.key": "REF:QWEN_KEY",
+            "Intent.Options": [
+                "CLOUD_LIVE_RETRIEVAL",
+                "CLOUD_DEEP_REASONING",
+                "CLOUD_MULTI_STEP_AGENT"
+            ]
         },
         {
             "Name": "On-Device Model",
             "Type": "Local",
             "Endpoint": "http://127.0.0.1:8888/completion",
             "Model": "gemma-2-2b-it-Q4_K_M.gguf",
-            "Model.Options": ["gemma-2-2b-it-Q4_K_M.gguf"],
-            "Temperature": 0.7
+            "Model.Options": ["gemma-2-2b-it-Q4_K_M.gguf", "qwen2.5-0.5b-instruct-q4_k_m.gguf"],
+            "Temperature": 0.7,
+            "Intent.Options": [
+                "LOCAL_TEXT_TRANSFORM",
+                "LOCAL_STRUCTURED_EXTRACT",
+                "LOCAL_DEVICE_ACTION"
+            ]
         }
     ],
     "ai.worker.llm": "On-Device Model",

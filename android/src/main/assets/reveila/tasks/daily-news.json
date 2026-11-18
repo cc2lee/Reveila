@@ -1,6 +1,18 @@
 {
   "taskId": "daily-news-alert",
+  "title": "Daily AI Security Briefing",
   "intent": "news.search",
   "prompt": "Find the latest news about AI security and provide a summary.",
-  "frequency": "daily"
+  "frequency": "daily",
+  "scheduleTime": "08:00",
+  "executionTarget": "auto",
+  "requiresApproval": false,
+  "approvalReason": "",
+  "enabled": true,
+  "status": "ACTIVE",
+  "routeTarget": "CLOUD",
+  "taskCategory": "CLOUD_LIVE_RETRIEVAL",
+  "routingReason": "Static intent 'news.search' mapped to CLOUD_LIVE_RETRIEVAL in O(1) time.",
+  "lastRunAt": 0,
+  "lastResult": "Scheduled (daily at 08:00)."
 }
