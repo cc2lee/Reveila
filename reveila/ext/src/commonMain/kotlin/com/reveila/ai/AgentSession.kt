@@ -22,6 +22,19 @@ open class AgentSession @JvmOverloads constructor(
         const val SPACE_SUMMARY: String = "_space_summary"
         const val DEFAULT_SPACE_ID: String = "main-space"
         const val DEFAULT_SPACE_NAME: String = "Main Space"
+        const val CONVERSATION_SUMMARY_PREFIX: String = "Earlier conversation summary:"
+
+        fun isConversationSummaryMessage(role: LlmRole, content: String): Boolean =
+            role == LlmRole.SYSTEM && content.trim().startsWith(CONVERSATION_SUMMARY_PREFIX, ignoreCase = true)
+
+        fun extractConversationSummaryBody(content: String): String {
+            val trimmed = content.trim()
+            return if (trimmed.startsWith(CONVERSATION_SUMMARY_PREFIX, ignoreCase = true)) {
+                trimmed.substring(CONVERSATION_SUMMARY_PREFIX.length).trim()
+            } else {
+                trimmed
+            }
+        }
 
         fun normalizeSpaceId(raw: String?): String {
             val trimmed = raw?.trim().orEmpty()

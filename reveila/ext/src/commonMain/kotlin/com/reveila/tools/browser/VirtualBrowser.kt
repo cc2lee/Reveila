@@ -34,6 +34,7 @@ open class VirtualBrowser : SystemComponent() {
         private set
 
     var onTakeoverCallback: ((UserTakeoverState) -> Unit)? = null
+    var onPageChangedCallback: ((WebPage?, String) -> Unit)? = null
 
     @Throws(Exception::class)
     override fun onStart() {
@@ -59,6 +60,7 @@ open class VirtualBrowser : SystemComponent() {
             historyStack.add(page.url)
         }
         currentPage = page
+        onPageChangedCallback?.invoke(page, "Navigated to ${page.url}")
 
         checkAndTriggerTakeoverIfNeeded(page)
         return page
@@ -81,6 +83,8 @@ open class VirtualBrowser : SystemComponent() {
             }
         }
 
+        val label = if (elem.isSecret) "[secret]" else text.take(40)
+        onPageChangedCallback?.invoke(page, "Typed into ${elem.name ?: target}: $label")
         return page
     }
 
@@ -139,6 +143,7 @@ open class VirtualBrowser : SystemComponent() {
                 historyStack.add(pageResult.url)
             }
             currentPage = pageResult
+            onPageChangedCallback?.invoke(pageResult, "Submitted form to ${pageResult.url}")
             checkAndTriggerTakeoverIfNeeded(pageResult)
             pageResult
         }
@@ -204,6 +209,7 @@ open class VirtualBrowser : SystemComponent() {
         }
 
         logger.info("[VirtualBrowser] Auto-filled credentials for user: ${credential.username} on domain: $targetDomain")
+        onPageChangedCallback?.invoke(page, "Auto-filled credentials for $targetDomain")
 
         if (autoSubmit) {
             return submit(form.id ?: form.index.toString())
@@ -243,6 +249,7 @@ open class VirtualBrowser : SystemComponent() {
      */
     fun loadPageForTest(page: WebPage) {
         currentPage = page
+        onPageChangedCallback?.invoke(page, "Loaded ${page.url}")
     }
 
     /**
@@ -324,7 +331,62 @@ open class VirtualBrowser : SystemComponent() {
         takeoverState = null
         val target = resumeUrl ?: currentPage?.url ?: throw IllegalStateException("No URL to resume browsing.")
         logger.info("[VirtualBrowser] Resuming autonomous agent execution at: $target")
-        return navigate(target)
+        val page = navigate(target)
+        onPageChangedCallback?.invoke(page, "Resumed agent control at ${page.url}")
+        return page
+    }
+
+    /**
+     * Synchronizes live WebView cookies, URL, and DOM HTML after user interaction in the
+     * large takeover window without losing session authentication.
+     */
+    fun updateFromLiveWebView(
+        url: String,
+        title: String? = null,
+        cookieHeader: String? = null,
+        rawHtml: String? = null,
+        resumeControl: Boolean = false
+    ): WebPage? {
+        val normalized = normalizeUrl(url)
+        val domain = CookieJar.extractDomain(normalized)
+        if (!cookieHeader.isNullOrBlank() && domain.isNotBlank()) {
+            val cookies = cookieHeader.split(";")
+                .mapNotNull { part ->
+                    val eq = part.indexOf('=')
+                    if (eq <= 0) null else BrowserCookie(
+                        name = part.substring(0, eq).trim(),
+                        value = part.substring(eq + 1).trim(),
+                        domain = domain
+                    )
+                }
+            if (cookies.isNotEmpty()) {
+                cookieJar.addAll(cookies)
+            }
+        }
+        if (resumeControl) {
+            takeoverState = null
+        }
+        val updatedPage = if (!rawHtml.isNullOrBlank()) {
+            val parsed = HtmlParser.parse(normalized, 200, rawHtml, emptyMap())
+            val resolvedTitle = title?.takeIf { it.isNotBlank() } ?: parsed.title
+            parsed.copy(title = resolvedTitle).also { p ->
+                currentPage = p
+                lock.withLock {
+                    if (historyStack.lastOrNull() != p.url) historyStack.add(p.url)
+                }
+            }
+        } else if (currentPage?.url != normalized) {
+            navigate(normalized)
+        } else {
+            currentPage
+        }
+        val actionLabel = if (resumeControl) {
+            "Returned control to AI agent at $normalized"
+        } else {
+            "Synced live WebView page at $normalized"
+        }
+        onPageChangedCallback?.invoke(updatedPage, actionLabel)
+        return updatedPage
     }
 
     private fun executeRequestWithRedirects(

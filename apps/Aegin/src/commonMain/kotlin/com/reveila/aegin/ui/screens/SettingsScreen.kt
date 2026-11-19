@@ -57,11 +57,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.reveila.aegin.bridge.AeginBridge
+import com.reveila.aegin.bridge.AeginDisplayMapper
 import com.reveila.aegin.bridge.DeviceCapabilityReport
 import com.reveila.aegin.bridge.LlmProviderConfig
 import com.reveila.aegin.bridge.LocalModelCheckResult
 import com.reveila.aegin.bridge.LocalModelDownloadState
-import com.reveila.aegin.bridge.TaskItem
 import androidx.compose.foundation.layout.windowInsetsPadding
 import com.reveila.aegin.ui.PlatformBackHandler
 import com.reveila.aegin.ui.components.VaultFolderPickerDialog
@@ -81,25 +81,13 @@ fun SettingsScreen(
     val theme = LocalAeginColors.current
     val scope = rememberCoroutineScope()
 
-    val tabs = listOf("General", "Tasks", "Security", "Advanced")
+    val tabs = listOf("General", "Security", "Advanced")
     var activeTab by remember { mutableStateOf("General") }
     var isBiometricEnabled by remember { mutableStateOf(false) }
     var isLoadingProviders by remember { mutableStateOf(true) }
     val providersList = remember { mutableStateListOf<LlmProviderConfig>() }
     val configuredMap = remember { mutableStateMapOf<String, Boolean>() }
     val testedMap = remember { mutableStateMapOf<String, Boolean>() }
-
-    // Studio Tasks Authoring & Sandbox Control State
-    val studioTasks = remember { mutableStateListOf<TaskItem>() }
-    var tasksFolderPath by remember { mutableStateOf("") }
-    var editingStudioTaskId by remember { mutableStateOf<String?>(null) }
-    var studioTaskTitle by remember { mutableStateOf("") }
-    var studioTaskIntent by remember { mutableStateOf("auto") }
-    var studioTaskExecutionTarget by remember { mutableStateOf("auto") }
-    var studioTaskPrompt by remember { mutableStateOf("") }
-    var studioTaskFreq by remember { mutableStateOf("DAILY") }
-    var studioTaskTime by remember { mutableStateOf("08:00") }
-    var studioTaskRequiresApproval by remember { mutableStateOf(false) }
 
     var workerProvider by remember { mutableStateOf("Auto") }
     var selectedModelName by remember { mutableStateOf("On-Device Model") }
@@ -166,7 +154,7 @@ fun SettingsScreen(
             val ok = try {
                 AeginBridge.downloadLocalModel(modelName)
             } catch (e: Exception) {
-                showAlert("Model Download Failed", e.message ?: "Unable to download $modelName.")
+                showAlert("Model download failed", e.message ?: "Unable to download $modelName.")
                 false
             }
             try {
@@ -177,7 +165,7 @@ fun SettingsScreen(
             if (!ok) {
                 val dlState = AeginBridge.observeLocalModelDownloadState().value
                 if (dlState.status == "FAILED" && dlState.message.isNotBlank()) {
-                    showAlert("Model Download Failed", dlState.message)
+                    showAlert("Model download failed", dlState.message)
                 }
             }
         }
@@ -258,7 +246,7 @@ fun SettingsScreen(
             refreshConfiguredAndTestedStates()
             if (showFeedbackDialog) {
                 showAlert(
-                    if (result.ok) "Connection Verified" else "Connection Test Failed",
+                    if (result.ok) "Connection verified" else "Connection test failed",
                     result.message
                 )
             }
@@ -353,36 +341,17 @@ fun SettingsScreen(
                 if (isRunning) {
                     val suspStr = AeginBridge.invoke("OrchestrationService", "isSuspended", emptyList())
                     isSuspended = suspStr.trim().equals("true", ignoreCase = true)
-                    val dashboard = AeginBridge.getTasksDashboard()
-                    if (dashboard.tasksDir.isNotBlank()) {
-                        tasksFolderPath = dashboard.tasksDir
-                    }
-                    studioTasks.clear()
-                    studioTasks.addAll(dashboard.tasks)
                 }
             } catch (_: Exception) {
             }
-            val hasRunningTask = studioTasks.any { it.status == "RUNNING" || it.status == "SUSPENDED" }
-            delay(if (hasRunningTask || activeTab == "Tasks") 1200L else 4000L)
-        }
-    }
-
-    suspend fun refreshStudioTasks() {
-        try {
-            val dashboard = AeginBridge.getTasksDashboard()
-            if (dashboard.tasksDir.isNotBlank()) {
-                tasksFolderPath = dashboard.tasksDir
-            }
-            studioTasks.clear()
-            studioTasks.addAll(dashboard.tasks)
-        } catch (_: Exception) {
+            delay(4000L)
         }
     }
 
     fun isProviderConfigured(pName: String): Boolean {
         if (isLoadingProviders) return false
         if (pName == "Auto") return true
-        if (pName == "Disable" || pName == "Custom" || pName == "+ Add New Provider") return false
+        if (pName == "Disable" || pName == "Custom" || pName == "+ New") return false
         val p = providersList.find { it.name == pName } ?: return false
         if (p.type.equals("Local", ignoreCase = true) || p.name == "On-Device Model") {
             return (localModelCheck?.existsLocally == true) ||
@@ -514,11 +483,11 @@ fun SettingsScreen(
     fun handleSaveProviderEdit() {
         val candidate = effectiveDialogConfig()
         if (candidate.name.isBlank()) {
-            showAlert("Validation Error", "Please enter a Provider Name before saving.")
+            showAlert("Validation error", "Please enter a provider name before saving.")
             return
         }
         if (isAddingNewProvider && providersList.any { it.name.equals(candidate.name, ignoreCase = true) }) {
-            showAlert("Duplicate Provider", "A provider named '${candidate.name}' already exists.")
+            showAlert("Duplicate provider", "A provider named '${candidate.name}' already exists.")
             return
         }
         val mergedOptions = if (candidate.model.isNotBlank() && candidate.modelOptions.none { it == candidate.model }) {
@@ -564,8 +533,8 @@ fun SettingsScreen(
                     val passed = runConnectionTestAndPersist(savedEdit.name, showFeedbackDialog = false)
                     if (!passed) {
                         showAlert(
-                            "Verification Needed",
-                            "'${savedEdit.name}' was saved, but connection verification failed. Run Test Connection before assigning it to Worker or Governance AI Model."
+                            "Verification needed",
+                            "'${savedEdit.name}' was saved, but connection verification failed. Run Test connection before assigning it to Worker or Governance AI Model."
                         )
                     }
                 } else if (!savedEdit.tested) {
@@ -586,15 +555,15 @@ fun SettingsScreen(
                 val eligible = eligibleCandidateNames().toSet()
                 if (workerProvider != "Auto" && workerProvider !in eligible) {
                     showAlert(
-                        "Untested Worker Model",
-                        "'$workerProvider' must be configured and pass Test Connection before it can be assigned as the Worker AI Model."
+                        "Untested worker model",
+                        "'$workerProvider' must be configured and pass Test connection before it can be assigned as the Worker AI Model."
                     )
                     return@launch
                 }
                 if (governanceProvider != "Disable" && governanceProvider != "Auto" && governanceProvider !in eligible) {
                     showAlert(
-                        "Untested Governance Model",
-                        "'$governanceProvider' must be configured and pass Test Connection before it can be assigned as the Governance AI Model."
+                        "Untested governance model",
+                        "'$governanceProvider' must be configured and pass Test connection before it can be assigned as the Governance AI Model."
                     )
                     return@launch
                 }
@@ -617,8 +586,8 @@ fun SettingsScreen(
                 vaultDocCount = stats.documentCount
                 vaultChunkCount = stats.chunkCount
                 showAlert(
-                    "Success",
-                    "Configuration saved and embeddings database refreshed for '$vaultFolder' (${res.filesScanned} docs, ${stats.chunkCount} vectors)."
+                    "Setup complete",
+                    "Configuration saved and knowledge folder indexed for '$vaultFolder' (${res.filesScanned} docs, ${stats.chunkCount} sections)."
                 )
             } catch (e: Exception) {
                 showAlert("Error", "Failed to save configuration: ${e.message}")
@@ -638,11 +607,11 @@ fun SettingsScreen(
                 vaultDocCount = stats.documentCount
                 vaultChunkCount = stats.chunkCount
                 showAlert(
-                    "Embeddings Refreshed",
-                    "Indexed Reference Documents Folder '$targetFolder'. Documents processed: ${res.filesScanned}, Vector chunks: ${stats.chunkCount}"
+                    "Documents indexed",
+                    "Updated Personal Knowledge Folder '$targetFolder'. Documents indexed: ${res.filesScanned}, searchable sections: ${stats.chunkCount}."
                 )
             } catch (e: Exception) {
-                showAlert("Indexing Error", e.message ?: "Failed to index Reference Documents Folder.")
+                showAlert("Indexing error", e.message ?: "Failed to index Personal Knowledge Folder.")
             } finally {
                 isVaultScanning = false
             }
@@ -655,7 +624,7 @@ fun SettingsScreen(
                 AeginBridge.invoke("OrchestrationService", "toggleSuspend", listOf(value.toString()))
                 isSuspended = value
                 showAlert(
-                    if (value) "System Suspended" else "System Resumed",
+                    if (value) "System suspended" else "System resumed",
                     if (value) "All background AI tasks are paused." else "System restored to normal operation."
                 )
             } catch (e: Exception) {
@@ -679,7 +648,7 @@ fun SettingsScreen(
 
     Scaffold(
         containerColor = theme.bg,
-        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top)
+        contentWindowInsets = WindowInsets.safeDrawing
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -703,6 +672,21 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(theme.card)
+                                .border(1.dp, theme.glassBorder, CircleShape)
+                                .clickable { onClose() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AeginVectorIcon(
+                                type = AeginIconType.BACK,
+                                tint = theme.text,
+                                size = 15.dp
+                            )
+                        }
                         AeginOrbAvatar(
                             size = 36.dp,
                             isLocalMode = workerProvider == "On-Device Model",
@@ -719,7 +703,7 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.Black
                             )
                             Text(
-                                text = "Worker: $workerProvider • $vaultDocCount docs ($vaultChunkCount vectors)",
+                                text = "Background AI: ${AeginDisplayMapper.providerDisplayName(workerProvider)} • $vaultDocCount docs ($vaultChunkCount sections)",
                                 color = theme.subText,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
@@ -745,7 +729,6 @@ fun SettingsScreen(
                         val isSelected = activeTab == tab
                         val tabLabel = when (tab) {
                             "General" -> "Configuration"
-                            "Tasks" -> "Tasks"
                             "Security" -> "Privacy"
                             else -> "Diagnostics"
                         }
@@ -784,8 +767,8 @@ fun SettingsScreen(
             if (activeTab == "General") {
                 val eligibleModels = providersList.filter { it.name != "Disable" && it.name != "Custom" }
 
-                // 1. UNIFIED AI MODELS CATALOG & CONNECTION VERIFICATION
-                UnifiedAiModelsCard(
+                // 1. UNIFIED AI SETUP (Model Catalog + Worker & Governance Assignments)
+                AiSetupCard(
                     models = eligibleModels,
                     selectedModelName = selectedModelName,
                     testingModelName = testingModelFromCard,
@@ -816,11 +799,7 @@ fun SettingsScreen(
                             refreshConfiguredAndTestedStates()
                         }
                     },
-                    onOpenAddNewModal = ::openAddNewProviderModal
-                )
-
-                // 2. WORKER & GOVERNANCE AI MODEL ASSIGNMENTS
-                AiAssignmentsCard(
+                    onOpenAddNewModal = ::openAddNewProviderModal,
                     workerProvider = workerProvider,
                     governanceProvider = governanceProvider,
                     isLoadingProviders = isLoadingProviders,
@@ -833,7 +812,7 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Reference Documents Folder",
+                    text = "Personal Knowledge Folder",
                     color = theme.text,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
@@ -849,7 +828,7 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "Reference documents in this folder are indexed for AI inference. Saving a new document refreshes the embeddings database.",
+                        text = "Add notes, PDFs, or documents to this folder so Aegin can search them privately on your device and answer questions using your own files.",
                         color = theme.subText,
                         fontSize = 13.sp,
                         lineHeight = 18.sp
@@ -960,7 +939,7 @@ fun SettingsScreen(
                                 .background(theme.inputBg)
                                 .padding(12.dp)
                         ) {
-                            Text("VECTOR CHUNKS", fontSize = 10.sp, fontWeight = FontWeight.Black, color = theme.subText)
+                            Text("INDEXED SECTIONS", fontSize = 10.sp, fontWeight = FontWeight.Black, color = theme.subText)
                             Text(
                                 text = "$vaultChunkCount",
                                 fontSize = 20.sp,
@@ -991,7 +970,7 @@ fun SettingsScreen(
                                 )
                             } else {
                                 Text(
-                                    text = "Save & Re-Index",
+                                    text = "Save & re-index",
                                     color = Color.White,
                                     fontWeight = FontWeight.ExtraBold,
                                     fontSize = 13.sp
@@ -1002,677 +981,6 @@ fun SettingsScreen(
                 }
             }
 
-            if (activeTab == "Tasks") {
-                val freqOptions = listOf("ONCE", "EVERY 15M", "HOURLY", "DAILY", "WEEKLY")
-                val targetOptions = listOf(
-                    "auto" to "AUTO (Smart Preprocessor)",
-                    "local" to "LOCAL ONLY (Offline)",
-                    "cloud" to "CLOUD (Force Cloud)"
-                )
-                val inProgressCount = studioTasks.count { it.status == "RUNNING" || it.status == "SUSPENDED" }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = if (editingStudioTaskId == null) "Create Task Definition" else "Edit Task ($editingStudioTaskId.json)",
-                            color = theme.text,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Saved in ${tasksFolderPath.ifBlank { "$storageMountPath/tasks" }}",
-                            color = theme.subText,
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                    if (editingStudioTaskId != null) {
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(theme.inputBg)
-                                .border(1.dp, theme.border, CircleShape)
-                                .clickable {
-                                    editingStudioTaskId = null
-                                    studioTaskTitle = ""
-                                    studioTaskPrompt = ""
-                                    studioTaskFreq = "DAILY"
-                                    studioTaskTime = "08:00"
-                                    studioTaskRequiresApproval = false
-                                }
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        ) {
-                            Text("Cancel Edit", color = theme.subText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(theme.card)
-                        .border(1.dp, theme.border, RoundedCornerShape(14.dp))
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedTextField(
-                        value = studioTaskTitle,
-                        onValueChange = { studioTaskTitle = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("Task Title", color = theme.subText, fontSize = 12.sp) },
-                        placeholder = { Text("e.g., Daily Security Briefing", color = theme.subText, fontSize = 13.sp) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = theme.text,
-                            unfocusedTextColor = theme.text,
-                            focusedContainerColor = theme.inputBg,
-                            unfocusedContainerColor = theme.inputBg,
-                            focusedBorderColor = theme.primary,
-                            unfocusedBorderColor = theme.border
-                        )
-                    )
-
-                    OutlinedTextField(
-                        value = studioTaskPrompt,
-                        onValueChange = { studioTaskPrompt = it },
-                        modifier = Modifier.fillMaxWidth().height(96.dp),
-                        label = { Text("Task Prompt / Instructions", color = theme.subText, fontSize = 12.sp) },
-                        placeholder = {
-                            Text(
-                                "Describe the action or analysis for Reveila Core Engine to execute...",
-                                color = theme.subText,
-                                fontSize = 13.sp
-                            )
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = theme.text,
-                            unfocusedTextColor = theme.text,
-                            focusedContainerColor = theme.inputBg,
-                            unfocusedContainerColor = theme.inputBg,
-                            focusedBorderColor = theme.primary,
-                            unfocusedBorderColor = theme.border
-                        )
-                    )
-
-                    Text(
-                        text = "EXECUTION TARGET OVERRIDE (DEFAULT: AUTO)",
-                        color = theme.subText,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Black
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        targetOptions.forEach { (targetKey, targetLabel) ->
-                            val selected = studioTaskExecutionTarget.equals(targetKey, ignoreCase = true)
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (selected) theme.cyan.copy(alpha = 0.2f) else theme.inputBg)
-                                    .border(1.dp, if (selected) theme.cyan else theme.border, RoundedCornerShape(8.dp))
-                                    .clickable { studioTaskExecutionTarget = targetKey }
-                                    .padding(vertical = 8.dp, horizontal = 4.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = targetLabel,
-                                    color = if (selected) theme.cyan else theme.subText,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-
-                    Text(
-                        text = "RECURRENCE & SCHEDULE TIME",
-                        color = theme.subText,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Black
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        freqOptions.forEach { opt ->
-                            val selected = studioTaskFreq.equals(opt, ignoreCase = true)
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (selected) theme.primary else theme.inputBg)
-                                    .border(1.dp, if (selected) theme.primary else theme.border, RoundedCornerShape(8.dp))
-                                    .clickable { studioTaskFreq = opt }
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = opt,
-                                    color = if (selected) Color.White else theme.subText,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = studioTaskTime,
-                            onValueChange = { studioTaskTime = it },
-                            modifier = Modifier.weight(0.45f),
-                            singleLine = true,
-                            label = { Text("Time (HH:MM)", color = theme.subText, fontSize = 11.sp) },
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = theme.text,
-                                unfocusedTextColor = theme.text,
-                                focusedContainerColor = theme.inputBg,
-                                unfocusedContainerColor = theme.inputBg,
-                                focusedBorderColor = theme.primary,
-                                unfocusedBorderColor = theme.border
-                            )
-                        )
-
-                        Row(
-                            modifier = Modifier
-                                .weight(0.55f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(theme.inputBg)
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Require HITL Approval",
-                                color = theme.text,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Switch(
-                                checked = studioTaskRequiresApproval,
-                                onCheckedChange = { studioTaskRequiresApproval = it }
-                            )
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(CircleShape)
-                                .background(theme.primaryGradient)
-                                .clickable {
-                                    val title = studioTaskTitle.trim().ifBlank { "Studio Task" }
-                                    val prompt = studioTaskPrompt.trim()
-                                    if (prompt.isBlank()) {
-                                        showAlert("Missing Prompt", "Please enter instructions for the task.")
-                                        return@clickable
-                                    }
-                                    scope.launch {
-                                        try {
-                                            if (editingStudioTaskId == null) {
-                                                AeginBridge.createTask(
-                                                    title = title,
-                                                    prompt = prompt,
-                                                    frequency = studioTaskFreq.lowercase(),
-                                                    scheduleTime = studioTaskTime.ifBlank { "08:00" },
-                                                    requiresApproval = studioTaskRequiresApproval,
-                                                    intent = studioTaskIntent,
-                                                    executionTarget = studioTaskExecutionTarget
-                                                )
-                                                showAlert("Task Created", "Saved '$title' to tasks folder.")
-                                            } else {
-                                                AeginBridge.updateTask(
-                                                    taskId = editingStudioTaskId!!,
-                                                    title = title,
-                                                    prompt = prompt,
-                                                    frequency = studioTaskFreq.lowercase(),
-                                                    scheduleTime = studioTaskTime.ifBlank { "08:00" },
-                                                    enabled = true,
-                                                    intent = studioTaskIntent,
-                                                    requiresApproval = studioTaskRequiresApproval,
-                                                    executionTarget = studioTaskExecutionTarget
-                                                )
-                                                showAlert("Task Updated", "Updated '$title' in tasks folder.")
-                                            }
-                                            editingStudioTaskId = null
-                                            studioTaskTitle = ""
-                                            studioTaskIntent = "auto"
-                                            studioTaskExecutionTarget = "auto"
-                                            studioTaskPrompt = ""
-                                            refreshStudioTasks()
-                                        } catch (e: Exception) {
-                                            showAlert("Error", "Failed to save task: ${e.message}")
-                                        }
-                                    }
-                                }
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = if (editingStudioTaskId == null) "💾 Save to Tasks Folder" else "💾 Update Task File",
-                                color = Color.White,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 12.sp
-                            )
-                        }
-
-                        if (editingStudioTaskId == null) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(CircleShape)
-                                    .background(theme.cyan.copy(alpha = 0.18f))
-                                    .border(1.dp, theme.cyan, CircleShape)
-                                    .clickable {
-                                        val title = studioTaskTitle.trim().ifBlank { "Studio Task" }
-                                        val prompt = studioTaskPrompt.trim()
-                                        if (prompt.isBlank()) {
-                                            showAlert("Missing Prompt", "Please enter instructions for the task.")
-                                            return@clickable
-                                        }
-                                        scope.launch {
-                                            try {
-                                                val createdRaw = AeginBridge.createTask(
-                                                    title = title,
-                                                    prompt = prompt,
-                                                    frequency = studioTaskFreq.lowercase(),
-                                                    scheduleTime = studioTaskTime.ifBlank { "08:00" },
-                                                    requiresApproval = false,
-                                                    intent = studioTaskIntent,
-                                                    executionTarget = studioTaskExecutionTarget
-                                                )
-                                                studioTaskTitle = ""
-                                                studioTaskIntent = "auto"
-                                                studioTaskExecutionTarget = "auto"
-                                                studioTaskPrompt = ""
-                                                refreshStudioTasks()
-                                                val createdTask = studioTasks.firstOrNull { it.title == title }
-                                                if (createdTask != null) {
-                                                    AeginBridge.runTaskNow(createdTask.taskId)
-                                                    refreshStudioTasks()
-                                                } else if (createdRaw.contains("taskId")) {
-                                                    refreshStudioTasks()
-                                                }
-                                            } catch (e: Exception) {
-                                                showAlert("Error", "Failed to launch task: ${e.message}")
-                                            }
-                                        }
-                                    }
-                                    .padding(vertical = 12.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "⚡ Save & Run Sandbox",
-                                    color = theme.cyan,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 12.sp
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Active Sandboxes & Tasks Folder Registry
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Registered Tasks (${studioTasks.size}) • $inProgressCount in sandbox",
-                        color = theme.text,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (inProgressCount > 0) {
-                        Box(
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(theme.danger)
-                                .clickable {
-                                    scope.launch {
-                                        AeginBridge.setGlobalKillSwitch(true)
-                                        refreshStudioTasks()
-                                    }
-                                }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "⏹ Kill All Sandboxes",
-                                color = Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                        }
-                    }
-                }
-
-                if (studioTasks.isEmpty()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(theme.card)
-                            .border(1.dp, theme.border, RoundedCornerShape(12.dp))
-                            .padding(16.dp)
-                    ) {
-                        Text(
-                            text = "No task definitions found in tasks folder.",
-                            color = theme.subText,
-                            fontSize = 13.sp
-                        )
-                    }
-                } else {
-                    studioTasks.forEach { task ->
-                        val isRunningTask = task.status == "RUNNING"
-                        val isSuspendedTask = task.status == "SUSPENDED"
-                        val isInProgress = isRunningTask || isSuspendedTask
-                        val badgeColor = when (task.status) {
-                            "RUNNING" -> theme.cyan
-                            "SUSPENDED", "WAITING_APPROVAL" -> theme.warning
-                            "ACTIVE" -> theme.primary
-                            "COMPLETED" -> theme.success
-                            "KILLED", "FAILED" -> theme.danger
-                            else -> theme.subText
-                        }
-
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(theme.card)
-                                .border(
-                                    width = 1.dp,
-                                    color = when {
-                                        isRunningTask -> theme.cyan.copy(alpha = 0.7f)
-                                        isSuspendedTask -> theme.warning.copy(alpha = 0.7f)
-                                        else -> theme.border
-                                    },
-                                    shape = RoundedCornerShape(14.dp)
-                                )
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
-                                    Text(
-                                        text = task.title,
-                                        color = theme.text,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "${task.fileName.ifBlank { "${task.taskId}.json" }} • target=${task.executionTarget} • ${task.frequency.uppercase()} @ ${task.scheduleTime}",
-                                        color = theme.subText,
-                                        fontSize = 10.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    val isCloudRoute = task.routeTarget.equals("CLOUD", ignoreCase = true)
-                                    val routeColor = if (isCloudRoute) theme.cyan else theme.success
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(CircleShape)
-                                            .background(routeColor.copy(alpha = 0.16f))
-                                            .padding(horizontal = 8.dp, vertical = 3.dp)
-                                    ) {
-                                        Text(
-                                            text = if (isCloudRoute) "☁️ ${task.taskCategory}" else "📱 ${task.taskCategory}",
-                                            color = routeColor,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Black
-                                        )
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(CircleShape)
-                                            .background(badgeColor.copy(alpha = 0.16f))
-                                            .padding(horizontal = 9.dp, vertical = 3.dp)
-                                    ) {
-                                        Text(
-                                            text = task.status,
-                                            color = badgeColor,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Black
-                                        )
-                                    }
-                                }
-                            }
-
-                            Text(
-                                text = task.prompt,
-                                color = theme.subText,
-                                fontSize = 12.sp,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-
-                            if (task.routingReason.isNotBlank()) {
-                                Text(
-                                    text = task.routingReason,
-                                    color = theme.subText,
-                                    fontSize = 10.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-
-                            if (isInProgress) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(
-                                            if (isRunningTask) theme.cyan.copy(alpha = 0.12f)
-                                            else theme.warning.copy(alpha = 0.12f)
-                                        )
-                                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    if (isRunningTask) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(13.dp),
-                                            strokeWidth = 2.dp,
-                                            color = theme.cyan
-                                        )
-                                    }
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        if (task.sandboxId.isNotBlank()) {
-                                            Text(
-                                                text = "SANDBOX • ${task.sandboxId}",
-                                                color = if (isRunningTask) theme.cyan else theme.warning,
-                                                fontSize = 9.sp,
-                                                fontFamily = FontFamily.Monospace,
-                                                fontWeight = FontWeight.Black
-                                            )
-                                        }
-                                        Text(
-                                            text = task.currentStep.ifBlank { "Running in isolated sandbox..." },
-                                            color = theme.text,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Per-task Sandbox & Lifecycle Controls
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                if (isInProgress) {
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (isRunningTask) theme.warning.copy(alpha = 0.18f)
-                                                else theme.success.copy(alpha = 0.18f)
-                                            )
-                                            .border(
-                                                1.dp,
-                                                if (isRunningTask) theme.warning else theme.success,
-                                                CircleShape
-                                            )
-                                            .clickable {
-                                                scope.launch {
-                                                    if (isRunningTask) {
-                                                        AeginBridge.pauseTask(task.taskId)
-                                                    } else {
-                                                        AeginBridge.resumeTask(task.taskId)
-                                                    }
-                                                    refreshStudioTasks()
-                                                }
-                                            }
-                                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                                    ) {
-                                        Text(
-                                            text = if (isRunningTask) "⏸ Suspend" else "▶ Resume",
-                                            color = if (isRunningTask) theme.warning else theme.success,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.ExtraBold
-                                        )
-                                    }
-
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(CircleShape)
-                                            .background(theme.danger.copy(alpha = 0.18f))
-                                            .border(1.dp, theme.danger, CircleShape)
-                                            .clickable {
-                                                scope.launch {
-                                                    AeginBridge.killTask(task.taskId)
-                                                    refreshStudioTasks()
-                                                }
-                                            }
-                                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                                    ) {
-                                        Text(
-                                            text = "⏹ Kill",
-                                            color = theme.danger,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.ExtraBold
-                                        )
-                                    }
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(CircleShape)
-                                            .background(theme.primaryGradient)
-                                            .clickable {
-                                                scope.launch {
-                                                    AeginBridge.runTaskNow(task.taskId)
-                                                    refreshStudioTasks()
-                                                }
-                                            }
-                                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                                    ) {
-                                        Text(
-                                            text = "▶ Run in Sandbox",
-                                            color = Color.White,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.ExtraBold
-                                        )
-                                    }
-
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(CircleShape)
-                                            .background(theme.inputBg)
-                                            .border(1.dp, theme.border, CircleShape)
-                                            .clickable {
-                                                editingStudioTaskId = task.taskId
-                                                studioTaskTitle = task.title
-                                                studioTaskIntent = task.intent.ifBlank { "auto" }
-                                                studioTaskExecutionTarget = task.executionTarget.ifBlank { "auto" }
-                                                studioTaskPrompt = task.prompt
-                                                studioTaskFreq = task.frequency.uppercase()
-                                                studioTaskTime = task.scheduleTime
-                                                studioTaskRequiresApproval = task.requiresApproval
-                                            }
-                                            .padding(horizontal = 11.dp, vertical = 6.dp)
-                                    ) {
-                                        Text("Edit", color = theme.text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                    }
-
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(CircleShape)
-                                            .background(theme.inputBg)
-                                            .border(1.dp, theme.border, CircleShape)
-                                            .clickable {
-                                                scope.launch {
-                                                    if (task.status == "ACTIVE") {
-                                                        AeginBridge.pauseTask(task.taskId)
-                                                    } else {
-                                                        AeginBridge.resumeTask(task.taskId)
-                                                    }
-                                                    refreshStudioTasks()
-                                                }
-                                            }
-                                            .padding(horizontal = 11.dp, vertical = 6.dp)
-                                    ) {
-                                        Text(
-                                            text = if (task.status == "ACTIVE") "Pause" else "Resume",
-                                            color = if (task.status == "ACTIVE") theme.warning else theme.success,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.weight(1f))
-
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(CircleShape)
-                                            .background(theme.inputBg)
-                                            .clickable {
-                                                scope.launch {
-                                                    AeginBridge.deleteTask(task.taskId)
-                                                    refreshStudioTasks()
-                                                }
-                                            }
-                                            .padding(horizontal = 11.dp, vertical = 6.dp)
-                                    ) {
-                                        Text("Delete", color = theme.danger, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
 
             if (activeTab == "Security") {
                 Text(
@@ -1762,13 +1070,13 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "Security Portal",
+                        text = "Privacy & Safety Portal",
                         color = theme.text,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Inspect authorization prompts and sandbox permissions.",
+                        text = "Review on-device privacy protections, approvals, and recent safety activity.",
                         color = theme.subText,
                         fontSize = 13.sp,
                         lineHeight = 18.sp
@@ -1783,7 +1091,7 @@ fun SettingsScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "OPEN SECURITY PORTAL",
+                            text = "Open Privacy & Safety Portal",
                             color = theme.accent,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 13.sp
@@ -1794,7 +1102,7 @@ fun SettingsScreen(
 
             if (activeTab == "Advanced") {
                 Text(
-                    text = "Advanced Diagnostics",
+                    text = "Diagnostics & Device Health",
                     color = theme.text,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
@@ -1810,29 +1118,29 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "On-Device GGUF Hardware Preflight & Staging",
+                        text = "On-Device AI Readiness",
                         color = theme.text,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Tier: ${capabilities.hardwareTier} • Recommended: ${capabilities.recommendedModel}",
+                        text = "Device Tier: ${AeginDisplayMapper.hardwareTier(capabilities.hardwareTier)} • Recommended: ${AeginDisplayMapper.modelDisplayName(capabilities.recommendedModel)}",
                         color = if (capabilities.canRunLocalGguf) theme.success else theme.warning,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "RAM: ${capabilities.totalRamGb} GB total (${capabilities.availableRamGb} GB free) | Disk: ${capabilities.freeDiskGb} GB free",
+                        text = "Memory: ${capabilities.totalRamGb} GB total (${capabilities.availableRamGb} GB free) • Storage: ${capabilities.freeDiskGb} GB free",
                         color = theme.subText,
                         fontSize = 12.sp
                     )
                     Text(
-                        text = "ABI: ${capabilities.cpuAbi} | DotProd: ${capabilities.supportsSimdDotProd} | FP16: ${capabilities.supportsFp16} | Vulkan 1.1+: ${capabilities.supportsVulkanCompute}",
+                        text = "Processor: ${capabilities.cpuAbi} • Fast Math: ${if (capabilities.supportsSimdDotProd) "Yes" else "No"} • GPU Acceleration: ${if (capabilities.supportsVulkanCompute) "Available" else "Not Available"}",
                         color = theme.subText,
                         fontSize = 12.sp
                     )
                     Text(
-                        text = "GGUF Staging Directory (No-Backup mmap):",
+                        text = "Offline Model Storage Folder:",
                         color = theme.text,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold
@@ -1878,13 +1186,13 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "Reference Documents Index Sync",
+                        text = "Personal Knowledge Index Sync",
                         color = theme.text,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Force-trigger an explicit re-indexing pass across the active Reference Documents Folder to refresh vector embeddings.",
+                        text = "Re-scan your Personal Knowledge Folder so Aegin picks up new or edited files.",
                         color = theme.subText,
                         fontSize = 13.sp,
                         lineHeight = 18.sp
@@ -1902,9 +1210,9 @@ fun SettingsScreen(
                                         val stats = AeginBridge.getVaultStats()
                                         vaultDocCount = stats.documentCount
                                         vaultChunkCount = stats.chunkCount
-                                        showAlert("Index Sync", "Reference Documents scan and embedding refresh completed successfully.")
+                                        showAlert("Index sync", "Personal Knowledge Folder scan completed successfully.")
                                     } catch (e: Exception) {
-                                        showAlert("Scan Failed", e.message ?: "Error triggering scan")
+                                        showAlert("Scan failed", e.message ?: "Error triggering scan")
                                     }
                                 }
                             }
@@ -1974,7 +1282,7 @@ fun SettingsScreen(
             isConfigured = { isProviderConfigured(it) },
             isTested = { isProviderTested(it) },
             emptyHint = if (testedCandidates.isEmpty()) {
-                "No configured & tested AI models yet. Select a model in AI Model Setup above, configure it, and run Test Connection to add candidates here."
+                "No verified AI models yet. Select a model in AI Setup above, configure it, and run Test connection."
             } else null,
             onSelect = { chosen ->
                 workerProvider = chosen
@@ -1988,12 +1296,12 @@ fun SettingsScreen(
     if (isGovModalVisible) {
         val testedCandidates = eligibleCandidateNames()
         ProviderListDialog(
-            title = "Select Governance AI Model",
+            title = "Select governance AI model",
             items = listOf("Disable", "Auto") + testedCandidates,
             isConfigured = { isProviderConfigured(it) },
             isTested = { isProviderTested(it) },
             emptyHint = if (testedCandidates.isEmpty()) {
-                "No configured & tested AI models yet. Select a model in AI Model Setup above, configure it, and run Test Connection to add candidates here."
+                "No verified AI models yet. Select a model in AI Setup above, configure it, and run Test connection."
             } else null,
             onSelect = { chosen ->
                 governanceProvider = chosen
@@ -2007,15 +1315,15 @@ fun SettingsScreen(
     if (isModelCatalogModalVisible) {
         val allModels = providersList
             .filter { it.name != "Disable" && it.name != "Custom" }
-            .map { it.name } + listOf("+ Add New Provider")
+            .map { it.name } + listOf("+ New")
         ProviderListDialog(
-            title = "Select AI Model",
+            title = "Select AI model",
             items = allModels,
             isConfigured = { isProviderConfigured(it) },
             isTested = { isProviderTested(it) },
             onSelect = { chosen ->
                 isModelCatalogModalVisible = false
-                if (chosen == "+ Add New Provider") {
+                if (chosen == "+ New") {
                     openAddNewProviderModal()
                 } else {
                     selectedModelName = chosen
@@ -2097,8 +1405,8 @@ fun SettingsScreen(
     if (showConfirmDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showConfirmDeleteDialog = false },
-            title = { Text("Confirm Delete") },
-            text = { Text("Are you sure you want to delete '${editData.name}' from llm.json?") },
+            title = { Text("Remove AI Model?") },
+            text = { Text("Are you sure you want to remove '${AeginDisplayMapper.providerDisplayName(editData.name)}'?") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -2143,7 +1451,7 @@ fun SettingsScreen(
     if (showConfirmResetDialog) {
         AlertDialog(
             onDismissRequest = { showConfirmResetDialog = false },
-            title = { Text("Confirm Destructive Reset") },
+            title = { Text("Confirm destructive reset") },
             text = {
                 Text("Are you absolutely sure you want to reset the environment? All configuration parameters will clear.")
             },
@@ -2159,16 +1467,16 @@ fun SettingsScreen(
                                 vaultDocCount = 0
                                 vaultChunkCount = 0
                                 showAlert(
-                                    "Reset Complete",
+                                    "Reset complete",
                                     "Application reset complete. Configuration parameters have been cleared."
                                 )
                             } catch (e: Exception) {
-                                showAlert("Reset Warning", e.message ?: "Reset executed.")
+                                showAlert("Reset warning", e.message ?: "Reset executed.")
                             }
                         }
                     }
                 ) {
-                    Text("Reset Platform", color = theme.danger)
+                    Text("Reset platform", color = theme.danger)
                 }
             },
             dismissButton = {
@@ -2188,31 +1496,32 @@ fun SettingsScreen(
             pendingPrompt.availableStorageBytes >= 0L &&
             pendingPrompt.availableStorageBytes < (remainingBytes + 1_500_000_000L)
         val wifiNotice = if (!pendingPrompt.isWifiConnected || pendingPrompt.isMeteredNetwork) {
-            "⚠️ You are not currently on an unmetered Wi-Fi network. GGUF model files are very large ($formattedSize) and can consume substantial mobile data. Please consider switching to Wi-Fi before downloading."
+            "⚠️ You are not currently on an unmetered Wi-Fi network. Offline AI model files are very large ($formattedSize) and can use substantial mobile data. Consider switching to Wi-Fi before downloading."
         } else {
-            "ℹ️ GGUF model files can be very large ($formattedSize). Make sure you remain connected to Wi-Fi while downloading."
+            "ℹ️ Offline AI model files can be very large ($formattedSize). Stay connected to Wi-Fi while downloading."
         }
         AlertDialog(
             onDismissRequest = { pendingModelDownloadPrompt = null },
-            title = { Text("Download On-Device Model?") },
+            title = { Text("Download Offline AI Model?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val friendlyModelName = AeginDisplayMapper.modelDisplayName(pendingPrompt.modelName)
                     Text(
                         text = if (pendingPrompt.partialBytes > 0L) {
-                            "${pendingPrompt.modelName} has a partial download (${AeginBridge.formatByteSize(pendingPrompt.partialBytes)}) ready to resume (${AeginBridge.formatByteSize(remainingBytes)} remaining)."
+                            "$friendlyModelName has a partial download (${AeginBridge.formatByteSize(pendingPrompt.partialBytes)}) ready to resume (${AeginBridge.formatByteSize(remainingBytes)} remaining)."
                         } else {
-                            "${pendingPrompt.modelName} was not found locally on this device."
+                            "$friendlyModelName is not downloaded on this device yet."
                         },
                         fontSize = 13.sp
                     )
                     if (pendingPrompt.availableStorageBytes >= 0L) {
                         Text(
                             text = if (hasInsufficientStorage) {
-                                "⚠️ Insufficient on-device storage: needs ${AeginBridge.formatByteSize(remainingBytes)} more, but only ${AeginBridge.formatByteSize(pendingPrompt.availableStorageBytes)} is free."
+                                "⚠️ Insufficient storage: needs ${AeginBridge.formatByteSize(remainingBytes)} more, but only ${AeginBridge.formatByteSize(pendingPrompt.availableStorageBytes)} is free."
                             } else if (isStorageTight) {
-                                "⚠️ Free storage: ${AeginBridge.formatByteSize(pendingPrompt.availableStorageBytes)} (tight for GGUF inference; ${AeginBridge.formatByteSize(remainingBytes + 1_500_000_000L)} recommended with 1.5 GB buffer)."
+                                "⚠️ Free storage: ${AeginBridge.formatByteSize(pendingPrompt.availableStorageBytes)} (tight for offline AI; ${AeginBridge.formatByteSize(remainingBytes + 1_500_000_000L)} recommended)."
                             } else {
-                                "Free on-device storage: ${AeginBridge.formatByteSize(pendingPrompt.availableStorageBytes)}"
+                                "Free device storage: ${AeginBridge.formatByteSize(pendingPrompt.availableStorageBytes)}"
                             },
                             color = when {
                                 hasInsufficientStorage -> theme.danger
@@ -2246,7 +1555,7 @@ fun SettingsScreen(
                         startLocalModelDownload(targetModel)
                     }
                 ) {
-                    Text(if (pendingPrompt.partialBytes > 0L) "Resume Download" else "Download Now")
+                    Text(if (pendingPrompt.partialBytes > 0L) "Resume download" else "Download now")
                 }
             },
             dismissButton = {
@@ -2377,7 +1686,7 @@ private fun ProviderSelectorRow(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = selectedProvider,
+                            text = AeginDisplayMapper.providerDisplayName(selectedProvider),
                             color = theme.text,
                             fontWeight = FontWeight.Medium,
                             fontSize = 14.sp,
@@ -2417,7 +1726,7 @@ private fun ProviderSelectorRow(
         }
         if (!isLoading && selectedProvider != "Disable" && selectedProvider != "Auto" && selectedProvider != "Custom" && !isVerified) {
             Text(
-                text = "'$selectedProvider' is not verified yet — configure and pass Test Connection under AI Model Setup, or choose Auto.",
+                text = "'$selectedProvider' is not verified yet — configure and pass Test connection under AI Setup, or choose Auto.",
                 color = Color(0xFFF59E0B),
                 fontSize = 11.sp
             )
@@ -2456,15 +1765,15 @@ private fun ProviderListDialog(
                 val badgeColor: Color
                 when {
                     item == "Auto" -> {
-                        badgeText = "AUTO"
+                        badgeText = "Auto"
                         badgeColor = theme.cyan
                     }
                     item == "Disable" -> {
-                        badgeText = "OFF"
+                        badgeText = "Off"
                         badgeColor = theme.subText
                     }
-                    item == "+ Add New Provider" -> {
-                        badgeText = "NEW"
+                    item == "+ New" -> {
+                        badgeText = "New"
                         badgeColor = theme.cyan
                     }
                     item == "Custom" -> {
@@ -2472,15 +1781,15 @@ private fun ProviderListDialog(
                         badgeColor = theme.subText
                     }
                     tested -> {
-                        badgeText = "TESTED"
+                        badgeText = "Verified"
                         badgeColor = theme.success
                     }
                     configured -> {
-                        badgeText = "UNTESTED"
+                        badgeText = "Needs Test"
                         badgeColor = Color(0xFFF59E0B)
                     }
                     else -> {
-                        badgeText = "SETUP"
+                        badgeText = "Setup Needed"
                         badgeColor = theme.danger
                     }
                 }
@@ -2493,7 +1802,11 @@ private fun ProviderListDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(item, color = theme.text, fontSize = 14.sp)
+                    Text(
+                        text = if (item == "+ New") "+ Add New AI" else AeginDisplayMapper.providerDisplayName(item),
+                        color = theme.text,
+                        fontSize = 14.sp
+                    )
                     if (badgeText != null) {
                         Box(
                             modifier = Modifier
@@ -2538,7 +1851,7 @@ private fun ProviderListDialog(
 }
 
 @Composable
-private fun UnifiedAiModelsCard(
+private fun AiSetupCard(
     models: List<LlmProviderConfig>,
     selectedModelName: String,
     testingModelName: String?,
@@ -2553,12 +1866,20 @@ private fun UnifiedAiModelsCard(
     onDownloadLocalModel: () -> Unit,
     onPauseLocalDownload: () -> Unit,
     onCancelLocalDownload: () -> Unit,
-    onOpenAddNewModal: () -> Unit
+    onOpenAddNewModal: () -> Unit,
+    workerProvider: String,
+    governanceProvider: String,
+    isLoadingProviders: Boolean,
+    isWorkerVerified: Boolean,
+    isGovVerified: Boolean,
+    onOpenWorkerSelectModal: () -> Unit,
+    onOpenGovSelectModal: () -> Unit,
+    onSaveConfiguration: () -> Unit
 ) {
     val theme = LocalAeginColors.current
     Spacer(modifier = Modifier.height(4.dp))
     Text(
-        text = "AI Model Setup",
+        text = "AI Setup",
         color = theme.text,
         fontSize = 16.sp,
         fontWeight = FontWeight.Bold
@@ -2571,10 +1892,10 @@ private fun UnifiedAiModelsCard(
             .background(theme.card)
             .border(1.dp, theme.border, RoundedCornerShape(12.dp))
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "Manage all local and external AI models from llm.json. Only models that are configured and pass Test Connection appear as Worker and Governance candidates.",
+            text = "Choose an AI Model to edit its properties.",
             color = theme.subText,
             fontSize = 13.sp,
             lineHeight = 18.sp
@@ -2610,7 +1931,7 @@ private fun UnifiedAiModelsCard(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        text = if (activeName.isNotBlank()) activeName else "Select AI Model",
+                        text = if (activeName.isNotBlank()) AeginDisplayMapper.providerDisplayName(activeName) else "Select AI Model",
                         color = theme.text,
                         fontWeight = FontWeight.Medium,
                         fontSize = 14.sp,
@@ -2649,18 +1970,10 @@ private fun UnifiedAiModelsCard(
         }
 
         if (activeModel != null) {
-            val typeLabel = when {
-                isLocal -> "On-Device GGUF"
-                activeModel.type.equals("Self-Hosted", ignoreCase = true) -> "Self-Hosted"
-                else -> "Cloud"
-            }
-            val displayModel = activeModel.model.ifBlank {
-                if (isLocal) recommendedLocalModel else "default"
-            }
-            val statusLabel = when {
-                isTested -> "Verified & Tested"
-                isConfigured -> "Configured • Test Required"
-                else -> "Setup Required"
+            val statusText = when {
+                isTested -> "Ready to use"
+                isConfigured -> "Test required"
+                else -> "Setup required"
             }
             val statusColor = when {
                 isTested -> theme.success
@@ -2669,18 +1982,20 @@ private fun UnifiedAiModelsCard(
             }
 
             Text(
-                text = "$typeLabel • Model: $displayModel • $statusLabel",
+                text = statusText,
                 color = statusColor,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold
             )
 
             if (activeModel.intentOptions.isNotEmpty()) {
+                val friendlyCapabilities = activeModel.intentOptions.joinToString(", ") {
+                    AeginBridge.formatIntentLabel(it)
+                }
                 Text(
-                    text = "Intents (${activeModel.intentOptions.size}): ${activeModel.intentOptions.joinToString(", ")}",
+                    text = "Capabilities: $friendlyCapabilities",
                     color = theme.subText,
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -2788,7 +2103,7 @@ private fun UnifiedAiModelsCard(
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Text(
-                        text = if (partial > 0L) "▶️ Resume (${AeginBridge.formatByteSize(partial)})" else "⬇️ Download GGUF",
+                        text = if (partial > 0L) "▶️ Resume (${AeginBridge.formatByteSize(partial)})" else "⬇️ Download Offline AI",
                         color = Color.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
@@ -2824,7 +2139,7 @@ private fun UnifiedAiModelsCard(
                         text = when {
                             isTestingThis -> "Testing..."
                             isTested -> "✓ Re-test"
-                            else -> "🧪 Test Connection"
+                            else -> "🧪 Test connection"
                         },
                         color = if (isTested) theme.success else theme.cyan,
                         fontSize = 12.sp,
@@ -2841,48 +2156,24 @@ private fun UnifiedAiModelsCard(
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
                 Text(
-                    text = "➕ Add New Provider",
+                    text = "➕ New",
                     color = theme.primary,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
         }
-    }
-}
 
-@Composable
-private fun AiAssignmentsCard(
-    workerProvider: String,
-    governanceProvider: String,
-    isLoadingProviders: Boolean,
-    isWorkerVerified: Boolean,
-    isGovVerified: Boolean,
-    onOpenWorkerSelectModal: () -> Unit,
-    onOpenGovSelectModal: () -> Unit,
-    onSaveConfiguration: () -> Unit
-) {
-    val theme = LocalAeginColors.current
-    Spacer(modifier = Modifier.height(4.dp))
-    Text(
-        text = "Worker & Governance AI Models",
-        color = theme.text,
-        fontSize = 16.sp,
-        fontWeight = FontWeight.Bold
-    )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(theme.border.copy(alpha = 0.7f))
+        )
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(theme.card)
-            .border(1.dp, theme.border, RoundedCornerShape(12.dp))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
         ProviderSelectorRow(
-            label = "Worker AI Model",
-            description = "Used for background tasks and default routing. Assistant tab toggles (Auto / Local / Cloud) do not overwrite this.",
+            label = "Background Tasks AI",
+            description = "Default model for automated tasks and smart routing.",
             selectedProvider = workerProvider,
             isLoading = isLoadingProviders,
             isVerified = isWorkerVerified,
@@ -2890,8 +2181,8 @@ private fun AiAssignmentsCard(
         )
 
         ProviderSelectorRow(
-            label = "Governance AI Model",
-            description = "Guardrail scanner inspecting prompts and risks across tasks and chat. Only verified models appear as candidates.",
+            label = "Safety Review AI",
+            description = "Reviews requests and tasks for safety and policy risks.",
             selectedProvider = governanceProvider,
             isLoading = isLoadingProviders,
             isVerified = isGovVerified,
@@ -2908,7 +2199,7 @@ private fun AiAssignmentsCard(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "Save AI Configuration",
+                text = "Save AI configuration",
                 color = Color.White,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 13.sp
@@ -2954,8 +2245,8 @@ private fun EditProviderDialog(
         ) {
             Text(
                 text = when {
-                    isAddingNewProvider -> "➕ Add External / Self-Hosted LLM"
-                    isDeviceModel -> "📱 On-Device Model"
+                    isAddingNewProvider -> "➕ Add Cloud or Custom AI"
+                    isDeviceModel -> "📱 On-Device AI"
                     isSelfHosted -> "🖥️ Configure ${editData.name}"
                     else -> "☁️ Configure ${editData.name}"
                 },
@@ -2977,13 +2268,13 @@ private fun EditProviderDialog(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "🔒 100% Private & Offline (Embedded GGUF)",
+                        text = "🔒 100% Private & Offline AI",
                         color = theme.primary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Runs locally on your device. Download the GGUF file (or point Endpoint URL to a local llama-server) and run Test Connection to verify.",
+                        text = "Runs directly on your device. Download the offline model (or connect a local server) and tap Test connection to verify.",
                         color = theme.subText,
                         fontSize = 11.sp,
                         lineHeight = 15.sp
@@ -2995,7 +2286,7 @@ private fun EditProviderDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "${modelDownloadState.status} ${modelDownloadState.percent}%",
+                                text = "${AeginDisplayMapper.downloadStatus(modelDownloadState.status)} ${modelDownloadState.percent}%",
                                 color = theme.cyan,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -3076,7 +2367,7 @@ private fun EditProviderDialog(
                         }
                     } else {
                         Text(
-                            text = "✓ GGUF model present locally on device.",
+                            text = "✓ Offline AI model is ready on this device.",
                             color = theme.success,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
@@ -3139,7 +2430,7 @@ private fun EditProviderDialog(
                             .padding(vertical = 10.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("🖥️ Self-Hosted LLM", color = if (isSelfHosted) Color.White else theme.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("🖥️ Custom / Local Server", color = if (isSelfHosted) Color.White else theme.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
 
@@ -3153,16 +2444,16 @@ private fun EditProviderDialog(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
-                        text = if (isSelfHosted) "🖥️ Self-Hosted OpenAI-Compatible Endpoint" else "⚡ Commercial Cloud LLM Service",
+                        text = if (isSelfHosted) "🖥️ Custom or Local AI Server" else "⚡ Cloud AI Service",
                         color = theme.accent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = if (isSelfHosted) {
-                            "Connects to your local or LAN inference server (Ollama, vLLM, LM Studio, llama-server). API key is optional."
+                            "Connects to your local or private AI server (Ollama, LM Studio, vLLM, or compatible). API key is optional."
                         } else {
-                            "Requests are sent over the internet to ${editData.name.ifBlank { "your provider" }}'s API endpoint. Requires an API key."
+                            "Requests are sent securely to ${editData.name.ifBlank { "your provider" }}. Requires an API key."
                         },
                         color = theme.subText,
                         fontSize = 11.sp,
@@ -3215,7 +2506,7 @@ private fun EditProviderDialog(
 
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = if (isDeviceModel) "EMBEDDED GGUF MODEL" else "MODEL NAME",
+                    text = if (isDeviceModel) "OFFLINE AI MODEL" else "MODEL NAME",
                     color = theme.text,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Black
@@ -3251,7 +2542,7 @@ private fun EditProviderDialog(
 
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = if (isDeviceModel) "INTERNAL ENGINE ENDPOINT" else "ENDPOINT URL",
+                    text = if (isDeviceModel) "LOCAL ENGINE ADDRESS" else "ENDPOINT URL",
                     color = theme.text,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Black
@@ -3264,33 +2555,26 @@ private fun EditProviderDialog(
                 )
             }
 
-            val intentMetadata = listOf(
-                "LOCAL_TEXT_TRANSFORM" to "Summarize, rewrite, or format local text",
-                "LOCAL_STRUCTURED_EXTRACT" to "Extract entities, tags, or classify fields",
-                "LOCAL_DEVICE_ACTION" to "Single-step local action or vault query",
-                "CLOUD_LIVE_RETRIEVAL" to "Latest news, web search, weather, live prices",
-                "CLOUD_DEEP_REASONING" to "Multi-step planning, coding, deep analysis",
-                "CLOUD_MULTI_STEP_AGENT" to "Autonomous multi-turn tool orchestration"
-            )
-
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = "SUPPORTED TASK INTENTS (Intent.Options)",
+                    text = "CAPABILITIES",
                     color = theme.text,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Black
                 )
                 Text(
-                    text = "Select one or more of the 6 predefined intents this LLM handles. On-Device Model has higher preference when both match.",
+                    text = "Choose what this model can handle. On-Device AI is preferred when available.",
                     color = theme.subText,
                     fontSize = 11.sp,
                     lineHeight = 15.sp
                 )
 
-                intentMetadata.forEach { (intentKey, intentDesc) ->
+                AeginBridge.PREDEFINED_TASK_INTENTS.forEach { intentKey ->
                     val isSelected = editData.intentOptions.any { it.equals(intentKey, ignoreCase = true) }
                     val isCloudIntent = intentKey.startsWith("CLOUD_")
                     val accentColor = if (isCloudIntent) theme.cyan else theme.success
+                    val friendlyLabel = AeginDisplayMapper.taskCategory(intentKey)
+                    val intentDesc = AeginDisplayMapper.taskCategoryDescription(intentKey)
 
                     Row(
                         modifier = Modifier
@@ -3319,11 +2603,10 @@ private fun EditProviderDialog(
                     ) {
                         Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                             Text(
-                                text = intentKey,
+                                text = friendlyLabel,
                                 color = if (isSelected) accentColor else theme.text,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.ExtraBold
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
                             )
                             Text(
                                 text = intentDesc,
@@ -3381,10 +2664,10 @@ private fun EditProviderDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = theme.cyan)
-                        Text("Testing Connection...", color = theme.cyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("Testing connection...", color = theme.cyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 } else {
-                    Text("🧪 Test Connection", color = theme.cyan, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                    Text("🧪 Test connection", color = theme.cyan, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
                 }
             }
 

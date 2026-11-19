@@ -221,6 +221,114 @@ data class LocalModelDownloadState(
     val message: String = ""
 )
 
+@Serializable
+data class BrowserElementItem(
+    val index: Int,
+    val tagName: String,
+    val type: String = "",
+    val name: String = "",
+    val elementId: String = "",
+    val text: String = "",
+    val placeholder: String = "",
+    val value: String = "",
+    val href: String = "",
+    val isClickable: Boolean = false,
+    val isInputField: Boolean = false,
+    val isSecret: Boolean = false,
+    val formId: String = ""
+)
+
+@Serializable
+data class BrowserLiveState(
+    val isVisible: Boolean = false,
+    val url: String = "",
+    val title: String = "",
+    val statusCode: Int = 0,
+    val lastAction: String = "",
+    val contentPreview: String = "",
+    val rawHtml: String = "",
+    val elements: List<BrowserElementItem> = emptyList(),
+    val controlOwner: String = "AGENT",
+    val waitingForUser: Boolean = false,
+    val takeoverReason: String = "",
+    val takeoverMessage: String = "",
+    val updatedAtMs: Long = 0L
+)
+
+@Serializable
+data class TerminalLiveState(
+    val isVisible: Boolean = false,
+    val executionId: String = "default",
+    val shellName: String = "",
+    val workingDir: String = "",
+    val currentScript: String = "",
+    val outputText: String = "",
+    val exitCode: Int? = null,
+    val status: String = "IDLE",
+    val controlOwner: String = "AGENT",
+    val waitingForUser: Boolean = false,
+    val updatedAtMs: Long = 0L
+)
+
+@Serializable
+data class DownloadTaskSummary(
+    val downloadId: String,
+    val fileName: String,
+    val url: String = "",
+    val destinationPath: String = "",
+    val status: String = "IDLE",
+    val percentage: Int = 0,
+    val downloadedBytes: Long = 0L,
+    val totalBytes: Long = -1L,
+    val message: String = "",
+    val updatedAtMs: Long = 0L
+)
+
+@Serializable
+data class DownloadLiveState(
+    val isVisible: Boolean = false,
+    val controlOwner: String = "AGENT",
+    val availableStorageBytes: Long = -1L,
+    val items: List<DownloadTaskSummary> = emptyList(),
+    val updatedAtMs: Long = 0L
+)
+
+@Serializable
+data class PendingToolAuthState(
+    val requestId: String,
+    val traceId: String = "",
+    val sessionId: String = "",
+    val spaceId: String = "main-space",
+    val toolName: String,
+    val action: String = "",
+    val scope: String = "*",
+    val title: String = "",
+    val reason: String = "",
+    val commandPreview: String = "",
+    val riskLevel: String = "MEDIUM",
+    val requiresCredentials: Boolean = false,
+    val credentialType: String = "NONE",
+    val credentialDomain: String = "",
+    val credentialKey: String = "",
+    val createdAtMs: Long = 0L
+)
+
+@Serializable
+data class ToolHubSnapshot(
+    val browser: BrowserLiveState = BrowserLiveState(),
+    val terminal: TerminalLiveState = TerminalLiveState(),
+    val downloads: DownloadLiveState = DownloadLiveState(),
+    val pendingAuthorization: PendingToolAuthState? = null,
+    val waitingForUserInput: Boolean = false
+)
+
+data class ToolAuthResolutionResult(
+    val answer: String,
+    val status: String,
+    val waitingForUser: Boolean = false,
+    val sessionId: String? = null
+)
+
 /**
  * Multiplatform expect declaration for connecting the Compose UI to the underlying
  * Reveila Sovereign Engine (JVM Desktop, Android Service, iOS Native, or Web Wasm).
@@ -285,6 +393,9 @@ object AeginBridge {
         "CLOUD_DEEP_REASONING",
         "CLOUD_MULTI_STEP_AGENT"
     )
+
+    fun formatIntentLabel(intentKey: String): String =
+        AeginDisplayMapper.taskCategory(intentKey)
 
     val json = Json {
         ignoreUnknownKeys = true
@@ -417,7 +528,7 @@ object AeginBridge {
             )
             if (raw.isBlank() || raw == "null") return emptyList()
             val arr = json.parseToJsonElement(raw).jsonArray
-            arr.mapNotNull { elem ->
+            val parsed = arr.mapNotNull { elem ->
                 try {
                     val obj = elem.jsonObject
                     val role = obj["role"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
@@ -429,8 +540,40 @@ object AeginBridge {
                     null
                 }
             }
+            trimSpaceHistoryToLastSummary(parsed)
         } catch (_: Exception) {
             emptyList()
+        }
+    }
+
+    const val CONVERSATION_SUMMARY_PREFIX: String = "Earlier conversation summary:"
+
+    fun isConversationSummaryEntry(entry: SpaceMessageEntry): Boolean =
+        entry.role.equals("SYSTEM", ignoreCase = true) &&
+            entry.content.trim().startsWith(CONVERSATION_SUMMARY_PREFIX, ignoreCase = true)
+
+    fun extractConversationSummaryText(rawContent: String): String {
+        val trimmed = rawContent.trim()
+        return if (trimmed.startsWith(CONVERSATION_SUMMARY_PREFIX, ignoreCase = true)) {
+            trimmed.substring(CONVERSATION_SUMMARY_PREFIX.length).trim()
+        } else {
+            trimmed
+        }
+    }
+
+    /**
+     * Limits space history for UI display so it starts at the most recent persisted
+     * conversation summary (if any) and includes all turns after it, excluding any older
+     * pre-summary messages and unrelated system messages.
+     */
+    fun trimSpaceHistoryToLastSummary(history: List<SpaceMessageEntry>): List<SpaceMessageEntry> {
+        if (history.isEmpty()) return emptyList()
+        val lastSummaryIdx = history.indexOfLast { isConversationSummaryEntry(it) }
+        val scoped = if (lastSummaryIdx >= 0) history.drop(lastSummaryIdx) else history
+        return scoped.filter { entry ->
+            isConversationSummaryEntry(entry) ||
+                entry.role.equals("USER", ignoreCase = true) ||
+                entry.role.equals("ASSISTANT", ignoreCase = true)
         }
     }
 
@@ -459,6 +602,45 @@ object AeginBridge {
         } catch (_: Exception) {
             emptyList()
         }
+    }
+
+    fun selectRecentSpacesForStrip(
+        persistedSpaces: List<SpaceThreadSummary>,
+        activeSpaceId: String,
+        activeSpaceName: String,
+        maxCount: Int = 3
+    ): List<SpaceThreadSummary> {
+        if (maxCount <= 0) return emptyList()
+        val normalizedActiveId = normalizeSpaceId(activeSpaceId)
+        val sortedUnique = linkedMapOf<String, SpaceThreadSummary>()
+
+        for (space in persistedSpaces.sortedByDescending { it.updatedAt }) {
+            val key = normalizeSpaceId(space.spaceId)
+            if (!sortedUnique.containsKey(key)) {
+                sortedUnique[key] = space.copy(spaceId = key)
+            }
+        }
+
+        if (!sortedUnique.containsKey("main-space")) {
+            sortedUnique["main-space"] = SpaceThreadSummary(
+                spaceId = "main-space",
+                spaceName = "Main Space"
+            )
+        }
+
+        val result = sortedUnique.values.take(maxCount).toMutableList()
+        if (result.none { it.spaceId == normalizedActiveId }) {
+            val activeEntry = sortedUnique[normalizedActiveId] ?: SpaceThreadSummary(
+                spaceId = normalizedActiveId,
+                spaceName = activeSpaceName.ifBlank { "Main Space" }
+            )
+            if (result.size >= maxCount) {
+                result[result.lastIndex] = activeEntry
+            } else {
+                result.add(activeEntry)
+            }
+        }
+        return result
     }
 
     suspend fun getSpaceSummary(spaceId: String): String {
@@ -1116,5 +1298,130 @@ object AeginBridge {
 
     suspend fun setGlobalKillSwitch(engage: Boolean): String {
         return invoke("AutonomousAgent", "setGlobalKillSwitch", listOf(engage.toString()))
+    }
+
+    // =========================================================================
+    // Live Interactive Tool Windows, Takeover & Authorization Bridge
+    // =========================================================================
+
+    fun parseToolHubSnapshot(rawJson: String): ToolHubSnapshot {
+        if (rawJson.isBlank() || rawJson == "null") return ToolHubSnapshot()
+        return try {
+            json.decodeFromString(ToolHubSnapshot.serializer(), rawJson)
+        } catch (_: Exception) {
+            ToolHubSnapshot()
+        }
+    }
+
+    suspend fun getToolActivitySnapshot(): ToolHubSnapshot {
+        return try {
+            val raw = invoke("AgenticFabric", "getToolActivitySnapshotJson", emptyList())
+            parseToolHubSnapshot(raw)
+        } catch (_: Exception) {
+            ToolHubSnapshot()
+        }
+    }
+
+    suspend fun resolvePendingToolAuthorization(
+        requestId: String,
+        decision: String,
+        username: String = "",
+        password: String = "",
+        secretKey: String = "",
+        secretValue: String = "",
+        editedScript: String = ""
+    ): ToolAuthResolutionResult {
+        return try {
+            val raw = invoke(
+                "AgenticFabric",
+                "resolvePendingToolAuthorizationJson",
+                listOf(requestId, decision, username, password, secretKey, secretValue, editedScript)
+            )
+            val obj = json.parseToJsonElement(raw).jsonObject
+            ToolAuthResolutionResult(
+                answer = obj["answer"]?.jsonPrimitive?.contentOrNull ?: raw,
+                status = obj["status"]?.jsonPrimitive?.contentOrNull ?: "COMPLETED",
+                waitingForUser = obj["waitingForUser"]?.jsonPrimitive?.booleanOrNull ?: false,
+                sessionId = obj["sessionId"]?.jsonPrimitive?.contentOrNull
+            )
+        } catch (e: Exception) {
+            ToolAuthResolutionResult(
+                answer = e.message ?: "Failed to process authorization.",
+                status = "FAILED"
+            )
+        }
+    }
+
+    suspend fun browserUserAction(
+        action: String,
+        url: String = "",
+        target: String = "",
+        text: String = "",
+        form: String = "",
+        cookieHeader: String = "",
+        rawHtml: String = ""
+    ): ToolHubSnapshot {
+        return try {
+            val raw = invoke(
+                "AgenticFabric",
+                "browserUserActionJson",
+                listOf(action, url, target, text, form, cookieHeader, rawHtml)
+            )
+            parseToolHubSnapshot(raw)
+        } catch (_: Exception) {
+            getToolActivitySnapshot()
+        }
+    }
+
+    suspend fun terminalUserAction(
+        action: String,
+        script: String = "",
+        workingDir: String = ""
+    ): ToolHubSnapshot {
+        return try {
+            val raw = invoke(
+                "AgenticFabric",
+                "terminalUserActionJson",
+                listOf(action, script, workingDir)
+            )
+            parseToolHubSnapshot(raw)
+        } catch (_: Exception) {
+            getToolActivitySnapshot()
+        }
+    }
+
+    suspend fun downloadUserAction(
+        action: String,
+        downloadId: String = ""
+    ): ToolHubSnapshot {
+        return try {
+            val raw = invoke(
+                "AgenticFabric",
+                "downloadUserActionJson",
+                listOf(action, downloadId)
+            )
+            parseToolHubSnapshot(raw)
+        } catch (_: Exception) {
+            getToolActivitySnapshot()
+        }
+    }
+
+    suspend fun secretVaultAction(
+        action: String,
+        key: String = "",
+        value: String = "",
+        category: String = "GENERAL",
+        domain: String = "",
+        username: String = ""
+    ): String {
+        return try {
+            invoke(
+                "AgenticFabric",
+                "secretVaultUserActionJson",
+                listOf(action, key, value, category, domain, username)
+            )
+        } catch (e: Exception) {
+            """{"error":"${escapeJson(e.message ?: "Vault unavailable")}"}"""
+        }
     }
 }

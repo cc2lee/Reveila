@@ -154,46 +154,43 @@ fun AeginOrbAvatar(
 ) {
     val theme = LocalAeginColors.current
 
-    // Smooth active/breathing infinite transition
-    val infiniteTransition = rememberInfiniteTransition(label = "aegin_pup_transition")
-    val activePhase by infiniteTransition.animateFloat(
-        initialValue = -1f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 420, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "active_phase"
-    )
-    val haloAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.28f,
-        targetValue = 0.65f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 700, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "halo_alpha"
-    )
-    val haloSweepAngle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1600, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "halo_sweep"
-    )
-    val breathPhase by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2400, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "idle_breath"
-    )
+    // Only run continuous 60fps infinite transitions while actively thinking;
+    // idle frames stay stationary between calm periodic gestures to avoid burning GPU/CPU.
+    var activePhase = 0f
+    var haloAlpha = 0f
+    var haloSweepAngle = 0f
+    if (isThinking) {
+        val infiniteTransition = rememberInfiniteTransition(label = "aegin_pup_transition")
+        activePhase = infiniteTransition.animateFloat(
+            initialValue = -1f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "active_phase"
+        ).value
+        haloAlpha = infiniteTransition.animateFloat(
+            initialValue = 0.28f,
+            targetValue = 0.65f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "halo_alpha"
+        ).value
+        haloSweepAngle = infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1600, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "halo_sweep"
+        ).value
+    }
 
-    // Periodic playful movement while relaxing in idle state
+    // Periodic playful movement while relaxing in idle state (zero redraws during wait)
     val idleTilt = remember { Animatable(0f) }
     val idleHop = remember { Animatable(0f) }
 
@@ -204,20 +201,15 @@ fun AeginOrbAvatar(
             return@LaunchedEffect
         }
         while (true) {
-            // Relax calmly between movements
-            delay(3200L)
-            // Curious head tilt + gentle two-step perk bounce
+            delay(5000L)
             launch {
-                idleTilt.animateTo(-7f, tween(340, easing = FastOutSlowInEasing))
-                delay(240L)
-                idleTilt.animateTo(5f, tween(320, easing = FastOutSlowInEasing))
-                idleTilt.animateTo(0f, tween(420, easing = FastOutSlowInEasing))
+                idleTilt.animateTo(-6f, tween(320, easing = FastOutSlowInEasing))
+                delay(220L)
+                idleTilt.animateTo(4f, tween(300, easing = FastOutSlowInEasing))
+                idleTilt.animateTo(0f, tween(380, easing = FastOutSlowInEasing))
             }
-            idleHop.animateTo(-2.5f, tween(170, easing = FastOutSlowInEasing))
+            idleHop.animateTo(-2f, tween(170, easing = FastOutSlowInEasing))
             idleHop.animateTo(0f, tween(170, easing = FastOutSlowInEasing))
-            delay(120L)
-            idleHop.animateTo(-1.8f, tween(150, easing = FastOutSlowInEasing))
-            idleHop.animateTo(0f, tween(220, easing = FastOutSlowInEasing))
         }
     }
 
@@ -234,10 +226,10 @@ fun AeginOrbAvatar(
             scaleFactor = 0.90f + 0.05f * bounceRatio
         }
         animateIdle -> {
-            // Calm breathing + periodic playful gesture
-            translationYDp = idleHop.value - 0.6f * breathPhase
+            // Calm periodic playful gesture without continuous redraws
+            translationYDp = idleHop.value
             rotationDeg = idleTilt.value
-            scaleFactor = 1.0f + 0.018f * breathPhase
+            scaleFactor = 1.0f
         }
         else -> {
             translationYDp = 0f
@@ -318,7 +310,9 @@ enum class AeginIconType {
     MOON,
     BOLT,
     CHECK,
-    CLOSE
+    CLOSE,
+    MENU,
+    BACK
 }
 
 /**
@@ -477,6 +471,17 @@ fun AeginVectorIcon(
             AeginIconType.CLOSE -> {
                 drawLine(tint, Offset(w * 0.24f, h * 0.24f), Offset(w * 0.76f, h * 0.76f), strokeWidth = sw, cap = StrokeCap.Round)
                 drawLine(tint, Offset(w * 0.76f, h * 0.24f), Offset(w * 0.24f, h * 0.76f), strokeWidth = sw, cap = StrokeCap.Round)
+            }
+
+            AeginIconType.MENU -> {
+                drawLine(tint, Offset(w * 0.18f, h * 0.28f), Offset(w * 0.82f, h * 0.28f), strokeWidth = sw, cap = StrokeCap.Round)
+                drawLine(tint, Offset(w * 0.18f, h * 0.50f), Offset(w * 0.82f, h * 0.50f), strokeWidth = sw, cap = StrokeCap.Round)
+                drawLine(tint, Offset(w * 0.18f, h * 0.72f), Offset(w * 0.82f, h * 0.72f), strokeWidth = sw, cap = StrokeCap.Round)
+            }
+
+            AeginIconType.BACK -> {
+                drawLine(tint, Offset(w * 0.62f, h * 0.20f), Offset(w * 0.30f, h * 0.50f), strokeWidth = sw, cap = StrokeCap.Round)
+                drawLine(tint, Offset(w * 0.30f, h * 0.50f), Offset(w * 0.62f, h * 0.80f), strokeWidth = sw, cap = StrokeCap.Round)
             }
         }
     }

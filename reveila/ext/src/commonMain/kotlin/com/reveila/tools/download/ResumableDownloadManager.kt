@@ -101,6 +101,7 @@ open class ResumableDownloadManager @JvmOverloads constructor(
     }
 
     private val lock = PlatformLock()
+    var onProgressObserver: ((DownloadProgress) -> Unit)? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val entries = mutableMapOf<String, ManagedDownload>()
 
@@ -228,8 +229,7 @@ open class ResumableDownloadManager @JvmOverloads constructor(
             destinationPath = entry.request.destinationPath,
             message = "Paused at $partial bytes (.part retained for resume)."
         )
-        entry._state.value = pausedState
-        entry.callback?.onProgressDetailed(pausedState)
+        emitState(entry, pausedState)
         return true
     }
 
@@ -295,8 +295,7 @@ open class ResumableDownloadManager @JvmOverloads constructor(
             destinationPath = entry.request.destinationPath,
             message = "Download cancelled and partial temp file removed."
         )
-        entry._state.value = cancelledState
-        entry.callback?.onProgressDetailed(cancelledState)
+        emitState(entry, cancelledState)
         return true
     }
 
@@ -555,8 +554,7 @@ open class ResumableDownloadManager @JvmOverloads constructor(
                                 destinationPath = req.destinationPath,
                                 message = "Downloading ($pct%)"
                             )
-                            entry._state.value = progress
-                            entry.callback?.onProgressDetailed(progress)
+                            emitState(entry, progress)
                             if (pct >= 0 && pct != lastCallbackPct) {
                                 lastCallbackPct = pct
                                 entry.callback?.onProgress(pct)
@@ -678,9 +676,14 @@ open class ResumableDownloadManager @JvmOverloads constructor(
         }
     }
 
+    open fun listAllProgress(): List<DownloadProgress> {
+        return lock.withLock { entries.values.map { it._state.value } }
+    }
+
     private fun emitState(entry: ManagedDownload, progress: DownloadProgress) {
         entry._state.value = progress
         entry.callback?.onProgressDetailed(progress)
+        onProgressObserver?.invoke(progress)
     }
 
     private fun failEntry(entry: ManagedDownload, error: Throwable) {

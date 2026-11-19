@@ -64,9 +64,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.reveila.aegin.bridge.AeginBridge
+import com.reveila.aegin.bridge.AeginDisplayMapper
+import com.reveila.aegin.bridge.SpaceThreadSummary
 import com.reveila.aegin.bridge.TaskItem
+import com.reveila.aegin.bridge.ToolHubSnapshot
 import com.reveila.aegin.bridge.VaultStats
 import com.reveila.aegin.ui.PlatformBackHandler
+import com.reveila.aegin.ui.components.ActiveLargeToolWindow
+import com.reveila.aegin.ui.components.LargeBrowserTakeoverDialog
+import com.reveila.aegin.ui.components.LargeDownloadTakeoverDialog
+import com.reveila.aegin.ui.components.LargeTerminalTakeoverDialog
+import com.reveila.aegin.ui.components.LiveToolMiniCardsPanel
+import com.reveila.aegin.ui.components.WaitingForUserBanner
 import com.reveila.aegin.ui.theme.AeginIconType
 import com.reveila.aegin.ui.theme.AeginOrbAvatar
 import com.reveila.aegin.ui.theme.AeginVectorIcon
@@ -95,7 +104,9 @@ private data class StarterSpaceCardData(
 @Composable
 fun HomeScreen(
     onNavigateToSettings: () -> Unit,
-    onNavigateToExplore: () -> Unit,
+    onNavigateToSpaces: () -> Unit,
+    onNavigateToTasks: (draftPrompt: String?) -> Unit = {},
+    onOpenSecurityPortal: () -> Unit = {},
     onToggleTheme: () -> Unit,
     activeSpaceId: String = "main-space",
     activeSpaceName: String = "Main Space",
@@ -117,7 +128,12 @@ fun HomeScreen(
     var isAutoReady by remember { mutableStateOf(false) }
     var cloudProviderName by remember { mutableStateOf("") }
     var isStatusExpanded by remember { mutableStateOf(false) }
+    var isMenuExpanded by remember { mutableStateOf(false) }
     var activeProcessNote by remember { mutableStateOf("Idle • Checking configured AI models...") }
+    val allPersistedSpaces = remember { mutableStateListOf<SpaceThreadSummary>() }
+    var toolSnapshot by remember { mutableStateOf(ToolHubSnapshot()) }
+    var activeLargeWindow by remember { mutableStateOf(ActiveLargeToolWindow.NONE) }
+    var isAuthorizingTool by remember { mutableStateOf(false) }
 
     val isAutoMode = activeSelection == "AUTO"
     val isLocalMode = activeSelection == "LOCAL"
@@ -288,9 +304,9 @@ fun HomeScreen(
             }
 
             activeProcessNote = when (activeSelection) {
-                "AUTO" -> "Auto • Local-first smart router ready"
-                "LOCAL" -> "Local • Embedded GGUF ready"
-                "CLOUD" -> "External • $cloudProviderName ready"
+                "AUTO" -> "Auto • Smart routing ready"
+                "LOCAL" -> "On-Device • Private offline AI ready"
+                "CLOUD" -> "Cloud • $cloudProviderName ready"
                 else -> "No AI model configured — open Studio Configuration"
             }
             refreshMainGreetingCard()
@@ -320,8 +336,8 @@ fun HomeScreen(
                     activeSelection = "AUTO"
                     targetProvider = "Auto"
                     modeKey = "auto"
-                    modeLabel = "Auto (Local-First Smart Router)"
-                    modeBadgeLabel = "Auto (Local-First)"
+                    modeLabel = "Smart Auto"
+                    modeBadgeLabel = "Auto"
                 }
                 targetMode.equals("On-Device Model", ignoreCase = true) -> {
                     if (!isLocalReady) {
@@ -332,7 +348,7 @@ fun HomeScreen(
                     activeSelection = "LOCAL"
                     targetProvider = "On-Device Model"
                     modeKey = "local"
-                    modeLabel = "On-Device GGUF (Offline)"
+                    modeLabel = "On-Device AI (Offline)"
                     modeBadgeLabel = "Local"
                 }
                 else -> {
@@ -377,9 +393,9 @@ fun HomeScreen(
                         id = Clock.System.now().toEpochMilliseconds().toString(),
                         sender = "agent",
                         text = when (modeKey) {
-                            "auto" -> "Switched Assistant to Auto mode. Interactive chat uses local-first routing while background tasks follow Studio Worker/Governance settings."
-                            "local" -> "Switched Assistant to Local mode. Interactive chat runs via the embedded on-device GGUF engine."
-                            else -> "Switched Assistant to $cloudProviderName. Interactive chat routes through $cloudProviderName while Governance guardrails stay active."
+                            "auto" -> "Switched Assistant to Auto mode. Chats automatically choose the best AI for each request."
+                            "local" -> "Switched Assistant to On-Device mode. Chats run privately on your device."
+                            else -> "Switched Assistant to $cloudProviderName. Safety checks remain active."
                         },
                         modeBadge = modeBadgeLabel
                     )
@@ -426,6 +442,49 @@ fun HomeScreen(
         }
     }
 
+    suspend fun syncSpaceHistoryFromDb(spaceKey: String, spaceLabel: String) {
+        try {
+            val history = AeginBridge.getSpaceHistory(spaceKey, 100)
+            val hydrated = history.mapIndexedNotNull { idx, entry ->
+                when {
+                    AeginBridge.isConversationSummaryEntry(entry) -> ChatMessage(
+                        id = "db-summary-$spaceKey-$idx-${entry.timestamp}",
+                        sender = "summary",
+                        text = AeginBridge.extractConversationSummaryText(entry.content),
+                        modeBadge = "Earlier Summary"
+                    )
+                    entry.role.equals("USER", ignoreCase = true) -> ChatMessage(
+                        id = "db-$spaceKey-$idx-${entry.timestamp}",
+                        sender = "user",
+                        text = entry.content,
+                        modeBadge = spaceLabel
+                    )
+                    entry.role.equals("ASSISTANT", ignoreCase = true) -> ChatMessage(
+                        id = "db-$spaceKey-$idx-${entry.timestamp}",
+                        sender = "agent",
+                        text = formatPersistedDisplayText(entry.role, entry.content),
+                        modeBadge = spaceLabel
+                    )
+                    else -> null
+                }
+            }
+            if (hydrated.isNotEmpty() && !isThinking) {
+                threadMessagesMap[spaceKey] = hydrated
+                syncThreadMessages(spaceKey)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    suspend fun refreshRecentSpaces() {
+        try {
+            val list = AeginBridge.listSpaces()
+            allPersistedSpaces.clear()
+            allPersistedSpaces.addAll(list)
+        } catch (_: Exception) {
+        }
+    }
+
     fun dispatchPrompt(rawInput: String) {
         val trimmed = rawInput.trim()
         if (trimmed.isEmpty() || isThinking) return
@@ -460,8 +519,8 @@ fun HomeScreen(
         prompt = ""
         isThinking = true
         activeProcessNote = when {
-            isAutoMode -> "Auto router evaluating task category (local-first)..."
-            isLocalMode -> "Retrieving Vault vectors & running local GGUF inference..."
+            isAutoMode -> "Choosing the best AI for your request..."
+            isLocalMode -> "Searching your Knowledge Folder & thinking privately..."
             else -> "Routing prompt via $cloudProviderName..."
         }
 
@@ -558,7 +617,7 @@ fun HomeScreen(
                 }
 
                 updateBubble(reply)
-                activeProcessNote = "Completed via $currentBadge • ${vaultStats.chunkCount} vectors active"
+                activeProcessNote = "Ready • ${vaultStats.chunkCount} indexed sections"
             } catch (e: Exception) {
                 val fallback = try {
                     val (ans, _) = AeginBridge.askAgentInSpace(
@@ -577,10 +636,52 @@ fun HomeScreen(
                 activeProcessNote = "Ready • Fallback handled"
             } finally {
                 isThinking = false
+                try {
+                    toolSnapshot = AeginBridge.getToolActivitySnapshot()
+                } catch (_: Exception) {
+                }
+                syncSpaceHistoryFromDb(normalizedSpaceId, activeSpaceName)
+                refreshRecentSpaces()
                 delay(50)
                 if (messages.isNotEmpty()) {
                     listState.animateScrollToItem(messages.lastIndex)
                 }
+            }
+        }
+    }
+
+    fun dispatchKnowledgeShortcut(shortcutLabel: String, shortcutPrompt: String) {
+        if (isThinking) return
+        if (hasNoActiveModel) {
+            dispatchPrompt(shortcutPrompt)
+            return
+        }
+        scope.launch {
+            refreshVaultSummary()
+            if (vaultStats.documentCount <= 0) {
+                messages.add(
+                    ChatMessage(
+                        id = Clock.System.now().toEpochMilliseconds().toString(),
+                        sender = "user",
+                        text = shortcutPrompt,
+                        modeBadge = ""
+                    )
+                )
+                messages.add(
+                    ChatMessage(
+                        id = (Clock.System.now().toEpochMilliseconds() + 1).toString(),
+                        sender = "agent",
+                        text = "No documents are indexed in your Knowledge Folder ($vaultFolder) yet, so \"$shortcutLabel\" has nothing to scan.\n\nYou can add files to that folder or pick a folder in Settings (☰ → Studio & Settings), or paste your notes directly in this chat.",
+                        modeBadge = "Knowledge Folder"
+                    )
+                )
+                persistCurrentThreadMessages()
+                delay(50)
+                if (messages.isNotEmpty()) {
+                    listState.animateScrollToItem(messages.lastIndex)
+                }
+            } else {
+                dispatchPrompt(shortcutPrompt)
             }
         }
     }
@@ -596,6 +697,7 @@ fun HomeScreen(
             }
         }
         refreshVaultSummary()
+        refreshRecentSpaces()
         loadActiveMode()
 
         // Background task telemetry loop (never locks up interactive Assistant chat)
@@ -624,8 +726,9 @@ fun HomeScreen(
                                 "KILLED" -> "⏹"
                                 else -> "❌"
                             }
+                            val friendlyEvtStatus = AeginDisplayMapper.taskStatus(evt.status)
                             val cardText = buildString {
-                                appendLine("$statusIcon Background Task ${evt.status}: ${evt.title}")
+                                appendLine("$statusIcon Background Task $friendlyEvtStatus: ${evt.title}")
                                 if (evt.summary.isNotBlank()) {
                                     append(evt.summary)
                                 }
@@ -635,7 +738,7 @@ fun HomeScreen(
                                     id = evt.eventId,
                                     sender = "agent",
                                     text = cardText,
-                                    modeBadge = "Task • ${evt.status}"
+                                    modeBadge = "Task • $friendlyEvtStatus"
                                 )
                             )
                             persistCurrentThreadMessages()
@@ -644,7 +747,21 @@ fun HomeScreen(
                 }
             } catch (_: Exception) {
             }
-            delay(if (inFlightTasks.isNotEmpty()) 1000L else 2800L)
+            try {
+                toolSnapshot = AeginBridge.getToolActivitySnapshot()
+            } catch (_: Exception) {
+            }
+            val fastToolTick = isThinking ||
+                toolSnapshot.waitingForUserInput ||
+                toolSnapshot.terminal.status == "RUNNING" ||
+                toolSnapshot.downloads.items.any { it.status == "DOWNLOADING" }
+            delay(
+                when {
+                    fastToolTick -> 750L
+                    inFlightTasks.isNotEmpty() -> 1000L
+                    else -> 2400L
+                }
+            )
         }
     }
 
@@ -662,24 +779,10 @@ fun HomeScreen(
         }
 
         try {
-            val history = AeginBridge.getSpaceHistory(normalizedSpaceId, 100)
-            val hydrated = history
-                .filter { it.role.equals("USER", ignoreCase = true) || it.role.equals("ASSISTANT", ignoreCase = true) }
-                .mapIndexed { idx, entry ->
-                    ChatMessage(
-                        id = "db-$normalizedSpaceId-$idx-${entry.timestamp}",
-                        sender = if (entry.role.equals("USER", ignoreCase = true)) "user" else "agent",
-                        text = formatPersistedDisplayText(entry.role, entry.content),
-                        modeBadge = activeSpaceName
-                    )
-                }
-            if (hydrated.isNotEmpty() && !isThinking) {
-                threadMessagesMap[normalizedSpaceId] = hydrated
-                syncThreadMessages(normalizedSpaceId)
-            }
-        } catch (_: Exception) {
+            syncSpaceHistoryFromDb(normalizedSpaceId, activeSpaceName)
         } finally {
             hydratedSpaceId = normalizedSpaceId
+            refreshRecentSpaces()
         }
     }
 
@@ -709,34 +812,34 @@ fun HomeScreen(
     val starterCards = remember(theme) {
         listOf(
             StarterSpaceCardData(
-                title = "Vault Synthesis",
-                subtitle = "Distill strategy, architecture & key takeaways from indexed docs",
-                badge = "RAG • LOCAL",
-                prompt = "Summarize the key strategic insights and architectural decisions from my indexed documents.",
+                title = "Summarize Files",
+                subtitle = "Distill key ideas, decisions & takeaways from your Knowledge Folder",
+                badge = AeginDisplayMapper.spaceTemplateCategory("RAG • LOCAL"),
+                prompt = "Summarize the key insights and decisions from the documents in my Knowledge Folder.",
                 iconType = AeginIconType.VAULT,
                 accentColor = Color(0xFFFF6B2C)
             ),
             StarterSpaceCardData(
-                title = "Executive Briefing",
-                subtitle = "Generate a structured daily digest and priority action plan",
-                badge = "BRIEFING",
-                prompt = "Create a concise executive briefing with top 3 priorities and action items based on my knowledge vault.",
+                title = "Daily Briefing",
+                subtitle = "Generate a concise digest with top priorities and next steps",
+                badge = AeginDisplayMapper.spaceTemplateCategory("BRIEFING"),
+                prompt = "Create a concise briefing with top 3 priorities and action items from the documents in my Knowledge Folder.",
                 iconType = AeginIconType.SPARKLES,
                 accentColor = Color(0xFF06B6D4)
             ),
             StarterSpaceCardData(
-                title = "Risk & Privacy Audit",
-                subtitle = "Check confidential notes & active workflows for exposure",
-                badge = "GUARDRAIL",
-                prompt = "Audit my indexed documents for sensitive entities, compliance risks, or confidential milestones.",
+                title = "Privacy Check",
+                subtitle = "Check saved notes and documents for sensitive information",
+                badge = AeginDisplayMapper.spaceTemplateCategory("GUARDRAIL"),
+                prompt = "Review the documents in my Knowledge Folder and flag any sensitive or confidential details.",
                 iconType = AeginIconType.SHIELD,
                 accentColor = Color(0xFF10B981)
             ),
             StarterSpaceCardData(
-                title = "Roadmap Studio",
-                subtitle = "Brainstorm technical milestones and next-step deliverables",
-                badge = "PLANNER",
-                prompt = "Help me draft a clear 3-phase technical roadmap and milestone checklist.",
+                title = "Project Roadmap",
+                subtitle = "Organize goals, milestones, and upcoming deliverables",
+                badge = AeginDisplayMapper.spaceTemplateCategory("PLANNER"),
+                prompt = "Help me draft a clear 3-phase project roadmap and milestone checklist.",
                 iconType = AeginIconType.BOLT,
                 accentColor = Color(0xFF8B5CF6)
             )
@@ -763,6 +866,7 @@ fun HomeScreen(
                     indication = null
                 ) {
                     if (isStatusExpanded) isStatusExpanded = false
+                    if (isMenuExpanded) isMenuExpanded = false
                 }
                 .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
@@ -779,6 +883,7 @@ fun HomeScreen(
                         shape = CircleShape
                     )
                     .clickable {
+                        isMenuExpanded = false
                         val opening = !isStatusExpanded
                         isStatusExpanded = opening
                         if (opening) {
@@ -828,6 +933,7 @@ fun HomeScreen(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .clickable {
+                        isMenuExpanded = false
                         val opening = !isStatusExpanded
                         isStatusExpanded = opening
                         if (opening) {
@@ -843,7 +949,7 @@ fun HomeScreen(
                 )
             }
 
-            // Right Controls: Theme Toggle
+            // Right Controls: Theme Toggle + Sandwich Menu
             Row(
                 modifier = Modifier.align(Alignment.CenterEnd),
                 verticalAlignment = Alignment.CenterVertically,
@@ -858,6 +964,7 @@ fun HomeScreen(
                         .border(1.dp, theme.glassBorder, CircleShape)
                         .clickable {
                             isStatusExpanded = false
+                            isMenuExpanded = false
                             onToggleTheme()
                         },
                     contentAlignment = Alignment.Center
@@ -865,6 +972,30 @@ fun HomeScreen(
                     AeginVectorIcon(
                         type = if (theme.isDark) AeginIconType.SUN else AeginIconType.MOON,
                         tint = if (theme.isDark) theme.warning else theme.accent,
+                        size = 16.dp
+                    )
+                }
+
+                // Sandwich Menu Button (Spaces, Studio & Settings, Privacy & Safety)
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(if (isMenuExpanded) theme.cyan.copy(alpha = 0.16f) else theme.card)
+                        .border(
+                            width = 1.dp,
+                            color = if (isMenuExpanded) theme.cyan else theme.glassBorder,
+                            shape = CircleShape
+                        )
+                        .clickable {
+                            isStatusExpanded = false
+                            isMenuExpanded = !isMenuExpanded
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    AeginVectorIcon(
+                        type = AeginIconType.MENU,
+                        tint = if (isMenuExpanded) theme.cyan else theme.text,
                         size = 16.dp
                     )
                 }
@@ -902,6 +1033,7 @@ fun HomeScreen(
                             .clip(RoundedCornerShape(14.dp))
                             .background(accent.copy(alpha = 0.12f))
                             .border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
+                            .clickable { onNavigateToTasks(null) }
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
@@ -927,7 +1059,7 @@ fun HomeScreen(
                             }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "${bgTask.title} • ${bgTask.sandboxId.ifBlank { bgTask.status }}",
+                                    text = "${bgTask.title} • ${AeginDisplayMapper.taskStatus(bgTask.status)}",
                                     color = theme.text,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.ExtraBold,
@@ -935,7 +1067,7 @@ fun HomeScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = bgTask.currentStep.ifBlank { "Executing in background sandbox..." },
+                                    text = AeginDisplayMapper.taskStep(bgTask.currentStep, isSuspended = !isRunning),
                                     color = theme.subText,
                                     fontSize = 10.sp,
                                     maxLines = 1,
@@ -970,7 +1102,7 @@ fun HomeScreen(
                                     .padding(horizontal = 9.dp, vertical = 4.dp)
                             ) {
                                 Text(
-                                    text = if (isRunning) "⏸ Suspend" else "▶ Resume",
+                                    text = if (isRunning) "⏸ Pause" else "▶ Resume",
                                     color = if (isRunning) theme.warning else theme.success,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.ExtraBold
@@ -995,7 +1127,7 @@ fun HomeScreen(
                                     .padding(horizontal = 9.dp, vertical = 4.dp)
                             ) {
                                 Text(
-                                    text = "⏹ Kill",
+                                    text = "⏹ Stop",
                                     color = theme.danger,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.ExtraBold
@@ -1006,6 +1138,49 @@ fun HomeScreen(
                 }
             }
         }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // 3.6. HIGH-VISIBILITY WAITING FOR USER INPUT / AUTHORIZATION BANNER
+        // ─────────────────────────────────────────────────────────────────────
+        WaitingForUserBanner(
+            snapshot = toolSnapshot,
+            isBusy = isAuthorizingTool || isThinking,
+            onAuthorizeDecision = { reqId, decision, user, pass, sKey, sVal, editedScript ->
+                if (!isAuthorizingTool) {
+                    isAuthorizingTool = true
+                    scope.launch {
+                        try {
+                            val res = AeginBridge.resolvePendingToolAuthorization(
+                                requestId = reqId,
+                                decision = decision,
+                                username = user,
+                                password = pass,
+                                secretKey = sKey,
+                                secretValue = sVal,
+                                editedScript = editedScript
+                            )
+                            toolSnapshot = AeginBridge.getToolActivitySnapshot()
+                            if (res.answer.isNotBlank()) {
+                                messages.add(
+                                    ChatMessage(
+                                        id = "auth-res-${Clock.System.now().toEpochMilliseconds()}",
+                                        sender = "agent",
+                                        text = res.answer,
+                                        modeBadge = if (decision == "DENY") "Denied" else "Tool Result"
+                                    )
+                                )
+                                persistCurrentThreadMessages()
+                            }
+                            syncSpaceHistoryFromDb(normalizedSpaceId, activeSpaceName)
+                        } finally {
+                            isAuthorizingTool = false
+                        }
+                    }
+                }
+            },
+            onOpenBrowserWindow = { activeLargeWindow = ActiveLargeToolWindow.BROWSER },
+            onOpenTerminalWindow = { activeLargeWindow = ActiveLargeToolWindow.TERMINAL }
+        )
 
         // ─────────────────────────────────────────────────────────────────────
         // 4. CONVERSATION STREAM + MUSE-INSPIRED HERO EMPTY STATE
@@ -1031,18 +1206,18 @@ fun HomeScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "QUICK SPACES",
+                                text = "STARTER CHATS",
                                 color = theme.subText,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Black,
                                 letterSpacing = 1.sp
                             )
                             Text(
-                                text = "Explore All Spaces →",
+                                text = "All Spaces →",
                                 color = theme.cyan,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.clickable { onNavigateToExplore() }
+                                modifier = Modifier.clickable { onNavigateToSpaces() }
                             )
                         }
 
@@ -1100,8 +1275,43 @@ fun HomeScreen(
             items(messages, key = { it.id }) { msg ->
                 val isUser = msg.sender == "user"
                 val isSystem = msg.sender == "system"
+                val isSummary = msg.sender == "summary"
 
-                if (isUser) {
+                if (isSummary) {
+                    // Compacted Earlier Conversation Summary Banner
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(theme.cardAlt.copy(alpha = 0.72f))
+                            .border(1.dp, theme.glassBorder, RoundedCornerShape(16.dp))
+                            .padding(horizontal = 14.dp, vertical = 11.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            AeginVectorIcon(
+                                type = AeginIconType.SPARKLES,
+                                tint = theme.cyan,
+                                size = 13.dp
+                            )
+                            Text(
+                                text = "Earlier Conversation Summary",
+                                color = theme.cyan,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                        Text(
+                            text = msg.text,
+                            color = theme.subText,
+                            fontSize = 13.sp,
+                            lineHeight = 19.sp
+                        )
+                    }
+                } else if (isUser) {
                     // User Message Bubble (Right-aligned, asymmetric Muse pill)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1254,11 +1464,13 @@ fun HomeScreen(
                                         modifier = Modifier
                                             .clip(CircleShape)
                                             .background(theme.inputBg)
-                                            .clickable { onNavigateToExplore() }
+                                            .clickable {
+                                                onNavigateToTasks("Automate this recurring check:\n${msg.text.take(280)}")
+                                            }
                                             .padding(horizontal = 10.dp, vertical = 4.dp)
                                     ) {
                                         Text(
-                                            text = "⚡ Automate in Spaces",
+                                            text = "⚡ Automate as Task",
                                             color = theme.cyan,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.SemiBold
@@ -1268,6 +1480,15 @@ fun HomeScreen(
                             }
                         }
                     }
+                }
+            }
+
+            if (toolSnapshot.browser.isVisible || toolSnapshot.terminal.isVisible || toolSnapshot.downloads.items.isNotEmpty() || toolSnapshot.downloads.isVisible) {
+                item(key = "live_tool_mini_cards") {
+                    LiveToolMiniCardsPanel(
+                        snapshot = toolSnapshot,
+                        onOpenWindow = { win -> activeLargeWindow = win }
+                    )
                 }
             }
 
@@ -1289,7 +1510,7 @@ fun HomeScreen(
                             color = if (isLocalMode) theme.primary else theme.cyan
                         )
                         Text(
-                            text = if (isLocalMode) "Running local GGUF inference..." else "Querying $cloudProviderName...",
+                            text = if (isLocalMode) "Thinking privately on your device..." else "Querying $cloudProviderName...",
                             color = theme.subText,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
@@ -1300,21 +1521,23 @@ fun HomeScreen(
         }
 
         // ─────────────────────────────────────────────────────────────────────
-        // 5. QUICK SUGGESTION CHIPS + FLOATING PILL COMPOSER
+        // 5. QUICK SUGGESTION CHIPS + FLOATING PILL COMPOSER + RECENT SPACES STRIP
         // ─────────────────────────────────────────────────────────────────────
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 8.dp),
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+                .padding(horizontal = 14.dp)
+                .padding(top = 6.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Contextual Quick Suggestion Chips
+            // Contextual Quick Suggestion Chips (Knowledge Folder shortcuts)
             val quickChips = remember {
                 listOf(
-                    "✦ Summarize Vault" to "Summarize my indexed documents and highlight key entities.",
-                    "⚡ Action Items" to "Extract the most urgent action items from my notes.",
-                    "🔍 Search Roadmap" to "What architectural or roadmap milestones are in my vault?",
-                    "🛡️ Privacy Check" to "Scan for any sensitive information in my current workspace."
+                    Triple("✦ Summarize Docs", "Summarize Docs", "Summarize the documents in my Knowledge Folder and highlight key takeaways."),
+                    Triple("⚡ Action Items", "Action Items", "Review the documents and notes in my Knowledge Folder and list the most urgent action items."),
+                    Triple("🔍 Find Milestones", "Find Milestones", "Search the documents in my Knowledge Folder for project plans, roadmaps, and key milestones."),
+                    Triple("🛡️ Privacy Check", "Privacy Check", "Scan the documents in my Knowledge Folder for any sensitive or private information.")
                 )
             }
 
@@ -1324,13 +1547,15 @@ fun HomeScreen(
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                quickChips.forEach { (chipLabel, chipPrompt) ->
+                quickChips.forEach { (chipLabel, shortTitle, chipPrompt) ->
                     Box(
                         modifier = Modifier
                             .clip(CircleShape)
                             .background(theme.card)
                             .border(1.dp, theme.glassBorder, CircleShape)
-                            .clickable(enabled = !isThinking) { dispatchPrompt(chipPrompt) }
+                            .clickable(enabled = !isThinking) {
+                                dispatchKnowledgeShortcut(shortTitle, chipPrompt)
+                            }
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Text(
@@ -1393,7 +1618,12 @@ fun HomeScreen(
                     onValueChange = { prompt = it },
                     modifier = Modifier
                         .weight(1f)
-                        .onFocusChanged { if (it.isFocused) isStatusExpanded = false },
+                        .onFocusChanged {
+                            if (it.isFocused) {
+                                isStatusExpanded = false
+                                isMenuExpanded = false
+                            }
+                        },
                     placeholder = {
                         Text(
                             text = when {
@@ -1448,10 +1678,96 @@ fun HomeScreen(
                     )
                 }
             }
+
+            // Compact Horizontal Strip: 3 Most Recent Spaces + "•••" (All Spaces)
+            val recentSpaces = remember(allPersistedSpaces.toList(), normalizedSpaceId, activeSpaceName) {
+                AeginBridge.selectRecentSpacesForStrip(
+                    persistedSpaces = allPersistedSpaces,
+                    activeSpaceId = normalizedSpaceId,
+                    activeSpaceName = activeSpaceName,
+                    maxCount = 3
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                recentSpaces.forEach { spaceItem ->
+                    val isActiveSpace = spaceItem.spaceId == normalizedSpaceId
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(CircleShape)
+                            .background(
+                                if (isActiveSpace) theme.cyan.copy(alpha = 0.16f)
+                                else theme.card.copy(alpha = 0.72f)
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = if (isActiveSpace) theme.cyan.copy(alpha = 0.55f) else theme.glassBorder,
+                                shape = CircleShape
+                            )
+                            .clickable(enabled = !isThinking) {
+                                isStatusExpanded = false
+                                isMenuExpanded = false
+                                onSelectSpace(spaceItem.spaceId, spaceItem.spaceName)
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        if (isActiveSpace) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(theme.cyan)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+                        Text(
+                            text = spaceItem.spaceName,
+                            color = if (isActiveSpace) theme.text else theme.subText,
+                            fontSize = 11.sp,
+                            fontWeight = if (isActiveSpace) FontWeight.Bold else FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                // "•••" All Spaces Pill
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(theme.card)
+                        .border(1.dp, theme.glassBorder, CircleShape)
+                        .clickable {
+                            isStatusExpanded = false
+                            isMenuExpanded = false
+                            onNavigateToSpaces()
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "•••",
+                        color = theme.cyan,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1
+                    )
+                }
+            }
         } // end Section 5 Column
         } // end inner content Column
 
-            if (isStatusExpanded) {
+            if (isStatusExpanded || isMenuExpanded) {
                 Box(
                     modifier = Modifier
                         .matchParentSize()
@@ -1460,6 +1776,7 @@ fun HomeScreen(
                             indication = null
                         ) {
                             isStatusExpanded = false
+                            isMenuExpanded = false
                         }
                 )
             }
@@ -1507,7 +1824,7 @@ fun HomeScreen(
                     ) {
                         IntelligenceLayerTile(
                             title = "⚡ Auto",
-                            subtitle = if (isAutoReady) "Local-First Smart" else "Not configured",
+                            subtitle = if (isAutoReady) "Smart Routing" else "Not configured",
                             accentColor = theme.success,
                             selected = isAutoMode && isAutoReady,
                             enabled = isAutoReady,
@@ -1525,7 +1842,7 @@ fun HomeScreen(
 
                         IntelligenceLayerTile(
                             title = "📱 Local",
-                            subtitle = if (isLocalReady) "Offline GGUF" else "Not configured",
+                            subtitle = if (isLocalReady) "Private & Offline" else "Not configured",
                             accentColor = theme.primary,
                             selected = isLocalMode && isLocalReady,
                             enabled = isLocalReady,
@@ -1543,7 +1860,7 @@ fun HomeScreen(
 
                         IntelligenceLayerTile(
                             title = if (isCloudReady && cloudProviderName.isNotBlank()) "☁️ $cloudProviderName" else "☁️ Cloud AI",
-                            subtitle = if (isCloudReady) "External LLM" else "Not configured",
+                            subtitle = if (isCloudReady) "Cloud Service" else "Not configured",
                             accentColor = theme.cyan,
                             selected = isCloudMode && isCloudReady,
                             enabled = isCloudReady && cloudProviderName.isNotBlank(),
@@ -1561,11 +1878,250 @@ fun HomeScreen(
                     }
                 }
             }
+
+            // Floating Top-Right Sandwich Menu Drawer
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isMenuExpanded,
+                modifier = Modifier.align(Alignment.TopEnd),
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp)
+                        .widthIn(min = 225.dp, max = 265.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(theme.card)
+                        .border(1.dp, theme.glassBorder, RoundedCornerShape(20.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {}
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    SandwichMenuItem(
+                        iconType = AeginIconType.SPACES,
+                        accentColor = theme.cyan,
+                        title = "Spaces",
+                        subtitle = "All chat threads & templates",
+                        onClick = {
+                            isMenuExpanded = false
+                            onNavigateToSpaces()
+                        }
+                    )
+                    SandwichMenuItem(
+                        iconType = AeginIconType.BOLT,
+                        accentColor = theme.primary,
+                        title = "Tasks",
+                        subtitle = "Scheduled automations & approvals",
+                        onClick = {
+                            isMenuExpanded = false
+                            onNavigateToTasks(null)
+                        }
+                    )
+                    SandwichMenuItem(
+                        iconType = AeginIconType.SETTINGS,
+                        accentColor = theme.violet,
+                        title = "Settings",
+                        subtitle = "AI models & Knowledge Folder",
+                        onClick = {
+                            isMenuExpanded = false
+                            onNavigateToSettings()
+                        }
+                    )
+                    SandwichMenuItem(
+                        iconType = AeginIconType.SHIELD,
+                        accentColor = theme.success,
+                        title = "Privacy & Safety",
+                        subtitle = "On-device protection & activity",
+                        onClick = {
+                            isMenuExpanded = false
+                            onOpenSecurityPortal()
+                        }
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            "🌐 Web" to ActiveLargeToolWindow.BROWSER,
+                            ">_ Shell" to ActiveLargeToolWindow.TERMINAL,
+                            "⬇️ Files" to ActiveLargeToolWindow.DOWNLOADS
+                        ).forEach { (label, winTarget) ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(CircleShape)
+                                    .background(theme.inputBg)
+                                    .border(1.dp, theme.glassBorder, CircleShape)
+                                    .clickable {
+                                        isMenuExpanded = false
+                                        activeLargeWindow = winTarget
+                                        scope.launch { toolSnapshot = AeginBridge.getToolActivitySnapshot() }
+                                    }
+                                    .padding(vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(label, color = theme.text, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
-    PlatformBackHandler(enabled = isStatusExpanded) {
-        isStatusExpanded = false
+    when (activeLargeWindow) {
+        ActiveLargeToolWindow.BROWSER -> {
+            LargeBrowserTakeoverDialog(
+                state = toolSnapshot.browser,
+                onTakeOver = {
+                    scope.launch { toolSnapshot = AeginBridge.browserUserAction("takeover") }
+                },
+                onReturnControlWithCapture = { url, cookieHeader, rawHtml ->
+                    scope.launch {
+                        toolSnapshot = AeginBridge.browserUserAction(
+                            action = "return_control",
+                            url = url,
+                            cookieHeader = cookieHeader,
+                            rawHtml = rawHtml
+                        )
+                    }
+                },
+                onNavigateUrl = { url ->
+                    scope.launch { toolSnapshot = AeginBridge.browserUserAction("navigate", url = url) }
+                },
+                onBack = {
+                    scope.launch { toolSnapshot = AeginBridge.browserUserAction("back") }
+                },
+                onReload = {
+                    scope.launch { toolSnapshot = AeginBridge.browserUserAction("reload") }
+                },
+                onClickElement = { target ->
+                    scope.launch { toolSnapshot = AeginBridge.browserUserAction("click", target = target) }
+                },
+                onTypeElement = { target, text ->
+                    scope.launch { toolSnapshot = AeginBridge.browserUserAction("type", target = target, text = text) }
+                },
+                onSubmitForm = { form ->
+                    scope.launch { toolSnapshot = AeginBridge.browserUserAction("submit", form = form.orEmpty()) }
+                },
+                onClose = { activeLargeWindow = ActiveLargeToolWindow.NONE }
+            )
+        }
+
+        ActiveLargeToolWindow.TERMINAL -> {
+            LargeTerminalTakeoverDialog(
+                state = toolSnapshot.terminal,
+                onTakeOver = {
+                    scope.launch { toolSnapshot = AeginBridge.terminalUserAction("takeover") }
+                },
+                onReturnControl = {
+                    scope.launch { toolSnapshot = AeginBridge.terminalUserAction("return_control") }
+                },
+                onExecuteScript = { script, workingDir ->
+                    scope.launch { toolSnapshot = AeginBridge.terminalUserAction("execute", script = script, workingDir = workingDir) }
+                },
+                onStop = {
+                    scope.launch { toolSnapshot = AeginBridge.terminalUserAction("stop") }
+                },
+                onClearOutput = {
+                    scope.launch { toolSnapshot = AeginBridge.terminalUserAction("clear") }
+                },
+                onClose = { activeLargeWindow = ActiveLargeToolWindow.NONE }
+            )
+        }
+
+        ActiveLargeToolWindow.DOWNLOADS -> {
+            LargeDownloadTakeoverDialog(
+                state = toolSnapshot.downloads,
+                onTakeOver = {
+                    scope.launch { toolSnapshot = AeginBridge.downloadUserAction("takeover") }
+                },
+                onReturnControl = {
+                    scope.launch { toolSnapshot = AeginBridge.downloadUserAction("return_control") }
+                },
+                onPauseDownload = { id ->
+                    scope.launch { toolSnapshot = AeginBridge.downloadUserAction("pause", downloadId = id) }
+                },
+                onResumeDownload = { id ->
+                    scope.launch { toolSnapshot = AeginBridge.downloadUserAction("resume", downloadId = id) }
+                },
+                onCancelDownload = { id ->
+                    scope.launch { toolSnapshot = AeginBridge.downloadUserAction("cancel", downloadId = id) }
+                },
+                onCleanupTemp = {
+                    scope.launch { toolSnapshot = AeginBridge.downloadUserAction("cleanup_temp") }
+                },
+                onClose = { activeLargeWindow = ActiveLargeToolWindow.NONE }
+            )
+        }
+
+        ActiveLargeToolWindow.NONE -> Unit
+    }
+
+    PlatformBackHandler(enabled = isStatusExpanded || isMenuExpanded || activeLargeWindow != ActiveLargeToolWindow.NONE) {
+        if (activeLargeWindow != ActiveLargeToolWindow.NONE) {
+            activeLargeWindow = ActiveLargeToolWindow.NONE
+        } else {
+            isStatusExpanded = false
+            isMenuExpanded = false
+        }
+    }
+}
+
+@Composable
+private fun SandwichMenuItem(
+    iconType: AeginIconType,
+    accentColor: Color,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    val theme = LocalAeginColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(accentColor.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) {
+            AeginVectorIcon(
+                type = iconType,
+                tint = accentColor,
+                size = 16.dp
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = theme.text,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                color = theme.subText,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 

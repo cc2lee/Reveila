@@ -19,6 +19,9 @@ object Constants {
     const val LOG_FILE_SIZE = "logging.file.size"
     const val LOG_FILE_COUNT = "logging.file.count"
     const val LOG_LEVEL = "logging.level"
+    const val LOG_CHAT_ARCHIVE_ENABLED = "logging.chat.archive.enabled"
+    const val LOG_CHAT_ARCHIVE_FILE_SIZE = "logging.chat.archive.file.size"
+    const val LOG_CHAT_ARCHIVE_FILE_COUNT = "logging.chat.archive.file.count"
     const val SYSTEM_PROPERTIES = "reveila.properties"
     const val CHARACTER_ENCODING = "text.character.encoding"
     const val LAUNCH_STRICT_MODE = "launch.strict.mode"
@@ -94,4 +97,26 @@ object Constants {
     const val AI_STATUS_ESCALATE = "ESCALATE"
     const val AI_STATUS_FAILED = "FAILED"
     const val AI_STATUS_TOOL_CALL = "TOOL CALL"
+
+    // Human-readable display labels for the 6 predefined task routing categories
+    const val INTENT_LABEL_LOCAL_TEXT_TRANSFORM = "Summarize & Rewrite"
+    const val INTENT_LABEL_LOCAL_STRUCTURED_EXTRACT = "Extract & Organize Data"
+    const val INTENT_LABEL_LOCAL_DEVICE_ACTION = "Quick Device & Doc Actions"
+    const val INTENT_LABEL_CLOUD_LIVE_RETRIEVAL = "Live Web & Real-Time Info"
+    const val INTENT_LABEL_CLOUD_DEEP_REASONING = "Deep Analysis & Coding"
+    const val INTENT_LABEL_CLOUD_MULTI_STEP_AGENT = "Multi-Step Automation"
+
+    val TASK_INTENT_LABELS: Map<String, String> = mapOf(
+        "LOCAL_TEXT_TRANSFORM" to INTENT_LABEL_LOCAL_TEXT_TRANSFORM,
+        "LOCAL_STRUCTURED_EXTRACT" to INTENT_LABEL_LOCAL_STRUCTURED_EXTRACT,
+        "LOCAL_DEVICE_ACTION" to INTENT_LABEL_LOCAL_DEVICE_ACTION,
+        "CLOUD_LIVE_RETRIEVAL" to INTENT_LABEL_CLOUD_LIVE_RETRIEVAL,
+        "CLOUD_DEEP_REASONING" to INTENT_LABEL_CLOUD_DEEP_REASONING,
+        "CLOUD_MULTI_STEP_AGENT" to INTENT_LABEL_CLOUD_MULTI_STEP_AGENT
+    )
+
+    fun formatTaskIntentLabel(category: String): String {
+        val key = category.trim().uppercase()
+        return TASK_INTENT_LABELS[key] ?: category
+    }
 }

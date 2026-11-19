@@ -101,8 +101,17 @@ open class ManagedInvocation : SystemComponent() {
         }
 
         val tenantId = context?.properties?.getProperty("tenant-id", "default-tenant") ?: "default-tenant"
-        val traceId = TraceContextHolder.getTraceId() ?: Uuid.randomUuid()
-        val callbackPlugin = Plugin(traceId, component, tenantId, traceId)
+        val traceCtx = TraceContextHolder.getContext()
+        val traceId = traceCtx?.traceId ?: Uuid.randomUuid()
+        val callbackPlugin = Plugin(
+            sessionId = traceId,
+            name = component,
+            tenantId = tenantId,
+            traceId = traceId,
+            parentSpanId = traceCtx?.spanId,
+            actorId = traceCtx?.actorId.orEmpty(),
+            actorType = traceCtx?.actorType ?: "SYSTEM"
+        )
         flightRecorder?.recordStep(
             callbackPlugin,
             "sandbox_callback",
@@ -171,14 +180,21 @@ open class ManagedInvocation : SystemComponent() {
 
         val pluginId = request.functionName ?: throw IllegalArgumentException("InvocationRequest functionName cannot be null")
         val sessionId = (metaInfo["_session_id"] as? String) ?: (metaInfo["sessionId"] as? String)
-        val traceId = (metaInfo["traceId"] as? String) ?: Uuid.randomUuid()
+        val traceCtx = TraceContextHolder.getContext()
+        val traceId = (metaInfo["traceId"] as? String) ?: traceCtx?.traceId ?: Uuid.randomUuid()
+        val parentSpanId = (metaInfo["parentSpanId"] as? String) ?: traceCtx?.spanId
+        val actorId = (metaInfo["actorId"] as? String) ?: traceCtx?.actorId.orEmpty()
+        val actorType = (metaInfo["actorType"] as? String) ?: traceCtx?.actorType ?: "SYSTEM"
         val tenantId = context?.properties?.getProperty("tenant-id", "default-tenant") ?: "default-tenant"
 
         val plugin = Plugin(
-            sessionId ?: Uuid.randomUuid(),
-            pluginId,
-            tenantId,
-            traceId
+            sessionId = sessionId ?: Uuid.randomUuid(),
+            name = pluginId,
+            tenantId = tenantId,
+            traceId = traceId,
+            parentSpanId = parentSpanId,
+            actorId = actorId,
+            actorType = actorType
         )
 
         // Step 2: Validate Intent

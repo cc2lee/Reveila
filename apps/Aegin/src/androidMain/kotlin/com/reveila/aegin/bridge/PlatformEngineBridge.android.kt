@@ -1224,7 +1224,8 @@ actual object PlatformEngineBridge {
                 return@flow
             }
             val routeToCloud = prep?.get("routeToCloud")?.toString()?.equals("true", ignoreCase = true) == true
-            if (routeToCloud) {
+            val routeToAgenticLoop = prep?.get("routeToAgenticLoop")?.toString()?.equals("true", ignoreCase = true) == true
+            if (routeToCloud || routeToAgenticLoop) {
                 val raw = if (!spaceId.isNullOrBlank()) {
                     invoke("AgenticFabric", "askAgentInSpace", listOf(prompt, spaceId, spaceName ?: "", sessionId ?: "", prevSummary ?: "", effectiveMode))
                 } else {

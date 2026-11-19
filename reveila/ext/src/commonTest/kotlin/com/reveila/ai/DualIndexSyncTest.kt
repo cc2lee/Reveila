@@ -32,6 +32,10 @@ class DualIndexSyncTest {
         val searchResult = vault.search("hexagonal architecture")
         assertTrue(searchResult.contains("hexagonal persistence architecture"))
 
+        // Verify natural-language notes/action-items shortcut query retrieves indexed content
+        val notesShortcutResult = vault.search("Extract the most urgent action items from my notes.")
+        assertTrue(notesShortcutResult.contains("hexagonal persistence architecture"))
+
         // 2. Test Content Hash deduplication: Saving identical document should not re-index/duplicate
         val initialChunkCount = vault.getChunkCount()
         dataService.save("document", docMap)

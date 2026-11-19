@@ -423,10 +423,18 @@ open class AgentSessionManager : SystemComponent() {
             filtered.addAll(session.messagesForSpace(target))
         }
         val ordered = filtered.sortedBy { it.timestamp }
-        return if (maxMessages > 0 && ordered.size > maxMessages) {
-            ordered.takeLast(maxMessages)
+        val lastSummaryIdx = ordered.indexOfLast {
+            AgentSession.isConversationSummaryMessage(it.role, it.content)
+        }
+        val scoped = if (lastSummaryIdx >= 0) ordered.drop(lastSummaryIdx) else ordered
+        return if (maxMessages > 0 && scoped.size > maxMessages) {
+            if (lastSummaryIdx >= 0 && maxMessages > 1) {
+                listOf(scoped.first()) + scoped.drop(1).takeLast(maxMessages - 1)
+            } else {
+                scoped.takeLast(maxMessages)
+            }
         } else {
-            ordered
+            scoped
         }
     }
 

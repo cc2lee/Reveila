@@ -1,17 +1,26 @@
 package com.reveila.ai
 
+import com.reveila.safety.CommandChainAudit
+import com.reveila.safety.CommandChainReport
+import com.reveila.safety.DefaultFlightRecorder
+import com.reveila.safety.FlightRecorder
 import com.reveila.safety.GuardedRuntime
 import com.reveila.safety.KillSwitch
 import com.reveila.safety.SafetyStatus
+import com.reveila.safety.TraceContextHolder
+import com.reveila.safety.TraceContextSnapshot
 import com.reveila.service.DataService
 import com.reveila.system.Constants
+import com.reveila.system.Plugin
 import com.reveila.system.RolePrincipal
 import com.reveila.system.Subject
 import com.reveila.system.SystemComponent
+import com.reveila.system.UserPrincipal
 import com.reveila.system.io.PlatformFileSystem
 import com.reveila.system.platform.PlatformSystem
 import com.reveila.util.Uuid
 import com.reveila.util.json.JsonUtil
+import kotlin.jvm.JvmOverloads
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +44,7 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
     private var agenticFabric: AgenticFabric? = null
     private var orchestrationService: OrchestrationService? = null
     private var dataService: DataService? = null
+    private var flightRecorder: FlightRecorder? = null
     private var guardedRuntime: GuardedRuntime? = null
     private var llmFactory: LlmProviderFactory? = null
     private var subject: Subject? = null
@@ -45,6 +55,8 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
     private val runningTaskIds: MutableSet<String> = mutableSetOf()
     private val activeSandboxes: MutableMap<String, TaskExecutionSandbox> = mutableMapOf()
     private val taskNotifications: MutableList<Map<String, Any?>> = mutableListOf()
+    private val fallbackTraceHashes: MutableMap<String, String> = mutableMapOf()
+    private var lastFallbackTimestamp: Long = 0L
     private var globalEmergencyStopped: Boolean = false
 
     @Throws(Exception::class)
@@ -59,6 +71,7 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         resolveFabric()
         resolveOrchestration()
         resolveDataService()
+        resolveFlightRecorder()
         resolveGuardedRuntime()
         resolveLlmFactory()
 
@@ -107,6 +120,25 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             }
         }
         return dataService
+    }
+
+    private fun resolveFlightRecorder(): FlightRecorder? {
+        if (flightRecorder == null) {
+            try {
+                val p = context?.getProxy("FlightRecorder")
+                flightRecorder = (p?.getInstance() as? FlightRecorder) ?: p as? FlightRecorder
+            } catch (_: Exception) {
+            }
+        }
+        return flightRecorder
+    }
+
+    private fun resolveActorId(explicitActorId: String = ""): String {
+        val explicit = explicitActorId.trim()
+        if (explicit.isNotEmpty()) return explicit
+        val fromCtx = TraceContextHolder.getContext()?.actorId?.trim()
+        if (!fromCtx.isNullOrEmpty() && fromCtx != "system") return fromCtx
+        return "local-user"
     }
 
     private fun resolveGuardedRuntime(): GuardedRuntime? {
@@ -330,14 +362,28 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         val requiresApproval = (taskDef["requiresApproval"] as? Boolean) == true ||
             (!approvedByUser && isApprovalRequiredForPrompt(prompt))
 
+        val traceId = (taskDef["traceId"] as? String)?.takeIf { it.isNotBlank() }
+            ?: TraceContextHolder.getTraceId()
+            ?: Uuid.randomUuid()
+        taskDef["traceId"] = traceId
+        val initiatedBy = (taskDef["initiatedBy"] as? String)?.takeIf { it.isNotBlank() }
+            ?: resolveActorId()
+        taskDef["initiatedBy"] = initiatedBy
+
         if (requiresApproval && !approvedByUser) {
             val reason = "Task requires Human-In-The-Loop approval before executing: \"$title\""
             taskDef["status"] = "WAITING_APPROVAL"
             taskDef["approvalReason"] = reason
             taskDef["sandboxId"] = ""
             taskDef["currentStep"] = "Paused at HITL governance gate"
+            recordTaskCommandEvent(
+                taskDef = taskDef,
+                action = "TASK_WAITING_APPROVAL",
+                details = "Task [$taskId] ($title) paused awaiting user approval.",
+                actorId = initiatedBy,
+                actorType = "USER"
+            )
             fs.writeText(filePath, JsonUtil.toPrettyJsonString(taskDef), append = false)
-            recordAuditLog("TASK_WAITING_APPROVAL", "Task [$taskId] ($title) paused awaiting user approval.")
             emitTaskNotification(
                 taskId = taskId,
                 title = title,
@@ -350,8 +396,8 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         val shortRunId = Uuid.randomUuid().take(6)
         val sandboxId = "sbx-$taskId-$shortRunId"
         val orch = resolveOrchestration()
-        val isolatedSession = orch?.createSession("task-$taskId-$shortRunId", null)
-            ?: AgentSession("task-$taskId-$shortRunId", null, 10)
+        val isolatedSession = orch?.createSession("task-$taskId-$shortRunId", traceId)
+            ?: AgentSession("task-$taskId-$shortRunId", traceId, 10)
 
         val sandbox = TaskExecutionSandbox(
             sandboxId = sandboxId,
@@ -368,9 +414,14 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         taskDef["approvalReason"] = ""
         taskDef["sandboxId"] = sandboxId
         taskDef["currentStep"] = sandbox.currentStep
+        recordTaskCommandEvent(
+            taskDef = taskDef,
+            action = "TASK_STARTED",
+            details = "Launched task [$taskId] in isolated sandbox [$sandboxId]: $prompt",
+            actorId = "autonomous-agent",
+            actorType = "AGENT"
+        )
         fs.writeText(filePath, JsonUtil.toPrettyJsonString(taskDef), append = false)
-
-        recordAuditLog("TASK_STARTED", "Launched task [$taskId] in isolated sandbox [$sandboxId]: $prompt")
         emitTaskNotification(
             taskId = taskId,
             title = title,
@@ -576,9 +627,14 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             )
 
             val fabric = resolveFabric()
-            val subj = subject ?: Subject().apply {
-                principals.add(RolePrincipal("system"))
-                principals.add(RolePrincipal("autonomous-agent"))
+            val initiatedBy = (initialTaskDef["initiatedBy"] as? String)?.takeIf { it.isNotBlank() } ?: "local-user"
+            val traceId = (initialTaskDef["traceId"] as? String)?.takeIf { it.isNotBlank() }
+                ?: sandbox.session.parentTraceId
+                ?: Uuid.randomUuid()
+            val dispatchSpanId = (initialTaskDef["lastSpanId"] as? String)?.takeIf { it.isNotBlank() }
+            val subj = Subject().apply {
+                principals.addAll(subject?.principals ?: listOf(RolePrincipal("system"), RolePrincipal("autonomous-agent")))
+                principals.add(UserPrincipal(initiatedBy))
             }
 
             var answerText: String
@@ -593,7 +649,20 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             }
 
             if (fabric != null) {
-                val rawResult = fabric.processIntent(sandbox.session, subj, prompt, preferredProviderName = selectedProviderName)
+                val rawResult = try {
+                    TraceContextHolder.setContext(
+                        TraceContextSnapshot(
+                            traceId = traceId,
+                            spanId = Uuid.randomUuid().replace("-", "").take(16),
+                            parentSpanId = dispatchSpanId,
+                            actorId = initiatedBy,
+                            actorType = "AGENT"
+                        )
+                    )
+                    fabric.processIntent(sandbox.session, subj, prompt, preferredProviderName = selectedProviderName)
+                } finally {
+                    TraceContextHolder.clear()
+                }
                 val statusStr = rawResult["status"]?.toString() ?: ""
                 if (statusStr.equals(Constants.AI_STATUS_ESCALATE, ignoreCase = true)) {
                     finalStatus = "WAITING_APPROVAL"
@@ -659,12 +728,24 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             }
             latestDef["lastRunAt"] = PlatformSystem.currentTimeMillis()
             latestDef["lastResult"] = answerText
-            fs.writeText(filePath, JsonUtil.toPrettyJsonString(latestDef), append = false)
+            if (latestDef["traceId"] == null || (latestDef["traceId"] as? String).isNullOrBlank()) {
+                latestDef["traceId"] = initialTaskDef["traceId"] ?: sandbox.session.parentTraceId
+            }
+            if (latestDef["lastSpanId"] == null || (latestDef["lastSpanId"] as? String).isNullOrBlank()) {
+                latestDef["lastSpanId"] = initialTaskDef["lastSpanId"]
+            }
 
             sandbox.markCompleted()
 
             if (finalStatus == "WAITING_APPROVAL") {
-                recordAuditLog("TASK_WAITING_APPROVAL", "Task [$taskId] escalated for approval: $escalatedReason")
+                recordTaskCommandEvent(
+                    taskDef = latestDef,
+                    action = "TASK_WAITING_APPROVAL",
+                    details = "Task [$taskId] escalated for approval: $escalatedReason",
+                    actorId = "autonomous-agent",
+                    actorType = "AGENT"
+                )
+                fs.writeText(filePath, JsonUtil.toPrettyJsonString(latestDef), append = false)
                 emitTaskNotification(
                     taskId = taskId,
                     title = title,
@@ -672,7 +753,14 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
                     summary = "Escalated for approval: $escalatedReason"
                 )
             } else {
-                recordAuditLog("TASK_COMPLETED", "Task [$taskId] completed via $resolvedRouteBadge in sandbox [${sandbox.sandboxId}]: ${answerText.take(160)}")
+                recordTaskCommandEvent(
+                    taskDef = latestDef,
+                    action = "TASK_COMPLETED",
+                    details = "Task [$taskId] completed via $resolvedRouteBadge in sandbox [${sandbox.sandboxId}]: ${answerText.take(160)}",
+                    actorId = "autonomous-agent",
+                    actorType = "AGENT"
+                )
+                fs.writeText(filePath, JsonUtil.toPrettyJsonString(latestDef), append = false)
                 emitTaskNotification(
                     taskId = taskId,
                     title = title,
@@ -701,10 +789,29 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
                 latestDef["currentStep"] = "Failed: ${e.message}"
                 latestDef["lastRunAt"] = PlatformSystem.currentTimeMillis()
                 latestDef["lastResult"] = "Execution error: ${e.message}"
+                if (latestDef["traceId"] == null || (latestDef["traceId"] as? String).isNullOrBlank()) {
+                    latestDef["traceId"] = initialTaskDef["traceId"] ?: sandbox.session.parentTraceId
+                }
+                if (latestDef["lastSpanId"] == null || (latestDef["lastSpanId"] as? String).isNullOrBlank()) {
+                    latestDef["lastSpanId"] = initialTaskDef["lastSpanId"]
+                }
+                recordTaskCommandEvent(
+                    taskDef = latestDef,
+                    action = "TASK_FAILED",
+                    details = "Task [$taskId] failed in sandbox [${sandbox.sandboxId}]: ${e.message}",
+                    actorId = "autonomous-agent",
+                    actorType = "AGENT"
+                )
                 fs.writeText(filePath, JsonUtil.toPrettyJsonString(latestDef), append = false)
             } catch (_: Exception) {
+                recordTaskCommandEvent(
+                    taskDef = initialTaskDef,
+                    action = "TASK_FAILED",
+                    details = "Task [$taskId] failed in sandbox [${sandbox.sandboxId}]: ${e.message}",
+                    actorId = "autonomous-agent",
+                    actorType = "AGENT"
+                )
             }
-            recordAuditLog("TASK_FAILED", "Task [$taskId] failed in sandbox [${sandbox.sandboxId}]: ${e.message}")
             emitTaskNotification(
                 taskId = taskId,
                 title = title,
@@ -885,6 +992,7 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         )
     }
 
+    @JvmOverloads
     open fun createTaskWithIntent(
         title: String,
         intent: String,
@@ -892,7 +1000,8 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         frequency: String,
         scheduleTime: String,
         requiresApproval: Boolean,
-        executionTarget: String = "auto"
+        executionTarget: String = "auto",
+        actorId: String = ""
     ): String {
         val fs = PlatformFileSystem()
         val tasksDir = resolveTasksDir()
@@ -919,6 +1028,10 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         val cleanTime = scheduleTime.ifBlank { "08:00" }
         val needsHitl = requiresApproval || isApprovalRequiredForPrompt(prompt)
         val resolvedTitle = title.ifBlank { formatTaskTitle(taskId, prompt) }
+        val initiator = resolveActorId(actorId)
+        val activeCtx = TraceContextHolder.getContext()
+        val traceId = activeCtx?.traceId?.takeIf { it.isNotBlank() } ?: Uuid.randomUuid()
+        val rootSpanId = Uuid.randomUuid().replace("-", "").take(16)
 
         val assessment = TaskCapabilityRouter.assessTask(
             intent = cleanIntent,
@@ -941,6 +1054,11 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             "requiresApproval" to needsHitl,
             "approvalReason" to if (needsHitl) "Awaiting user approval before first execution." else "",
             "sandboxId" to "",
+            "traceId" to traceId,
+            "lastSpanId" to rootSpanId,
+            "initiatedBy" to initiator,
+            "approvedBy" to "",
+            "rejectedBy" to "",
             "routeTarget" to assessment.targetRoute,
             "taskCategory" to assessment.taskCategory,
             "routingReason" to assessment.reason,
@@ -950,8 +1068,16 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             "lastResult" to if (needsHitl) "Waiting for user approval." else "Scheduled ($cleanFreq at $cleanTime). ${assessment.reason}"
         )
 
+        recordTaskCommandEvent(
+            taskDef = taskMap,
+            action = "TASK_CREATED",
+            details = "Created task [$taskId] ($resolvedTitle) - executionTarget=$cleanTarget, category=${assessment.taskCategory}",
+            actorId = initiator,
+            actorType = "USER",
+            explicitSpanId = rootSpanId,
+            explicitParentSpanId = activeCtx?.spanId
+        )
         fs.writeText(filePath, JsonUtil.toPrettyJsonString(taskMap), append = false)
-        recordAuditLog("TASK_CREATED", "Created task [$taskId] ($resolvedTitle) - executionTarget=$cleanTarget, category=${assessment.taskCategory}")
         return JsonUtil.toJsonString(taskMap)
     }
 
@@ -1044,29 +1170,49 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         return JsonUtil.toJsonString(updated)
     }
 
-    open fun approveTask(taskId: String): String {
+    @JvmOverloads
+    open fun approveTask(taskId: String, approverId: String = ""): String {
         val (filePath, existing) = findTaskFile(taskId)
             ?: return """{"error":"Task not found: $taskId"}"""
+        val approver = resolveActorId(approverId)
         globalEmergencyStopped = false
         killedTaskIds.remove(taskId)
         existing["enabled"] = true
         existing["requiresApproval"] = false
         existing["approvalReason"] = ""
-        recordAuditLog("TASK_APPROVED", "User approved task [$taskId]. Launching in sandbox.")
+        existing["approvedBy"] = approver
+        existing["approvedAt"] = PlatformSystem.currentTimeMillis()
+        recordTaskCommandEvent(
+            taskDef = existing,
+            action = "TASK_APPROVED",
+            details = "User [$approver] approved task [$taskId]. Launching in sandbox.",
+            actorId = approver,
+            actorType = "USER"
+        )
         val updated = dispatchTaskToSandbox(filePath, existing, triggeredManually = true, approvedByUser = true)
         return JsonUtil.toJsonString(updated)
     }
 
-    open fun rejectTask(taskId: String): String {
+    @JvmOverloads
+    open fun rejectTask(taskId: String, rejectorId: String = ""): String {
         val (filePath, existing) = findTaskFile(taskId)
             ?: return """{"error":"Task not found: $taskId"}"""
         val fs = PlatformFileSystem()
+        val rejector = resolveActorId(rejectorId)
         existing["enabled"] = false
         existing["status"] = "PAUSED"
         existing["approvalReason"] = ""
-        existing["lastResult"] = "Execution rejected by user."
+        existing["rejectedBy"] = rejector
+        existing["rejectedAt"] = PlatformSystem.currentTimeMillis()
+        existing["lastResult"] = "Execution rejected by user [$rejector]."
+        recordTaskCommandEvent(
+            taskDef = existing,
+            action = "TASK_REJECTED",
+            details = "User [$rejector] rejected pending approval for task [$taskId].",
+            actorId = rejector,
+            actorType = "USER"
+        )
         fs.writeText(filePath, JsonUtil.toPrettyJsonString(existing), append = false)
-        recordAuditLog("TASK_REJECTED", "User rejected pending approval for task [$taskId].")
         return JsonUtil.toJsonString(existing)
     }
 
@@ -1232,17 +1378,141 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         return prompt.take(40).ifBlank { "Scheduled Task" }
     }
 
-    private fun recordAuditLog(action: String, details: String?) {
+    open fun getTraceChainJson(traceId: String): String {
+        val cleanTraceId = traceId.trim()
+        if (cleanTraceId.isEmpty()) {
+            return JsonUtil.toJsonString(
+                mapOf(
+                    "traceId" to "",
+                    "error" to "traceId is required",
+                    "eventCount" to 0,
+                    "chainIntegrityVerified" to false
+                )
+            )
+        }
+        val fr = resolveFlightRecorder()
+        val report: CommandChainReport? = if (fr is DefaultFlightRecorder) {
+            fr.reconstructCommandChain(cleanTraceId)
+        } else {
+            resolveDataService()?.let { CommandChainAudit.reconstructTrace(cleanTraceId, it) }
+        }
+        if (report == null) {
+            return JsonUtil.toJsonString(
+                mapOf(
+                    "traceId" to cleanTraceId,
+                    "error" to "DataService not available",
+                    "eventCount" to 0,
+                    "chainIntegrityVerified" to false
+                )
+            )
+        }
+        return report.toJsonString()
+    }
+
+    private fun recordTaskCommandEvent(
+        taskDef: MutableMap<String, Any?>?,
+        action: String,
+        details: String,
+        actorId: String,
+        actorType: String,
+        explicitSpanId: String? = null,
+        explicitParentSpanId: String? = null
+    ) {
         try {
+            val traceId = (taskDef?.get("traceId") as? String)?.takeIf { it.isNotBlank() }
+                ?: TraceContextHolder.getTraceId()
+                ?: Uuid.randomUuid()
+            val parentSpanId = explicitParentSpanId
+                ?: (taskDef?.get("lastSpanId") as? String)?.takeIf { it.isNotBlank() }
+                ?: TraceContextHolder.getContext()?.spanId
+            val spanId = explicitSpanId ?: Uuid.randomUuid().replace("-", "").take(16)
+            if (taskDef != null) {
+                taskDef["traceId"] = traceId
+                taskDef["lastSpanId"] = spanId
+            }
+
+            val fr = resolveFlightRecorder()
+            if (fr != null) {
+                val sessionId = (taskDef?.get("sandboxId") as? String)?.takeIf { it.isNotBlank() }
+                    ?: (taskDef?.get("taskId") as? String)?.takeIf { it.isNotBlank() }
+                    ?: "autonomous-agent"
+                val plugin = Plugin(
+                    sessionId = sessionId,
+                    name = "AutonomousAgent",
+                    tenantId = "default",
+                    traceId = traceId,
+                    spanId = spanId,
+                    parentSpanId = parentSpanId,
+                    actorId = actorId,
+                    actorType = actorType
+                )
+                val meta = mutableMapOf<String, Any>(
+                    "component" to "AutonomousAgent"
+                )
+                val taskId = taskDef?.get("taskId") as? String
+                if (!taskId.isNullOrBlank()) {
+                    meta["taskId"] = taskId
+                }
+                fr.recordCommandEvent(
+                    plugin = plugin,
+                    action = action,
+                    details = details,
+                    actorId = actorId,
+                    actorType = actorType,
+                    metadata = meta
+                )
+                return
+            }
+
             val ds = resolveDataService() ?: return
+            val nowMs = PlatformSystem.currentTimeMillis()
+            val timestamp = if (nowMs <= lastFallbackTimestamp) lastFallbackTimestamp + 1L else nowMs
+            lastFallbackTimestamp = timestamp
+            val recordId = "${timestamp}-${Uuid.randomUuid().take(8)}"
+            val prevHash = fallbackTraceHashes[traceId] ?: ""
+            val eventHash = CommandChainAudit.computeEventHash(
+                prevEventHash = prevHash,
+                traceId = traceId,
+                spanId = spanId,
+                parentSpanId = parentSpanId,
+                actorId = actorId,
+                actorType = actorType,
+                action = action,
+                details = details,
+                timestamp = timestamp
+            )
+            fallbackTraceHashes[traceId] = eventHash
+
             val log = mutableMapOf<String, Any?>()
+            log["recordId"] = recordId
+            log["traceId"] = traceId
+            log["spanId"] = spanId
+            log["parentSpanId"] = parentSpanId ?: ""
+            log["actorId"] = actorId
+            log["actorType"] = actorType
+            log["pluginName"] = "AutonomousAgent"
+            log["sessionId"] = taskDef?.get("sandboxId")?.toString().orEmpty()
+            log["tenantId"] = "default"
             log["action"] = action
-            log["details"] = details ?: ""
-            log["timestamp"] = PlatformSystem.currentTimeMillis()
+            log["details"] = details
+            log["timestamp"] = timestamp
+            log["prevEventHash"] = prevHash
+            log["eventHash"] = eventHash
             ds.save("AuditLog", log)
         } catch (e: Exception) {
             logger.warning("Failed to write AuditLog from AutonomousAgent: ${e.message}")
         }
+    }
+
+    private fun recordAuditLog(action: String, details: String?) {
+        val ctx = TraceContextHolder.getContext()
+        recordTaskCommandEvent(
+            taskDef = null,
+            action = action,
+            details = details ?: "",
+            actorId = ctx?.actorId ?: "system",
+            actorType = ctx?.actorType ?: "SYSTEM"
+        )
     }
 
     private fun fetchRecentAuditLogs(limit: Int): List<Map<String, Any?>> {

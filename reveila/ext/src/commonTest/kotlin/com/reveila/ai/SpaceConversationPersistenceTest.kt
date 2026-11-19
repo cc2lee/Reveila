@@ -4,6 +4,7 @@ import com.reveila.crypto.Cryptographer
 import com.reveila.safety.ManagedInvocation
 import com.reveila.safety.MetadataRegistry
 import com.reveila.service.DataService
+import com.reveila.system.Constants
 import com.reveila.system.Context
 import com.reveila.system.PlatformAdapter
 import com.reveila.system.Properties
@@ -352,6 +353,127 @@ class SpaceConversationPersistenceTest {
             assertEquals(4, alphaHistory.size)
             assertTrue(alphaHistory.any { it["content"] == "Audit completed cleanly with AES-GCM verified." })
             assertEquals(2, verifiedSm.getFilteredMessagesForSpace("beta-travel").size)
+        } finally {
+            val fs = PlatformFileSystem()
+            if (fs.exists(testDir)) fs.delete(testDir, recursive = true)
+        }
+    }
+
+    @Test
+    fun testSlidingWindowCompactsDbAndSpaceHistoryLimitsToLastSummary() {
+        val testDir = "build/test-data/compact-spaces-${PlatformSystem.currentTimeMillis()}"
+        cleanTestDir(testDir)
+        try {
+            val summaryReplyProvider = object : LlmProvider {
+                override fun invoke(request: LlmRequest): LlmResponse =
+                    LlmResponse("Summary: Discussed database size and Q4 mobile roadmap.", "stop", null, null, null)
+
+                override fun isEnabled(): Boolean = true
+                override fun isConfigured(): Boolean = true
+                override fun getName(): String = "On-Device Model"
+                override fun getSupportedIntents(): List<String> = TaskRoutingCategory.entries.map { it.name }
+            }
+
+            val (ctx, sessionManager, orchestration) = buildTestContext(testDir, summaryReplyProvider)
+            val fabric = AgenticFabric().apply {
+                context = ctx
+                start()
+            }
+
+            // Seed 6 turns (3 user + 3 assistant) with ascending timestamps
+            val session = orchestration.getOrCreateSpaceSession("mobile-opt", "Mobile Opt", "space-mobile-opt")
+            for (i in 1..3) {
+                session.addMessage(LlmRole.USER, "Old question $i", timestamp = 1000L + (i * 2))
+                session.addMessage(LlmRole.ASSISTANT, "Old answer $i", timestamp = 1001L + (i * 2))
+            }
+            sessionManager.saveSession(session.sessionId, session)
+
+            // Commit one more streaming turn (8 turns total > 6 max for On-Device Model) -> triggers compaction immediately
+            val committed = fabric.commitStreamingTurn(
+                sessionId = session.sessionId,
+                userIntent = "Latest user question 4",
+                assistantAnswer = "Latest assistant answer 4",
+                spaceId = "mobile-opt",
+                spaceName = "Mobile Opt"
+            )
+            assertTrue(committed)
+
+            // Reload fresh engine from DB and verify history starts at the summary and drops old pre-summary turns
+            val (_, _, freshOrch) = buildTestContext(testDir, summaryReplyProvider)
+            val history = freshOrch.getSpaceHistory("mobile-opt", 100)
+            assertEquals(4, history.size, "Expected 1 summary + 3 recent turns after compaction, got: $history")
+            assertEquals("SYSTEM", history[0]["role"])
+            assertTrue(history[0]["content"].toString().startsWith(AgentSession.CONVERSATION_SUMMARY_PREFIX))
+            assertTrue(history[0]["content"].toString().contains("Discussed database size"))
+            assertFalse(history.any { it["content"].toString().contains("Old question 1") })
+            assertEquals("Latest assistant answer 4", history.last()["content"])
+
+            // Archive disabled by default: no archive log file should be created
+            val fs = PlatformFileSystem()
+            val defaultArchivePath = fs.resolve(fs.resolve(testDir, "logs"), ChatHistoryArchiveWriter.ARCHIVE_FILE_NAME)
+            assertFalse(fs.exists(defaultArchivePath), "Archive log should not exist when logging.chat.archive.enabled is false")
+        } finally {
+            val fs = PlatformFileSystem()
+            if (fs.exists(testDir)) fs.delete(testDir, recursive = true)
+        }
+    }
+
+    @Test
+    fun testEnterpriseChatArchiveWriterCreatesAndRotatesJsonlLogs() {
+        val testDir = "build/test-data/archive-logs-${PlatformSystem.currentTimeMillis()}"
+        cleanTestDir(testDir)
+        try {
+            val fs = PlatformFileSystem()
+            val summaryReplyProvider = object : LlmProvider {
+                override fun invoke(request: LlmRequest): LlmResponse =
+                    LlmResponse("Summary: Enterprise audit topic.", "stop", null, null, null)
+
+                override fun isEnabled(): Boolean = true
+                override fun isConfigured(): Boolean = true
+                override fun getName(): String = "On-Device Model"
+                override fun getSupportedIntents(): List<String> = TaskRoutingCategory.entries.map { it.name }
+            }
+
+            val (ctx, sessionManager, orchestration) = buildTestContext(testDir, summaryReplyProvider)
+            ctx.properties?.setProperty(Constants.LOG_CHAT_ARCHIVE_ENABLED, "true")
+            ctx.properties?.setProperty(Constants.LOG_CHAT_ARCHIVE_FILE_SIZE, "400")
+            ctx.properties?.setProperty(Constants.LOG_CHAT_ARCHIVE_FILE_COUNT, "2")
+
+            val fabric = AgenticFabric().apply {
+                context = ctx
+                start()
+            }
+
+            val session = orchestration.getOrCreateSpaceSession("audit-space", "Audit Space", "space-audit-space")
+            for (i in 1..3) {
+                session.addMessage(LlmRole.USER, "Compliance question $i with sufficient payload to test rotation", timestamp = 1000L + (i * 2))
+                session.addMessage(LlmRole.ASSISTANT, "Compliance answer $i with sufficient payload to test rotation", timestamp = 1001L + (i * 2))
+            }
+            sessionManager.saveSession(session.sessionId, session)
+
+            assertTrue(
+                fabric.commitStreamingTurn(
+                    sessionId = session.sessionId,
+                    userIntent = "Compliance question 4",
+                    assistantAnswer = "Compliance answer 4",
+                    spaceId = "audit-space",
+                    spaceName = "Audit Space"
+                )
+            )
+
+            val logsDir = fs.resolve(testDir, "logs")
+            val activeLog = fs.resolve(logsDir, ChatHistoryArchiveWriter.ARCHIVE_FILE_NAME)
+            val rotatedLog1 = fs.resolve(logsDir, "${ChatHistoryArchiveWriter.ARCHIVE_FILE_NAME}.1")
+            val rotatedLog2 = fs.resolve(logsDir, "${ChatHistoryArchiveWriter.ARCHIVE_FILE_NAME}.2")
+
+            assertTrue(fs.exists(activeLog), "Expected active JSONL archive file at $activeLog")
+            assertTrue(fs.exists(rotatedLog1), "Expected rotated backup .1 when size limit is small")
+            assertFalse(fs.exists(rotatedLog2), "Total file count should be capped at logging.chat.archive.file.count=2")
+
+            val combinedContent = fs.readText(rotatedLog1) + "\n" + fs.readText(activeLog)
+            assertTrue(combinedContent.contains("\"spaceId\":\"audit-space\""))
+            assertTrue(combinedContent.contains("\"compactedIntoSummary\":\"Summary: Enterprise audit topic.\""))
+            assertTrue(combinedContent.contains("Compliance"))
         } finally {
             val fs = PlatformFileSystem()
             if (fs.exists(testDir)) fs.delete(testDir, recursive = true)

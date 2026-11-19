@@ -2,22 +2,30 @@ package com.reveila.ai
 
 import com.reveila.error.ExceptionCollection
 import com.reveila.error.SecurityException
+import com.reveila.safety.CommandChainAudit
 import com.reveila.safety.FlightRecorder
 import com.reveila.safety.GovernancePolicy
 import com.reveila.safety.InvocationResult
 import com.reveila.safety.ManagedInvocation
 import com.reveila.safety.MetadataRegistry
+import com.reveila.safety.SecretManager
 import com.reveila.safety.SecurityPerimeter
+import com.reveila.safety.TraceContextHolder
+import com.reveila.safety.TraceContextSnapshot
 import com.reveila.service.DataService
 import com.reveila.system.Constants
 import com.reveila.system.Plugin
 import com.reveila.system.RolePrincipal
 import com.reveila.system.Subject
 import com.reveila.system.SystemComponent
+import com.reveila.system.UserPrincipal
 import com.reveila.system.io.PlatformFileSystem
 import com.reveila.system.platform.PlatformSystem
+import com.reveila.tools.ToolActivityHub
+import com.reveila.tools.download.ResumableDownloadManager
 import com.reveila.util.Uuid
 import com.reveila.util.json.JsonUtil
+import kotlin.jvm.JvmOverloads
 
 /**
  * Agentic AI Runtime Fabric.
@@ -48,6 +56,8 @@ open class AgenticFabric : SystemComponent() {
     private var intentValidator: AiIntentValidator? = null
     private var flightRecorder: FlightRecorder? = null
     private var dataService: DataService? = null
+    private var secretManager: SecretManager? = null
+    private var toolCoordinator: ReveilaToolCoordinator? = null
     private var governancePolicy: GovernancePolicy = GovernancePolicy.defaultPolicy()
 
     var aiLoopLimit: Int = 5
@@ -100,6 +110,13 @@ open class AgenticFabric : SystemComponent() {
             // Optional
         }
 
+        try {
+            val smProxy = context?.getProxy("SecretManager")
+            this.secretManager = (smProxy?.getInstance() as? SecretManager) ?: smProxy as? SecretManager
+        } catch (e: Exception) {
+            // Optional
+        }
+
         // Load Governance Policy from governance-policy.json
         val fs = PlatformFileSystem()
         val home = context?.properties?.getProperty("system.home") ?: "system-home/standard"
@@ -110,8 +127,33 @@ open class AgenticFabric : SystemComponent() {
             GovernancePolicy.defaultPolicy()
         }
 
-        logger.info("AgenticFabric started with policy [${governancePolicy.policyName}] (aiLoopLimit=$aiLoopLimit).")
+        val coordinator = ReveilaToolCoordinator(
+            systemHome = home,
+            secretManagerProvider = {
+                secretManager ?: try {
+                    val p = context?.getProxy("SecretManager")
+                    ((p?.getInstance() as? SecretManager) ?: p as? SecretManager)?.also { secretManager = it }
+                } catch (_: Exception) {
+                    null
+                }
+            },
+            downloadManagerProvider = {
+                try {
+                    val p = context?.getProxy("ResumableDownloadManager")
+                    (p?.getInstance() as? ResumableDownloadManager) ?: p as? ResumableDownloadManager
+                } catch (_: Exception) {
+                    null
+                }
+            },
+            auditLogger = { action, details -> recordAuditLog(action, details) }
+        )
+        coordinator.registerManifests(metadataRegistry)
+        this.toolCoordinator = coordinator
+
+        logger.info("AgenticFabric started with policy [${governancePolicy.policyName}] (aiLoopLimit=$aiLoopLimit, tools=5).")
     }
+
+    open fun getToolCoordinator(): ReveilaToolCoordinator? = toolCoordinator
 
     open fun askAgent(userIntent: String, sessionId: String?, systemPrompt: String?): Map<String, Any?> {
         return askAgentWithMode(userIntent, sessionId, systemPrompt, assistantMode = null)
@@ -154,6 +196,9 @@ open class AgenticFabric : SystemComponent() {
         val interpretation = interpretAiResponse(jsonResponse)
         val uiResponse = mutableMapOf<String, Any?>()
         uiResponse["answer"] = interpretation
+        uiResponse["status"] = jsonResponse[STATUS] ?: Constants.AI_STATUS_COMPLETED
+        uiResponse["waitingForUser"] = (jsonResponse[STATUS]?.toString()?.equals(Constants.AI_STATUS_ESCALATE, ignoreCase = true) == true) ||
+            ToolActivityHub.getSnapshot().waitingForUserInput
         uiResponse["sessionId"] = session?.sessionId ?: actualSessionId
         uiResponse["spaceId"] = session?.spaceId ?: AgentSession.DEFAULT_SPACE_ID
         uiResponse["spaceName"] = session?.spaceName ?: AgentSession.DEFAULT_SPACE_NAME
@@ -218,6 +263,13 @@ open class AgenticFabric : SystemComponent() {
             return mapOf(
                 "routeToCloud" to "true",
                 "providerName" to workerSel.providerName,
+                "taskCategory" to assessment.taskCategory,
+                "sessionId" to (sessionId ?: Uuid.randomUuid())
+            )
+        }
+        if (toolCoordinator?.shouldRouteToAgenticLoop(userIntent) == true) {
+            return mapOf(
+                "routeToAgenticLoop" to "true",
                 "taskCategory" to assessment.taskCategory,
                 "sessionId" to (sessionId ?: Uuid.randomUuid())
             )
@@ -356,6 +408,7 @@ open class AgenticFabric : SystemComponent() {
         }
         session.addMessage(ReveilaMessage.user(userIntent, spaceId = session.spaceId))
         session.addMessage(ReveilaMessage.assistant(assistantAnswer, spaceId = session.spaceId))
+        enforceSlidingWindow(session)
         sessionManager?.saveSession(session.sessionId, session)
         return true
     }
@@ -451,11 +504,45 @@ open class AgenticFabric : SystemComponent() {
         intent: String,
         preferredProviderName: String?
     ): Map<String, Any?> {
-        val traceId = session.parentTraceId ?: Uuid.randomUuid()
-        TraceContextHolder.setTraceId(traceId)
-        val dummyPlugin = Plugin(session.sessionId, "AgenticFabric", "default-tenant", traceId)
+        val existingCtx = TraceContextHolder.getContext()
+        val traceId = session.parentTraceId?.takeIf { it.isNotBlank() }
+            ?: existingCtx?.traceId?.takeIf { it.isNotBlank() }
+            ?: Uuid.randomUuid()
+        val rootSpanId = Uuid.randomUuid()
+        val parentSpanId = existingCtx?.takeIf { it.traceId == traceId }?.spanId
+        val actorId = subject.principals.filterIsInstance<UserPrincipal>().firstOrNull()?.name
+            ?: existingCtx?.actorId?.takeIf { it.isNotBlank() }
+            ?: "local-user"
+        val tenantId = context?.properties?.getProperty("tenant-id", "default-tenant") ?: "default-tenant"
 
-        logger.info("[Fabric] Processing intent (trace: $traceId, preferredProvider=${preferredProviderName ?: "default"}): $intent")
+        TraceContextHolder.setContext(
+            TraceContextSnapshot(
+                traceId = traceId,
+                spanId = rootSpanId,
+                parentSpanId = parentSpanId,
+                actorId = actorId,
+                actorType = "USER"
+            )
+        )
+        val dummyPlugin = Plugin(
+            sessionId = session.sessionId,
+            name = "AgenticFabric",
+            tenantId = tenantId,
+            traceId = traceId,
+            spanId = rootSpanId,
+            parentSpanId = parentSpanId,
+            actorId = actorId,
+            actorType = "USER"
+        )
+        flightRecorder?.recordCommandEvent(
+            plugin = dummyPlugin,
+            action = "PROMPT_ISSUED",
+            details = intent.take(240),
+            actorId = actorId,
+            actorType = "USER"
+        )
+
+        logger.info("[Fabric] Processing intent (trace: $traceId, actor=$actorId, preferredProvider=${preferredProviderName ?: "default"}): $intent")
 
         // 1. Subject Principal Authorization
         val principals = subject.principals
@@ -579,7 +666,27 @@ open class AgenticFabric : SystemComponent() {
 
         var intentBuffer = intent
         val responseValidator = AiResponseValidator(governancePolicy)
+        return executeAgenticLoop(
+            session = session,
+            initialIntentBuffer = intentBuffer,
+            effectivePreferredProvider = effectivePreferredProvider,
+            traceId = traceId,
+            actorId = actorId,
+            dummyPlugin = dummyPlugin,
+            responseValidator = responseValidator
+        )
+    }
 
+    private fun executeAgenticLoop(
+        session: AgentSession,
+        initialIntentBuffer: String,
+        effectivePreferredProvider: String?,
+        traceId: String,
+        actorId: String,
+        dummyPlugin: Plugin,
+        responseValidator: AiResponseValidator
+    ): Map<String, Any?> {
+        var intentBuffer = initialIntentBuffer
         // 3. The Robust Agentic AI Loop
         for (loopCount in 0 until aiLoopLimit) {
             logger.info("[Fabric] Starting Agentic Loop iteration [${loopCount + 1}/$aiLoopLimit]")
@@ -620,7 +727,7 @@ open class AgenticFabric : SystemComponent() {
             // plain conversational replies (even if they contain '{...}' snippets) pass through intact.
             val jsonResponse: Map<String, Any?> = try {
                 val parsed = JsonUtil.parseJsonStringToMap(sanitizedResponse)
-                if (parsed.containsKey(STATUS) || parsed.containsKey(RESULT) || parsed.containsKey(TOOL_CALL)) {
+                if (parsed.containsKey(STATUS) || parsed.containsKey(RESULT) || parsed.containsKey(TOOL_CALL) || parsed.containsKey("tool_call")) {
                     parsed
                 } else if (rawSanitized.isNotBlank()) {
                     mapOf(
@@ -655,25 +762,29 @@ open class AgenticFabric : SystemComponent() {
             if (status.equals(Constants.AI_STATUS_COMPLETED, ignoreCase = true)) {
                 recordAuditLog("TASK_COMPLETED", reasoning)
                 flightRecorder?.recordStep(dummyPlugin, "task_completed", jsonResponse.filterValues { it != null }.mapValues { it.value as Any })
+                enforceSlidingWindow(session)
                 sessionManager?.saveSession(session.sessionId, session)
                 return jsonResponse
             } else if (status.equals(Constants.AI_STATUS_INSUFFICIENT_CONTEXT, ignoreCase = true)) {
                 recordAuditLog("INSUFFICIENT_CONTEXT", reasoning)
                 flightRecorder?.recordStep(dummyPlugin, "insufficient_context", mapOf("reason" to reasoning))
+                enforceSlidingWindow(session)
                 sessionManager?.saveSession(session.sessionId, session)
                 return jsonResponse
             } else if (status.equals(Constants.AI_STATUS_ESCALATE, ignoreCase = true)) {
                 recordAuditLog("ESCALATED", reasoning)
                 flightRecorder?.recordStep(dummyPlugin, "escalated_hitl", mapOf("reason" to reasoning))
+                enforceSlidingWindow(session)
                 sessionManager?.saveSession(session.sessionId, session)
                 return jsonResponse
             } else if (status.equals(Constants.AI_STATUS_FAILED, ignoreCase = true)) {
                 recordAuditLog("TASK_FAILED", reasoning)
                 flightRecorder?.recordStep(dummyPlugin, "task_failed", mapOf("reason" to reasoning))
+                enforceSlidingWindow(session)
                 sessionManager?.saveSession(session.sessionId, session)
                 return jsonResponse
             } else if (status.equals(Constants.AI_STATUS_TOOL_CALL, ignoreCase = true)) {
-                val toolCallObj = jsonResponse[TOOL_CALL]
+                val toolCallObj = jsonResponse[TOOL_CALL] ?: jsonResponse["tool_call"]
                 if (toolCallObj == null) {
                     intentBuffer = "The AI indicated a tool call is needed but did not specify the tool or arguments. Reasoning provided: $reasoning | Please clarify the tool to call and its arguments."
                     recordAuditLog("TOOL_CALL_FAILED", "Missing tool/arguments.")
@@ -685,20 +796,54 @@ open class AgenticFabric : SystemComponent() {
 
                     try {
                         if (toolCallObj is List<*>) {
-                            for (item in toolCallObj) {
-                                if (item is Map<*, *>) {
-                                    @Suppress("UNCHECKED_CAST")
-                                    val singleToolCall = item as Map<String, Any?>
-                                    val result = handleGuardedToolCall(session, singleToolCall, currentResponse, traceId)
-                                    toolResults.append("\n- Tool: ").append(singleToolCall["method"]?.toString() ?: "")
-                                        .append("\n  Result: ").append(result)
-                                }
+                            val callsList = toolCallObj.filterIsInstance<Map<String, Any?>>()
+                            for ((idx, singleToolCall) in callsList.withIndex()) {
+                                val remaining = if (idx + 1 < callsList.size) callsList.drop(idx + 1) else emptyList()
+                                val result = handleGuardedToolCall(
+                                    session = session,
+                                    toolCallObj = singleToolCall,
+                                    intent = currentResponse,
+                                    traceId = traceId,
+                                    actorId = actorId,
+                                    preferredProviderName = effectivePreferredProvider,
+                                    remainingCalls = remaining,
+                                    accumulatedResults = toolResults.toString(),
+                                    originalReasoning = reasoning
+                                )
+                                val label = singleToolCall["name"]?.toString()
+                                    ?: singleToolCall["plugin"]?.toString()
+                                    ?: singleToolCall["method"]?.toString()
+                                    ?: "tool"
+                                toolResults.append("\n- Tool: ").append(label)
+                                    .append("\n  Result: ").append(result)
                             }
                         } else if (toolCallObj is Map<*, *>) {
                             @Suppress("UNCHECKED_CAST")
                             val singleToolCall = toolCallObj as Map<String, Any?>
-                            val result = handleGuardedToolCall(session, singleToolCall, currentResponse, traceId)
+                            val result = handleGuardedToolCall(
+                                session = session,
+                                toolCallObj = singleToolCall,
+                                intent = currentResponse,
+                                traceId = traceId,
+                                actorId = actorId,
+                                preferredProviderName = effectivePreferredProvider,
+                                remainingCalls = emptyList(),
+                                accumulatedResults = "",
+                                originalReasoning = reasoning
+                            )
                             toolResults.append(result)
+                        }
+
+                        if (ToolActivityHub.getSnapshot().browser.waitingForUser) {
+                            sessionManager?.saveSession(session.sessionId, session)
+                            val waitingSnap = ToolActivityHub.getSnapshot().browser
+                            return mapOf(
+                                STATUS to Constants.AI_STATUS_ESCALATE,
+                                REASONING to waitingSnap.takeoverMessage.ifBlank { "Browser requires user takeover (${waitingSnap.takeoverReason})." },
+                                RESULT to "Browser paused at ${waitingSnap.url} waiting for user input. Tap the Live Browser window to complete verification and return control.",
+                                CONFIDENCE_SCORE to 1.0,
+                                TOOL_CALL to toolCallObj
+                            )
                         }
 
                         intentBuffer = "The AI has requested to call tools with details: $toolCallObj | Reasoning provided: $reasoning | Results from tool execution: $toolResults | Analyze this information and provide the next step or final answer."
@@ -719,7 +864,8 @@ open class AgenticFabric : SystemComponent() {
                         val hitlResponse = mutableMapOf<String, Any?>()
                         hitlResponse[STATUS] = Constants.AI_STATUS_ESCALATE
                         hitlResponse[REASONING] = approvalMessage
-                        hitlResponse[RESULT] = "Paused awaiting Human-In-The-Loop approval."
+                        hitlResponse[RESULT] = ToolActivityHub.getSnapshot().pendingAuthorization?.reason
+                            ?: "Paused awaiting Human-In-The-Loop authorization."
                         hitlResponse[CONFIDENCE_SCORE] = 1.0
                         hitlResponse[TOOL_CALL] = toolCallObj
                         sessionManager?.saveSession(session.sessionId, session)
@@ -738,13 +884,18 @@ open class AgenticFabric : SystemComponent() {
     }
 
     /**
-     * Handles tool execution with Dual-Model consensus verification and security perimeter enforcement.
+     * Handles tool execution with Dual-Model consensus verification, secret/permission gating, and security perimeter enforcement.
      */
     private fun handleGuardedToolCall(
         session: AgentSession,
         toolCallObj: Map<String, Any?>,
         intent: String,
-        traceId: String
+        traceId: String,
+        actorId: String = TraceContextHolder.getContext()?.actorId.orEmpty().ifBlank { "local-user" },
+        preferredProviderName: String? = null,
+        remainingCalls: List<Map<String, Any?>> = emptyList(),
+        accumulatedResults: String = "",
+        originalReasoning: String = ""
     ): String {
         var pluginId = toolCallObj["plugin"]?.toString() ?: ""
         if (pluginId.isEmpty()) {
@@ -768,12 +919,227 @@ open class AgenticFabric : SystemComponent() {
             }
         }
 
+        val coordinator = toolCoordinator
+        if (coordinator != null && coordinator.isRegisteredTool(pluginId)) {
+            val result = coordinator.authorizeAndExecute(
+                toolCallObj = toolCallObj,
+                session = session,
+                actorId = actorId,
+                preferredProviderName = preferredProviderName,
+                requireInteractiveAuth = true,
+                remainingCalls = remainingCalls,
+                accumulatedResults = accumulatedResults,
+                originalReasoning = originalReasoning
+            )
+            session.chatMemory.add(ReveilaMessage.assistant("Reasoning: Executed tool [$pluginId].", spaceId = session.spaceId))
+            session.chatMemory.add(ReveilaMessage.tool("Tool [$pluginId] returned: $result", spaceId = session.spaceId))
+            return result
+        }
+
         return handleToolCall(session, toolCallObj, intent)
     }
 
+    // =========================================================================
+    // Live Tool Activity, User Takeover & Interactive Authorization Endpoints
+    // =========================================================================
+
+    open fun getToolActivitySnapshotJson(): String = ToolActivityHub.getSnapshotJson()
+
+    @JvmOverloads
+    open fun resolvePendingToolAuthorizationJson(
+        requestId: String,
+        decision: String,
+        username: String = "",
+        password: String = "",
+        secretKey: String = "",
+        secretValue: String = "",
+        editedScript: String = ""
+    ): String {
+        val coordinator = toolCoordinator
+            ?: return JsonUtil.toJsonString(mapOf("error" to "Tool coordinator not initialized."))
+        val resolution = coordinator.resolvePendingAuthorization(
+            requestId = requestId,
+            decision = decision,
+            approverId = TraceContextHolder.getContext()?.actorId?.takeIf { it.isNotBlank() } ?: "local-user",
+            username = username,
+            password = password,
+            secretKey = secretKey,
+            secretValue = secretValue,
+            editedScript = editedScript
+        )
+        if (!resolution.found || resolution.pendingExecution == null) {
+            return JsonUtil.toJsonString(
+                mapOf(
+                    "answer" to resolution.message,
+                    "status" to Constants.AI_STATUS_FAILED,
+                    "snapshot" to ToolActivityHub.getSnapshotJson()
+                )
+            )
+        }
+
+        val pending = resolution.pendingExecution
+        val session = orchestrationService?.getOrCreateSpaceSession(
+            spaceId = pending.spaceId,
+            spaceName = pending.spaceId,
+            preferredSessionId = pending.sessionId
+        ) ?: return JsonUtil.toJsonString(
+            mapOf(
+                "answer" to if (resolution.approved) resolution.toolOutput else resolution.message,
+                "status" to if (resolution.approved) Constants.AI_STATUS_COMPLETED else Constants.AI_STATUS_FAILED
+            )
+        )
+
+        val traceId = pending.view.traceId.ifBlank { Uuid.randomUuid() }
+        val dummyPlugin = Plugin(
+            sessionId = traceId,
+            name = COMPONENT_NAME,
+            tenantId = context?.properties?.getProperty("tenant-id", "default-tenant") ?: "default-tenant",
+            traceId = traceId,
+            actorId = pending.actorId,
+            actorType = "USER"
+        )
+
+        if (!resolution.approved) {
+            session.addMessage(ReveilaMessage.assistant(resolution.message, spaceId = session.spaceId))
+            sessionManager?.saveSession(session.sessionId, session)
+            return JsonUtil.toJsonString(
+                mapOf(
+                    "answer" to resolution.message,
+                    "status" to Constants.AI_STATUS_FAILED,
+                    "sessionId" to session.sessionId,
+                    "spaceId" to session.spaceId
+                )
+            )
+        }
+
+        val combinedResults = StringBuilder(pending.accumulatedResults)
+        combinedResults.append("\n- Tool: ").append(pending.view.toolName)
+            .append("\n  Result: ").append(resolution.toolOutput)
+
+        // Continue any queued subsequent tool calls before resuming the LLM loop
+        if (pending.remainingCalls.isNotEmpty()) {
+            try {
+                for ((idx, nextCall) in pending.remainingCalls.withIndex()) {
+                    val tailCalls = pending.remainingCalls.drop(idx + 1)
+                    val nextOut = handleGuardedToolCall(
+                        session = session,
+                        toolCallObj = nextCall,
+                        intent = "resumed_after_approval",
+                        traceId = traceId,
+                        actorId = pending.actorId,
+                        preferredProviderName = pending.preferredProviderName,
+                        remainingCalls = tailCalls,
+                        accumulatedResults = combinedResults.toString(),
+                        originalReasoning = pending.originalReasoning
+                    )
+                    val label = nextCall["name"]?.toString() ?: nextCall["plugin"]?.toString() ?: "tool"
+                    combinedResults.append("\n- Tool: ").append(label).append("\n  Result: ").append(nextOut)
+                }
+            } catch (secEx: SecurityException) {
+                if (secEx.message?.startsWith("APPROVAL_REQUIRED") == true) {
+                    sessionManager?.saveSession(session.sessionId, session)
+                    return JsonUtil.toJsonString(
+                        mapOf(
+                            "answer" to "Additional tool authorization required.",
+                            "status" to Constants.AI_STATUS_ESCALATE,
+                            "waitingForUser" to true,
+                            "sessionId" to session.sessionId,
+                            "spaceId" to session.spaceId
+                        )
+                    )
+                }
+            }
+        }
+
+        if (ToolActivityHub.getSnapshot().browser.waitingForUser) {
+            sessionManager?.saveSession(session.sessionId, session)
+            val browserSnap = ToolActivityHub.getSnapshot().browser
+            return JsonUtil.toJsonString(
+                mapOf(
+                    "answer" to "Browser requires manual verification at ${browserSnap.url} (${browserSnap.takeoverReason}). Tap the Live Browser preview to complete and return control.",
+                    "status" to Constants.AI_STATUS_ESCALATE,
+                    "waitingForUser" to true,
+                    "sessionId" to session.sessionId,
+                    "spaceId" to session.spaceId
+                )
+            )
+        }
+
+        session.addMessage(ReveilaMessage.tool("Authorized tool execution returned: $combinedResults", spaceId = session.spaceId))
+        val resumePrompt = "Authorized tool execution finished with results: $combinedResults | Original reasoning: ${pending.originalReasoning} | Continue and provide the next step or final response."
+        val loopResult = executeAgenticLoop(
+            session = session,
+            initialIntentBuffer = resumePrompt,
+            effectivePreferredProvider = pending.preferredProviderName,
+            traceId = traceId,
+            actorId = pending.actorId,
+            dummyPlugin = dummyPlugin,
+            responseValidator = AiResponseValidator(governancePolicy)
+        )
+        val answer = interpretAiResponse(loopResult)
+        return JsonUtil.toJsonString(
+            mapOf(
+                "answer" to answer,
+                "status" to (loopResult[STATUS] ?: Constants.AI_STATUS_COMPLETED),
+                "waitingForUser" to ((loopResult[STATUS]?.toString()?.equals(Constants.AI_STATUS_ESCALATE, ignoreCase = true) == true) ||
+                    ToolActivityHub.getSnapshot().waitingForUserInput),
+                "sessionId" to session.sessionId,
+                "spaceId" to session.spaceId,
+                "toolOutput" to resolution.toolOutput
+            )
+        )
+    }
+
+    @JvmOverloads
+    open fun browserUserActionJson(
+        action: String,
+        url: String = "",
+        target: String = "",
+        text: String = "",
+        form: String = "",
+        cookieHeader: String = "",
+        rawHtml: String = ""
+    ): String {
+        return toolCoordinator?.handleBrowserUserAction(action, url, target, text, form, cookieHeader, rawHtml)
+            ?: ToolActivityHub.getSnapshotJson()
+    }
+
+    @JvmOverloads
+    open fun terminalUserActionJson(
+        action: String,
+        script: String = "",
+        workingDir: String = ""
+    ): String {
+        return toolCoordinator?.handleTerminalUserAction(action, script, workingDir)
+            ?: ToolActivityHub.getSnapshotJson()
+    }
+
+    @JvmOverloads
+    open fun downloadUserActionJson(
+        action: String,
+        downloadId: String = ""
+    ): String {
+        return toolCoordinator?.handleDownloadUserAction(action, downloadId)
+            ?: ToolActivityHub.getSnapshotJson()
+    }
+
+    @JvmOverloads
+    open fun secretVaultUserActionJson(
+        action: String,
+        key: String = "",
+        value: String = "",
+        category: String = "GENERAL",
+        domain: String = "",
+        username: String = ""
+    ): String {
+        return toolCoordinator?.handleSecretVaultUserAction(action, key, value, category, domain, username)
+            ?: JsonUtil.toJsonString(mapOf("error" to "Secret vault coordinator unavailable"))
+    }
+
     /**
-     * Sliding context window management: compacts or summarizes older messages
-     * for the session's active Space when message limit is approached, keeping recent turns intact.
+     * Sliding context window management: compacts and summarizes older messages
+     * for the session's active Space when message limit is exceeded, replacing raw
+     * pre-window turns in the database with the latest summary + recent turns.
      */
     private fun enforceSlidingWindow(session: AgentSession) {
         val worker = llmFactory?.getActiveProvider()
@@ -781,31 +1147,74 @@ open class AgenticFabric : SystemComponent() {
         val maxMsgs = if (isOnDevice) 6 else (orchestrationService?.getMaxMessages() ?: 20)
         val spaceId = session.spaceId
         val messages = session.messagesForSpace(spaceId)
+        val conversationTurns = messages.filterNot {
+            AgentSession.isConversationSummaryMessage(it.role, it.content)
+        }
 
-        if (messages.size > maxMsgs) {
-            try {
+        if (conversationTurns.size > maxMsgs) {
+            val keepCount = (maxMsgs / 2).coerceIn(2, 6)
+            val toSummarize = conversationTurns.dropLast(keepCount)
+            val recentTurns = conversationTurns.takeLast(keepCount)
+            val priorSummary = messages.lastOrNull {
+                AgentSession.isConversationSummaryMessage(it.role, it.content)
+            }?.let { AgentSession.extractConversationSummaryBody(it.content) }
+                ?.takeIf { it.isNotBlank() }
+                ?: session.summary
+
+            val summary = try {
                 if (worker != null) {
-                    val toSummarize = messages.take(messages.size - 6)
-                    val historyDump = toSummarize.joinToString("\n") { "${it.role().name}: ${it.content()}" }
+                    val historyDump = buildString {
+                        if (priorSummary.isNotBlank()) {
+                            appendLine("Previous summary: $priorSummary")
+                        }
+                        toSummarize.forEach { msg ->
+                            appendLine("${msg.role().name}: ${msg.content()}")
+                        }
+                    }.trim()
 
                     val summaryReq = LlmRequest.builder()
-                        .addMessage(ReveilaMessage.system("Summarize earlier conversation turns into 2-3 concise context bullet points."))
+                        .addMessage(ReveilaMessage.system("Summarize the conversation into 2-3 concise context bullet points, preserving key facts, decisions, and pending questions."))
                         .addMessage(ReveilaMessage.user(historyDump))
                         .build()
 
-                    val summary = worker.invoke(summaryReq).content ?: "Context summary preserved."
-                    val recentTurns = messages.takeLast(6)
-
-                    session.updateSummary(summary)
-                    session.chatMemory.clear()
-                    session.addMessage(ReveilaMessage.system("Earlier conversation summary: $summary", spaceId = spaceId))
-                    recentTurns.forEach { session.addMessage(it.withSpace(spaceId)) }
-                    sessionManager?.saveSession(session.sessionId, session)
-                    logger.info("[Fabric] Sliding context window activated for space [$spaceId]: compacted ${toSummarize.size} turns into concise summary.")
+                    worker.invoke(summaryReq).content?.trim()?.takeIf { it.isNotBlank() }
+                        ?: buildExtractiveSpaceSummary(session.spaceName, toSummarize, priorSummary)
+                } else {
+                    buildExtractiveSpaceSummary(session.spaceName, toSummarize, priorSummary)
                 }
             } catch (e: Exception) {
-                logger.warning("[Fabric] Could not compact context window: ${e.message}")
+                logger.warning("[Fabric] LLM summary fallback used while compacting window: ${e.message}")
+                buildExtractiveSpaceSummary(session.spaceName, toSummarize, priorSummary)
             }
+
+            val firstRecentTs = recentTurns.firstOrNull()?.timestamp?.takeIf { it > 0L }
+                ?: PlatformSystem.currentTimeMillis()
+            val summaryTs = (firstRecentTs - 1L).coerceAtLeast(1L)
+
+            session.updateSummary(summary)
+            session.chatMemory.clear()
+            session.addMessage(
+                ReveilaMessage.system(
+                    "${AgentSession.CONVERSATION_SUMMARY_PREFIX} $summary",
+                    spaceId = spaceId,
+                    timestamp = summaryTs
+                )
+            )
+            recentTurns.forEach { session.addMessage(it.withSpace(spaceId)) }
+            sessionManager?.saveSession(session.sessionId, session)
+            try {
+                ChatHistoryArchiveWriter.archiveCompactedTurns(
+                    properties = context?.properties,
+                    spaceId = spaceId,
+                    spaceName = session.spaceName,
+                    sessionId = session.sessionId,
+                    compactedSummary = summary,
+                    compactedTurns = toSummarize
+                )
+            } catch (archiveEx: Exception) {
+                logger.warning("[Fabric] Failed to archive compacted chat turns: ${archiveEx.message}")
+            }
+            logger.info("[Fabric] Sliding context window activated for space [$spaceId]: compacted ${toSummarize.size} turns into concise summary (kept ${recentTurns.size} recent turns).")
         }
     }
 
@@ -833,10 +1242,10 @@ open class AgenticFabric : SystemComponent() {
         }
 
         val conversationTurns = allFiltered.filterNot { msg ->
-            msg.role == LlmRole.SYSTEM && msg.content.startsWith("Earlier conversation summary:", ignoreCase = true)
+            AgentSession.isConversationSummaryMessage(msg.role, msg.content)
         }
         val embeddedSummary = allFiltered.lastOrNull { msg ->
-            msg.role == LlmRole.SYSTEM && msg.content.startsWith("Earlier conversation summary:", ignoreCase = true)
+            AgentSession.isConversationSummaryMessage(msg.role, msg.content)
         }?.content
 
         val recentTurns: List<ReveilaMessage>
@@ -851,7 +1260,7 @@ open class AgenticFabric : SystemComponent() {
 
         val effectiveSummary = when {
             persistedSummary.isNotBlank() -> persistedSummary
-            !embeddedSummary.isNullOrBlank() -> embeddedSummary.removePrefix("Earlier conversation summary:").trim()
+            !embeddedSummary.isNullOrBlank() -> AgentSession.extractConversationSummaryBody(embeddedSummary)
             olderTurns.isNotEmpty() -> buildExtractiveSpaceSummary(session.spaceName, olderTurns)
             else -> ""
         }
@@ -869,8 +1278,12 @@ open class AgenticFabric : SystemComponent() {
         return contextMessages
     }
 
-    private fun buildExtractiveSpaceSummary(spaceName: String, olderTurns: List<ReveilaMessage>): String {
-        return olderTurns
+    private fun buildExtractiveSpaceSummary(
+        spaceName: String,
+        olderTurns: List<ReveilaMessage>,
+        priorSummary: String = ""
+    ): String {
+        val turnBullets = olderTurns
             .filter { it.role == LlmRole.USER || it.role == LlmRole.ASSISTANT }
             .takeLast(6)
             .joinToString(" | ") { msg ->
@@ -878,6 +1291,9 @@ open class AgenticFabric : SystemComponent() {
                 val clipped = msg.content.replace('\n', ' ').trim().take(120)
                 "$prefix: $clipped"
             }
+        return listOf(priorSummary.trim(), turnBullets.trim())
+            .filter { it.isNotBlank() }
+            .joinToString(" | ")
             .ifBlank { "Continued session in $spaceName" }
     }
 
@@ -911,6 +1327,10 @@ open class AgenticFabric : SystemComponent() {
 
         val metaInfo = mutableMapOf<String, Any?>()
         metaInfo["traceId"] = child.traceId
+        metaInfo["spanId"] = child.spanId
+        metaInfo["parentSpanId"] = child.parentSpanId
+        metaInfo["actorId"] = child.actorId
+        metaInfo["actorType"] = child.actorType
         metaInfo[AgentSession.ID] = parent.sessionId
 
         val result = bridge?.invoke(delegateCall, activePerimeter, targetIntent, metaInfo)
@@ -1056,15 +1476,61 @@ open class AgenticFabric : SystemComponent() {
 
     private fun recordAuditLog(action: String, details: String?) {
         try {
+            val traceCtx = TraceContextHolder.getContext()
+            val traceId = traceCtx?.traceId ?: Uuid.randomUuid()
+            val spanId = Uuid.randomUuid()
+            val parentSpanId = traceCtx?.spanId
+            val actorId = traceCtx?.actorId.orEmpty()
+            val actorType = traceCtx?.actorType ?: "SYSTEM"
+            val tenantId = context?.properties?.getProperty("tenant-id", "default-tenant") ?: "default-tenant"
+
+            val fr = flightRecorder
+            if (fr != null) {
+                val plugin = Plugin(
+                    sessionId = traceId,
+                    name = "AgenticFabric",
+                    tenantId = tenantId,
+                    traceId = traceId,
+                    spanId = spanId,
+                    parentSpanId = parentSpanId,
+                    actorId = actorId,
+                    actorType = actorType
+                )
+                fr.recordCommandEvent(plugin, action, details ?: "", actorId, actorType)
+                return
+            }
+
             val ds = dataService ?: run {
                 val p = context?.getProxy("DataService")
                 (p?.getInstance() as? DataService) ?: p as? DataService
             }
             if (ds != null) {
+                val ts = PlatformSystem.currentTimeMillis()
+                val recordId = Uuid.randomUuid()
                 val log = mutableMapOf<String, Any?>()
+                log["recordId"] = recordId
+                log["traceId"] = traceId
+                log["spanId"] = spanId
+                if (!parentSpanId.isNullOrBlank()) log["parentSpanId"] = parentSpanId
+                log["actorId"] = actorId
+                log["actorType"] = actorType
+                log["pluginName"] = "AgenticFabric"
+                log["tenantId"] = tenantId
                 log["action"] = action
-                log["details"] = details
-                log["timestamp"] = PlatformSystem.currentTimeMillis()
+                log["details"] = details ?: ""
+                log["timestamp"] = ts
+                log["prevEventHash"] = ""
+                log["eventHash"] = CommandChainAudit.computeEventHash(
+                    prevEventHash = "",
+                    traceId = traceId,
+                    spanId = spanId,
+                    parentSpanId = parentSpanId,
+                    actorId = actorId,
+                    actorType = actorType,
+                    action = action,
+                    details = details ?: "",
+                    timestamp = ts
+                )
                 ds.save("AuditLog", log)
             }
         } catch (e: Exception) {
@@ -1074,10 +1540,14 @@ open class AgenticFabric : SystemComponent() {
 
     @Throws(Exception::class)
     private fun handleToolCall(session: AgentSession, toolCallObj: Map<String, Any?>, intent: String): String {
+        val traceCtx = TraceContextHolder.getContext()
         val bridgeArgs = mutableMapOf<String, Any?>()
         bridgeArgs[AgentSession.ID] = session.sessionId
         bridgeArgs[AgentSession.THOUGHT] = toolCallObj
-        bridgeArgs["traceId"] = session.parentTraceId ?: Uuid.randomUuid()
+        bridgeArgs["traceId"] = session.parentTraceId ?: traceCtx?.traceId ?: Uuid.randomUuid()
+        bridgeArgs["parentSpanId"] = traceCtx?.spanId
+        bridgeArgs["actorId"] = traceCtx?.actorId.orEmpty()
+        bridgeArgs["actorType"] = traceCtx?.actorType ?: "SYSTEM"
 
         var pluginId = toolCallObj["plugin"]?.toString() ?: ""
         if (pluginId.isEmpty()) {
@@ -1145,31 +1615,6 @@ open class AgenticFabric : SystemComponent() {
             return msg
         }
 
-        val tools: List<LlmTool>
-        val provider = toolProvider
-        if (provider != null) {
-            tools = provider.provideTools(userPrompt)
-        } else {
-            val mcpData = metadataRegistry?.exportToMCP()
-            @Suppress("UNCHECKED_CAST")
-            val mcpTools = mcpData?.get("tools") as? List<Map<String, Any?>>
-            val toolList = mutableListOf<LlmTool>()
-            if (mcpTools != null) {
-                for (toolMap in mcpTools) {
-                    val tool = LlmTool()
-                    tool.name = toolMap["name"] as? String
-                    tool.description = toolMap["description"] as? String
-                    val inputSchema = toolMap["inputSchema"]
-                    if (inputSchema is Map<*, *>) {
-                        @Suppress("UNCHECKED_CAST")
-                        tool.parameterSchema = inputSchema as Map<String, Any?>
-                    }
-                    toolList.add(tool)
-                }
-            }
-            tools = toolList
-        }
-
         val rawWorker = unwrapProvider(worker)
         val isOnDevice = rawWorker is LocalLlamaProvider || worker.getName().contains("On-Device", ignoreCase = true)
         val activeModel = (rawWorker as? BaseLlmProvider)?.model
@@ -1181,6 +1626,44 @@ open class AgenticFabric : SystemComponent() {
                 null
             }
         val systemHome = context?.properties?.getProperty("system.home")
+        val exposeBuiltinTools = !isOnDevice ||
+            !PromptTemplateRegistry.isSmallLocalModel(activeModel, systemHome) ||
+            (toolCoordinator?.shouldRouteToAgenticLoop(userPrompt) == true)
+        val builtinNames = toolCoordinator?.getToolNames() ?: emptySet()
+
+        val discoveredTools = LinkedHashMap<String, LlmTool>()
+        val provider = toolProvider
+        if (provider != null) {
+            provider.provideTools(userPrompt).forEach { t ->
+                t.name?.let { discoveredTools[it] = t }
+            }
+        } else {
+            val mcpData = metadataRegistry?.exportToMCP()
+            @Suppress("UNCHECKED_CAST")
+            val mcpTools = mcpData?.get("tools") as? List<Map<String, Any?>>
+            if (mcpTools != null) {
+                for (toolMap in mcpTools) {
+                    val toolName = toolMap["name"] as? String ?: continue
+                    if (!exposeBuiltinTools && toolName in builtinNames) continue
+                    val tool = LlmTool()
+                    tool.name = toolName
+                    tool.description = toolMap["description"] as? String
+                    val inputSchema = toolMap["inputSchema"]
+                    if (inputSchema is Map<*, *>) {
+                        @Suppress("UNCHECKED_CAST")
+                        tool.parameterSchema = inputSchema as Map<String, Any?>
+                    }
+                    discoveredTools[toolName] = tool
+                }
+            }
+        }
+        if (exposeBuiltinTools) {
+            toolCoordinator?.getAllLlmTools()?.forEach { t ->
+                t.name?.let { discoveredTools[it] = t }
+            }
+        }
+        val tools: List<LlmTool> = discoveredTools.values.toList()
+
         val promptMode = PromptTemplateRegistry.resolvePromptMode(
             isLocalProvider = isOnDevice,
             modelName = activeModel,

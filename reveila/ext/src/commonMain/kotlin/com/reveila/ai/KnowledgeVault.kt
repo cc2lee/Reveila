@@ -245,6 +245,7 @@ open class KnowledgeVault(
 
         val overviewKeywords = setOf(
             "vault", "document", "documents", "doc", "docs", "file", "files",
+            "note", "notes", "workspace",
             "folder", "indexed", "overview", "summarize", "summary", "list", "contents"
         )
         val isVaultOverviewQuery = queryTokens.any { it in overviewKeywords }
