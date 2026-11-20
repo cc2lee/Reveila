@@ -205,7 +205,6 @@ object ToolActivityHub {
                 waitingForUser = waitingForUser,
                 takeoverReason = if (waitingForUser) reason else "",
                 takeoverMessage = if (waitingForUser) message else "",
-                lastAction = if (owner == "USER") "User took over browser control" else "Control returned to AI agent",
                 updatedAtMs = now
             )
             publishLocked(currentSnapshot.copy(browser = updated))

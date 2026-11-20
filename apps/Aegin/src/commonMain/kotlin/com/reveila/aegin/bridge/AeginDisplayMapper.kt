@@ -133,7 +133,7 @@ object AeginDisplayMapper {
     private val PROVIDER_DISPLAY_NAMES: Map<String, String> = mapOf(
         "AUTO" to "Smart Auto",
         "DISABLE" to "Off",
-        "ON-DEVICE MODEL" to "On-Device AI",
+        "ON-DEVICE MODEL" to "On-Device Model",
         "CUSTOM" to "Custom AI"
     )
 

@@ -1,0 +1,396 @@
+package com.reveila.aegin.ui.mascot
+
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.painterResource
+import reveila_suite.apps.aegin.generated.resources.Res
+import reveila_suite.apps.aegin.generated.resources.aegin_robot_dog
+
+enum class AeginMascotMode(val defaultSize: Dp) {
+    SMALL_BADGE(36.dp),
+    COMPANION(96.dp)
+}
+
+@Composable
+fun AeginRobotDogMascot(
+    state: AeginMascotState,
+    modifier: Modifier = Modifier,
+    mode: AeginMascotMode = AeginMascotMode.COMPANION,
+    size: Dp = mode.defaultSize,
+    showTelemetryEffects: Boolean = true
+) {
+    val phase = state.phase
+    val isCompactBadge = size <= 44.dp
+    val transition = updateTransition(targetState = phase, label = "MascotPhaseTransition")
+
+    // 1. State-driven telemetry color (Cyan -> Emerald -> Electric Blue -> Amber/Red)
+    val earGlowColor by transition.animateColor(
+        transitionSpec = { tween(durationMillis = 300) },
+        label = "EarGlowColor"
+    ) { target ->
+        when (target) {
+            AeginMascotPhase.IDLE -> Color(0xFF38BDF8)               // Calm cyan
+            AeginMascotPhase.LISTENING_USER -> Color(0xFF22D3EE)     // Bright cyan
+            AeginMascotPhase.ROUTING_LOCAL -> Color(0xFF10B981)      // Emerald (on-device)
+            AeginMascotPhase.COORDINATING_CLOUD -> Color(0xFF00E5FF) // High-energy cyan-blue
+            AeginMascotPhase.SPEAKING_RESPONSE -> Color(0xFF60A5FA)  // Warm sky cyan
+            AeginMascotPhase.ERROR_ALERT -> Color(0xFFF43F5E)        // Amber-red alert
+        }
+    }
+
+    val pawGlowAlpha by transition.animateFloat(
+        transitionSpec = { tween(durationMillis = 300) },
+        label = "PawGlowAlpha"
+    ) { target ->
+        when (target) {
+            AeginMascotPhase.IDLE -> 0.25f
+            AeginMascotPhase.LISTENING_USER -> 0.48f
+            AeginMascotPhase.ERROR_ALERT -> 0.20f
+            else -> 0.85f
+        }
+    }
+
+    // 2. Continuous ambient & activity loops
+    val infiniteTransition = rememberInfiniteTransition(label = "MascotLiveLoops")
+
+    // Vertical breathing / energetic bounce / speaking nod synced with token speed
+    val bounceDuration = when (phase) {
+        AeginMascotPhase.COORDINATING_CLOUD -> 420
+        AeginMascotPhase.ROUTING_LOCAL -> 500
+        AeginMascotPhase.SPEAKING_RESPONSE -> {
+            val tpsBoost = state.tokensPerSecond.coerceIn(0f, 40f)
+            (620 - (tpsBoost * 6f).toInt()).coerceIn(340, 620)
+        }
+        AeginMascotPhase.LISTENING_USER -> 1100
+        else -> 1800
+    }
+    val verticalBob by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = bounceDuration, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "VerticalBob"
+    )
+
+    // Coordination ping-pong sway (simulates looking back & forth between user and AI model)
+    val coordinationSwing by infiniteTransition.animateFloat(
+        initialValue = -1f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = when (phase) {
+                    AeginMascotPhase.COORDINATING_CLOUD -> 650
+                    AeginMascotPhase.SPEAKING_RESPONSE -> 1100
+                    else -> 2400
+                },
+                easing = FastOutSlowInEasing
+            ),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "CoordinationSwing"
+    )
+
+    // Brass inner-ear clockwork gear rotation
+    val gearAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = when (phase) {
+                    AeginMascotPhase.ROUTING_LOCAL -> 1100
+                    AeginMascotPhase.COORDINATING_CLOUD -> 1450
+                    AeginMascotPhase.SPEAKING_RESPONSE -> 2200
+                    else -> 8000
+                },
+                easing = LinearEasing
+            ),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "GearRotation"
+    )
+
+    // 3. Natural periodic eye blink (~3.5s when idle so the mascot feels alive)
+    var isBlinking by remember { mutableStateOf(false) }
+    LaunchedEffect(phase) {
+        while (true) {
+            val waitMs = if (state.isBusy) 4200L else 3500L
+            delay(waitMs)
+            isBlinking = true
+            delay(130L)
+            isBlinking = false
+        }
+    }
+    val blinkProgress by animateFloatAsState(
+        targetValue = if (isBlinking) 1f else 0f,
+        animationSpec = tween(durationMillis = 90),
+        label = "BlinkProgress"
+    )
+
+    // Scale motion cleanly for compact badge vs companion size
+    val motionScale = if (isCompactBadge) 0.45f else 1f
+    val translationYPx = when (phase) {
+        AeginMascotPhase.COORDINATING_CLOUD -> -verticalBob * 5f * motionScale
+        AeginMascotPhase.ROUTING_LOCAL -> -verticalBob * 3.5f * motionScale
+        AeginMascotPhase.SPEAKING_RESPONSE -> -verticalBob * 3.2f * motionScale
+        else -> -verticalBob * 2f * motionScale
+    }
+
+    val translationXPx = when (phase) {
+        AeginMascotPhase.COORDINATING_CLOUD -> coordinationSwing * 4.5f * motionScale
+        AeginMascotPhase.LISTENING_USER -> 3.0f * motionScale
+        else -> coordinationSwing * 0.8f * motionScale
+    }
+
+    val tiltDegrees = when (phase) {
+        AeginMascotPhase.COORDINATING_CLOUD -> coordinationSwing * 5.5f
+        AeginMascotPhase.LISTENING_USER -> 4.5f
+        AeginMascotPhase.ERROR_ALERT -> -7.0f
+        AeginMascotPhase.SPEAKING_RESPONSE -> coordinationSwing * 2.2f
+        else -> coordinationSwing * 1.2f
+    }
+
+    Box(
+        modifier = modifier.size(size),
+        contentAlignment = Alignment.Center
+    ) {
+        // Underlay: Magenta paw-pad thruster glow & ambient coordination signal ring
+        if (showTelemetryEffects) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val w = this.size.width
+                val h = this.size.height
+
+                // Magenta paw-pad ground glow
+                drawOval(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFFEC4899).copy(alpha = pawGlowAlpha * (0.7f + 0.3f * verticalBob)),
+                            Color.Transparent
+                        ),
+                        center = Offset(w * 0.48f, h * 0.89f),
+                        radius = w * 0.34f
+                    ),
+                    topLeft = Offset(w * 0.16f, h * 0.78f),
+                    size = Size(w * 0.64f, h * 0.20f)
+                )
+
+                // Coordination signal ring behind head when brokering user <-> AI
+                if (phase == AeginMascotPhase.COORDINATING_CLOUD ||
+                    phase == AeginMascotPhase.ROUTING_LOCAL ||
+                    phase == AeginMascotPhase.ERROR_ALERT
+                ) {
+                    rotate(degrees = gearAngle, pivot = Offset(w * 0.54f, h * 0.42f)) {
+                        drawArc(
+                            color = earGlowColor.copy(alpha = 0.55f),
+                            startAngle = 0f,
+                            sweepAngle = 140f,
+                            useCenter = false,
+                            topLeft = Offset(w * 0.12f, h * 0.04f),
+                            size = Size(w * 0.80f, h * 0.80f),
+                            style = Stroke(width = (w * 0.026f).coerceAtLeast(1.5f), cap = StrokeCap.Round)
+                        )
+                        drawArc(
+                            color = earGlowColor.copy(alpha = 0.35f),
+                            startAngle = 180f,
+                            sweepAngle = 110f,
+                            useCenter = false,
+                            topLeft = Offset(w * 0.12f, h * 0.04f),
+                            size = Size(w * 0.80f, h * 0.80f),
+                            style = Stroke(width = (w * 0.026f).coerceAtLeast(1.5f), cap = StrokeCap.Round)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Core Robot Puppy Artwork + Articulated Overlays
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    translationX = translationXPx
+                    translationY = translationYPx
+                    rotationZ = tiltDegrees
+                    val scalePulse = if (state.isBusy) 1f + (verticalBob * 0.035f) else 1f + (verticalBob * 0.015f)
+                    scaleX = scalePulse
+                    scaleY = scalePulse
+                }
+        ) {
+            Image(
+                painter = painterResource(Res.drawable.aegin_robot_dog),
+                contentDescription = "Aegin Robot Dog (${state.statusLabel})",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // Precision overlays aligned to aegin_robot_dog.png ears, ear-hub, and eyes
+            if (showTelemetryEffects) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = this.size.width
+                    val h = this.size.height
+
+                    // 1. Left & Right Inner-Ear Cyan Glow + Rotating Brass Clockwork Gears
+                    val leftEarCenter = Offset(w * 0.34f, h * 0.19f)
+                    val rightEarCenter = Offset(w * 0.71f, h * 0.145f)
+                    val pulseAlpha = when (phase) {
+                        AeginMascotPhase.LISTENING_USER -> 0.42f + (0.20f * verticalBob)
+                        AeginMascotPhase.ERROR_ALERT -> 0.45f + (0.40f * verticalBob)
+                        else -> if (state.isBusy) 0.35f + (0.35f * verticalBob) else 0.18f
+                    }
+
+                    drawEarTelemetry(
+                        center = leftEarCenter,
+                        radius = w * 0.068f,
+                        glowColor = earGlowColor,
+                        glowAlpha = pulseAlpha,
+                        rotationDeg = gearAngle
+                    )
+                    drawEarTelemetry(
+                        center = rightEarCenter,
+                        radius = w * 0.056f,
+                        glowColor = earGlowColor,
+                        glowAlpha = pulseAlpha,
+                        rotationDeg = -gearAngle * 1.25f
+                    )
+
+                    // 2. Side Ear-Hub Cyan/Alert Ring Pulse
+                    val earHubCenter = Offset(w * 0.355f, h * 0.395f)
+                    drawCircle(
+                        color = earGlowColor.copy(alpha = 0.4f + 0.45f * verticalBob),
+                        radius = w * 0.044f,
+                        center = earHubCenter,
+                        style = Stroke(width = (w * 0.016f).coerceAtLeast(1.2f))
+                    )
+
+                    // 3. Metallic Eyelid Blink Overlay over glossy eyes
+                    if (blinkProgress > 0.02f) {
+                        drawEyelidBlink(
+                            eyeCenter = Offset(w * 0.465f, h * 0.37f),
+                            eyeRadiusX = w * 0.068f,
+                            eyeRadiusY = h * 0.068f,
+                            progress = blinkProgress
+                        )
+                        drawEyelidBlink(
+                            eyeCenter = Offset(w * 0.705f, h * 0.335f),
+                            eyeRadiusX = w * 0.052f,
+                            eyeRadiusY = h * 0.062f,
+                            progress = blinkProgress
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun DrawScope.drawEarTelemetry(
+    center: Offset,
+    radius: Float,
+    glowColor: Color,
+    glowAlpha: Float,
+    rotationDeg: Float
+) {
+    // Soft cyan-emerald aura inside the translucent ear
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(glowColor.copy(alpha = glowAlpha), Color.Transparent),
+            center = center,
+            radius = radius * 1.5f
+        ),
+        radius = radius * 1.5f,
+        center = center
+    )
+
+    // Rotating bronze gear ring
+    val gearColor = Color(0xFFD99B52).copy(alpha = 0.78f)
+    rotate(degrees = rotationDeg, pivot = center) {
+        drawCircle(
+            color = gearColor,
+            radius = radius * 0.65f,
+            center = center,
+            style = Stroke(width = (radius * 0.18f).coerceAtLeast(1f))
+        )
+        val teethCount = 8
+        for (i in 0 until teethCount) {
+            val angleRad = (i * (360.0 / teethCount)) * (PI / 180.0)
+            val inner = Offset(
+                x = center.x + (cos(angleRad) * radius * 0.65f).toFloat(),
+                y = center.y + (sin(angleRad) * radius * 0.65f).toFloat()
+            )
+            val outer = Offset(
+                x = center.x + (cos(angleRad) * radius * 0.95f).toFloat(),
+                y = center.y + (sin(angleRad) * radius * 0.95f).toFloat()
+            )
+            drawLine(
+                color = gearColor,
+                start = inner,
+                end = outer,
+                strokeWidth = (radius * 0.20f).coerceAtLeast(1f),
+                cap = StrokeCap.Round
+            )
+        }
+    }
+}
+
+private fun DrawScope.drawEyelidBlink(
+    eyeCenter: Offset,
+    eyeRadiusX: Float,
+    eyeRadiusY: Float,
+    progress: Float
+) {
+    val lidHeight = eyeRadiusY * 2f * progress
+    val eyelidPath = Path().apply {
+        addOval(
+            Rect(
+                left = eyeCenter.x - eyeRadiusX,
+                top = eyeCenter.y - eyeRadiusY,
+                right = eyeCenter.x + eyeRadiusX,
+                bottom = eyeCenter.y - eyeRadiusY + lidHeight
+            )
+        )
+    }
+    drawPath(
+        path = eyelidPath,
+        color = Color(0xFF94A3B8) // Brushed metallic silver eyelid
+    )
+}

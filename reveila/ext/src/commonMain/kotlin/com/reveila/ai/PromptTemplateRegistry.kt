@@ -177,14 +177,18 @@ ${'$'}{vault_section}"""
         }
     }
 
+    fun resolveParameterSizeBillions(modelName: String?, systemHome: String? = null): Double? {
+        val modelProfile = findBestTemplateFileForMetadata(modelName, systemHome)
+        val frontmatterSize = modelProfile?.metadata?.get("parameter_size_b")?.toDoubleOrNull()
+        return frontmatterSize ?: extractParameterSizeBillions(modelName)
+    }
+
     fun isSmallLocalModel(modelName: String?, systemHome: String? = null): Boolean {
         val norm = modelName?.trim()?.lowercase().orEmpty()
         if (norm.isEmpty() || norm == "auto" || norm.contains("on-device")) {
             return true
         }
-        val modelProfile = findBestTemplateFileForMetadata(modelName, systemHome)
-        val frontmatterSize = modelProfile?.metadata?.get("parameter_size_b")?.toDoubleOrNull()
-        val effectiveSize = frontmatterSize ?: extractParameterSizeBillions(modelName)
+        val effectiveSize = resolveParameterSizeBillions(modelName, systemHome)
         if (effectiveSize != null) {
             return effectiveSize <= 2.2
         }

@@ -17,6 +17,26 @@ open class MetadataRegistry : SystemComponent() {
     private var agentRepository: Repository<Entity, Map<String, Map<String, Any>>>? = null
 
     open fun register(manifest: PluginManifest) {
+        val existing = plugins[manifest.id()]
+        if (existing != null && manifest.tool_definitions.isEmpty() && manifest.exposeAsTool == null &&
+            (existing.tool_definitions.isNotEmpty() || existing.exposeAsTool != null ||
+                existing.routingKeywords.isNotEmpty() || existing.allowedModels.isNotEmpty() ||
+                existing.cloudOnly || existing.minParameterSizeB != null || existing.methodsSpec.isNotEmpty())
+        ) {
+            // Preserve JSON-configured AI tool exposure/routing settings when runtime services register themselves.
+            plugins[manifest.id()] = manifest.copy(
+                tool_definitions = existing.tool_definitions,
+                tier = if (manifest.tier == "Tier 3" && existing.tier != "Tier 3") existing.tier else manifest.tier,
+                description = manifest.description.ifBlank { existing.description },
+                exposeAsTool = existing.exposeAsTool,
+                routingKeywords = existing.routingKeywords,
+                allowedModels = existing.allowedModels,
+                cloudOnly = existing.cloudOnly,
+                minParameterSizeB = existing.minParameterSizeB,
+                methodsSpec = if (manifest.methodsSpec.isNotEmpty()) manifest.methodsSpec else existing.methodsSpec
+            )
+            return
+        }
         plugins[manifest.id()] = manifest
     }
 
@@ -52,7 +72,7 @@ open class MetadataRegistry : SystemComponent() {
             val version = (attrs["version"] as? String) ?: "1.0"
 
             val tools = if (attrs.containsKey("tool_definitions")) {
-                attrs["tool_definitions"] as Map<String, Any>
+                (attrs["tool_definitions"] as? Map<String, Any>) ?: emptyMap()
             } else {
                 emptyMap()
             }
@@ -61,8 +81,43 @@ open class MetadataRegistry : SystemComponent() {
             val perimeter = parseAgencyPerimeter(attrs["agency_perimeter"])
             val secrets = parseSet(attrs["secret_parameters"])
             val masked = parseSet(attrs["masked_parameters"])
+            val description = ((tools["description"] as? String)?.takeIf { it.isNotBlank() }
+                ?: (attrs["description"] as? String))
+                .orEmpty()
+            val exposeFlag = when (val rawExpose = attrs["expose_as_tool"] ?: attrs["ai_tool"] ?: attrs["tool_enabled"]) {
+                is Boolean -> rawExpose
+                is String -> rawExpose.trim().lowercase().let {
+                    when (it) {
+                        "true", "yes", "1" -> true
+                        "false", "no", "0" -> false
+                        else -> null
+                    }
+                }
+                else -> null
+            }
+            val routingKeywords = parseSet(attrs["routing_keywords"] ?: tools["routing_keywords"]).map { it.lowercase() }.toSet()
+            val allowedModels = parseSet(attrs["allowed_models"] ?: tools["allowed_models"]).map { it.lowercase() }.toSet()
+            val cloudOnly = (attrs["cloud_only"] as? Boolean) ?: (tools["cloud_only"] as? Boolean) ?: false
+            val minParamB = ((attrs["min_parameter_size_b"] ?: tools["min_parameter_size_b"]) as? Number)?.toDouble()
+            val methodsSpec = (attrs["methods"] as? List<*>)?.filterIsInstance<Map<String, Any?>>().orEmpty()
 
-            PluginManifest(id, name, version, tools, tier, perimeter, secrets, masked)
+            PluginManifest(
+                plugin_id = id,
+                manifestName = name,
+                manifestVersion = version,
+                tool_definitions = tools,
+                tier = tier,
+                agency_perimeter = perimeter,
+                secret_parameters = secrets,
+                masked_parameters = masked,
+                description = description,
+                exposeAsTool = exposeFlag,
+                routingKeywords = routingKeywords,
+                allowedModels = allowedModels,
+                cloudOnly = cloudOnly,
+                minParameterSizeB = minParamB,
+                methodsSpec = methodsSpec
+            )
         } catch (e: Exception) {
             logger.warning("Invalid manifest attributes for $id: ${e.message}")
             null
@@ -102,7 +157,14 @@ open class MetadataRegistry : SystemComponent() {
         val tier: String,
         val agency_perimeter: SecurityPerimeter,
         val secret_parameters: Set<String>,
-        val masked_parameters: Set<String>
+        val masked_parameters: Set<String>,
+        val description: String = "",
+        val exposeAsTool: Boolean? = null,
+        val routingKeywords: Set<String> = emptySet(),
+        val allowedModels: Set<String> = emptySet(),
+        val cloudOnly: Boolean = false,
+        val minParameterSizeB: Double? = null,
+        val methodsSpec: List<Map<String, Any?>> = emptyList()
     ) {
         fun id(): String = plugin_id
         fun plugin_id(): String = plugin_id
@@ -118,16 +180,114 @@ open class MetadataRegistry : SystemComponent() {
         fun maskedParameters(): Set<String> = masked_parameters
         fun masked_parameters(): Set<String> = masked_parameters
         fun hitlRequiredIntents(): Set<String> = emptySet()
+
+        /**
+         * Determines whether this plugin should be exposed to LLMs as a callable tool.
+         * Explicit `expose_as_tool` overrides implicit presence of `tool_definitions`.
+         */
+        fun isToolExposed(): Boolean = when (exposeAsTool) {
+            false -> false
+            true -> tool_definitions.isNotEmpty() || methodsSpec.isNotEmpty() || description.isNotBlank()
+            null -> tool_definitions.isNotEmpty()
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        fun resolvedInputSchema(): Map<String, Any?> {
+            val nested = (tool_definitions["inputSchema"] as? Map<*, *>)
+                ?: (tool_definitions["parameters"] as? Map<*, *>)
+            if (nested != null) {
+                return nested.entries.associate { (k, v) -> k.toString() to v }
+            }
+            if (tool_definitions.containsKey("properties") || tool_definitions.containsKey("type")) {
+                return tool_definitions
+            }
+            if (methodsSpec.isEmpty()) {
+                return tool_definitions
+            }
+            val props = linkedMapOf<String, Any?>()
+            val methodNames = mutableListOf<String>()
+            for (m in methodsSpec) {
+                val mName = m["name"]?.toString()?.trim().orEmpty()
+                if (mName.isNotEmpty()) methodNames.add(mName)
+                val params = m["parameters"] as? List<*> ?: continue
+                for (p in params) {
+                    val pMap = p as? Map<*, *> ?: continue
+                    val pName = pMap["name"]?.toString()?.trim().orEmpty()
+                    if (pName.isEmpty() || props.containsKey(pName)) continue
+                    val pType = mapJavaTypeToJsonSchemaType(pMap["type"]?.toString())
+                    val pDesc = pMap["description"]?.toString()?.trim().orEmpty()
+                    props[pName] = buildMap {
+                        put("type", pType)
+                        if (pDesc.isNotEmpty()) put("description", pDesc)
+                    }
+                }
+            }
+            if (methodNames.isNotEmpty()) {
+                props["method"] = mapOf(
+                    "type" to "string",
+                    "enum" to methodNames,
+                    "description" to "Target method name on $plugin_id"
+                )
+            }
+            return mapOf(
+                "type" to "object",
+                "properties" to props
+            )
+        }
+
+        fun resolvedToolDescription(): String {
+            val explicit = (tool_definitions["description"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+                ?: description.trim().takeIf { it.isNotEmpty() }
+                ?: "Plugin $plugin_id version $manifestVersion"
+            if (methodsSpec.isEmpty() || explicit.contains("Methods:", ignoreCase = true)) {
+                return explicit
+            }
+            val methodSummaries = methodsSpec.mapNotNull { m ->
+                val mName = m["name"]?.toString()?.trim().orEmpty()
+                if (mName.isEmpty()) return@mapNotNull null
+                val mDesc = m["description"]?.toString()?.trim().orEmpty()
+                val paramNames = (m["parameters"] as? List<*>)?.mapNotNull { p ->
+                    (p as? Map<*, *>)?.get("name")?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                }.orEmpty()
+                val sig = if (paramNames.isEmpty()) "$mName()" else "$mName(${paramNames.joinToString(", ")})"
+                if (mDesc.isNotEmpty()) "$sig: $mDesc" else sig
+            }
+            return if (methodSummaries.isEmpty()) {
+                explicit
+            } else {
+                "$explicit\nMethods: ${methodSummaries.joinToString("; ")}"
+            }
+        }
+
+        private fun mapJavaTypeToJsonSchemaType(rawType: String?): String = when (rawType?.lowercase()) {
+            "int", "integer", "long", "java.lang.integer", "java.lang.long" -> "integer"
+            "double", "float", "number", "java.lang.double", "java.lang.float" -> "number"
+            "boolean", "bool", "java.lang.boolean" -> "boolean"
+            "list", "array", "java.util.list" -> "array"
+            "map", "object", "java.util.map" -> "object"
+            else -> "string"
+        }
     }
 
+    open fun getExposedToolManifests(): List<PluginManifest> = plugins.values.filter { it.isToolExposed() }
+
+    open fun getLocalRoutingKeywords(): Set<String> =
+        plugins.values.asSequence()
+            .filter { it.isToolExposed() }
+            .flatMap { it.routingKeywords.asSequence() }
+            .toSet()
+
     open fun exportToMCP(): Map<String, Any> {
-        val mcpTools = plugins.values
-            .filter { it.toolDefinitions().isNotEmpty() }
+        val mcpTools = getExposedToolManifests()
             .map { p ->
                 mapOf(
-                    "name" to p.name(),
-                    "description" to "Plugin ${p.id()} version ${p.version()}",
-                    "inputSchema" to p.toolDefinitions()
+                    "name" to p.id(),
+                    "description" to p.resolvedToolDescription(),
+                    "inputSchema" to p.resolvedInputSchema(),
+                    "tier" to p.tier(),
+                    "cloudOnly" to p.cloudOnly,
+                    "allowedModels" to p.allowedModels.toList(),
+                    "minParameterSizeB" to p.minParameterSizeB
                 )
             }
 

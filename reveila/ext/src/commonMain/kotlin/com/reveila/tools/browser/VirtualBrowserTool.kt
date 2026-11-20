@@ -14,8 +14,9 @@ class VirtualBrowserTool(
 
     override fun getDescription(): String {
         return """
-            Autonomous virtual browser that interacts with web pages in the background.
+            PRIMARY tool for all web searches, news briefs, headlines, weather, and reading/interacting with web pages in the background. Always prefer this tool over terminal for any online lookup.
             Commands:
+            - search: { "action": "search", "query": "latest technology news", "search_url": "optional custom search URL or template with {query}" } (searches the web and returns result links and snippets)
             - navigate: { "action": "navigate", "url": "https://example.com" }
             - type: { "action": "type", "target": "1", "text": "user@example.com" } (target is element index or #id)
             - click: { "action": "click", "target": "3" } (clicks links or buttons)
@@ -32,6 +33,21 @@ class VirtualBrowserTool(
 
         return try {
             when (action) {
+                "search", "web_search", "find" -> {
+                    val query = (args["query"] as? String)
+                        ?: (args["q"] as? String)
+                        ?: (args["text"] as? String)
+                        ?: (args["target"] as? String)
+                        ?: return "Error: 'query' parameter is required for search action."
+                    val searchUrl = (args["search_url"] as? String)
+                        ?: (args["searchUrl"] as? String)
+                        ?: (args["source_url"] as? String)
+                        ?: (args["sourceUrl"] as? String)
+                        ?: (args["url"] as? String)
+                    browser.search(query, searchUrl)
+                    browser.getPageSnapshotForLlm()
+                }
+
                 "navigate", "open", "goto" -> {
                     val url = (args["url"] as? String) ?: (args["target"] as? String)
                         ?: return "Error: 'url' parameter is required for navigate action."

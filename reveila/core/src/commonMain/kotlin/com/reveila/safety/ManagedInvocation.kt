@@ -43,11 +43,17 @@ open class ManagedInvocation : SystemComponent() {
             is Map<*, *> -> {
                 @Suppress("UNCHECKED_CAST")
                 val argsMap = LinkedHashMap(args as Map<String, Any?>)
-                val explicitMethod = argsMap.remove("method") as? String
+                val explicitMethod = (argsMap.remove("method") ?: argsMap.remove("action"))?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                val manifest = metadataRegistry?.getManifest(pluginId)
                 if (explicitMethod != null) {
                     methodName = explicitMethod
+                } else {
+                    val onlyMethod = manifest?.methodsSpec?.singleOrNull()?.get("name")?.toString()?.trim()
+                    if (!onlyMethod.isNullOrEmpty()) {
+                        methodName = onlyMethod
+                    }
                 }
-                argsMap.values.toTypedArray()
+                bindMapArgumentsByManifest(manifest, methodName, argsMap)
             }
             is Array<*> -> {
                 @Suppress("UNCHECKED_CAST")
@@ -64,6 +70,43 @@ open class ManagedInvocation : SystemComponent() {
         } catch (e: Exception) {
             InvocationResult.error("Execution failed: ${e.message}")
         }
+    }
+
+    private fun bindMapArgumentsByManifest(
+        manifest: MetadataRegistry.PluginManifest?,
+        methodName: String,
+        argsMap: LinkedHashMap<String, Any?>
+    ): Array<Any?> {
+        val methods = manifest?.methodsSpec.orEmpty()
+        if (methods.isEmpty() || argsMap.isEmpty()) {
+            return argsMap.values.toTypedArray()
+        }
+        val matchingMethod = methods.firstOrNull {
+            it["name"]?.toString()?.equals(methodName, ignoreCase = true) == true
+        } ?: methods.singleOrNull()
+        val declaredParams = (matchingMethod?.get("parameters") as? List<*>)
+            ?.mapNotNull { (it as? Map<*, *>)?.get("name")?.toString()?.trim()?.takeIf(String::isNotEmpty) }
+            .orEmpty()
+        if (declaredParams.isEmpty()) {
+            return argsMap.values.toTypedArray()
+        }
+
+        val ordered = mutableListOf<Any?>()
+        val consumedKeys = mutableSetOf<String>()
+        for (paramName in declaredParams) {
+            val matchedKey = argsMap.keys.firstOrNull { it == paramName }
+                ?: argsMap.keys.firstOrNull { it.equals(paramName, ignoreCase = true) }
+            if (matchedKey != null) {
+                ordered.add(argsMap[matchedKey])
+                consumedKeys.add(matchedKey)
+            }
+        }
+        for ((k, v) in argsMap) {
+            if (k !in consumedKeys) {
+                ordered.add(v)
+            }
+        }
+        return ordered.toTypedArray()
     }
 
     @Throws(Exception::class)

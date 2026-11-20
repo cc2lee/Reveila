@@ -35,16 +35,14 @@ open class DynamicToolProvider(
         if (reranker != null && candidateIds.size > 1) {
             val candidates = candidateIds
                 .mapNotNull { registry.getManifest(it) }
-                .filter { securityTier <= it.tier() }
+                .filter { it.isToolExposed() && securityTier <= it.tier() }
 
             if (candidates.isEmpty()) {
                 return emptyList()
             }
 
             val candidateDescriptions = candidates.map { m ->
-                val name = m.name() ?: "unknown"
-                val tools = m.tool_definitions()
-                "$name: ${tools ?: "{}"}"
+                "${m.id()}: ${m.resolvedToolDescription()}"
             }
 
             val initialScores: MutableList<Double> = try {
@@ -76,7 +74,7 @@ open class DynamicToolProvider(
         } else {
             finalIds = candidateIds.asSequence()
                 .mapNotNull { registry.getManifest(it) }
-                .filter { securityTier <= it.tier() }
+                .filter { it.isToolExposed() && securityTier <= it.tier() }
                 .take(topK)
                 .map { it.plugin_id() }
                 .toList()
@@ -95,17 +93,8 @@ open class DynamicToolProvider(
     private fun mapToLlmTool(manifest: MetadataRegistry.PluginManifest): LlmTool {
         val tool = LlmTool()
         tool.name = manifest.plugin_id()
-        tool.description = "${manifest.name()} version ${manifest.version()}"
-
-        val defs = manifest.tool_definitions()
-        if (defs.containsKey("inputSchema")) {
-            val schema = defs["inputSchema"]
-            if (schema is Map<*, *>) {
-                @Suppress("UNCHECKED_CAST")
-                tool.parameterSchema = schema as Map<String, Any?>
-            }
-        }
-
+        tool.description = manifest.resolvedToolDescription()
+        tool.parameterSchema = manifest.resolvedInputSchema()
         tool.setReveilaMetadata(manifest.tier(), emptyList(), emptyList())
         return tool
     }

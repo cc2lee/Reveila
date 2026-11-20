@@ -18,6 +18,7 @@ import com.reveila.aegin.AeginEngineService
 import com.reveila.aegin.model.AeginModelLoader
 import com.reveila.aegin.model.ModelDownloadWorker
 import com.reveila.aegin.model.ResumableModelDownloader
+import com.reveila.aegin.model.VaultFileScanner
 import com.reveila.system.DefaultPlatformAdapter
 import com.reveila.system.Properties
 import com.reveila.system.Reveila
@@ -533,6 +534,42 @@ actual object PlatformEngineBridge {
         return null
     }
 
+    private fun ggufCleanupDirectories(): List<File> = buildList {
+        add(resolveModelsStagingDir())
+        appContext?.getExternalFilesDir("llms")?.let { add(it) }
+    }
+
+    private fun replaceAndLoadModel(
+        modelDir: File,
+        downloadTarget: File,
+        keepModelName: String,
+        expectedSha: String
+    ): Pair<Boolean, List<String>> {
+        releaseLocalModelBlocking()
+        val removed = ResumableModelDownloader.cleanupReplacedGgufFiles(
+            directories = ggufCleanupDirectories(),
+            keepFilename = keepModelName
+        )
+        if (removed.isNotEmpty()) {
+            Log.i(TAG, "Replaced old offline GGUF model(s): ${removed.joinToString(", ")}")
+        }
+        val loaded = try {
+            AeginModelLoader(modelDir).loadVerifiedFileBlocking(
+                ggufFile = downloadTarget,
+                expectedSha256 = expectedSha
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "AeginModelLoader gate blocked load after download: ${e.message}")
+            false
+        }
+        return loaded to removed
+    }
+
+    actual suspend fun getLocalModelCatalog(): List<LocalModelManifestEntry> =
+        withContext(Dispatchers.IO) {
+            readModelManifest().models
+        }
+
     actual suspend fun checkLocalModelAvailability(modelName: String): LocalModelCheckResult =
         withContext(Dispatchers.IO) {
             val manifest = readModelManifest()
@@ -590,20 +627,39 @@ actual object PlatformEngineBridge {
             modelDownloadCancelRequested.set(false)
             try {
                 val check = checkLocalModelAvailability(modelName)
+                val modelDir = resolveModelsStagingDir()
                 if (check.existsLocally) {
+                    val existingFile = File(check.localPath)
+                    val (loaded, removed) = replaceAndLoadModel(
+                        modelDir = modelDir,
+                        downloadTarget = existingFile,
+                        keepModelName = check.modelName,
+                        expectedSha = check.sha256
+                    )
                     modelDownloadState.value = LocalModelDownloadState(
                         status = "COMPLETED",
                         modelName = check.modelName,
-                        downloadedBytes = File(check.localPath).length(),
-                        totalBytes = File(check.localPath).length(),
+                        downloadedBytes = existingFile.length(),
+                        totalBytes = existingFile.length(),
                         percent = 100,
                         sourceUrl = check.downloadUrl,
-                        message = "Model already staged locally."
+                        message = when {
+                            removed.isNotEmpty() -> "Switched to ${check.modelName} and removed previous model."
+                            loaded -> "Model already staged locally."
+                            else -> "Model already staged locally."
+                        }
                     )
                     return@withContext true
                 }
 
-                val modelDir = resolveModelsStagingDir()
+                // Clear stale partial files belonging to previously selected GGUF models
+                ResumableModelDownloader.cleanupReplacedGgufFiles(
+                    directories = ggufCleanupDirectories(),
+                    keepFilename = check.modelName,
+                    deleteOtherGgufs = false,
+                    deleteOtherParts = true
+                )
+
                 val downloadTarget = File(modelDir, check.modelName)
                 val partFile = File(modelDir, "${check.modelName}.part")
                 val existingPartial = if (partFile.exists()) partFile.length() else 0L
@@ -742,15 +798,12 @@ actual object PlatformEngineBridge {
                             }
                             WorkInfo.State.SUCCEEDED -> {
                                 val srcUrl = info.outputData.getString(ModelDownloadWorker.KEY_SOURCE_URL) ?: primaryUrl
-                                val loaded = try {
-                                    AeginModelLoader(modelDir).loadVerifiedFileBlocking(
-                                        ggufFile = downloadTarget,
-                                        expectedSha256 = expectedSha
-                                    )
-                                } catch (e: Exception) {
-                                    Log.w(TAG, "AeginModelLoader gate blocked load after download: ${e.message}")
-                                    false
-                                }
+                                val (loaded, removed) = replaceAndLoadModel(
+                                    modelDir = modelDir,
+                                    downloadTarget = downloadTarget,
+                                    keepModelName = check.modelName,
+                                    expectedSha = expectedSha
+                                )
                                 modelDownloadState.value = LocalModelDownloadState(
                                     status = "COMPLETED",
                                     modelName = check.modelName,
@@ -758,10 +811,11 @@ actual object PlatformEngineBridge {
                                     totalBytes = downloadTarget.length(),
                                     percent = 100,
                                     sourceUrl = srcUrl,
-                                    message = if (loaded) {
-                                        "${check.modelName} downloaded, verified, and loaded via AeginModelLoader."
-                                    } else {
-                                        "${check.modelName} downloaded and verified at ${downloadTarget.absolutePath}."
+                                    message = when {
+                                        removed.isNotEmpty() && loaded -> "${check.modelName} downloaded, replaced old model, and loaded."
+                                        removed.isNotEmpty() -> "${check.modelName} downloaded and replaced previous model."
+                                        loaded -> "${check.modelName} downloaded, verified, and loaded via AeginModelLoader."
+                                        else -> "${check.modelName} downloaded and verified at ${downloadTarget.absolutePath}."
                                     }
                                 )
                                 finalSuccess = true
@@ -866,14 +920,12 @@ actual object PlatformEngineBridge {
                     }
                 )
                 if (fallbackOutcome.succeeded) {
-                    val loaded = try {
-                        AeginModelLoader(modelDir).loadVerifiedFileBlocking(
-                            ggufFile = downloadTarget,
-                            expectedSha256 = expectedSha
-                        )
-                    } catch (_: Exception) {
-                        false
-                    }
+                    val (loaded, removed) = replaceAndLoadModel(
+                        modelDir = modelDir,
+                        downloadTarget = downloadTarget,
+                        keepModelName = check.modelName,
+                        expectedSha = expectedSha
+                    )
                     modelDownloadState.value = LocalModelDownloadState(
                         status = "COMPLETED",
                         modelName = check.modelName,
@@ -881,10 +933,11 @@ actual object PlatformEngineBridge {
                         totalBytes = fallbackOutcome.bytesDownloaded,
                         percent = 100,
                         sourceUrl = fallbackOutcome.usedUrl,
-                        message = if (loaded) {
-                            "${check.modelName} downloaded, verified, and loaded into JNI runtime."
-                        } else {
-                            "${check.modelName} downloaded and verified at ${downloadTarget.absolutePath}."
+                        message = when {
+                            removed.isNotEmpty() && loaded -> "${check.modelName} downloaded, replaced old model, and loaded."
+                            removed.isNotEmpty() -> "${check.modelName} downloaded and replaced previous model."
+                            loaded -> "${check.modelName} downloaded, verified, and loaded into JNI runtime."
+                            else -> "${check.modelName} downloaded and verified at ${downloadTarget.absolutePath}."
                         }
                     )
                     return@withContext true
@@ -1569,23 +1622,6 @@ actual object PlatformEngineBridge {
         if (!candidateDir.exists()) {
             candidateDir.mkdirs()
         }
-        val files = candidateDir.listFiles()
-        if (files == null || files.isEmpty()) {
-            val overviewContent = """
-                # Reveila Sovereign AI Reference Document
-                This document is indexed in your local Reference Documents vector store on Android.
-                Physical folder location: ${candidateDir.absolutePath}
-                Focus areas: strategy, confidential architecture, multi-platform roadmap, zero cloud leaks.
-            """.trimIndent()
-            try {
-                File(candidateDir, "Reveila_Sovereign_Overview.md").writeText(overviewContent)
-            } catch (_: Exception) {
-                try {
-                    File(candidateDir, "Reveila_Overview.md").writeText(overviewContent)
-                } catch (_: Exception) {
-                }
-            }
-        }
         return candidateDir
     }
 
@@ -1594,7 +1630,7 @@ actual object PlatformEngineBridge {
             if (!dir.exists()) {
                 dir.mkdirs()
             }
-            dir.exists() && dir.canWrite()
+            dir.exists() && dir.canWrite() && dir.listFiles() != null
         } catch (_: Exception) {
             false
         }
@@ -1602,11 +1638,10 @@ actual object PlatformEngineBridge {
 
     private fun performLocalVaultScan(folderPath: String): VaultScanResult {
         val dir = resolveVaultDirectory(folderPath)
-        val supportedExts = setOf("md", "txt", "json", "docx", "csv", "log", "xml", "yaml", "yml", "html")
-        var files = dir.listFiles()?.filter { it.isFile && it.extension.lowercase() in supportedExts }.orEmpty()
-        if (files.isEmpty()) {
+        var scannedFiles = VaultFileScanner.collectSupportedFiles(dir)
+        if (scannedFiles.isEmpty()) {
             val bundledVault = File(resolveSystemHomeDir(), "ReveilaVault")
-            files = bundledVault.listFiles()?.filter { it.isFile && it.extension.lowercase() in supportedExts }.orEmpty()
+            scannedFiles = VaultFileScanner.collectSupportedFiles(bundledVault)
         }
 
         val keywordsCsv = getStorageItem("vault_focus_keywords") ?: "strategy, confidential, roadmap, architectural"
@@ -1627,12 +1662,20 @@ actual object PlatformEngineBridge {
         var filesScanned = 0
         var entitiesFound = 0
 
-        for (file in files) {
+        for (item in scannedFiles) {
+            val file = item.file
             val content = extractFileText(file)
+            if (file.name == "Reveila_Sovereign_Overview.md" && content.contains(VaultFileScanner.LEGACY_STUB_MARKER)) {
+                try {
+                    file.delete()
+                } catch (_: Exception) {
+                }
+                continue
+            }
             if (content.isNotBlank()) {
                 filesScanned++
                 val matched = keywords.count { kw ->
-                    file.name.lowercase().contains(kw) || content.lowercase().contains(kw)
+                    item.relativePath.lowercase().contains(kw) || content.lowercase().contains(kw)
                 }
                 entitiesFound += (matched + 2)
 
@@ -1640,12 +1683,13 @@ actual object PlatformEngineBridge {
                     try {
                         val meta = mapOf(
                             "title" to file.name,
+                            "relativePath" to item.relativePath,
                             "uri" to file.toURI().toString()
                         )
                         engine.invoke(
                             "KnowledgeVault",
                             "indexDocument",
-                            arrayOf<Any?>(file.name, content, meta),
+                            arrayOf<Any?>(item.relativePath, content, meta),
                             "127.0.0.1",
                             uiSubject
                         )
@@ -1693,6 +1737,7 @@ actual object PlatformEngineBridge {
                     }
                     sb.toString().trim()
                 }
+                "pdf" -> VaultFileScanner.extractPdfText(file)
                 else -> file.readText()
             }
         } catch (_: Exception) {

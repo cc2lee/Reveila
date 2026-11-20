@@ -135,14 +135,16 @@ $formattedTools
             }
 
             val toolCallFormatLine = if (validTools.isNotEmpty()) {
-                """- "tool-call": (if applicable, include any tools you would call and their arguments in a JSON-structured format)"""
+                """- "tool-call": (required when status is "{{status_tool_call}}"; an object or array of objects formatted as {"name": "<tool_name>", "arguments": {<tool_parameters>}}, e.g. {"name": "virtual_browser", "arguments": {"action": "search", "query": "latest news"}})"""
             } else {
                 ""
             }
 
             val cleanConstraints = constraints?.trim()?.takeIf { it.isNotEmpty() }
-            val constraintsValue = cleanConstraints ?: "No additional rules"
-            val constraintsLine = if (cleanConstraints != null) "Additional rules: $cleanConstraints" else ""
+            val presentationGuidance = ResponsePresentationService.formatPromptGuidance(DeviceFormFactor.COMPACT_MOBILE)
+            val mergedConstraints = listOfNotNull(cleanConstraints, presentationGuidance).joinToString("\n")
+            val constraintsValue = mergedConstraints.ifBlank { "No additional rules" }
+            val constraintsLine = "Additional rules:\n$mergedConstraints"
 
             val legacyContextSection = buildString {
                 if (validTools.isNotEmpty() || hasVault) {

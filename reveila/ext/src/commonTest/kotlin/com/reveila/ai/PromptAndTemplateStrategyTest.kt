@@ -99,6 +99,37 @@ class PromptAndTemplateStrategyTest {
         val relevantSearch = vault.search("What is our multi-platform roadmap strategy?", 3)
         assertTrue(relevantSearch.contains("Reveila_Sovereign_Overview.md"))
         assertTrue(relevantSearch.contains("Priority Keyword Match"))
+
+        // Multi-document overview query must cover distinct files beyond a single-doc chunk cap
+        vault.indexDocument("Notes_Alpha.txt", "Alpha architecture notes: zero-copy inference pipeline and benchmark latency.")
+        vault.indexDocument("Budget_Plan.md", "Q4 hardware budget approved for on-device test lab expansion.")
+        val overviewSearch = vault.search("Summarize the files in my Knowledge Folder.", 2)
+        assertTrue(overviewSearch.contains("Notes_Alpha.txt"))
+        assertTrue(overviewSearch.contains("Budget_Plan.md"))
+
+        // Scoped subfolder & root-only searches must filter to selected nested paths
+        vault.indexDocument(
+            "Architecture/design.md",
+            "Modular capability slicer keeps JAR minimal.",
+            mapOf("title" to "design.md", "relativePath" to "Architecture/design.md")
+        )
+        vault.indexDocument(
+            "Finance/q4_costs.csv",
+            "Compute cost allocation for GPU nodes.",
+            mapOf("title" to "q4_costs.csv", "relativePath" to "Finance/q4_costs.csv")
+        )
+        vault.setSearchScope("Architecture/")
+        val scopedArch = vault.search("Summarize the selected scope", 3)
+        assertTrue(scopedArch.contains("Architecture/design.md"))
+        assertFalse(scopedArch.contains("Finance/q4_costs.csv"))
+
+        vault.setSearchScope("__ROOT__")
+        val scopedRoot = vault.search("Summarize root files", 5)
+        assertTrue(scopedRoot.contains("Notes_Alpha.txt"))
+        assertFalse(scopedRoot.contains("Architecture/design.md"))
+
+        vault.setSearchScope("")
+        assertTrue(vault.getDocumentsJson().contains("Architecture/design.md"))
     }
 
     @Test
@@ -449,6 +480,18 @@ class PromptAndTemplateStrategyTest {
             )
             assertEquals("</s>", mistralStop)
             assertTrue(mistralFormatted.startsWith("<s>[INST] Hi\n\n2+2? [/INST]"))
+            val renderedPrompt = Prompt.buildSystemPrompt(
+                role = "Agent",
+                spaceName = "Assistant",
+                tools = listOf(LlmTool().apply {
+                    name = "virtual_browser"
+                    description = "Search and browse web"
+                }),
+                modelName = "gpt-4o",
+                systemHome = stdHome,
+                mode = PromptMode.AGENTIC_JSON
+            )
+            assertTrue(renderedPrompt.systemPrompt.contains("""{"name": "<tool_name>", "arguments": {<tool_parameters>}}"""))
         } finally {
             if (fs.exists(emptyHome)) fs.delete(emptyHome, recursive = true)
         }

@@ -27,8 +27,9 @@ class JsonSchemaEnforcer : SystemComponent(), SchemaEnforcer {
         val manifest = registry?.getManifest(pluginId)
             ?: throw IllegalArgumentException("Cannot enforce schema: Plugin $pluginId not found.")
 
-        val toolDefs = manifest.toolDefinitions()
-        validateSchema(pluginId, toolDefs, rawArguments)
+        val schema = manifest.resolvedInputSchema()
+        @Suppress("UNCHECKED_CAST")
+        validateSchema(pluginId, schema as? Map<String, Any>, rawArguments)
         return rawArguments
     }
 

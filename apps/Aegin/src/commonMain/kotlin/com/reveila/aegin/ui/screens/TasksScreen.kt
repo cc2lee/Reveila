@@ -73,7 +73,8 @@ private data class TaskPresetTemplate(
     val category: String,
     val prompt: String,
     val defaultRecurrence: String,
-    val accentColor: Color
+    val accentColor: Color,
+    val defaultSourceUrl: String = ""
 )
 
 private enum class TasksTabSection(val label: String) {
@@ -109,6 +110,7 @@ fun TasksScreen(
     var editingTaskId by remember { mutableStateOf<String?>(null) }
     var taskTitleInput by remember { mutableStateOf("") }
     var taskPromptInput by remember { mutableStateOf("") }
+    var taskSourceUrlInput by remember { mutableStateOf("") }
     var taskRecurrenceInput by remember { mutableStateOf("DAILY") }
     var taskScheduleTimeInput by remember { mutableStateOf("08:00") }
     var taskExecutionTargetInput by remember { mutableStateOf("auto") }
@@ -121,16 +123,24 @@ fun TasksScreen(
     val taskPresets = remember {
         listOf(
             TaskPresetTemplate(
-                title = "Vault Watchdog",
+                title = "News Brief",
+                category = "NEWS BRIEF",
+                prompt = "Retrieve the latest news headlines using the virtual browser and summarize the top stories with clickable source links.",
+                defaultRecurrence = "DAILY",
+                accentColor = Color(0xFF38BDF8),
+                defaultSourceUrl = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+            ),
+            TaskPresetTemplate(
+                title = "Knowledge Folder Watch",
                 category = "RAG MONITOR",
-                prompt = "Scan my Knowledge Vault for newly added strategy or architecture notes and summarize key changes.",
+                prompt = "Scan my Personal Knowledge Folder for newly added or updated files and summarize key changes.",
                 defaultRecurrence = "HOURLY",
                 accentColor = Color(0xFFFF6B2C)
             ),
             TaskPresetTemplate(
                 title = "Morning Digest",
                 category = "DAILY BRIEF",
-                prompt = "Compile a structured morning briefing with top 3 priorities and risk items from my indexed documents.",
+                prompt = "Compile a structured morning briefing with top 3 priorities and risk items from the files in my Personal Knowledge Folder.",
                 defaultRecurrence = "DAILY",
                 accentColor = Color(0xFF06B6D4)
             ),
@@ -178,11 +188,13 @@ fun TasksScreen(
         prefillTitle: String = "",
         prefillPrompt: String = "",
         prefillRecurrence: String = "DAILY",
-        prefillTarget: String = "auto"
+        prefillTarget: String = "auto",
+        prefillSourceUrl: String = ""
     ) {
         editingTaskId = null
         taskTitleInput = prefillTitle
         taskPromptInput = prefillPrompt
+        taskSourceUrlInput = prefillSourceUrl
         taskRecurrenceInput = prefillRecurrence
         taskScheduleTimeInput = "08:00"
         taskExecutionTargetInput = prefillTarget
@@ -194,6 +206,7 @@ fun TasksScreen(
         editingTaskId = item.taskId
         taskTitleInput = item.title
         taskPromptInput = item.prompt
+        taskSourceUrlInput = item.sourceUrl
         taskRecurrenceInput = item.frequency.ifBlank { "DAILY" }.uppercase()
         taskScheduleTimeInput = item.scheduleTime.ifBlank { "08:00" }
         taskExecutionTargetInput = item.executionTarget.ifBlank { "auto" }
@@ -226,7 +239,8 @@ fun TasksScreen(
                         frequency = taskRecurrenceInput.lowercase(),
                         scheduleTime = taskScheduleTimeInput.ifBlank { "08:00" },
                         requiresApproval = if (runImmediately) false else taskRequiresApprovalInput,
-                        executionTarget = taskExecutionTargetInput
+                        executionTarget = taskExecutionTargetInput,
+                        sourceUrl = taskSourceUrlInput.trim()
                     )
                     refreshDashboard(silent = true)
                     if (runImmediately) {
@@ -248,7 +262,8 @@ fun TasksScreen(
                         scheduleTime = taskScheduleTimeInput.ifBlank { "08:00" },
                         enabled = true,
                         requiresApproval = taskRequiresApprovalInput,
-                        executionTarget = taskExecutionTargetInput
+                        executionTarget = taskExecutionTargetInput,
+                        sourceUrl = taskSourceUrlInput.trim()
                     )
                     statusBanner = "Task '$title' updated."
                     refreshDashboard(silent = true)
@@ -689,7 +704,8 @@ fun TasksScreen(
                                             openCreateDialog(
                                                 prefillTitle = preset.title,
                                                 prefillPrompt = preset.prompt,
-                                                prefillRecurrence = preset.defaultRecurrence
+                                                prefillRecurrence = preset.defaultRecurrence,
+                                                prefillSourceUrl = preset.defaultSourceUrl
                                             )
                                         }
                                         .padding(horizontal = 12.dp, vertical = 7.dp),
@@ -1076,6 +1092,64 @@ fun TasksScreen(
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Source / Search URL (Optional)", color = theme.subText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = taskSourceUrlInput,
+                        onValueChange = { taskSourceUrlInput = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        placeholder = {
+                            Text(
+                                "Leave blank for default, or e.g. https://html.duckduckgo.com/html/?q={query}",
+                                color = theme.subText,
+                                fontSize = 12.sp
+                            )
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = theme.text,
+                            unfocusedTextColor = theme.text,
+                            focusedContainerColor = theme.inputBg,
+                            unfocusedContainerColor = theme.inputBg,
+                            focusedBorderColor = theme.cyan,
+                            unfocusedBorderColor = theme.border
+                        )
+                    )
+                    val urlQuickPresets = listOf(
+                        "Default Auto" to "",
+                        "DuckDuckGo" to "https://html.duckduckgo.com/html/?q={query}",
+                        "Google News" to "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en",
+                        "Bing News" to "https://www.bing.com/news/search?q={query}&format=rss",
+                        "Hacker News" to "https://news.ycombinator.com"
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        urlQuickPresets.forEach { (label, presetUrl) ->
+                            val isSelected = taskSourceUrlInput.trim() == presetUrl
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(if (isSelected) theme.cyan.copy(alpha = 0.2f) else theme.inputBg)
+                                    .border(1.dp, if (isSelected) theme.cyan else theme.border, CircleShape)
+                                    .clickable { taskSourceUrlInput = presetUrl }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = label,
+                                    color = if (isSelected) theme.cyan else theme.subText,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Where Should This Run?", color = theme.subText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1352,6 +1426,34 @@ private fun TaskControlCard(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
+
+        if (task.sourceUrl.isNotBlank()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(theme.cyan.copy(alpha = 0.10f))
+                    .border(1.dp, theme.cyan.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = "🌐 Source:",
+                    color = theme.cyan,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    text = task.sourceUrl,
+                    color = theme.text,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
 
         if (isRunningInSandbox || isSuspendedInSandbox) {
             Row(
@@ -1755,7 +1857,7 @@ fun SecurityPortalModal(
                 Triple("Private On-Device AI", "Active", "Local AI runs directly on your device without sending your private files over the internet."),
                 Triple("Approval Safeguard", "Enabled", "Sensitive automated actions pause and wait for your explicit approval before running."),
                 Triple("Verified System Bridge", "Verified", "All internal app actions and background workflows run through verified checks."),
-                Triple("Private Knowledge Folder", "Isolated", "Document search indexes stay stored locally inside your chosen folder.")
+                Triple("Personal Knowledge Folder", "Isolated", "File search indexes stay stored locally inside your chosen folder.")
             )
 
             pillars.forEach { (title, badge, desc) ->

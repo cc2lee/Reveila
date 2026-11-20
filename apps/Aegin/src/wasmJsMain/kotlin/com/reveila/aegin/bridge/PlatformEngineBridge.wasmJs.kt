@@ -170,6 +170,8 @@ actual object PlatformEngineBridge {
         )
     }
 
+    actual suspend fun getLocalModelCatalog(): List<LocalModelManifestEntry> = emptyList()
+
     actual suspend fun checkLocalModelAvailability(modelName: String): LocalModelCheckResult {
         val target = modelName.ifBlank { ModelTierCatalog.MODEL_0_5B }
         return LocalModelCheckResult(

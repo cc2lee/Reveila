@@ -18,7 +18,8 @@ class TerminalTool(
     override fun getName(): String = "terminal"
 
     override fun getDescription(): String = """
-        Executes scripts or shell commands on the target device inside a governed terminal sandbox.
+        Executes local OS scripts or shell commands on the target device inside a governed terminal sandbox.
+        Use ONLY for local filesystem, developer, or OS tasks. NEVER use terminal (curl, wget, python requests) to search the web, fetch news, or read web pages — ALWAYS use 'virtual_browser' instead.
         Supports live output streaming into the Terminal UI window and blind secret injection via SecretManager.
         Actions:
         - execute_script: { "action": "execute_script", "script": "...", "workingDir": "...", "timeoutSeconds": 30, "secretEnv": { "API_KEY": "SEC:my_api_key" } }
@@ -26,6 +27,15 @@ class TerminalTool(
         - stop: { "action": "stop" } (aborts active running script)
         - status: { "action": "status" } (returns latest script, exit code, and output)
     """.trimIndent()
+
+    private fun isWebBrowsingShellAttempt(cmdOrScript: String): Boolean {
+        val trimmed = cmdOrScript.trim().lowercase()
+        val usesWebCli = Regex("(^|[;&|\\n]\\s*)(curl|wget)\\b").containsMatchIn(trimmed)
+        if (!usesWebCli) return false
+        val isExplicitFileDownload = trimmed.contains(" -o ") || trimmed.contains(" -o\"") ||
+            trimmed.contains(" --output") || trimmed.contains(" > ")
+        return !isExplicitFileDownload
+    }
 
     override fun execute(args: Map<String, Any?>): String {
         val action = (args["action"] as? String)?.lowercase()?.trim() ?: when {
@@ -40,6 +50,9 @@ class TerminalTool(
                 "execute_script", "script", "run_script" -> {
                     val script = (args["script"] as? String)?.takeIf { it.isNotBlank() }
                         ?: return "Error: 'script' parameter is required for execute_script."
+                    if (isWebBrowsingShellAttempt(script)) {
+                        return "Redirect: Do not use terminal curl/wget to fetch web pages or news. Use the 'virtual_browser' tool (action: 'search' or 'navigate') instead."
+                    }
                     val timeoutSeconds = (args["timeoutSeconds"] as? Number)?.toLong()?.coerceIn(1L, 300L)
                         ?: Terminal.DEFAULT_TIMEOUT_SECONDS
                     val workingDir = (args["workingDir"] as? String)?.trim()?.takeIf { it.isNotBlank() }
@@ -97,6 +110,9 @@ class TerminalTool(
                     val cmd = (args["command"] as? String)?.takeIf { it.isNotBlank() }
                         ?: (args["cmd"] as? String)?.takeIf { it.isNotBlank() }
                         ?: return "Error: 'command' parameter is required for run_command."
+                    if (isWebBrowsingShellAttempt(cmd)) {
+                        return "Redirect: Do not use terminal curl/wget to fetch web pages or news. Use the 'virtual_browser' tool (action: 'search' or 'navigate') instead."
+                    }
                     val timeoutSeconds = (args["timeoutSeconds"] as? Number)?.toLong()?.coerceIn(1L, 300L)
                         ?: Terminal.DEFAULT_TIMEOUT_SECONDS
                     val workingDir = (args["workingDir"] as? String)?.trim()?.takeIf { it.isNotBlank() }

@@ -74,6 +74,15 @@ class AeginEngineService : Service() {
         }
     }
 
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        Log.w(TAG, "Foreground service timeout reached (fgsType=$fgsType); stopping gracefully.")
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } catch (_: Exception) {
+        }
+        stopSelf(startId)
+    }
+
     override fun onDestroy() {
         LlamaJniBridge.scheduleRelease()
         PlatformEngineBridge.releaseLocalModelBlocking()

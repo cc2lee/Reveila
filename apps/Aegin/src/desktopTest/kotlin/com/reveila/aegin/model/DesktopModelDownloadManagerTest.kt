@@ -226,4 +226,82 @@ class DesktopModelDownloadManagerTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun testCleanupReplacedGgufFilesRemovesPreviousModelsAndParts() {
+        val tempDir = createTempDirectory("aegin-replace-test").toFile()
+        try {
+            val oldModel = File(tempDir, "gemma-2-2b-it-Q4_K_M.gguf").apply { writeBytes(fakeGgufBytes(2048)) }
+            val oldPart = File(tempDir, "gemma-2-2b-it-Q4_K_M.gguf.part").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+            val newModel = File(tempDir, "qwen2.5-0.5b-instruct-q4_k_m.gguf").apply { writeBytes(fakeGgufBytes(2048)) }
+            val unrelatedManifest = File(tempDir, "manifest.json").apply { writeText("{}") }
+
+            val removed = ResumableModelDownloader.cleanupReplacedGgufFiles(
+                directories = listOf(tempDir),
+                keepFilename = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+            )
+
+            assertFalse(oldModel.exists())
+            assertFalse(oldPart.exists())
+            assertTrue(newModel.exists())
+            assertTrue(unrelatedManifest.exists())
+            assertTrue(removed.contains("gemma-2-2b-it-Q4_K_M.gguf"))
+            assertTrue(removed.contains("gemma-2-2b-it-Q4_K_M.gguf.part"))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testVaultFileScannerCollectsNestedDirectoriesAndSkipsHidden() {
+        val tempDir = createTempDirectory("aegin-vault-scan-test").toFile()
+        try {
+            File(tempDir, "root_note.txt").writeText("Root note content")
+            File(tempDir, "Architecture/Nested").mkdirs()
+            File(tempDir, "Architecture/design.md").writeText("Design doc")
+            File(tempDir, "Architecture/Nested/spec.json").writeText("{}")
+            File(tempDir, ".hidden").mkdirs()
+            File(tempDir, ".hidden/secret.txt").writeText("Should be skipped")
+            File(tempDir, "Architecture/image.png").writeText("Unsupported extension")
+
+            val collected = VaultFileScanner.collectSupportedFiles(tempDir)
+            assertEquals(
+                listOf("Architecture/design.md", "Architecture/Nested/spec.json", "root_note.txt"),
+                collected.map { it.relativePath }
+            )
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testVaultFileScannerExtractsPdfBillText() {
+        val tempDir = createTempDirectory("aegin-pdf-test").toFile()
+        try {
+            val pdfFile = File(tempDir, "electric-bill.pdf")
+            val minimalPdf = """
+                %PDF-1.4
+                1 0 obj
+                << /Length 74 >>
+                stream
+                BT
+                /F1 12 Tf
+                (City Power Electric Bill - Total Due: $185.20) Tj
+                ET
+                endstream
+                endobj
+                %%EOF
+            """.trimIndent()
+            pdfFile.writeBytes(minimalPdf.toByteArray(Charsets.ISO_8859_1))
+
+            val collected = VaultFileScanner.collectSupportedFiles(tempDir)
+            assertEquals(listOf("electric-bill.pdf"), collected.map { it.relativePath })
+
+            val extracted = VaultFileScanner.extractPdfText(pdfFile)
+            assertTrue(extracted.contains("City Power Electric Bill"))
+            assertTrue(extracted.contains("185.20"))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
 }

@@ -2,6 +2,7 @@ package com.reveila.aegin.bridge
 
 import com.reveila.aegin.model.DesktopModelDownloadManager
 import com.reveila.aegin.model.ResumableModelDownloader
+import com.reveila.aegin.model.VaultFileScanner
 import com.reveila.system.DefaultPlatformAdapter
 import com.reveila.system.Properties
 import com.reveila.system.Reveila
@@ -452,27 +453,12 @@ actual object PlatformEngineBridge {
         if (!dir.exists()) {
             dir.mkdirs()
         }
-        val files = dir.listFiles()
-        if (files == null || files.isEmpty()) {
-            try {
-                File(dir, "Reveila_Sovereign_Overview.md").writeText(
-                    """
-                    # Reveila Sovereign AI Reference Document
-                    This document is indexed in your local Reference Documents vector store.
-                    Physical folder location: ${dir.absolutePath}
-                    Focus areas: strategy, confidential architecture, multi-platform roadmap, zero cloud leaks.
-                    """.trimIndent()
-                )
-            } catch (_: Exception) {
-            }
-        }
         return dir
     }
 
     private fun performLocalVaultScan(folderPath: String): VaultScanResult {
         val dir = resolveVaultDirectory(folderPath)
-        val supportedExts = setOf("md", "txt", "json", "docx", "pdf", "csv", "log", "xml", "yaml", "yml", "html")
-        val files = dir.listFiles()?.filter { it.isFile && it.extension.lowercase() in supportedExts }.orEmpty()
+        val scannedFiles = VaultFileScanner.collectSupportedFiles(dir)
 
         val keywordsCsv = getStorageItem("vault_focus_keywords") ?: "strategy, confidential, roadmap, architectural"
         val keywords = keywordsCsv
@@ -492,12 +478,20 @@ actual object PlatformEngineBridge {
         var filesScanned = 0
         var entitiesFound = 0
 
-        for (file in files) {
+        for (item in scannedFiles) {
+            val file = item.file
             val content = extractFileText(file)
+            if (file.name == "Reveila_Sovereign_Overview.md" && content.contains(VaultFileScanner.LEGACY_STUB_MARKER)) {
+                try {
+                    file.delete()
+                } catch (_: Exception) {
+                }
+                continue
+            }
             if (content.isNotBlank()) {
                 filesScanned++
                 val matchedKeywords = keywords.count { kw ->
-                    file.name.lowercase().contains(kw) || content.lowercase().contains(kw)
+                    item.relativePath.lowercase().contains(kw) || content.lowercase().contains(kw)
                 }
                 entitiesFound += (matchedKeywords + 2)
 
@@ -505,12 +499,13 @@ actual object PlatformEngineBridge {
                     try {
                         val meta = mapOf(
                             "title" to file.name,
+                            "relativePath" to item.relativePath,
                             "uri" to file.toURI().toString()
                         )
                         engine.invoke(
                             "KnowledgeVault",
                             "indexDocument",
-                            arrayOf<Any?>(file.name, content, meta),
+                            arrayOf<Any?>(item.relativePath, content, meta),
                             "127.0.0.1",
                             uiSubject
                         )
@@ -542,6 +537,7 @@ actual object PlatformEngineBridge {
         return try {
             when (file.extension.lowercase()) {
                 "docx" -> extractDocxText(file)
+                "pdf" -> VaultFileScanner.extractPdfText(file)
                 else -> file.readText()
             }
         } catch (_: Exception) {
@@ -617,6 +613,11 @@ actual object PlatformEngineBridge {
         }
     }
 
+    actual suspend fun getLocalModelCatalog(): List<LocalModelManifestEntry> =
+        withContext(Dispatchers.IO) {
+            readDesktopModelManifest().models
+        }
+
     actual suspend fun checkLocalModelAvailability(modelName: String): LocalModelCheckResult =
         withContext(Dispatchers.IO) {
             val manifest = readDesktopModelManifest()
@@ -665,6 +666,12 @@ actual object PlatformEngineBridge {
         val modelsDir = withContext(Dispatchers.IO) {
             File(activeSystemHome, "models").apply { mkdirs() }
         }
+        ResumableModelDownloader.cleanupReplacedGgufFiles(
+            directories = listOf(modelsDir),
+            keepFilename = check.modelName,
+            deleteOtherGgufs = false,
+            deleteOtherParts = true
+        )
         val targetFile = File(modelsDir, check.modelName)
         val candidateUrls = buildList {
             if (check.downloadUrl.isNotBlank()) add(check.downloadUrl)
@@ -675,13 +682,22 @@ actual object PlatformEngineBridge {
             }
         }.distinct()
 
-        return desktopDownloadManager.downloadAndAwait(
+        val ok = desktopDownloadManager.downloadAndAwait(
             modelName = check.modelName,
             candidateUrls = candidateUrls,
             targetFile = targetFile,
             expectedSha256 = check.sha256,
             approxSizeBytes = check.approxSizeBytes
         )
+        if (ok) {
+            withContext(Dispatchers.IO) {
+                ResumableModelDownloader.cleanupReplacedGgufFiles(
+                    directories = listOf(modelsDir),
+                    keepFilename = check.modelName
+                )
+            }
+        }
+        return ok
     }
 
     actual suspend fun pauseLocalModelDownload(modelName: String) {

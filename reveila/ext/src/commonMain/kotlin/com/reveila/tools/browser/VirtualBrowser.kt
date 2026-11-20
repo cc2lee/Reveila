@@ -17,6 +17,10 @@ open class VirtualBrowser : SystemComponent() {
     companion object {
         const val DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
         const val MAX_REDIRECTS = 7
+        const val DEFAULT_DUCKDUCKGO_TEMPLATE = "https://html.duckduckgo.com/html/?q={query}"
+        const val DEFAULT_GOOGLE_NEWS_RSS_TEMPLATE = "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"
+        const val DEFAULT_BING_NEWS_RSS_TEMPLATE = "https://www.bing.com/news/search?q={query}&format=rss"
+        const val DEFAULT_BING_SEARCH_TEMPLATE = "https://www.bing.com/search?q={query}"
     }
 
     private val httpEngine = PlatformHttpEngine()
@@ -25,6 +29,17 @@ open class VirtualBrowser : SystemComponent() {
 
     var userAgent: String = DEFAULT_USER_AGENT
     var timeoutSeconds: Long = 30L
+
+    /**
+     * Optional global default search URL or template (e.g. "https://html.duckduckgo.com/html/?q={query}"
+     * or a direct site URL like "https://news.ycombinator.com"). When blank, built-in smart fallback is used.
+     */
+    var defaultSearchUrlTemplate: String = ""
+
+    /**
+     * Optional per-task search/source URL override active during a scheduled/autonomous task run.
+     */
+    var activeTaskSearchUrlOverride: String? = null
 
     private var currentPage: WebPage? = null
     private val historyStack = mutableListOf<String>()
@@ -48,6 +63,86 @@ open class VirtualBrowser : SystemComponent() {
         currentPage = null
         takeoverState = null
         logger.info("[VirtualBrowser] Stopped Virtual Browser engine.")
+    }
+
+    /**
+     * Resolves a user-configured URL or search template into a concrete request URL.
+     * Supports `{query}` / `%s` placeholders, trailing query parameters (`?q=`, `&q=`), or direct page/feed URLs.
+     */
+    fun resolveSearchUrl(templateOrUrl: String, query: String): String {
+        val raw = templateOrUrl.trim()
+        require(raw.isNotBlank()) { "Search URL template must not be blank." }
+        val encoded = urlEncode(query.trim())
+        val substituted = when {
+            raw.contains("{query}", ignoreCase = true) -> raw.replace(Regex("\\{query\\}", RegexOption.IGNORE_CASE), encoded)
+            raw.contains("%s") -> raw.replace("%s", encoded)
+            raw.endsWith("=") || raw.endsWith("?") || raw.endsWith("&") -> "$raw$encoded"
+            else -> raw
+        }
+        return normalizeUrl(substituted)
+    }
+
+    /**
+     * Searches the web and loads the parsed results page, honoring per-call / per-task / global
+     * configured search URLs first and falling back cleanly if an endpoint serves an anti-bot
+     * challenge or error status.
+     */
+    @kotlin.jvm.JvmOverloads
+    fun search(query: String, searchUrlOverride: String? = null): WebPage {
+        val cleanQuery = query.trim()
+        require(cleanQuery.isNotBlank()) { "Search query must not be blank." }
+        val encoded = urlEncode(cleanQuery)
+        val lower = cleanQuery.lowercase()
+        val isNewsIntent = listOf("news", "headline", "brief", "breaking", "latest").any { lower.contains(it) }
+
+        val configuredPrimary = searchUrlOverride?.trim()?.takeIf { it.isNotBlank() }
+            ?: activeTaskSearchUrlOverride?.trim()?.takeIf { it.isNotBlank() }
+            ?: defaultSearchUrlTemplate.trim().takeIf { it.isNotBlank() }
+
+        val candidates = buildList {
+            if (configuredPrimary != null) {
+                add(resolveSearchUrl(configuredPrimary, cleanQuery))
+            }
+            if (isNewsIntent) {
+                add("https://news.google.com/rss/search?q=$encoded&hl=en-US&gl=US&ceid=US:en")
+                add("https://www.bing.com/news/search?q=$encoded&format=rss")
+            }
+            add("https://html.duckduckgo.com/html/?q=$encoded")
+            add("https://www.bing.com/search?q=$encoded")
+            if (!isNewsIntent) {
+                add("https://news.google.com/rss/search?q=$encoded&hl=en-US&gl=US&ceid=US:en")
+            }
+        }.distinct()
+
+        var chosen: WebPage? = null
+        val previousTimeout = timeoutSeconds
+        try {
+            timeoutSeconds = minOf(timeoutSeconds, 10L)
+            for (candidateUrl in candidates) {
+                val attempt = try {
+                    executeRequestWithRedirects(candidateUrl, method = "GET", payload = null, contentType = null)
+                } catch (_: Exception) {
+                    null
+                }
+                if (attempt != null) {
+                    chosen = attempt
+                    if (!attempt.isSecurityChallenge && attempt.statusCode in 200..399 && attempt.statusCode != 202) {
+                        break
+                    }
+                }
+            }
+        } finally {
+            timeoutSeconds = previousTimeout
+        }
+
+        val finalPage = chosen ?: navigate(candidates.first())
+        lock.withLock {
+            historyStack.add(finalPage.url)
+        }
+        currentPage = finalPage
+        onPageChangedCallback?.invoke(finalPage, "Searched '${cleanQuery}' on ${finalPage.url}")
+        checkAndTriggerTakeoverIfNeeded(finalPage)
+        return finalPage
     }
 
     /**
@@ -380,10 +475,10 @@ open class VirtualBrowser : SystemComponent() {
         } else {
             currentPage
         }
-        val actionLabel = if (resumeControl) {
-            "Returned control to AI agent at $normalized"
+        val actionLabel = if (!updatedPage?.title.isNullOrBlank()) {
+            "${updatedPage?.title} • $normalized"
         } else {
-            "Synced live WebView page at $normalized"
+            normalized
         }
         onPageChangedCallback?.invoke(updatedPage, actionLabel)
         return updatedPage

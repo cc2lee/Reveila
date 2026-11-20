@@ -55,7 +55,15 @@ import com.reveila.aegin.bridge.DownloadLiveState
 import com.reveila.aegin.bridge.PendingToolAuthState
 import com.reveila.aegin.bridge.TerminalLiveState
 import com.reveila.aegin.bridge.ToolHubSnapshot
+import com.reveila.aegin.ui.theme.AeginOrbAvatar
 import com.reveila.aegin.ui.theme.LocalAeginColors
+
+private val AeginToolBubbleShape = RoundedCornerShape(
+    topStart = 6.dp,
+    topEnd = 20.dp,
+    bottomStart = 20.dp,
+    bottomEnd = 20.dp
+)
 
 enum class ActiveLargeToolWindow {
     NONE,
@@ -442,43 +450,66 @@ fun WaitingForUserBanner(
 @Composable
 fun LiveToolMiniCardsPanel(
     snapshot: ToolHubSnapshot,
+    isLocalMode: Boolean = false,
+    suppressBrowserCard: Boolean = false,
     onOpenWindow: (ActiveLargeToolWindow) -> Unit
 ) {
-    val showBrowser = snapshot.browser.isVisible || snapshot.browser.url.isNotBlank()
-    val showTerminal = snapshot.terminal.isVisible || snapshot.terminal.outputText.isNotBlank() || snapshot.terminal.currentScript.isNotBlank()
+    val showBrowser = (!suppressBrowserCard || snapshot.browser.waitingForUser) &&
+        (snapshot.browser.isVisible || snapshot.browser.url.isNotBlank())
+    val isSilentEmptyTerminalExit = snapshot.terminal.status == "COMPLETED" &&
+        snapshot.terminal.exitCode == 0 &&
+        !snapshot.terminal.waitingForUser &&
+        snapshot.terminal.controlOwner != "USER" &&
+        (snapshot.terminal.outputText.isBlank() ||
+            snapshot.terminal.outputText.trim().equals("(Exited with code 0, no output)", ignoreCase = true))
+    val showTerminal = !isSilentEmptyTerminalExit &&
+        (snapshot.terminal.isVisible || snapshot.terminal.outputText.isNotBlank() || snapshot.terminal.currentScript.isNotBlank())
     val showDownloads = snapshot.downloads.isVisible || snapshot.downloads.items.isNotEmpty()
     if (!showBrowser && !showTerminal && !showDownloads) return
 
-    val theme = LocalAeginColors.current
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         if (showBrowser) {
-            MiniBrowserCard(
-                state = snapshot.browser,
-                onClick = { onOpenWindow(ActiveLargeToolWindow.BROWSER) }
-            )
+            AeginToolBubbleRow(isLocalMode = isLocalMode) {
+                MiniBrowserCard(
+                    state = snapshot.browser,
+                    onClick = { onOpenWindow(ActiveLargeToolWindow.BROWSER) }
+                )
+            }
         }
         if (showTerminal) {
-            MiniTerminalCard(
-                state = snapshot.terminal,
-                onClick = { onOpenWindow(ActiveLargeToolWindow.TERMINAL) }
-            )
+            AeginToolBubbleRow(isLocalMode = isLocalMode) {
+                MiniTerminalCard(
+                    state = snapshot.terminal,
+                    onClick = { onOpenWindow(ActiveLargeToolWindow.TERMINAL) }
+                )
+            }
         }
         if (showDownloads) {
-            MiniDownloadCard(
-                state = snapshot.downloads,
-                onClick = { onOpenWindow(ActiveLargeToolWindow.DOWNLOADS) }
-            )
+            AeginToolBubbleRow(isLocalMode = isLocalMode) {
+                MiniDownloadCard(
+                    state = snapshot.downloads,
+                    onClick = { onOpenWindow(ActiveLargeToolWindow.DOWNLOADS) }
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun MiniBrowserCard(
+private fun AeginToolBubbleRow(
+    isLocalMode: Boolean,
+    content: @Composable () -> Unit
+) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        content()
+    }
+}
+
+@Composable
+fun MiniBrowserCard(
     state: BrowserLiveState,
     onClick: () -> Unit
 ) {
@@ -487,12 +518,12 @@ private fun MiniBrowserCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(AeginToolBubbleShape)
             .background(theme.card)
             .border(
                 width = 1.dp,
                 color = if (state.waitingForUser) theme.warning else if (isUser) theme.cyan else theme.glassBorder,
-                shape = RoundedCornerShape(16.dp)
+                shape = AeginToolBubbleShape
             )
             .clickable { onClick() }
     ) {
@@ -516,22 +547,40 @@ private fun MiniBrowserCard(
                         .background(if (state.waitingForUser) theme.warning else if (isUser) theme.cyan else theme.success)
                 )
                 Text(
-                    text = "🌐 ${state.url.ifBlank { state.title.ifBlank { "Live Browser" } }}",
+                    text = "🌐 Web Browser",
                     color = theme.text,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1
                 )
+                val targetLabel = state.url.ifBlank { state.title }
+                if (targetLabel.isNotBlank()) {
+                    Text(
+                        text = "• $targetLabel",
+                        color = theme.subText,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = if (isUser) "👤 Your Control" else "🤖 AI Active",
-                    color = if (isUser) theme.cyan else theme.success,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
+                if (isUser) {
+                    Text(
+                        text = "👤 Your Control",
+                        color = theme.cyan,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                } else if (state.waitingForUser) {
+                    Text(
+                        text = "⏳ Input Needed",
+                        color = theme.warning,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
                 Text(
                     text = "↗ Expand",
                     color = theme.primary,
@@ -566,14 +615,28 @@ private fun MiniBrowserCard(
             )
         }
 
-        if (state.lastAction.isNotBlank()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(theme.cardAlt.copy(alpha = 0.65f))
+                .padding(horizontal = 12.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
-                text = state.lastAction,
+                text = "Web Browser",
+                color = theme.text,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+            val footerDetail = state.title.ifBlank { state.url }.ifBlank { "Ready" }
+            Text(
+                text = footerDetail,
                 color = theme.subText,
                 fontSize = 10.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                modifier = Modifier.padding(start = 8.dp)
             )
         }
     }
@@ -590,12 +653,12 @@ private fun MiniTerminalCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(AeginToolBubbleShape)
             .background(Color(0xFF0E141B))
             .border(
                 width = 1.dp,
                 color = if (isRunning) theme.cyan else if (isUser) theme.warning else theme.glassBorder,
-                shape = RoundedCornerShape(16.dp)
+                shape = AeginToolBubbleShape
             )
             .clickable { onClick() }
             .padding(10.dp),
@@ -611,19 +674,35 @@ private fun MiniTerminalCard(
                     CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp, color = theme.cyan)
                 }
                 Text(
-                    text = ">_ Terminal (${state.shellName.ifBlank { "shell" }})",
+                    text = ">_ Command Terminal",
                     color = Color(0xFFE2E8F0),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.ExtraBold
                 )
+                if (state.shellName.isNotBlank()) {
+                    Text(
+                        text = "(${state.shellName})",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 10.sp
+                    )
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = if (isUser) "👤 Your Control" else state.status,
-                    color = if (isUser) theme.cyan else Color(0xFF38BDF8),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                if (isUser) {
+                    Text(
+                        text = "👤 Your Control",
+                        color = theme.cyan,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    Text(
+                        text = state.status.lowercase().replaceFirstChar { it.uppercase() },
+                        color = Color(0xFF38BDF8),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 Text(
                     text = "↗ Expand",
                     color = theme.primary,
@@ -641,6 +720,26 @@ private fun MiniTerminalCard(
             maxLines = 4,
             overflow = TextOverflow.Ellipsis
         )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Command Terminal",
+                color = Color(0xFFCBD5E1),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+            val exitInfo = state.exitCode?.let { "Exit $it" } ?: state.workingDir.ifBlank { "Ready" }
+            Text(
+                text = exitInfo,
+                color = Color(0xFF64748B),
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
@@ -650,14 +749,27 @@ private fun MiniDownloadCard(
     onClick: () -> Unit
 ) {
     val theme = LocalAeginColors.current
-    val lead = state.items.firstOrNull() ?: return
+    val lead = state.items.firstOrNull()
     val isUser = state.controlOwner == "USER"
+    val pct = (lead?.percentage ?: 0).coerceIn(0, 100)
+    val friendlyStatus = when (lead?.status?.uppercase()) {
+        "DOWNLOADING" -> "Downloading"
+        "QUEUED" -> "Queued"
+        "CHECKING_STORAGE" -> "Checking Storage"
+        "VERIFYING" -> "Verifying"
+        "PAUSED" -> "Paused"
+        "COMPLETED" -> "Completed"
+        "FAILED" -> "Failed"
+        "CANCELLED" -> "Cancelled"
+        else -> "Idle"
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(AeginToolBubbleShape)
             .background(theme.card)
-            .border(1.dp, if (isUser) theme.cyan else theme.glassBorder, RoundedCornerShape(16.dp))
+            .border(1.dp, if (isUser) theme.cyan else theme.glassBorder, AeginToolBubbleShape)
             .clickable { onClick() }
             .padding(11.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -668,7 +780,7 @@ private fun MiniDownloadCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "⬇️ ${lead.fileName} (${state.items.size})",
+                text = if (lead != null) "⬇️ ${lead.fileName} (${state.items.size})" else "⬇️ File Downloader",
                 color = theme.text,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.ExtraBold,
@@ -676,28 +788,69 @@ private fun MiniDownloadCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "${lead.status} • ${lead.percentage.coerceAtLeast(0)}%",
-                    color = theme.cyan,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (isUser) {
+                    Text(
+                        text = "👤 Your Control",
+                        color = theme.cyan,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    Text(
+                        text = "$friendlyStatus • $pct%",
+                        color = theme.cyan,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
                 Text("↗ Expand", color = theme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
         }
-        LinearProgressIndicator(
-            progress = { (lead.percentage.coerceIn(0, 100)) / 100f },
-            modifier = Modifier.fillMaxWidth().height(5.dp).clip(CircleShape),
-            color = theme.cyan
-        )
-        Text(
-            text = "${formatBytesCompact(lead.downloadedBytes)} / ${formatBytesCompact(lead.totalBytes)} • ${lead.message}",
-            color = theme.subText,
-            fontSize = 10.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            LinearProgressIndicator(
+                progress = { pct / 100f },
+                modifier = Modifier.weight(1f).height(6.dp).clip(CircleShape),
+                color = theme.cyan
+            )
+            Text(
+                text = "$pct%",
+                color = theme.text,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "File Downloader",
+                color = theme.text,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
+            val detail = if (lead != null) {
+                "${formatBytesCompact(lead.downloadedBytes)} / ${formatBytesCompact(lead.totalBytes)} • $friendlyStatus"
+            } else {
+                "No active downloads"
+            }
+            Text(
+                text = detail,
+                color = theme.subText,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        }
     }
 }
 
@@ -809,7 +962,7 @@ fun LargeBrowserTakeoverDialog(
     var captureTrigger by remember { mutableStateOf(0) }
 
     LargeToolWindowFrame(
-        title = "🌐 Live Web Browser",
+        title = "🌐 Web Browser",
         controlOwner = state.controlOwner,
         onTakeOver = onTakeOver,
         onReturnControl = { captureTrigger += 1 },
@@ -898,7 +1051,7 @@ fun LargeTerminalTakeoverDialog(
     var workingDirDraft by remember(state.workingDir) { mutableStateOf(state.workingDir) }
 
     LargeToolWindowFrame(
-        title = ">_ Terminal (${state.shellName.ifBlank { "shell" }})",
+        title = ">_ Command Terminal (${state.shellName.ifBlank { "shell" }})",
         controlOwner = state.controlOwner,
         onTakeOver = onTakeOver,
         onReturnControl = onReturnControl,
@@ -1035,7 +1188,7 @@ fun LargeDownloadTakeoverDialog(
 ) {
     val theme = LocalAeginColors.current
     LargeToolWindowFrame(
-        title = "⬇️ Resumable Downloads",
+        title = "⬇️ File Downloader",
         controlOwner = state.controlOwner,
         onTakeOver = onTakeOver,
         onReturnControl = onReturnControl,

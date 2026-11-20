@@ -18,6 +18,7 @@ import com.reveila.system.SystemComponent
 import com.reveila.system.UserPrincipal
 import com.reveila.system.io.PlatformFileSystem
 import com.reveila.system.platform.PlatformSystem
+import com.reveila.tools.ToolActivityHub
 import com.reveila.util.Uuid
 import com.reveila.util.json.JsonUtil
 import kotlin.jvm.JvmOverloads
@@ -640,6 +641,7 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             var answerText: String
             var finalStatus = "ACTIVE"
             var escalatedReason = ""
+            var capturedToolAttachment: Map<String, Any?>? = null
             val resolvedRouteBadge = if (isSelectedLocal && (!assessment.routeToCloud || matchedByIntent?.supportsIntent(assessment.taskCategory) == true)) {
                 "LOCAL ($selectedProviderName)"
             } else if (!isSelectedLocal) {
@@ -648,8 +650,19 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
                 "CLOUD -> LOCAL FALLBACK ($selectedProviderName)"
             }
 
+            val taskSourceUrl = (initialTaskDef["sourceUrl"] as? String)?.trim().orEmpty()
+            val effectivePrompt = if (taskSourceUrl.isNotBlank()) {
+                "$prompt\n\n[Configured Task Source URL: $taskSourceUrl — use virtual_browser with this URL or search template.]"
+            } else {
+                prompt
+            }
+
             if (fabric != null) {
+                val browserUpdatedBefore = ToolActivityHub.getSnapshot().browser.updatedAtMs
                 val rawResult = try {
+                    if (taskSourceUrl.isNotBlank()) {
+                        fabric.getToolCoordinator()?.virtualBrowser?.activeTaskSearchUrlOverride = taskSourceUrl
+                    }
                     TraceContextHolder.setContext(
                         TraceContextSnapshot(
                             traceId = traceId,
@@ -659,9 +672,29 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
                             actorType = "AGENT"
                         )
                     )
-                    fabric.processIntent(sandbox.session, subj, prompt, preferredProviderName = selectedProviderName)
+                    fabric.processIntent(sandbox.session, subj, effectivePrompt, preferredProviderName = selectedProviderName)
                 } finally {
+                    fabric.getToolCoordinator()?.virtualBrowser?.activeTaskSearchUrlOverride = null
                     TraceContextHolder.clear()
+                }
+                @Suppress("UNCHECKED_CAST")
+                val resultAttachment = rawResult["toolAttachment"] as? Map<String, Any?>
+                if (resultAttachment != null) {
+                    capturedToolAttachment = resultAttachment
+                } else {
+                    val bSnap = ToolActivityHub.getSnapshot().browser
+                    if (bSnap.updatedAtMs > browserUpdatedBefore && bSnap.url.isNotBlank()) {
+                        val isSynthesizedFeed = bSnap.rawHtml.contains("<!-- reveila-feed-html -->", ignoreCase = true)
+                        capturedToolAttachment = mapOf(
+                            "tool" to "virtual_browser",
+                            "url" to bSnap.url,
+                            "title" to bSnap.title,
+                            "statusCode" to bSnap.statusCode,
+                            "lastAction" to bSnap.lastAction,
+                            "contentPreview" to bSnap.contentPreview.take(1500),
+                            "rawHtml" to if (isSynthesizedFeed) bSnap.rawHtml.take(12_000) else ""
+                        )
+                    }
                 }
                 val statusStr = rawResult["status"]?.toString() ?: ""
                 if (statusStr.equals(Constants.AI_STATUS_ESCALATE, ignoreCase = true)) {
@@ -728,6 +761,9 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             }
             latestDef["lastRunAt"] = PlatformSystem.currentTimeMillis()
             latestDef["lastResult"] = answerText
+            if (capturedToolAttachment != null) {
+                latestDef["lastToolAttachment"] = capturedToolAttachment
+            }
             if (latestDef["traceId"] == null || (latestDef["traceId"] as? String).isNullOrBlank()) {
                 latestDef["traceId"] = initialTaskDef["traceId"] ?: sandbox.session.parentTraceId
             }
@@ -765,7 +801,8 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
                     taskId = taskId,
                     title = title,
                     status = "COMPLETED",
-                    summary = answerText.take(280)
+                    summary = answerText.take(1200),
+                    toolAttachment = capturedToolAttachment
                 )
             }
         } catch (ce: CancellationException) {
@@ -851,7 +888,8 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         taskId: String,
         title: String,
         status: String,
-        summary: String
+        summary: String,
+        toolAttachment: Map<String, Any?>? = null
     ) {
         val now = PlatformSystem.currentTimeMillis()
         val event = linkedMapOf<String, Any?>(
@@ -862,6 +900,9 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             "summary" to summary,
             "timestamp" to now
         )
+        if (toolAttachment != null) {
+            event["toolAttachment"] = toolAttachment
+        }
         taskNotifications.add(0, event)
         while (taskNotifications.size > 40) {
             taskNotifications.removeAt(taskNotifications.lastIndex)
@@ -1001,7 +1042,8 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         scheduleTime: String,
         requiresApproval: Boolean,
         executionTarget: String = "auto",
-        actorId: String = ""
+        actorId: String = "",
+        sourceUrl: String = ""
     ): String {
         val fs = PlatformFileSystem()
         val tasksDir = resolveTasksDir()
@@ -1046,6 +1088,7 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             "title" to resolvedTitle,
             "intent" to cleanIntent,
             "prompt" to prompt,
+            "sourceUrl" to sourceUrl.trim(),
             "frequency" to cleanFreq,
             "scheduleTime" to cleanTime,
             "executionTarget" to cleanTarget,
@@ -1101,6 +1144,7 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         )
     }
 
+    @JvmOverloads
     open fun updateTaskWithIntent(
         taskId: String,
         title: String,
@@ -1110,7 +1154,8 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         scheduleTime: String,
         enabled: Boolean,
         requiresApproval: Boolean = false,
-        executionTarget: String = ""
+        executionTarget: String = "",
+        sourceUrl: String = ""
     ): String {
         val (filePath, existing) = findTaskFile(taskId)
             ?: return """{"error":"Task not found: $taskId"}"""
@@ -1135,6 +1180,7 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         existing["title"] = title.ifBlank { existing["title"] ?: taskId }
         existing["intent"] = cleanIntent
         existing["prompt"] = prompt
+        existing["sourceUrl"] = sourceUrl.trim()
         existing["frequency"] = frequency.ifBlank { "daily" }
         existing["scheduleTime"] = scheduleTime.ifBlank { "08:00" }
         existing["executionTarget"] = cleanTarget
@@ -1157,6 +1203,17 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
 
         fs.writeText(filePath, JsonUtil.toPrettyJsonString(existing), append = false)
         recordAuditLog("TASK_UPDATED", "Updated task [$taskId] (${existing["title"]}), executionTarget=$cleanTarget, category=${assessment.taskCategory}")
+        return JsonUtil.toJsonString(existing)
+    }
+
+    open fun updateTaskSourceUrl(taskId: String, sourceUrl: String): String {
+        val (filePath, existing) = findTaskFile(taskId)
+            ?: return """{"error":"Task not found: $taskId"}"""
+        val fs = PlatformFileSystem()
+        val cleaned = sourceUrl.trim()
+        existing["sourceUrl"] = cleaned
+        fs.writeText(filePath, JsonUtil.toPrettyJsonString(existing), append = false)
+        recordAuditLog("TASK_SOURCE_URL_UPDATED", "Updated sourceUrl for task [$taskId] to '${cleaned.ifBlank { "default" }}'")
         return JsonUtil.toJsonString(existing)
     }
 

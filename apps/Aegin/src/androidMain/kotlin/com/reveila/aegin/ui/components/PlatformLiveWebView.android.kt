@@ -28,6 +28,74 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.reveila.aegin.bridge.BrowserLiveState
 import com.reveila.aegin.ui.theme.LocalAeginColors
+import com.reveila.tools.browser.HtmlParser
+
+private fun looksLikeFeedUrl(url: String): Boolean {
+    val lower = url.lowercase()
+    return lower.contains("/rss") ||
+        lower.contains("format=rss") ||
+        lower.contains("rss.xml") ||
+        lower.contains("/feed") ||
+        lower.endsWith(".xml") ||
+        lower.contains(".xml?")
+}
+
+private fun looksLikeRawXml(content: String): Boolean {
+    val head = content.trimStart('\uFEFF', ' ', '\t', '\r', '\n').take(1200).lowercase()
+    return head.startsWith("<?xml") ||
+        head.startsWith("<rss") ||
+        head.startsWith("<feed") ||
+        (head.contains("<channel") && head.contains("<item"))
+}
+
+private fun buildFallbackPreviewHtml(title: String, url: String, contentPreview: String): String {
+    fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+    val lines = contentPreview.lines().map { it.trim() }.filter { it.isNotBlank() }.take(25)
+    val itemsHtml = if (lines.isEmpty()) {
+        """<div style="color:#94a3b8;font-size:13px;">Loading feed content...</div>"""
+    } else {
+        lines.joinToString("\n") { line ->
+            val cleaned = line.removePrefix("•").removePrefix("-").trim()
+            """<article style="background:#161b26;border:1px solid #2a3347;border-radius:10px;padding:9px 11px;margin-bottom:7px;font-size:13px;line-height:1.4;color:#e2e8f0;">${esc(cleaned)}</article>"""
+        }
+    }
+    return """
+        <!DOCTYPE html>
+        <!-- reveila-feed-html -->
+        <html>
+        <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head>
+        <body style="margin:0;padding:10px 12px;background:#0d1117;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+          <header style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #2a3347;">
+            <div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:#38bdf8;font-weight:700;">Live News Feed</div>
+            <h1 style="margin:3px 0 0 0;font-size:15px;color:#f8fafc;">${esc(title.ifBlank { url.ifBlank { "News Brief" } })}</h1>
+          </header>
+          $itemsHtml
+        </body>
+        </html>
+    """.trimIndent()
+}
+
+private fun resolveRenderedHtmlIfFeedOrLocal(state: BrowserLiveState): String? {
+    val raw = state.rawHtml
+    if (raw.contains("<!-- reveila-feed-html -->", ignoreCase = true) ||
+        raw.contains("<!-- reveila-mermaid-html -->", ignoreCase = true)
+    ) {
+        return raw
+    }
+    if (raw.isNotBlank() && looksLikeRawXml(raw)) {
+        return HtmlParser.parse(state.url, state.statusCode.takeIf { it > 0 } ?: 200, raw, emptyMap()).rawHtml
+    }
+    if (looksLikeFeedUrl(state.url)) {
+        if (raw.isNotBlank() && (raw.trimStart().startsWith("<!DOCTYPE html", ignoreCase = true) || raw.trimStart().startsWith("<html", ignoreCase = true))) {
+            return raw
+        }
+        return buildFallbackPreviewHtml(state.title, state.url, state.contentPreview)
+    }
+    if (raw.isNotBlank() && (state.url.startsWith("http://127.0.0.1") || state.url.startsWith("http://localhost") || state.url.isBlank())) {
+        return raw
+    }
+    return null
+}
 
 @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 @Composable
@@ -154,19 +222,29 @@ actual fun PlatformLiveWebView(
                     wv.isFocusableInTouchMode = true
                 }
 
-                val sig = "${state.url}|${state.updatedAtMs}|${state.rawHtml.hashCode()}"
+                val inlineHtml = resolveRenderedHtmlIfFeedOrLocal(state)
+                val sig = "${state.url}|${state.updatedAtMs}|${state.rawHtml.hashCode()}|${inlineHtml != null}"
                 if (sig != lastLoadedSignature && !isInteractive) {
                     lastLoadedSignature = sig
-                    if (state.rawHtml.isNotBlank() && (state.url.startsWith("http://127.0.0.1") || state.url.startsWith("http://localhost") || state.url.isBlank())) {
-                        wv.loadDataWithBaseURL(state.url.ifBlank { "https://localhost" }, state.rawHtml, "text/html", "utf-8", state.url)
+                    if (inlineHtml != null) {
+                        if (isMiniPreview) {
+                            wv.setInitialScale(0)
+                        }
+                        wv.loadDataWithBaseURL(state.url.ifBlank { "https://localhost" }, inlineHtml, "text/html", "utf-8", null)
                     } else if (state.url.isNotBlank() && wv.url != state.url) {
+                        if (isMiniPreview) {
+                            wv.setInitialScale(55)
+                        }
                         wv.loadUrl(state.url)
                     } else if (state.rawHtml.isNotBlank() && wv.url.isNullOrBlank()) {
-                        wv.loadDataWithBaseURL(state.url, state.rawHtml, "text/html", "utf-8", state.url)
+                        wv.loadDataWithBaseURL(state.url.ifBlank { "https://localhost" }, state.rawHtml, "text/html", "utf-8", null)
                     }
-                } else if (sig != lastLoadedSignature && wv.url.isNullOrBlank()) {
+                } else if (sig != lastLoadedSignature && (wv.url.isNullOrBlank() || wv.url == "about:blank" || inlineHtml != null)) {
                     lastLoadedSignature = sig
-                    if (state.url.isNotBlank()) {
+                    if (inlineHtml != null) {
+                        wv.setInitialScale(0)
+                        wv.loadDataWithBaseURL(state.url.ifBlank { "https://localhost" }, inlineHtml, "text/html", "utf-8", null)
+                    } else if (state.url.isNotBlank()) {
                         wv.loadUrl(state.url)
                     } else if (state.rawHtml.isNotBlank()) {
                         wv.loadDataWithBaseURL("https://localhost", state.rawHtml, "text/html", "utf-8", null)

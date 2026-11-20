@@ -26,7 +26,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -312,7 +316,10 @@ enum class AeginIconType {
     CHECK,
     CLOSE,
     MENU,
-    BACK
+    BACK,
+    DEVICE,
+    CLOUD,
+    FOLDERS_STACK
 }
 
 /**
@@ -431,23 +438,48 @@ fun AeginVectorIcon(
             }
 
             AeginIconType.SUN -> {
-                drawCircle(tint, radius = w * 0.22f, center = Offset(w * 0.5f, h * 0.5f), style = stroke)
-                drawLine(tint, Offset(w * 0.5f, h * 0.10f), Offset(w * 0.5f, h * 0.18f), strokeWidth = sw, cap = StrokeCap.Round)
-                drawLine(tint, Offset(w * 0.5f, h * 0.82f), Offset(w * 0.5f, h * 0.90f), strokeWidth = sw, cap = StrokeCap.Round)
-                drawLine(tint, Offset(w * 0.10f, h * 0.5f), Offset(w * 0.18f, h * 0.5f), strokeWidth = sw, cap = StrokeCap.Round)
-                drawLine(tint, Offset(w * 0.82f, h * 0.5f), Offset(w * 0.90f, h * 0.5f), strokeWidth = sw, cap = StrokeCap.Round)
+                val cx = w * 0.5f
+                val cy = h * 0.5f
+                drawCircle(tint, radius = w * 0.19f, center = Offset(cx, cy), style = stroke)
+                val innerR = w * 0.31f
+                val outerR = w * 0.44f
+                for (i in 0 until 8) {
+                    val angle = i * (PI / 4.0)
+                    val dx = cos(angle).toFloat()
+                    val dy = sin(angle).toFloat()
+                    drawLine(
+                        color = tint,
+                        start = Offset(cx + innerR * dx, cy + innerR * dy),
+                        end = Offset(cx + outerR * dx, cy + outerR * dy),
+                        strokeWidth = sw * 0.9f,
+                        cap = StrokeCap.Round
+                    )
+                }
             }
 
             AeginIconType.MOON -> {
+                val outerBounds = Rect(w * 0.16f, h * 0.16f, w * 0.84f, h * 0.84f)
                 val p = Path().apply {
-                    moveTo(w * 0.64f, h * 0.18f)
-                    quadraticTo(w * 0.26f, h * 0.24f, w * 0.26f, h * 0.54f)
-                    quadraticTo(w * 0.26f, h * 0.82f, w * 0.68f, h * 0.82f)
-                    quadraticTo(w * 0.46f, h * 0.68f, w * 0.46f, h * 0.46f)
-                    quadraticTo(w * 0.46f, h * 0.28f, w * 0.64f, h * 0.18f)
+                    arcTo(
+                        rect = outerBounds,
+                        startAngleDegrees = -78f,
+                        sweepAngleDegrees = -204f,
+                        forceMoveTo = true
+                    )
+                    cubicTo(
+                        w * 0.36f, h * 0.73f,
+                        w * 0.36f, h * 0.27f,
+                        w * 0.57f, h * 0.17f
+                    )
                     close()
                 }
                 drawPath(p, color = tint, style = stroke)
+                // Crisp companion star twinkle in upper-right
+                val sx = w * 0.76f
+                val sy = h * 0.25f
+                val sr = w * 0.08f
+                drawLine(tint, Offset(sx, sy - sr), Offset(sx, sy + sr), strokeWidth = sw * 0.8f, cap = StrokeCap.Round)
+                drawLine(tint, Offset(sx - sr, sy), Offset(sx + sr, sy), strokeWidth = sw * 0.8f, cap = StrokeCap.Round)
             }
 
             AeginIconType.BOLT -> {
@@ -482,6 +514,70 @@ fun AeginVectorIcon(
             AeginIconType.BACK -> {
                 drawLine(tint, Offset(w * 0.62f, h * 0.20f), Offset(w * 0.30f, h * 0.50f), strokeWidth = sw, cap = StrokeCap.Round)
                 drawLine(tint, Offset(w * 0.30f, h * 0.50f), Offset(w * 0.62f, h * 0.80f), strokeWidth = sw, cap = StrokeCap.Round)
+            }
+
+            AeginIconType.DEVICE -> {
+                // Crisp smartphone line-art silhouette with top earpiece and bottom home indicator
+                drawRoundRect(
+                    color = tint,
+                    topLeft = Offset(w * 0.26f, h * 0.11f),
+                    size = Size(w * 0.48f, h * 0.78f),
+                    cornerRadius = CornerRadius(w * 0.10f, w * 0.10f),
+                    style = stroke
+                )
+                drawLine(
+                    tint,
+                    Offset(w * 0.42f, h * 0.22f),
+                    Offset(w * 0.58f, h * 0.22f),
+                    strokeWidth = sw * 0.9f,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    tint,
+                    Offset(w * 0.40f, h * 0.77f),
+                    Offset(w * 0.60f, h * 0.77f),
+                    strokeWidth = sw * 0.95f,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            AeginIconType.CLOUD -> {
+                val p = Path().apply {
+                    moveTo(w * 0.28f, h * 0.74f)
+                    lineTo(w * 0.74f, h * 0.74f)
+                    cubicTo(w * 0.86f, h * 0.74f, w * 0.90f, h * 0.64f, w * 0.88f, h * 0.55f)
+                    cubicTo(w * 0.87f, h * 0.47f, w * 0.80f, h * 0.42f, w * 0.72f, h * 0.43f)
+                    cubicTo(w * 0.69f, h * 0.28f, w * 0.54f, h * 0.22f, w * 0.42f, h * 0.28f)
+                    cubicTo(w * 0.34f, h * 0.32f, w * 0.30f, h * 0.39f, w * 0.30f, h * 0.44f)
+                    cubicTo(w * 0.19f, h * 0.45f, w * 0.12f, h * 0.53f, w * 0.12f, h * 0.62f)
+                    cubicTo(w * 0.12f, h * 0.70f, w * 0.19f, h * 0.74f, w * 0.28f, h * 0.74f)
+                    close()
+                }
+                drawPath(p, color = tint, style = stroke)
+            }
+
+            AeginIconType.FOLDERS_STACK -> {
+                // Back stacked folder (top-right offset)
+                val backFolder = Path().apply {
+                    moveTo(w * 0.24f, h * 0.24f)
+                    lineTo(w * 0.44f, h * 0.24f)
+                    lineTo(w * 0.52f, h * 0.32f)
+                    lineTo(w * 0.88f, h * 0.32f)
+                    lineTo(w * 0.88f, h * 0.68f)
+                }
+                drawPath(backFolder, color = tint.copy(alpha = 0.65f), style = stroke)
+
+                // Front primary folder (bottom-left)
+                val frontFolder = Path().apply {
+                    moveTo(w * 0.12f, h * 0.38f)
+                    lineTo(w * 0.36f, h * 0.38f)
+                    lineTo(w * 0.44f, h * 0.47f)
+                    lineTo(w * 0.78f, h * 0.47f)
+                    lineTo(w * 0.78f, h * 0.82f)
+                    lineTo(w * 0.12f, h * 0.82f)
+                    close()
+                }
+                drawPath(frontFolder, color = tint, style = stroke)
             }
         }
     }

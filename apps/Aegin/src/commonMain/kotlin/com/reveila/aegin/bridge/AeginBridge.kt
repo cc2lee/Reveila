@@ -18,11 +18,62 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
 @Serializable
+data class ChatToolAttachment(
+    val tool: String = "",
+    val url: String = "",
+    val title: String = "",
+    val statusCode: Int = 200,
+    val lastAction: String = "",
+    val contentPreview: String = "",
+    val rawHtml: String = ""
+) {
+    fun toBrowserLiveState(): BrowserLiveState = BrowserLiveState(
+        isVisible = url.isNotBlank() || rawHtml.isNotBlank(),
+        url = url,
+        title = title,
+        statusCode = statusCode,
+        lastAction = lastAction,
+        contentPreview = contentPreview,
+        rawHtml = rawHtml,
+        controlOwner = "AGENT",
+        waitingForUser = false
+    )
+}
+
+data class ParsedAgentReply(
+    val text: String,
+    val sessionId: String? = null,
+    val attachment: ChatToolAttachment? = null
+)
+
+data class BrowserSearchPreset(
+    val id: String,
+    val label: String,
+    val url: String
+)
+
+data class BrowserSearchConfig(
+    val defaultSearchUrl: String = "",
+    val presets: List<BrowserSearchPreset> = defaultPresets()
+) {
+    companion object {
+        fun defaultPresets(): List<BrowserSearchPreset> = listOf(
+            BrowserSearchPreset("auto", "Smart Auto (News RSS + DuckDuckGo)", ""),
+            BrowserSearchPreset("duckduckgo", "DuckDuckGo HTML", "https://html.duckduckgo.com/html/?q={query}"),
+            BrowserSearchPreset("google_news", "Google News RSS", "https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en"),
+            BrowserSearchPreset("bing_news", "Bing News RSS", "https://www.bing.com/news/search?q={query}&format=rss"),
+            BrowserSearchPreset("bing", "Bing Web Search", "https://www.bing.com/search?q={query}")
+        )
+    }
+}
+
+@Serializable
 data class TaskItem(
     val taskId: String,
     val title: String = "",
     val intent: String = "auto",
     val prompt: String = "",
+    val sourceUrl: String = "",
     val frequency: String = "daily",
     val scheduleTime: String = "08:00",
     val executionTarget: String = "auto",
@@ -47,7 +98,8 @@ data class TaskNotificationItem(
     val title: String = "",
     val status: String = "",
     val summary: String = "",
-    val timestamp: Long = 0L
+    val timestamp: Long = 0L,
+    val toolAttachment: ChatToolAttachment? = null
 )
 
 @Serializable
@@ -104,6 +156,22 @@ data class VaultScanResult(
 data class VaultFolderConfig(
     val folder: String = "Documents/Reveila",
     val focusKeywords: String = "strategy, confidential, roadmap, architectural"
+)
+
+@Serializable
+data class KnowledgeFileItem(
+    val id: String,
+    val title: String = "",
+    val relativePath: String = "",
+    val folderPath: String = "",
+    val chunkCount: Int = 0,
+    val length: Int = 0
+)
+
+data class KnowledgeFolderSummary(
+    val scopeKey: String,
+    val displayName: String,
+    val fileCount: Int
 )
 
 @Serializable
@@ -338,6 +406,7 @@ expect object PlatformEngineBridge {
     suspend fun getEngineStatus(): EngineStatus
     suspend fun getDeviceCapabilities(): DeviceCapabilityReport
     suspend fun verifyModelPreflight(modelSizeBytes: Long): PreflightCheckResult
+    suspend fun getLocalModelCatalog(): List<LocalModelManifestEntry>
     suspend fun checkLocalModelAvailability(modelName: String): LocalModelCheckResult
     suspend fun downloadLocalModel(modelName: String): Boolean
     suspend fun pauseLocalModelDownload(modelName: String = "")
@@ -417,6 +486,10 @@ object AeginBridge {
 
     suspend fun verifyModelPreflight(modelSizeBytes: Long): PreflightCheckResult {
         return PlatformEngineBridge.verifyModelPreflight(modelSizeBytes)
+    }
+
+    suspend fun getLocalModelCatalog(): List<LocalModelManifestEntry> {
+        return PlatformEngineBridge.getLocalModelCatalog()
     }
 
     suspend fun checkLocalModelAvailability(modelName: String): LocalModelCheckResult {
@@ -554,10 +627,71 @@ object AeginBridge {
 
     fun extractConversationSummaryText(rawContent: String): String {
         val trimmed = rawContent.trim()
-        return if (trimmed.startsWith(CONVERSATION_SUMMARY_PREFIX, ignoreCase = true)) {
+        val body = if (trimmed.startsWith(CONVERSATION_SUMMARY_PREFIX, ignoreCase = true)) {
             trimmed.substring(CONVERSATION_SUMMARY_PREFIX.length).trim()
         } else {
             trimmed
+        }
+        return formatSummaryBody(body)
+    }
+
+    private fun formatSummaryBody(body: String): String {
+        val cleaned = body.trim()
+            .removePrefix("```json").removePrefix("```markdown").removePrefix("```")
+            .removeSuffix("```").trim()
+        if (cleaned.isBlank()) return ""
+
+        // Unwrap a top-level JSON summary envelope (e.g. {"status":"COMPLETED","result":"..."} or {"summary":"..."})
+        if (cleaned.startsWith("{")) {
+            val unwrapped = unwrapJsonTextField(cleaned)
+            if (!unwrapped.isNullOrBlank()) return unwrapped
+        }
+
+        // Clean legacy pipe-delimited extractive summaries that may embed raw assistant JSON
+        if (cleaned.contains(" | ") && (cleaned.contains("Assistant: {") || cleaned.contains("User: "))) {
+            val formattedBullets = cleaned.split(" | ").mapNotNull { segment ->
+                val seg = segment.trim()
+                when {
+                    seg.startsWith("User:", ignoreCase = true) -> {
+                        val content = seg.substringAfter(":").trim()
+                        if (content.startsWith("The AI has requested to call tools") ||
+                            content.startsWith("Authorized tool execution finished")
+                        ) null else "- **User:** $content"
+                    }
+                    seg.startsWith("Assistant:", ignoreCase = true) -> {
+                        val rawAns = seg.substringAfter(":").trim()
+                        val unwrapped = unwrapJsonTextField(rawAns) ?: rawAns
+                        if (unwrapped.isBlank() || unwrapped.startsWith("{")) null
+                        else "- **Aegin:** $unwrapped"
+                    }
+                    seg.isNotBlank() -> "- $seg"
+                    else -> null
+                }
+            }
+            if (formattedBullets.isNotEmpty()) {
+                return formattedBullets.joinToString("\n")
+            }
+        }
+        return cleaned
+    }
+
+    private fun unwrapJsonTextField(raw: String): String? {
+        val trimmed = raw.trim()
+        if (!trimmed.startsWith("{")) return null
+        return try {
+            val obj = parsePossiblyNestedObject(json.parseToJsonElement(trimmed))
+            obj["summary"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+                ?: obj["answer"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+                ?: obj["result"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+                ?: obj["reasoning"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
+        } catch (_: Exception) {
+            // Handle truncated JSON from legacy 120-char extractive clipping
+            val fieldRegex = Regex("\"(?:summary|answer|result|reasoning)\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)")
+            fieldRegex.find(trimmed)?.groupValues?.get(1)
+                ?.replace("\\n", "\n")
+                ?.replace("\\\"", "\"")
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
         }
     }
 
@@ -617,22 +751,24 @@ object AeginBridge {
         for (space in persistedSpaces.sortedByDescending { it.updatedAt }) {
             val key = normalizeSpaceId(space.spaceId)
             if (!sortedUnique.containsKey(key)) {
-                sortedUnique[key] = space.copy(spaceId = key)
+                val displayName = if (key == "main-space") "Assistant" else space.spaceName
+                sortedUnique[key] = space.copy(spaceId = key, spaceName = displayName)
             }
         }
 
-        if (!sortedUnique.containsKey("main-space")) {
-            sortedUnique["main-space"] = SpaceThreadSummary(
-                spaceId = "main-space",
-                spaceName = "Main Space"
-            )
-        }
+        val mainEntry = (sortedUnique["main-space"] ?: SpaceThreadSummary(
+            spaceId = "main-space",
+            spaceName = "Assistant"
+        )).copy(spaceId = "main-space", spaceName = "Assistant")
 
-        val result = sortedUnique.values.take(maxCount).toMutableList()
-        if (result.none { it.spaceId == normalizedActiveId }) {
+        val others = sortedUnique.values.filter { it.spaceId != "main-space" }
+        val result = mutableListOf(mainEntry)
+        result.addAll(others.take((maxCount - 1).coerceAtLeast(0)))
+
+        if (normalizedActiveId != "main-space" && maxCount > 1 && result.none { it.spaceId == normalizedActiveId }) {
             val activeEntry = sortedUnique[normalizedActiveId] ?: SpaceThreadSummary(
                 spaceId = normalizedActiveId,
-                spaceName = activeSpaceName.ifBlank { "Main Space" }
+                spaceName = activeSpaceName.ifBlank { normalizedActiveId }
             )
             if (result.size >= maxCount) {
                 result[result.lastIndex] = activeEntry
@@ -748,7 +884,7 @@ object AeginBridge {
 
     fun parseAgentReplyText(raw: String): Pair<String, String?> = parseAgentResponse(raw, null)
 
-    private fun parseAgentResponse(raw: String, fallbackSessionId: String?): Pair<String, String?> {
+    fun parseAgentReplyWithAttachment(raw: String, fallbackSessionId: String? = null): ParsedAgentReply {
         return try {
             val element = json.parseToJsonElement(raw)
             val obj = parsePossiblyNestedObject(element)
@@ -757,10 +893,38 @@ object AeginBridge {
                 ?: obj["reasoning"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() && it != "null" }
                 ?: raw
             val newSessionId = obj["sessionId"]?.jsonPrimitive?.contentOrNull ?: fallbackSessionId
-            Pair(answer, newSessionId)
+            val attachment = parseToolAttachment(obj["toolAttachment"])
+            ParsedAgentReply(text = answer, sessionId = newSessionId, attachment = attachment)
         } catch (_: Exception) {
-            Pair(raw, fallbackSessionId)
+            ParsedAgentReply(text = raw, sessionId = fallbackSessionId, attachment = null)
         }
+    }
+
+    private fun parseToolAttachment(element: JsonElement?): ChatToolAttachment? {
+        if (element == null) return null
+        return try {
+            val obj = parsePossiblyNestedObject(element)
+            val tool = obj["tool"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val url = obj["url"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val rawHtml = obj["rawHtml"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            if (tool.isBlank() && url.isBlank() && rawHtml.isBlank()) return null
+            ChatToolAttachment(
+                tool = tool.ifBlank { "virtual_browser" },
+                url = url,
+                title = obj["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                statusCode = obj["statusCode"]?.jsonPrimitive?.intOrNull ?: 200,
+                lastAction = obj["lastAction"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                contentPreview = obj["contentPreview"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                rawHtml = rawHtml
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseAgentResponse(raw: String, fallbackSessionId: String?): Pair<String, String?> {
+        val parsed = parseAgentReplyWithAttachment(raw, fallbackSessionId)
+        return Pair(parsed.text, parsed.sessionId)
     }
 
     private fun parsePossiblyNestedObject(element: JsonElement): JsonObject {
@@ -808,6 +972,85 @@ object AeginBridge {
 
     suspend fun getVaultStats(): VaultStats {
         return PlatformEngineBridge.getVaultStats()
+    }
+
+    fun parseKnowledgeDocumentsJson(rawJson: String): List<KnowledgeFileItem> {
+        if (rawJson.isBlank() || rawJson == "null") return emptyList()
+        return try {
+            val arr = json.parseToJsonElement(rawJson).jsonArray
+            arr.mapNotNull { el ->
+                try {
+                    val obj = el.jsonObject
+                    val id = obj["id"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                    val rel = (obj["relativePath"]?.jsonPrimitive?.contentOrNull ?: id)
+                        .replace('\\', '/')
+                        .trimStart('/')
+                    if (rel.isEmpty()) return@mapNotNull null
+                    val folder = if ('/' in rel) rel.substringBeforeLast('/') else ""
+                    val title = obj["title"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                        ?: rel.substringAfterLast('/')
+                    KnowledgeFileItem(
+                        id = id.ifEmpty { rel },
+                        title = title,
+                        relativePath = rel,
+                        folderPath = folder,
+                        chunkCount = obj["chunkCount"]?.jsonPrimitive?.intOrNull ?: 0,
+                        length = obj["length"]?.jsonPrimitive?.intOrNull ?: 0
+                    )
+                } catch (_: Exception) {
+                    null
+                }
+            }.sortedBy { it.relativePath.lowercase() }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun buildKnowledgeFolderSummaries(files: List<KnowledgeFileItem>): List<KnowledgeFolderSummary> {
+        if (files.isEmpty()) return emptyList()
+        val countsByScope = linkedMapOf<String, Int>()
+        val rootCount = files.count { !it.relativePath.contains('/') }
+        if (rootCount > 0) {
+            countsByScope["__ROOT__"] = rootCount
+        }
+        val allDirs = mutableSetOf<String>()
+        for (file in files) {
+            val rel = file.relativePath
+            var idx = rel.indexOf('/')
+            while (idx > 0) {
+                allDirs.add(rel.substring(0, idx))
+                idx = rel.indexOf('/', idx + 1)
+            }
+        }
+        for (dir in allDirs.sortedBy { it.lowercase() }) {
+            val prefix = "$dir/"
+            countsByScope[prefix] = files.count { it.relativePath.startsWith(prefix, ignoreCase = true) }
+        }
+        return countsByScope.map { (scopeKey, count) ->
+            val label = if (scopeKey == "__ROOT__") "(Root Files)" else scopeKey.trimEnd('/')
+            KnowledgeFolderSummary(
+                scopeKey = scopeKey,
+                displayName = label,
+                fileCount = count
+            )
+        }
+    }
+
+    suspend fun listKnowledgeFiles(): List<KnowledgeFileItem> {
+        return try {
+            val raw = invoke("KnowledgeVault", "getDocumentsJson", emptyList())
+            parseKnowledgeDocumentsJson(raw)
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun setVaultSearchScope(scopePaths: List<String>) {
+        try {
+            val csv = scopePaths.map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+            invoke("KnowledgeVault", "setSearchScope", listOf(csv))
+        } catch (_: Exception) {
+        }
     }
 
     fun getStorageItem(key: String): String? = PlatformEngineBridge.getStorageItem(key)
@@ -1142,6 +1385,7 @@ object AeginBridge {
                         title = obj["title"]?.jsonPrimitive?.contentOrNull ?: taskId,
                         intent = obj["intent"]?.jsonPrimitive?.contentOrNull ?: "auto",
                         prompt = obj["prompt"]?.jsonPrimitive?.contentOrNull ?: "",
+                        sourceUrl = obj["sourceUrl"]?.jsonPrimitive?.contentOrNull ?: "",
                         frequency = obj["frequency"]?.jsonPrimitive?.contentOrNull ?: "daily",
                         scheduleTime = obj["scheduleTime"]?.jsonPrimitive?.contentOrNull ?: "08:00",
                         executionTarget = obj["executionTarget"]?.jsonPrimitive?.contentOrNull ?: "auto",
@@ -1174,7 +1418,8 @@ object AeginBridge {
                         title = obj["title"]?.jsonPrimitive?.contentOrNull ?: "",
                         status = obj["status"]?.jsonPrimitive?.contentOrNull ?: "",
                         summary = obj["summary"]?.jsonPrimitive?.contentOrNull ?: "",
-                        timestamp = obj["timestamp"]?.jsonPrimitive?.longOrNull ?: 0L
+                        timestamp = obj["timestamp"]?.jsonPrimitive?.longOrNull ?: 0L,
+                        toolAttachment = parseToolAttachment(obj["toolAttachment"])
                     )
                 } catch (_: Exception) {
                     null
@@ -1231,12 +1476,13 @@ object AeginBridge {
         scheduleTime: String,
         requiresApproval: Boolean,
         intent: String = "auto",
-        executionTarget: String = "auto"
+        executionTarget: String = "auto",
+        sourceUrl: String = ""
     ): String {
         return invoke(
             "AutonomousAgent",
             "createTaskWithIntent",
-            listOf(title, intent, prompt, frequency, scheduleTime, requiresApproval.toString(), executionTarget)
+            listOf(title, intent, prompt, frequency, scheduleTime, requiresApproval.toString(), executionTarget, "", sourceUrl.trim())
         )
     }
 
@@ -1249,7 +1495,8 @@ object AeginBridge {
         enabled: Boolean,
         intent: String = "",
         requiresApproval: Boolean = false,
-        executionTarget: String = "auto"
+        executionTarget: String = "auto",
+        sourceUrl: String = ""
     ): String {
         return invoke(
             "AutonomousAgent",
@@ -1263,9 +1510,14 @@ object AeginBridge {
                 scheduleTime,
                 enabled.toString(),
                 requiresApproval.toString(),
-                executionTarget
+                executionTarget,
+                sourceUrl.trim()
             )
         )
+    }
+
+    suspend fun updateTaskSourceUrl(taskId: String, sourceUrl: String): String {
+        return invoke("AutonomousAgent", "updateTaskSourceUrl", listOf(taskId, sourceUrl.trim()))
     }
 
     suspend fun runTaskNow(taskId: String): String {
@@ -1319,6 +1571,43 @@ object AeginBridge {
             parseToolHubSnapshot(raw)
         } catch (_: Exception) {
             ToolHubSnapshot()
+        }
+    }
+
+    suspend fun getBrowserConfig(): BrowserSearchConfig {
+        return try {
+            val raw = invoke("AgenticFabric", "getBrowserConfigJson", emptyList())
+            parseBrowserSearchConfig(raw)
+        } catch (_: Exception) {
+            BrowserSearchConfig()
+        }
+    }
+
+    suspend fun saveBrowserConfig(defaultSearchUrl: String): BrowserSearchConfig {
+        return try {
+            val raw = invoke("AgenticFabric", "saveBrowserConfigJson", listOf(defaultSearchUrl.trim()))
+            parseBrowserSearchConfig(raw)
+        } catch (_: Exception) {
+            BrowserSearchConfig(defaultSearchUrl = defaultSearchUrl.trim())
+        }
+    }
+
+    private fun parseBrowserSearchConfig(rawJson: String): BrowserSearchConfig {
+        if (rawJson.isBlank() || rawJson == "null") return BrowserSearchConfig()
+        return try {
+            val obj = json.parseToJsonElement(rawJson).jsonObject
+            val defaultUrl = obj["defaultSearchUrl"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val presetsArr = obj["presets"]?.jsonArray
+            val presets = presetsArr?.mapNotNull { el ->
+                val pObj = el.jsonObject
+                val id = pObj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
+                val label = pObj["label"]?.jsonPrimitive?.contentOrNull ?: id
+                val url = pObj["url"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                BrowserSearchPreset(id, label, url)
+            }.orEmpty().ifEmpty { BrowserSearchConfig.defaultPresets() }
+            BrowserSearchConfig(defaultSearchUrl = defaultUrl, presets = presets)
+        } catch (_: Exception) {
+            BrowserSearchConfig()
         }
     }
 

@@ -8,6 +8,7 @@ import com.reveila.safety.TraceContextHolder
 import com.reveila.system.concurrency.PlatformLock
 import com.reveila.system.io.PlatformFileSystem
 import com.reveila.system.platform.PlatformSystem
+import com.reveila.tools.KnowledgeVaultTool
 import com.reveila.tools.PendingToolAuthorizationView
 import com.reveila.tools.Terminal
 import com.reveila.tools.TerminalTool
@@ -32,6 +33,7 @@ class ReveilaToolCoordinator(
     private val systemHome: String,
     private val secretManagerProvider: () -> SecretManager?,
     private val downloadManagerProvider: () -> ResumableDownloadManager?,
+    private val knowledgeVaultProvider: () -> KnowledgeVault? = { null },
     private val auditLogger: (action: String, details: String) -> Unit = { _, _ -> }
 ) {
     data class PendingToolExecution(
@@ -61,6 +63,7 @@ class ReveilaToolCoordinator(
     val passwordManager: PasswordManager = PasswordManager.createDefault(systemHome)
     val virtualBrowser: VirtualBrowser = VirtualBrowser().apply {
         passwordManager = this@ReveilaToolCoordinator.passwordManager
+        defaultSearchUrlTemplate = loadPersistedSearchUrlTemplate()
         onPageChangedCallback = { page, actionDesc ->
             ToolActivityHub.updateBrowserPage(
                 page = page,
@@ -78,6 +81,58 @@ class ReveilaToolCoordinator(
                 message = takeover.message
             )
         }
+    }
+
+    private fun resolveBrowserConfigPath(): String {
+        val configsDir = fs.resolve(systemHome, "configs")
+        try {
+            if (!fs.exists(configsDir)) fs.createDirectories(configsDir)
+        } catch (_: Exception) {
+        }
+        return fs.resolve(configsDir, "browser.json")
+    }
+
+    private fun loadPersistedSearchUrlTemplate(): String {
+        return try {
+            val cfgPath = resolveBrowserConfigPath()
+            if (!fs.exists(cfgPath)) return ""
+            val map = JsonUtil.parseJsonStringToMap(fs.readText(cfgPath))
+            (map["defaultSearchUrl"] as? String)?.trim().orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    fun getBrowserConfigJson(): String {
+        val current = virtualBrowser.defaultSearchUrlTemplate.trim()
+        return JsonUtil.toJsonString(
+            mapOf(
+                "defaultSearchUrl" to current,
+                "presets" to listOf(
+                    mapOf("id" to "auto", "label" to "Smart Auto (News RSS + DuckDuckGo)", "url" to ""),
+                    mapOf("id" to "duckduckgo", "label" to "DuckDuckGo HTML", "url" to VirtualBrowser.DEFAULT_DUCKDUCKGO_TEMPLATE),
+                    mapOf("id" to "google_news", "label" to "Google News RSS", "url" to VirtualBrowser.DEFAULT_GOOGLE_NEWS_RSS_TEMPLATE),
+                    mapOf("id" to "bing_news", "label" to "Bing News RSS", "url" to VirtualBrowser.DEFAULT_BING_NEWS_RSS_TEMPLATE),
+                    mapOf("id" to "bing", "label" to "Bing Web Search", "url" to VirtualBrowser.DEFAULT_BING_SEARCH_TEMPLATE)
+                )
+            )
+        )
+    }
+
+    fun saveBrowserConfigJson(defaultSearchUrl: String): String {
+        val cleaned = defaultSearchUrl.trim()
+        virtualBrowser.defaultSearchUrlTemplate = cleaned
+        try {
+            val cfgPath = resolveBrowserConfigPath()
+            fs.writeText(
+                cfgPath,
+                JsonUtil.toPrettyJsonString(mapOf("defaultSearchUrl" to cleaned)),
+                append = false
+            )
+            auditLogger("BROWSER_CONFIG_UPDATED", "Updated default search URL: '${cleaned.ifBlank { "Smart Auto" }}'")
+        } catch (_: Exception) {
+        }
+        return getBrowserConfigJson()
     }
 
     private var lazyDownloadManager: ResumableDownloadManager? = null
@@ -115,15 +170,29 @@ class ReveilaToolCoordinator(
         passwordManagerProvider = { passwordManager },
         browserProvider = { virtualBrowser }
     )
+    val knowledgeVaultTool = KnowledgeVaultTool(knowledgeVaultProvider)
 
-    private val toolsByName: Map<String, ReveilaTool> by lazy {
+    private val toolsByName: MutableMap<String, ReveilaTool> by lazy {
         linkedMapOf(
             virtualBrowserTool.getName() to virtualBrowserTool,
+            knowledgeVaultTool.getName() to knowledgeVaultTool,
             downloadTool.getName() to downloadTool,
             terminalTool.getName() to terminalTool,
             secretManagerTool.getName() to secretManagerTool,
             passwordManagerTool.getName() to passwordManagerTool
         )
+    }
+
+    /**
+     * Dynamically registers an additional [ReveilaTool] instance at runtime and optionally
+     * publishes its capability manifest into [MetadataRegistry].
+     */
+    @kotlin.jvm.JvmOverloads
+    fun registerTool(tool: ReveilaTool, registry: MetadataRegistry? = null) {
+        toolsByName[tool.getName()] = tool
+        if (registry != null) {
+            registerManifestForTool(tool, registry)
+        }
     }
 
     fun getToolNames(): Set<String> = toolsByName.keys
@@ -137,12 +206,73 @@ class ReveilaToolCoordinator(
         val clean = rawName.trim().lowercase()
         return when (clean) {
             "browser", "web", "virtualbrowser", "web_browser" -> "virtual_browser"
+            "knowledge", "knowledgevault", "vault_files", "folder_analysis", "documents" -> "knowledge_vault"
             "download", "downloader", "resumabledownload" -> "resumable_download"
             "shell", "bash", "powershell", "script" -> "terminal"
             "secret", "secrets", "secretmanager", "vault" -> "secret_manager"
             "password", "passwords", "passwordmanager" -> "password_manager"
             else -> clean
         }
+    }
+
+    /**
+     * Extracts the target tool/plugin name across LLM wrapper variations
+     * (`plugin`, `name`, `tool`, `tool_name`, or nested `function.name`).
+     */
+    fun extractToolName(toolCallObj: Map<String, Any?>): String {
+        val fnObj = toolCallObj["function"] as? Map<*, *>
+        val candidates = listOf(
+            toolCallObj["plugin"],
+            toolCallObj["name"],
+            toolCallObj["tool"],
+            toolCallObj["tool_name"],
+            fnObj?.get("name"),
+            if (fnObj == null) toolCallObj["function"] else null
+        )
+        return candidates.firstNotNullOfOrNull { it?.toString()?.trim()?.takeIf(String::isNotEmpty) }.orEmpty()
+    }
+
+    /**
+     * Extracts tool arguments across nested (`arguments`/`parameters`/`args`/`input`/JSON string)
+     * and flat (`{"name": "...", "action": "...", ...}`) LLM payloads.
+     */
+    @Suppress("UNCHECKED_CAST")
+    fun extractArguments(toolCallObj: Map<String, Any?>): MutableMap<String, Any?> {
+        val fnObj = toolCallObj["function"] as? Map<*, *>
+        val rawArgs = toolCallObj["arguments"]
+            ?: toolCallObj["parameters"]
+            ?: toolCallObj["args"]
+            ?: toolCallObj["input"]
+            ?: fnObj?.get("arguments")
+
+        val extracted: MutableMap<String, Any?> = when (rawArgs) {
+            is Map<*, *> -> rawArgs.entries.associateTo(linkedMapOf()) { (k, v) -> k.toString() to v }
+            is String -> rawArgs.trim().takeIf { it.startsWith("{") }?.let {
+                try {
+                    JsonUtil.parseJsonStringToMap(it).toMutableMap()
+                } catch (_: Exception) {
+                    mutableMapOf()
+                }
+            } ?: mutableMapOf()
+            else -> mutableMapOf()
+        }
+
+        if (!extracted.containsKey("action") && toolCallObj.containsKey("method")) {
+            extracted["action"] = toolCallObj["method"]
+        }
+
+        if (extracted.isEmpty()) {
+            val envelopeKeys = setOf(
+                "plugin", "name", "tool", "tool_name", "function",
+                "arguments", "parameters", "args", "input", "method", "id", "type"
+            )
+            for ((k, v) in toolCallObj) {
+                if (k !in envelopeKeys) {
+                    extracted[k] = v
+                }
+            }
+        }
+        return extracted
     }
 
     fun getAllLlmTools(): List<LlmTool> {
@@ -158,56 +288,159 @@ class ReveilaToolCoordinator(
 
     fun registerManifests(registry: MetadataRegistry?) {
         if (registry == null) return
-        val permissiveInternetPerimeter = SecurityPerimeter(
-            setOf("tool:execute", "network:https"),
-            emptySet(),
-            false,
-            1024L,
-            2,
-            120,
-            false
-        )
-        val localPerimeter = SecurityPerimeter(
-            setOf("tool:execute", "device:shell"),
-            emptySet(),
-            true,
-            1024L,
-            2,
-            120,
-            false
-        )
         for (tool in toolsByName.values) {
-            val id = tool.getName()
-            val perimeter = if (id == "virtual_browser" || id == "resumable_download") {
-                permissiveInternetPerimeter
-            } else {
-                localPerimeter
-            }
-            val manifest = MetadataRegistry.PluginManifest(
-                plugin_id = id,
-                manifestName = id,
-                manifestVersion = "1.0.0",
-                tool_definitions = mapOf("inputSchema" to buildSchemaForTool(id)),
-                tier = "Tier 2",
-                agency_perimeter = perimeter,
-                secret_parameters = setOf("password", "value", "secret", "new_password"),
-                masked_parameters = setOf("password", "value", "secret")
-            )
-            registry.register(manifest)
+            registerManifestForTool(tool, registry)
         }
     }
 
-    fun shouldRouteToAgenticLoop(userPrompt: String): Boolean {
+    private fun registerManifestForTool(tool: ReveilaTool, registry: MetadataRegistry) {
+        val id = tool.getName()
+        val perimeter = if (id == "virtual_browser" || id == "resumable_download") {
+            SecurityPerimeter(
+                setOf("tool:execute", "network:https"),
+                emptySet(),
+                false,
+                1024L,
+                2,
+                120,
+                false
+            )
+        } else {
+            SecurityPerimeter(
+                setOf("tool:execute", "device:shell"),
+                emptySet(),
+                true,
+                1024L,
+                2,
+                120,
+                false
+            )
+        }
+        val manifest = MetadataRegistry.PluginManifest(
+            plugin_id = id,
+            manifestName = id,
+            manifestVersion = "1.0.0",
+            tool_definitions = mapOf("inputSchema" to buildSchemaForTool(id)),
+            tier = "Tier 2",
+            agency_perimeter = perimeter,
+            secret_parameters = setOf("password", "value", "secret", "new_password"),
+            masked_parameters = setOf("password", "value", "secret"),
+            description = tool.getDescription(),
+            exposeAsTool = true
+        )
+        registry.register(manifest)
+    }
+
+    /**
+     * Evaluates whether [manifest] should be exposed to the selected target model for this turn.
+     */
+    fun isManifestAllowedForTarget(
+        manifest: MetadataRegistry.PluginManifest,
+        isOnDevice: Boolean,
+        modelName: String?,
+        systemHome: String?
+    ): Boolean {
+        if (!manifest.isToolExposed()) return false
+        if (isOnDevice && manifest.cloudOnly) return false
+
+        val minSize = manifest.minParameterSizeB
+        if (isOnDevice && minSize != null) {
+            val detectedSize = PromptTemplateRegistry.resolveParameterSizeBillions(modelName, systemHome)
+            if (detectedSize == null || detectedSize < minSize) return false
+        }
+
+        if (manifest.allowedModels.isNotEmpty()) {
+            val normModel = modelName?.trim()?.lowercase().orEmpty()
+            if (normModel.isEmpty()) return false
+            if (manifest.allowedModels.none { normModel.contains(it) }) return false
+        }
+        return true
+    }
+
+    @kotlin.jvm.JvmOverloads
+    fun shouldRouteToAgenticLoop(userPrompt: String, extraKeywords: Collection<String> = emptySet()): Boolean {
         val lower = userPrompt.lowercase()
         val toolKeywords = listOf(
             "http://", "https://", "browse ", "open website", "open url", "web page", "webpage",
+            "search the web", "search online", "web search", "look up online", "look up on the web",
+            "find online", "news brief", "latest news", "breaking news", "today's news",
+            "todays news", "daily news", "news headlines", "headlines", "in the news", "news today",
+            "news update", "weather forecast", "current weather", "stock price", "live price",
             "log in to", "login to", "sign in to", "scrape ", "click ", "submit form",
             "download ", "pause download", "resume download", "cancel download", "gguf",
             "terminal", "run script", "execute script", "run command", "shell ", "powershell", "bash ",
             "secret manager", "store secret", "save secret", "save credential", "password manager",
-            "stored password", "api token", "list secrets", "list permissions"
+            "stored password", "api token", "list secrets", "list permissions",
+            "analyze folder", "cause-effect", "cause and effect", "relationship", "top 5 expenses",
+            "expenses", "invoices", "bills"
         )
-        return toolKeywords.any { lower.contains(it) }
+        if (toolKeywords.any { lower.contains(it) }) return true
+        val vault = knowledgeVaultProvider()
+        if (vault != null && (vault.getSearchScope().isNotEmpty() || vault.inferFolderScopesFromPrompt(userPrompt).isNotEmpty())) {
+            if (vault.isAnalyticalOrFolderWideQuery(userPrompt)) return true
+        }
+        return extraKeywords.any { kw -> kw.isNotBlank() && lower.contains(kw.lowercase()) }
+    }
+
+    /**
+     * Detects folder-scoped document/relationship/expense analysis prompts that belong to `knowledge_vault`.
+     */
+    fun isKnowledgeFolderAnalysisIntent(userPrompt: String): Boolean {
+        val vault = knowledgeVaultProvider() ?: return false
+        val hasScopeOrFolderMatch = vault.getSearchScope().isNotEmpty() ||
+            vault.inferFolderScopesFromPrompt(userPrompt).isNotEmpty()
+        if (!hasScopeOrFolderMatch) return false
+        val lower = userPrompt.lowercase()
+        val explicitOtherTools = listOf(
+            "http://", "https://", "browse ", "search the web", "search online", "latest news",
+            "terminal", "bash", "powershell", "run script", "download "
+        )
+        return vault.isAnalyticalOrFolderWideQuery(userPrompt) && explicitOtherTools.none { lower.contains(it) }
+    }
+
+    /**
+     * Detects pure web/news/search lookup prompts that do not ask for shell, download, or secret tools.
+     */
+    fun isPureWebLookupIntent(userPrompt: String): Boolean {
+        val lower = userPrompt.lowercase()
+        val webLookupSignals = listOf(
+            "news", "headline", "briefing", "weather", "stock price", "live price",
+            "search the web", "search online", "web search", "look up online", "find online",
+            "browse ", "open website", "open url", "web page", "webpage", "what's happening",
+            "whats happening", "current events"
+        )
+        val nonBrowserSignals = listOf(
+            "terminal", "shell", "bash", "powershell", "script", "command", "curl", "wget",
+            "download", "file", "folder", "directory", "disk", "git ", "gradle", "python",
+            "secret", "password", "credential", "login", "log in", "sign in", "token"
+        )
+        return webLookupSignals.any { lower.contains(it) } &&
+            nonBrowserSignals.none { lower.contains(it) }
+    }
+
+    /**
+     * Scopes builtin tools to the user's intent so the LLM does not waste round trips
+     * calling `terminal` (e.g. curl/wget) for web or news lookups that belong to `virtual_browser`.
+     */
+    fun filterToolsForIntent(userPrompt: String, tools: List<LlmTool>): List<LlmTool> {
+        if (tools.isEmpty()) return tools
+        val builtinNames = getToolNames()
+        if (isKnowledgeFolderAnalysisIntent(userPrompt)) {
+            val hasKv = tools.any { normalizeToolName(it.name.orEmpty()) == "knowledge_vault" }
+            if (hasKv) {
+                return tools.filter { tool ->
+                    val norm = normalizeToolName(tool.name.orEmpty())
+                    norm == "knowledge_vault" || norm !in builtinNames
+                }
+            }
+        }
+        if (!isPureWebLookupIntent(userPrompt)) return tools
+        val hasBrowser = tools.any { normalizeToolName(it.name.orEmpty()) == "virtual_browser" }
+        if (!hasBrowser) return tools
+        return tools.filter { tool ->
+            val norm = normalizeToolName(tool.name.orEmpty())
+            norm == "virtual_browser" || norm !in builtinNames
+        }
     }
 
     /**
@@ -224,18 +457,12 @@ class ReveilaToolCoordinator(
         accumulatedResults: String = "",
         originalReasoning: String = ""
     ): String {
-        val rawName = toolCallObj["plugin"]?.toString()?.takeIf { it.isNotBlank() }
-            ?: toolCallObj["name"]?.toString().orEmpty()
+        val rawName = extractToolName(toolCallObj)
         val toolName = normalizeToolName(rawName)
         val tool = toolsByName[toolName]
             ?: throw IllegalArgumentException("Unknown tool '$rawName'")
 
-        @Suppress("UNCHECKED_CAST")
-        val args = ((toolCallObj["arguments"] as? Map<String, Any?>)?.toMutableMap() ?: mutableMapOf()).also { m ->
-            if (!m.containsKey("action") && toolCallObj.containsKey("method")) {
-                m["action"] = toolCallObj["method"]
-            }
-        }
+        val args = extractArguments(toolCallObj)
         val action = (args["action"] as? String)?.lowercase()?.trim() ?: inferDefaultAction(toolName, args)
 
         // Yield gracefully if the user is actively controlling this tool window
@@ -684,7 +911,11 @@ class ReveilaToolCoordinator(
     }
 
     private fun inferDefaultAction(toolName: String, args: Map<String, Any?>): String = when (toolName) {
-        "virtual_browser" -> if (args.containsKey("url")) "navigate" else "snapshot"
+        "virtual_browser" -> when {
+            args.containsKey("query") || args.containsKey("q") -> "search"
+            args.containsKey("url") -> "navigate"
+            else -> "snapshot"
+        }
         "resumable_download" -> if (args.containsKey("url")) "download" else "status"
         "terminal" -> when {
             args.containsKey("script") -> "execute_script"
@@ -697,6 +928,7 @@ class ReveilaToolCoordinator(
     }
 
     private fun isReadOnlyAction(toolName: String, action: String): Boolean = when (toolName) {
+        "knowledge_vault" -> true
         "virtual_browser" -> action in setOf("snapshot", "status", "read")
         "resumable_download" -> action in setOf("status", "check_storage", "list_incomplete")
         "terminal" -> action == "status"
@@ -710,6 +942,7 @@ class ReveilaToolCoordinator(
             "virtual_browser", "password_manager" -> {
                 val target = (args["domain"] as? String)
                     ?: (args["url"] as? String)
+                    ?: if (toolName == "virtual_browser" && action == "search") "web-search" else null
                     ?: virtualBrowser.getCurrentPage()?.url
                     ?: "*"
                 val domain = if (target == "*") "*" else CookieJar.extractDomain(target).ifBlank { target }
@@ -748,6 +981,7 @@ class ReveilaToolCoordinator(
             "terminal" -> "Run Script on Device"
             "virtual_browser" -> when (action) {
                 "login", "autofill", "signin" -> "Browser Login on ${args["domain"] ?: args["url"] ?: "website"}"
+                "search", "web_search", "find" -> "Search Web: ${args["query"] ?: args["q"] ?: "web search"}"
                 else -> "Browse Web: ${args["url"] ?: action}"
             }
             "resumable_download" -> "Download File (${action})"
@@ -764,6 +998,8 @@ class ReveilaToolCoordinator(
                 ?: "Action: $action"
             "virtual_browser" -> buildString {
                 append("Action: $action")
+                val query = (args["query"] ?: args["q"])?.toString()
+                if (!query.isNullOrBlank()) append(" • Query: $query")
                 val url = (args["url"] ?: args["domain"])?.toString()
                 if (!url.isNullOrBlank()) append(" • Target: $url")
                 val target = args["target"]?.toString()
@@ -785,6 +1021,8 @@ class ReveilaToolCoordinator(
         val props: Map<String, Any?> = when (toolName) {
             "virtual_browser" -> mapOf(
                 "action" to mapOf("type" to "string"),
+                "query" to mapOf("type" to "string"),
+                "search_url" to mapOf("type" to "string"),
                 "url" to mapOf("type" to "string"),
                 "target" to mapOf("type" to "string"),
                 "text" to mapOf("type" to "string"),
@@ -792,6 +1030,13 @@ class ReveilaToolCoordinator(
                 "submit" to mapOf("type" to "boolean"),
                 "reason" to mapOf("type" to "string"),
                 "message" to mapOf("type" to "string")
+            )
+            "knowledge_vault" -> mapOf(
+                "action" to mapOf("type" to "string"),
+                "folder" to mapOf("type" to "string"),
+                "path" to mapOf("type" to "string"),
+                "query" to mapOf("type" to "string"),
+                "maxChars" to mapOf("type" to "integer")
             )
             "resumable_download" -> mapOf(
                 "action" to mapOf("type" to "string"),

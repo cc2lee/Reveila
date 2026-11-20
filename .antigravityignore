@@ -1,0 +1,95 @@
+# ==============================================================================
+# Reveila-Suite .antigravityignore
+# Prevents Antigravity IDE from indexing, scanning, or attaching binary artifacts,
+# native CMake/NDK builds, GGUF models, and local database files into trajectories.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Native CMake, Android NDK & C++ JNI Build Outputs (apps/Aegin & llama.cpp)
+# ------------------------------------------------------------------------------
+**/.cxx/
+**/.externalNativeBuild/
+**/cmake-build-*/
+**/obj/
+**/out/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Makefile
+*.a
+*.so
+*.dylib
+*.dll
+*.lib
+*.exp
+*.pdb
+*.o
+*.lo
+*.la
+
+# ------------------------------------------------------------------------------
+# 2. Local LLM / SLM Model Weights & Staging Files
+# ------------------------------------------------------------------------------
+*.gguf
+*.ggml
+*.part
+*.bin
+*.safetensors
+*.onnx
+*.pte
+*.tflite
+**/models/*.json
+!**/system-home/**/models/*.json
+
+# ------------------------------------------------------------------------------
+# 3. Sovereign Data & Local Persistence (PostgreSQL / SQLite / Room)
+# ------------------------------------------------------------------------------
+**/infrastructure/data/postgres/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# ------------------------------------------------------------------------------
+# 4. Gradle, Kotlin Multiplatform & Compiled JVM Archives
+# ------------------------------------------------------------------------------
+.gradle/
+**/build/
+!**/src/**/build/
+.kotlin/
+kotlin-js-store/
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.hprof
+*.jfr
+
+# ------------------------------------------------------------------------------
+# 5. Scratch Workspaces, Logs & Node/Expo Dependencies
+# ------------------------------------------------------------------------------
+scratch/
+*.log
+build_log.txt
+logs/
+tmp/
+temp/
+node_modules/
+.expo/
+dist/
+web-build/
+
+# ------------------------------------------------------------------------------
+# 6. Local Secrets, Keystores & IDE Internal Caches
+# ------------------------------------------------------------------------------
+local.properties
+*.keystore
+*.jks
+google-services.json
+.idea*/
+.vscode/
+.vscode-logs/
+bin/

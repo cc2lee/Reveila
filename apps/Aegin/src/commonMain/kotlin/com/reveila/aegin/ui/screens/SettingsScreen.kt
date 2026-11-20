@@ -3,6 +3,7 @@ package com.reveila.aegin.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,6 +63,7 @@ import com.reveila.aegin.bridge.DeviceCapabilityReport
 import com.reveila.aegin.bridge.LlmProviderConfig
 import com.reveila.aegin.bridge.LocalModelCheckResult
 import com.reveila.aegin.bridge.LocalModelDownloadState
+import com.reveila.aegin.bridge.LocalModelManifestEntry
 import androidx.compose.foundation.layout.windowInsetsPadding
 import com.reveila.aegin.ui.PlatformBackHandler
 import com.reveila.aegin.ui.components.VaultFolderPickerDialog
@@ -99,6 +101,9 @@ fun SettingsScreen(
     var vaultDocCount by remember { mutableStateOf(0) }
     var vaultChunkCount by remember { mutableStateOf(0) }
     var isVaultScanning by remember { mutableStateOf(false) }
+    var browserSearchUrlDraft by remember { mutableStateOf("") }
+    var browserSearchPresets by remember { mutableStateOf(com.reveila.aegin.bridge.BrowserSearchConfig.defaultPresets()) }
+    var isSavingBrowserSearch by remember { mutableStateOf(false) }
 
     var isWorkerModalVisible by remember { mutableStateOf(false) }
     var isGovModalVisible by remember { mutableStateOf(false) }
@@ -122,6 +127,7 @@ fun SettingsScreen(
     var showConfirmResetDialog by remember { mutableStateOf(false) }
 
     val modelDownloadState by AeginBridge.observeLocalModelDownloadState().collectAsState()
+    var localModelCatalog by remember { mutableStateOf<List<LocalModelManifestEntry>>(emptyList()) }
     var localModelCheck by remember { mutableStateOf<LocalModelCheckResult?>(null) }
     var pendingModelDownloadPrompt by remember { mutableStateOf<LocalModelCheckResult?>(null) }
 
@@ -149,8 +155,43 @@ fun SettingsScreen(
         }
     }
 
+    suspend fun persistSettingsPreservingAssistant() {
+        try {
+            val configJson = AeginBridge.buildLlmSettingsJson(
+                providers = providersList,
+                workerProvider = workerProvider,
+                governanceProvider = governanceProvider,
+                assistantProvider = assistantProvider.takeIf { it.isNotBlank() }
+            )
+            AeginBridge.invoke("LlmProviderFactory", "saveSettings", listOf("llm.json", configJson))
+        } catch (_: Exception) {
+        }
+    }
+
     fun startLocalModelDownload(modelName: String) {
         scope.launch {
+            val trimmed = modelName.trim()
+            if (trimmed.isNotBlank()) {
+                val localIdx = providersList.indexOfFirst { it.name == "On-Device Model" }
+                if (localIdx >= 0) {
+                    val cur = providersList[localIdx]
+                    val mergedOpts = if (cur.modelOptions.any { it.equals(trimmed, ignoreCase = true) }) {
+                        cur.modelOptions
+                    } else {
+                        cur.modelOptions + trimmed
+                    }
+                    providersList[localIdx] = cur.copy(
+                        model = trimmed,
+                        modelOptions = mergedOpts,
+                        tested = false,
+                        testedFingerprint = ""
+                    )
+                }
+                if (isEditModalVisible && editData.name == "On-Device Model") {
+                    editData = editData.copy(model = trimmed, tested = false, testedFingerprint = "")
+                }
+                persistSettingsPreservingAssistant()
+            }
             val ok = try {
                 AeginBridge.downloadLocalModel(modelName)
             } catch (e: Exception) {
@@ -168,19 +209,6 @@ fun SettingsScreen(
                     showAlert("Model download failed", dlState.message)
                 }
             }
-        }
-    }
-
-    suspend fun persistSettingsPreservingAssistant() {
-        try {
-            val configJson = AeginBridge.buildLlmSettingsJson(
-                providers = providersList,
-                workerProvider = workerProvider,
-                governanceProvider = governanceProvider,
-                assistantProvider = assistantProvider.takeIf { it.isNotBlank() }
-            )
-            AeginBridge.invoke("LlmProviderFactory", "saveSettings", listOf("llm.json", configJson))
-        } catch (_: Exception) {
         }
     }
 
@@ -263,13 +291,35 @@ fun SettingsScreen(
             modelDownloadState.status == "CANCELLED"
         ) {
             try {
-                localModelCheck = AeginBridge.checkLocalModelAvailability(activeLocalModelName())
+                val targetName = modelDownloadState.modelName.ifBlank { activeLocalModelName() }
+                if (modelDownloadState.status == "COMPLETED" && targetName.isNotBlank()) {
+                    val localIdx = providersList.indexOfFirst { it.name == "On-Device Model" }
+                    if (localIdx >= 0 && !providersList[localIdx].model.equals(targetName, ignoreCase = true)) {
+                        providersList[localIdx] = providersList[localIdx].copy(model = targetName)
+                    }
+                    if (isEditModalVisible && editData.name == "On-Device Model" &&
+                        !editData.model.equals(targetName, ignoreCase = true)
+                    ) {
+                        editData = editData.copy(model = targetName)
+                    }
+                }
+                localModelCheck = AeginBridge.checkLocalModelAvailability(targetName)
                 capabilities = AeginBridge.getDeviceCapabilities()
                 if (modelDownloadState.status == "COMPLETED" && localModelCheck?.existsLocally == true) {
                     runConnectionTestAndPersist("On-Device Model", showFeedbackDialog = false)
                 } else {
                     refreshConfiguredAndTestedStates()
                 }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    LaunchedEffect(isEditModalVisible, editData.name, editData.model) {
+        if (isEditModalVisible && editData.name == "On-Device Model") {
+            try {
+                val target = editData.model.ifBlank { capabilities.recommendedModel }
+                localModelCheck = AeginBridge.checkLocalModelAvailability(target)
             } catch (_: Exception) {
             }
         }
@@ -292,6 +342,11 @@ fun SettingsScreen(
         }
 
         try {
+            localModelCatalog = AeginBridge.getLocalModelCatalog()
+        } catch (_: Exception) {
+        }
+
+        try {
             val v = AeginBridge.getVaultFolder()
             if (v.folder.isNotBlank()) vaultFolder = v.folder
         } catch (_: Exception) {
@@ -301,6 +356,15 @@ fun SettingsScreen(
             val s = AeginBridge.getVaultStats()
             vaultDocCount = s.documentCount
             vaultChunkCount = s.chunkCount
+        } catch (_: Exception) {
+        }
+
+        try {
+            val browserCfg = AeginBridge.getBrowserConfig()
+            browserSearchUrlDraft = browserCfg.defaultSearchUrl
+            if (browserCfg.presets.isNotEmpty()) {
+                browserSearchPresets = browserCfg.presets
+            }
         } catch (_: Exception) {
         }
 
@@ -587,7 +651,7 @@ fun SettingsScreen(
                 vaultChunkCount = stats.chunkCount
                 showAlert(
                     "Setup complete",
-                    "Configuration saved and knowledge folder indexed for '$vaultFolder' (${res.filesScanned} docs, ${stats.chunkCount} sections)."
+                    "Configuration saved and Personal Knowledge Folder indexed for '$vaultFolder' (${res.filesScanned} files, ${stats.chunkCount} sections)."
                 )
             } catch (e: Exception) {
                 showAlert("Error", "Failed to save configuration: ${e.message}")
@@ -607,8 +671,8 @@ fun SettingsScreen(
                 vaultDocCount = stats.documentCount
                 vaultChunkCount = stats.chunkCount
                 showAlert(
-                    "Documents indexed",
-                    "Updated Personal Knowledge Folder '$targetFolder'. Documents indexed: ${res.filesScanned}, searchable sections: ${stats.chunkCount}."
+                    "Files indexed",
+                    "Updated Personal Knowledge Folder '$targetFolder'. Files indexed: ${res.filesScanned}, searchable sections: ${stats.chunkCount}."
                 )
             } catch (e: Exception) {
                 showAlert("Indexing error", e.message ?: "Failed to index Personal Knowledge Folder.")
@@ -703,7 +767,7 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.Black
                             )
                             Text(
-                                text = "Background AI: ${AeginDisplayMapper.providerDisplayName(workerProvider)} • $vaultDocCount docs ($vaultChunkCount sections)",
+                                text = "Background AI: ${AeginDisplayMapper.providerDisplayName(workerProvider)} • $vaultDocCount files ($vaultChunkCount sections)",
                                 color = theme.subText,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
@@ -728,7 +792,7 @@ fun SettingsScreen(
                     tabs.forEach { tab ->
                         val isSelected = activeTab == tab
                         val tabLabel = when (tab) {
-                            "General" -> "Configuration"
+                            "General" -> "Settings"
                             "Security" -> "Privacy"
                             else -> "Diagnostics"
                         }
@@ -828,7 +892,7 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "Add notes, PDFs, or documents to this folder so Aegin can search them privately on your device and answer questions using your own files.",
+                        text = "This folder organizes your personal knowledge. Add documents to this folder to use them in AI inference. Supported formats: PDF (.pdf), Word (.docx), plain text (.txt, .md, .log), and structured text (.csv, .json, .xml, .yaml, .html).",
                         color = theme.subText,
                         fontSize = 13.sp,
                         lineHeight = 18.sp
@@ -977,6 +1041,112 @@ fun SettingsScreen(
                                 )
                             }
                         }
+                    }
+                }
+
+                // Web Search & Virtual Browser Default URL Card
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(theme.card)
+                        .border(1.dp, theme.glassBorder, RoundedCornerShape(16.dp))
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "🌐 Web Search & Virtual Browser",
+                        color = theme.text,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Choose the default search engine or news feed URL used by the Virtual Browser. Individual tasks (like News Brief) can override this with their own saved URL.",
+                        color = theme.subText,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        browserSearchPresets.forEach { preset ->
+                            val selected = browserSearchUrlDraft.trim() == preset.url
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(if (selected) theme.cyan.copy(alpha = 0.2f) else theme.inputBg)
+                                    .border(1.dp, if (selected) theme.cyan else theme.border, CircleShape)
+                                    .clickable { browserSearchUrlDraft = preset.url }
+                                    .padding(horizontal = 12.dp, vertical = 7.dp)
+                            ) {
+                                Text(
+                                    text = preset.label,
+                                    color = if (selected) theme.cyan else theme.text,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = browserSearchUrlDraft,
+                        onValueChange = { browserSearchUrlDraft = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        placeholder = {
+                            Text(
+                                "Leave blank for Smart Auto, or enter a URL / template with {query}",
+                                color = theme.subText,
+                                fontSize = 12.sp
+                            )
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = theme.text,
+                            unfocusedTextColor = theme.text,
+                            focusedContainerColor = theme.inputBg,
+                            unfocusedContainerColor = theme.inputBg,
+                            focusedBorderColor = theme.cyan,
+                            unfocusedBorderColor = theme.border
+                        )
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(theme.cloudGradient)
+                            .clickable(enabled = !isSavingBrowserSearch) {
+                                scope.launch {
+                                    isSavingBrowserSearch = true
+                                    try {
+                                        val saved = AeginBridge.saveBrowserConfig(browserSearchUrlDraft.trim())
+                                        browserSearchUrlDraft = saved.defaultSearchUrl
+                                        showAlert(
+                                            "Browser Search Updated",
+                                            if (saved.defaultSearchUrl.isBlank()) {
+                                                "Virtual Browser set to Smart Auto (News RSS + DuckDuckGo fallback)."
+                                            } else {
+                                                "Default Virtual Browser search URL saved:\n${saved.defaultSearchUrl}"
+                                            }
+                                        )
+                                    } catch (e: Exception) {
+                                        showAlert("Save Error", e.message ?: "Could not save browser search URL.")
+                                    } finally {
+                                        isSavingBrowserSearch = false
+                                    }
+                                }
+                            }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (isSavingBrowserSearch) "Saving..." else "Save Search URL",
+                            color = Color.White,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 12.sp
+                        )
                     }
                 }
             }
@@ -1345,6 +1515,8 @@ fun SettingsScreen(
             isTestingConnection = isTestingEditConnection,
             testFeedback = editTestFeedback,
             modelDownloadState = modelDownloadState,
+            localModelCatalog = localModelCatalog,
+            stagedGgufNames = capabilities.stagedModels.map { it.substringBefore(" (").trim() },
             localModelCheck = localModelCheck,
             recommendedLocalModel = capabilities.recommendedModel,
             onEditDataChange = { updated ->
@@ -1506,11 +1678,20 @@ fun SettingsScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     val friendlyModelName = AeginDisplayMapper.modelDisplayName(pendingPrompt.modelName)
+                    val hasExistingOtherGguf = capabilities.stagedModels.any { staged ->
+                        val fname = staged.substringBefore(" (").trim()
+                        fname.endsWith(".gguf", ignoreCase = true) && !fname.equals(pendingPrompt.modelName, ignoreCase = true)
+                    }
                     Text(
-                        text = if (pendingPrompt.partialBytes > 0L) {
-                            "$friendlyModelName has a partial download (${AeginBridge.formatByteSize(pendingPrompt.partialBytes)}) ready to resume (${AeginBridge.formatByteSize(remainingBytes)} remaining)."
-                        } else {
-                            "$friendlyModelName is not downloaded on this device yet."
+                        text = buildString {
+                            if (pendingPrompt.partialBytes > 0L) {
+                                append("$friendlyModelName has a partial download (${AeginBridge.formatByteSize(pendingPrompt.partialBytes)}) ready to resume (${AeginBridge.formatByteSize(remainingBytes)} remaining).")
+                            } else {
+                                append("$friendlyModelName is not downloaded on this device yet.")
+                            }
+                            if (hasExistingOtherGguf) {
+                                append(" Downloading it will replace the existing offline GGUF model on this device.")
+                            }
                         },
                         fontSize = 13.sp
                     )
@@ -1879,7 +2060,7 @@ private fun AiSetupCard(
     val theme = LocalAeginColors.current
     Spacer(modifier = Modifier.height(4.dp))
     Text(
-        text = "AI Setup",
+        text = "Configure AI Providers",
         color = theme.text,
         fontSize = 16.sp,
         fontWeight = FontWeight.Bold
@@ -1895,7 +2076,7 @@ private fun AiSetupCard(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "Choose an AI Model to edit its properties.",
+            text = "Choose an AI provider to edit its properties.",
             color = theme.subText,
             fontSize = 13.sp,
             lineHeight = 18.sp
@@ -1987,6 +2168,17 @@ private fun AiSetupCard(
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold
             )
+
+            if (isLocal && activeModel.model.isNotBlank()) {
+                Text(
+                    text = "GGUF Profile: ${AeginDisplayMapper.modelDisplayName(activeModel.model)}",
+                    color = theme.text,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
 
             if (activeModel.intentOptions.isNotEmpty()) {
                 val friendlyCapabilities = activeModel.intentOptions.joinToString(", ") {
@@ -2163,14 +2355,25 @@ private fun AiSetupCard(
                 )
             }
         }
+    }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(theme.border.copy(alpha = 0.7f))
-        )
+    Spacer(modifier = Modifier.height(4.dp))
+    Text(
+        text = "Assign Autonomous AI Providers",
+        color = theme.text,
+        fontSize = 16.sp,
+        fontWeight = FontWeight.Bold
+    )
 
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(theme.card)
+            .border(1.dp, theme.border, RoundedCornerShape(12.dp))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         ProviderSelectorRow(
             label = "Background Tasks AI",
             description = "Default model for automated tasks and smart routing.",
@@ -2208,6 +2411,33 @@ private fun AiSetupCard(
     }
 }
 
+private fun mergeLocalGgufChoices(
+    catalog: List<LocalModelManifestEntry>,
+    providerOptions: List<String>,
+    currentModel: String
+): List<LocalModelManifestEntry> {
+    val result = mutableListOf<LocalModelManifestEntry>()
+    val seen = mutableSetOf<String>()
+    for (entry in catalog) {
+        val fname = entry.effectiveFilename().trim()
+        if (fname.isNotEmpty() && seen.add(fname.lowercase())) {
+            result.add(entry.copy(filename = fname))
+        }
+    }
+    for (raw in providerOptions + listOf(currentModel)) {
+        val fname = raw.trim()
+        if (fname.endsWith(".gguf", ignoreCase = true) && seen.add(fname.lowercase())) {
+            result.add(
+                LocalModelManifestEntry(
+                    modelId = fname.removeSuffix(".gguf"),
+                    filename = fname
+                )
+            )
+        }
+    }
+    return result
+}
+
 @Composable
 private fun EditProviderDialog(
     editData: LlmProviderConfig,
@@ -2216,6 +2446,8 @@ private fun EditProviderDialog(
     isTestingConnection: Boolean,
     testFeedback: Pair<Boolean, String>?,
     modelDownloadState: LocalModelDownloadState,
+    localModelCatalog: List<LocalModelManifestEntry>,
+    stagedGgufNames: List<String>,
     localModelCheck: LocalModelCheckResult?,
     recommendedLocalModel: String,
     onEditDataChange: (LlmProviderConfig) -> Unit,
@@ -2246,8 +2478,7 @@ private fun EditProviderDialog(
             Text(
                 text = when {
                     isAddingNewProvider -> "➕ Add Cloud or Custom AI"
-                    isDeviceModel -> "📱 On-Device AI"
-                    isSelfHosted -> "🖥️ Configure ${editData.name}"
+                    isDeviceModel -> "📱 On-Device Model"
                     else -> "☁️ Configure ${editData.name}"
                 },
                 color = theme.text,
@@ -2257,7 +2488,10 @@ private fun EditProviderDialog(
 
             if (isDeviceModel) {
                 val isDlRunning = modelDownloadState.status == "DOWNLOADING" || modelDownloadState.status == "VERIFYING"
-                val isReadyLocally = localModelCheck?.existsLocally == true
+                val isReadyLocally = localModelCheck?.existsLocally == true &&
+                    localModelCheck.modelName.equals(editData.model.ifBlank { recommendedLocalModel }, ignoreCase = true)
+                val targetName = editData.model.ifBlank { recommendedLocalModel }
+                val hasOtherStaged = stagedGgufNames.any { !it.equals(targetName, ignoreCase = true) }
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2268,13 +2502,13 @@ private fun EditProviderDialog(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "🔒 100% Private & Offline AI",
+                        text = "🔒 On-Device Local AI",
                         color = theme.primary,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Runs directly on your device. Download the offline model (or connect a local server) and tap Test connection to verify.",
+                        text = "Runs offline directly on this device for full privacy, unlike cloud providers that send requests off-device.",
                         color = theme.subText,
                         fontSize = 11.sp,
                         lineHeight = 15.sp
@@ -2315,18 +2549,18 @@ private fun EditProviderDialog(
                             }
                         }
                     } else if (!isReadyLocally) {
-                        val targetName = editData.model.ifBlank { recommendedLocalModel }
                         val partial = localModelCheck?.partialBytes ?: 0L
+                        val friendlyTarget = AeginDisplayMapper.modelDisplayName(targetName)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = if (partial > 0L) {
-                                    "Partial '$targetName' (${AeginBridge.formatByteSize(partial)})"
-                                } else {
-                                    "Model '$targetName' not found locally."
+                                text = when {
+                                    partial > 0L -> "Partial '$friendlyTarget' (${AeginBridge.formatByteSize(partial)})"
+                                    hasOtherStaged -> "$friendlyTarget not downloaded yet (replaces existing model)."
+                                    else -> "$friendlyTarget not downloaded locally."
                                 },
                                 color = Color(0xFFF59E0B),
                                 fontSize = 11.sp,
@@ -2383,54 +2617,8 @@ private fun EditProviderDialog(
                             onValueChange = { onEditDataChange(editData.copy(name = it)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            placeholder = { Text("e.g. Ollama Local, vLLM Server, Anthropic", color = theme.subText, fontSize = 13.sp) }
+                            placeholder = { Text("e.g. Anthropic, OpenRouter, Ollama Server", color = theme.subText, fontSize = 13.sp) }
                         )
-                    }
-                }
-
-                Text("PROVIDER TYPE", color = theme.text, fontSize = 10.sp, fontWeight = FontWeight.Black)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (!isSelfHosted) Color(0xFF0F172A) else theme.inputBg)
-                            .border(1.dp, if (!isSelfHosted) Color(0xFF0F172A) else theme.border, RoundedCornerShape(8.dp))
-                            .clickable {
-                                onEditDataChange(
-                                    editData.copy(
-                                        type = "Cloud",
-                                        intentOptions = if (isAddingNewProvider) AeginBridge.DEFAULT_CLOUD_INTENTS else editData.intentOptions
-                                    )
-                                )
-                            }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("☁️ Cloud API", color = if (!isSelfHosted) Color.White else theme.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isSelfHosted) Color(0xFF0F172A) else theme.inputBg)
-                            .border(1.dp, if (isSelfHosted) Color(0xFF0F172A) else theme.border, RoundedCornerShape(8.dp))
-                            .clickable {
-                                onEditDataChange(
-                                    editData.copy(
-                                        type = "Self-Hosted",
-                                        provider = "OpenAI",
-                                        intentOptions = if (isAddingNewProvider) AeginBridge.DEFAULT_LOCAL_INTENTS else editData.intentOptions
-                                    )
-                                )
-                            }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("🖥️ Custom / Local Server", color = if (isSelfHosted) Color.White else theme.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
 
@@ -2444,16 +2632,16 @@ private fun EditProviderDialog(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
-                        text = if (isSelfHosted) "🖥️ Custom or Local AI Server" else "⚡ Cloud AI Service",
+                        text = "☁️ Cloud / Off-Device AI",
                         color = theme.accent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = if (isSelfHosted) {
-                            "Connects to your local or private AI server (Ollama, LM Studio, vLLM, or compatible). API key is optional."
+                            "Runs off-device via an external endpoint instead of the on-device local model. API key is optional."
                         } else {
-                            "Requests are sent securely to ${editData.name.ifBlank { "your provider" }}. Requires an API key."
+                            "Runs off-device via ${editData.name.ifBlank { "this cloud service" }} instead of the on-device local model. API key required."
                         },
                         color = theme.subText,
                         fontSize = 11.sp,
@@ -2504,37 +2692,129 @@ private fun EditProviderDialog(
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = if (isDeviceModel) "OFFLINE AI MODEL" else "MODEL NAME",
+                    text = if (isDeviceModel) "OFFLINE AI MODEL (GGUF)" else "MODEL NAME",
                     color = theme.text,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Black
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                if (isDeviceModel) {
+                    val ggufChoices = remember(localModelCatalog, editData.modelOptions, editData.model) {
+                        mergeLocalGgufChoices(localModelCatalog, editData.modelOptions, editData.model)
+                    }
+                    val hasAnyStagedGguf = stagedGgufNames.any { it.endsWith(".gguf", ignoreCase = true) } ||
+                        (localModelCheck?.existsLocally == true)
+                    if (ggufChoices.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            ggufChoices.forEach { entry ->
+                                val fname = entry.effectiveFilename()
+                                val isSelected = editData.model.equals(fname, ignoreCase = true)
+                                val isStaged = stagedGgufNames.any { it.equals(fname, ignoreCase = true) } ||
+                                    (localModelCheck?.existsLocally == true &&
+                                        localModelCheck.modelName.equals(fname, ignoreCase = true))
+                                val sizeText = if (entry.approxSizeBytes > 0L) {
+                                    " • ${AeginBridge.formatByteSize(entry.approxSizeBytes)}"
+                                } else {
+                                    ""
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (isSelected) theme.primary.copy(alpha = 0.12f) else theme.inputBg)
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (isSelected) theme.primary else theme.border,
+                                            shape = RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable { onEditDataChange(editData.copy(model = fname)) }
+                                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        Text(
+                                            text = AeginDisplayMapper.modelDisplayName(fname),
+                                            color = if (isSelected) theme.primary else theme.text,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "$fname$sizeText",
+                                            color = theme.subText,
+                                            fontSize = 10.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    val badgeLabel = when {
+                                        isStaged -> "Downloaded"
+                                        isSelected && hasAnyStagedGguf -> "Replace"
+                                        isSelected -> "Selected"
+                                        else -> "Choose"
+                                    }
+                                    val badgeColor = when {
+                                        isStaged -> theme.success
+                                        isSelected -> theme.primary
+                                        else -> theme.subText
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(badgeColor.copy(alpha = 0.14f))
+                                            .padding(horizontal = 7.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            text = badgeLabel,
+                                            color = badgeColor,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                     OutlinedTextField(
                         value = editData.model,
                         onValueChange = { onEditDataChange(editData.copy(model = it)) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("Custom .gguf filename", color = theme.subText, fontSize = 12.sp) }
                     )
-                    if (editData.modelOptions.isNotEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(theme.border)
-                                .clickable {
-                                    val idx = editData.modelOptions.indexOf(editData.model)
-                                    val next = editData.modelOptions[(idx + 1) % editData.modelOptions.size]
-                                    onEditDataChange(editData.copy(model = next))
-                                }
-                                .padding(horizontal = 10.dp, vertical = 12.dp)
-                        ) {
-                            Text("CYCLE", color = theme.text, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = editData.model,
+                            onValueChange = { onEditDataChange(editData.copy(model = it)) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        if (editData.modelOptions.isNotEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(theme.border)
+                                    .clickable {
+                                        val idx = editData.modelOptions.indexOf(editData.model)
+                                        val next = editData.modelOptions[(idx + 1) % editData.modelOptions.size]
+                                        onEditDataChange(editData.copy(model = next))
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 12.dp)
+                            ) {
+                                Text("CYCLE", color = theme.text, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }

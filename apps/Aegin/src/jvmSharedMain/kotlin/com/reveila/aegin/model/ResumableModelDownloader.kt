@@ -422,4 +422,37 @@ object ResumableModelDownloader {
             bytesDownloaded = finalSize
         )
     }
+
+    /**
+     * Deletes any other `.gguf` (or `.gguf.part`) files in [directories] that do not match [keepFilename],
+     * so downloading a different on-device GGUF model replaces any previously downloaded model weights cleanly.
+     */
+    fun cleanupReplacedGgufFiles(
+        directories: List<File>,
+        keepFilename: String,
+        deleteOtherGgufs: Boolean = true,
+        deleteOtherParts: Boolean = true
+    ): List<String> {
+        val target = keepFilename.trim()
+        if (target.isEmpty()) return emptyList()
+        val removed = mutableListOf<String>()
+        for (dir in directories.distinctBy { it.absolutePath }) {
+            if (!dir.exists() || !dir.isDirectory) continue
+            val files = dir.listFiles() ?: continue
+            for (file in files) {
+                if (!file.isFile) continue
+                val name = file.name
+                val isOtherGguf = deleteOtherGgufs &&
+                    name.endsWith(".gguf", ignoreCase = true) &&
+                    !name.equals(target, ignoreCase = true)
+                val isOtherPart = deleteOtherParts &&
+                    name.endsWith(".gguf.part", ignoreCase = true) &&
+                    !name.equals("$target.part", ignoreCase = true)
+                if ((isOtherGguf || isOtherPart) && file.delete()) {
+                    removed.add(name)
+                }
+            }
+        }
+        return removed
+    }
 }

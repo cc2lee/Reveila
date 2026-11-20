@@ -88,6 +88,16 @@ class VirtualBrowserTest {
         val mfaPage = HtmlParser.parse("https://protected.com/2fa", 200, mfaHtml, emptyMap())
         assertTrue(mfaPage.isSecurityChallenge)
         assertEquals(TakeoverReason.MFA_OTP_REQUIRED, mfaPage.detectedChallengeType)
+
+        val ddgBotHtml = """
+            <html><head><title>DuckDuckGo</title></head><body>
+            <p>Unfortunately, bots use DuckDuckGo too. Please complete the following challenge to confirm this search was made by a human.</p>
+            <button name="challenge-submit">Submit</button>
+            </body></html>
+        """.trimIndent()
+        val ddgPage = HtmlParser.parse("https://html.duckduckgo.com/html/?q=news", 202, ddgBotHtml, emptyMap())
+        assertTrue(ddgPage.isSecurityChallenge)
+        assertEquals(TakeoverReason.CAPTCHA_DETECTED, ddgPage.detectedChallengeType)
     }
 
     @Test
@@ -124,6 +134,11 @@ class VirtualBrowserTest {
         val snapshot = tool.execute(mapOf("action" to "snapshot"))
         assertTrue(snapshot.contains("No page loaded"))
 
+        // Test search description and validation
+        assertTrue(tool.getDescription().contains("\"action\": \"search\""))
+        val missingQuery = tool.execute(mapOf("action" to "search"))
+        assertTrue(missingQuery.contains("Error: 'query' parameter is required"))
+
         // Test user takeover escalation command
         val takeoverResult = tool.execute(
             mapOf(
@@ -134,5 +149,61 @@ class VirtualBrowserTest {
         )
         assertTrue(takeoverResult.contains("USER TAKEOVER INITIATED"))
         assertTrue(takeoverResult.contains("CAPTCHA_DETECTED"))
+    }
+
+    @Test
+    fun testConfigurableSearchUrlResolution() {
+        val browser = VirtualBrowser()
+
+        assertEquals(
+            "https://html.duckduckgo.com/html/?q=ai%20news",
+            browser.resolveSearchUrl("https://html.duckduckgo.com/html/?q={query}", "ai news")
+        )
+        assertEquals(
+            "https://searx.example.org/search?q=world%20headlines",
+            browser.resolveSearchUrl("https://searx.example.org/search?q=", "world headlines")
+        )
+        assertEquals(
+            "https://news.ycombinator.com",
+            browser.resolveSearchUrl("https://news.ycombinator.com", "tech brief")
+        )
+        assertEquals(
+            "https://www.reuters.com",
+            browser.resolveSearchUrl("www.reuters.com", "finance")
+        )
+    }
+
+    @Test
+    fun testRssFeedParsedAsInteractiveHtmlPage() {
+        val rssXml = "\uFEFF" + """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <rss version="2.0">
+              <channel>
+                <title>AI Security News</title>
+                <item>
+                  <title>New Sovereign AI Guardrails Released</title>
+                  <link>https://example.com/articles/guardrails</link>
+                  <pubDate>Thu, 19 Nov 2026 12:00:00 GMT</pubDate>
+                  <source>TechDaily</source>
+                  <description>&lt;a href="https://example.com/articles/guardrails"&gt;Overview of local-first agentic security controls.&lt;/a&gt;</description>
+                </item>
+              </channel>
+            </rss>
+        """.trimIndent()
+
+        val page = HtmlParser.parse(
+            url = "https://news.google.com/rss/search?q=ai+security",
+            statusCode = 200,
+            rawHtml = rssXml,
+            headers = emptyMap()
+        )
+
+        assertEquals("AI Security News", page.title)
+        assertTrue(page.rawHtml.contains("<!-- reveila-feed-html -->"))
+        assertTrue(page.rawHtml.contains("<!DOCTYPE html>"))
+        assertTrue(page.rawHtml.contains("https://example.com/articles/guardrails"))
+        assertTrue(!page.contentText.contains("<a href"))
+        assertTrue(page.elements.any { it.tagName == "a" && it.href == "https://example.com/articles/guardrails" })
+        assertTrue(page.contentText.contains("New Sovereign AI Guardrails Released"))
     }
 }

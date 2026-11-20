@@ -3,11 +3,11 @@ package com.reveila.aegin.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
@@ -51,18 +51,9 @@ import com.reveila.aegin.ui.theme.AeginVectorIcon
 import com.reveila.aegin.ui.theme.LocalAeginColors
 import kotlinx.coroutines.launch
 
-private data class ChatSpaceTemplate(
-    val title: String,
-    val subtitle: String,
-    val category: String,
-    val prompt: String,
-    val accentColor: Color,
-    val iconType: AeginIconType
-)
-
 /**
  * Dedicated screen for viewing, creating, opening, and clearing chat Spaces
- * (isolated topic-based conversation threads) and starter chat templates.
+ * (isolated topic-based conversation threads).
  */
 @Composable
 fun SpacesScreen(
@@ -80,43 +71,6 @@ fun SpacesScreen(
     var newSpaceNameInput by remember { mutableStateOf("") }
     var spacePendingClear by remember { mutableStateOf<SpaceThreadSummary?>(null) }
     var statusBanner by remember { mutableStateOf<String?>(null) }
-
-    val starterTemplates = remember {
-        listOf(
-            ChatSpaceTemplate(
-                title = "Summarize Files",
-                subtitle = "Distill key ideas and takeaways from your Knowledge Folder",
-                category = "RAG • LOCAL",
-                prompt = "Summarize the key insights and decisions from the documents in my Knowledge Folder.",
-                accentColor = Color(0xFFFF6B2C),
-                iconType = AeginIconType.VAULT
-            ),
-            ChatSpaceTemplate(
-                title = "Daily Briefing",
-                subtitle = "Create a concise digest with top priorities and next steps",
-                category = "BRIEFING",
-                prompt = "Create a concise briefing with top 3 priorities and action items from the documents in my Knowledge Folder.",
-                accentColor = Color(0xFF06B6D4),
-                iconType = AeginIconType.SPARKLES
-            ),
-            ChatSpaceTemplate(
-                title = "Privacy Check",
-                subtitle = "Review saved notes and documents for sensitive details",
-                category = "GUARDRAIL",
-                prompt = "Review the documents in my Knowledge Folder and flag any sensitive or confidential details.",
-                accentColor = Color(0xFF10B981),
-                iconType = AeginIconType.SHIELD
-            ),
-            ChatSpaceTemplate(
-                title = "Project Roadmap",
-                subtitle = "Organize project goals, milestones, and deliverables",
-                category = "PLANNER",
-                prompt = "Help me draft a clear 3-phase project roadmap and milestone checklist.",
-                accentColor = Color(0xFF8B5CF6),
-                iconType = AeginIconType.BOLT
-            )
-        )
-    }
 
     suspend fun refreshSpaces() {
         try {
@@ -303,26 +257,30 @@ fun SpacesScreen(
 
                 if (persistedSpaces.isEmpty()) {
                     SpaceCardRow(
-                        name = "Main Space",
+                        name = "Assistant",
                         preview = "Start a conversation or create separate Spaces for different topics.",
                         badgeLabel = "Ready",
                         isActive = true,
-                        onOpen = { onLaunchSpaceInChat("main-space", "Main Space", null) },
+                        onOpen = { onLaunchSpaceInChat("main-space", "Assistant", null) },
                         onRequestClear = null
                     )
                 } else {
                     persistedSpaces.forEach { spaceItem ->
-                        val previewText = spaceItem.summary.ifBlank {
+                        val rawPreview = spaceItem.summary.ifBlank {
                             spaceItem.lastMessagePreview.ifBlank { "Tap to continue this conversation" }
                         }
-                        val isCurrent = AeginBridge.normalizeSpaceId(spaceItem.spaceId) == normalizedActiveId
+                        val previewText = AeginBridge.extractConversationSummaryText(rawPreview)
+                            .ifBlank { "Tap to continue this conversation" }
+                        val normalizedItemId = AeginBridge.normalizeSpaceId(spaceItem.spaceId)
+                        val displayName = if (normalizedItemId == "main-space") "Assistant" else spaceItem.spaceName
+                        val isCurrent = normalizedItemId == normalizedActiveId
                         SpaceCardRow(
-                            name = spaceItem.spaceName,
+                            name = displayName,
                             preview = previewText,
                             badgeLabel = AeginDisplayMapper.messageCountLabel(spaceItem.messageCount),
                             isActive = isCurrent,
                             onOpen = {
-                                onLaunchSpaceInChat(spaceItem.spaceId, spaceItem.spaceName, null)
+                                onLaunchSpaceInChat(spaceItem.spaceId, displayName, null)
                             },
                             onRequestClear = {
                                 spacePendingClear = spaceItem
@@ -331,67 +289,17 @@ fun SpacesScreen(
                     }
                 }
             }
-
-            // Section 2: Starter Chat Templates
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Starter Chats",
-                        color = theme.text,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.ExtraBold
-                    )
-                    Text(
-                        text = "One-tap topic threads",
-                        color = theme.subText,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                starterTemplates.chunked(2).forEach { rowTemplates ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        rowTemplates.forEach { template ->
-                            val curatedSpaceId = AeginBridge.normalizeSpaceId(template.title)
-                            val hasExistingHistory = persistedSpaces.any {
-                                it.spaceId == curatedSpaceId && it.messageCount > 0
-                            }
-                            SpaceTemplateCard(
-                                template = template,
-                                hasExistingHistory = hasExistingHistory,
-                                modifier = Modifier.weight(1f),
-                                onClick = {
-                                    onLaunchSpaceInChat(
-                                        curatedSpaceId,
-                                        template.title,
-                                        if (hasExistingHistory) null else template.prompt
-                                    )
-                                }
-                            )
-                        }
-                        if (rowTemplates.size == 1) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-                    }
-                }
-            }
         }
     }
 
     // Create New Space Modal
     if (showNewSpaceDialog) {
+        val suggestedTopics = remember { listOf("Work", "Research", "Personal", "Coding", "Travel") }
         AlertDialog(
             onDismissRequest = { showNewSpaceDialog = false },
             title = { Text("Create New Space") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         text = "Each Space keeps its own conversation history and summary separate from other topics.",
                         fontSize = 12.sp
@@ -403,13 +311,42 @@ fun SpacesScreen(
                         placeholder = { Text("e.g., Q4 Strategy Review") },
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        suggestedTopics.forEach { topic ->
+                            val selected = newSpaceNameInput.trim().equals(topic, ignoreCase = true)
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(if (selected) theme.cyan.copy(alpha = 0.2f) else theme.inputBg)
+                                    .border(1.dp, if (selected) theme.cyan else theme.glassBorder, CircleShape)
+                                    .clickable { newSpaceNameInput = topic }
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = topic,
+                                    color = if (selected) theme.cyan else theme.subText,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val cleanedName = newSpaceNameInput.trim().ifBlank { "Main Space" }
-                        val cleanedId = AeginBridge.normalizeSpaceId(cleanedName)
+                        val cleanedName = newSpaceNameInput.trim().ifBlank { "Assistant" }
+                        val cleanedId = if (cleanedName.equals("Assistant", ignoreCase = true)) {
+                            "main-space"
+                        } else {
+                            AeginBridge.normalizeSpaceId(cleanedName)
+                        }
                         showNewSpaceDialog = false
                         onLaunchSpaceInChat(cleanedId, cleanedName, null)
                     }
@@ -585,84 +522,5 @@ private fun SpaceCardRow(
                 fontWeight = FontWeight.Bold
             )
         }
-    }
-}
-
-@Composable
-private fun SpaceTemplateCard(
-    template: ChatSpaceTemplate,
-    hasExistingHistory: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    val theme = LocalAeginColors.current
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(theme.card)
-            .border(1.dp, theme.glassBorder, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(template.accentColor.copy(alpha = 0.16f)),
-                contentAlignment = Alignment.Center
-            ) {
-                AeginVectorIcon(
-                    type = template.iconType,
-                    tint = template.accentColor,
-                    size = 16.dp
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(template.accentColor.copy(alpha = 0.12f))
-                    .padding(horizontal = 7.dp, vertical = 3.dp)
-            ) {
-                Text(
-                    text = AeginDisplayMapper.spaceTemplateCategory(template.category),
-                    color = template.accentColor,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1
-                )
-            }
-        }
-
-        Text(
-            text = template.title,
-            color = theme.text,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.ExtraBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-
-        Text(
-            text = template.subtitle,
-            color = theme.subText,
-            fontSize = 11.sp,
-            lineHeight = 15.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-
-        Text(
-            text = if (hasExistingHistory) "Continue Chat →" else "Start Chat →",
-            color = template.accentColor,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold
-        )
     }
 }

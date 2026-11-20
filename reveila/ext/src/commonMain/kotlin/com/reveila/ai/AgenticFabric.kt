@@ -145,6 +145,14 @@ open class AgenticFabric : SystemComponent() {
                     null
                 }
             },
+            knowledgeVaultProvider = {
+                try {
+                    val p = context?.getProxy("KnowledgeVault")
+                    (p?.getInstance() as? KnowledgeVault) ?: p as? KnowledgeVault
+                } catch (_: Exception) {
+                    null
+                }
+            },
             auditLogger = { action, details -> recordAuditLog(action, details) }
         )
         coordinator.registerManifests(metadataRegistry)
@@ -197,6 +205,9 @@ open class AgenticFabric : SystemComponent() {
         val uiResponse = mutableMapOf<String, Any?>()
         uiResponse["answer"] = interpretation
         uiResponse["status"] = jsonResponse[STATUS] ?: Constants.AI_STATUS_COMPLETED
+        if (jsonResponse["toolAttachment"] != null) {
+            uiResponse["toolAttachment"] = jsonResponse["toolAttachment"]
+        }
         uiResponse["waitingForUser"] = (jsonResponse[STATUS]?.toString()?.equals(Constants.AI_STATUS_ESCALATE, ignoreCase = true) == true) ||
             ToolActivityHub.getSnapshot().waitingForUserInput
         uiResponse["sessionId"] = session?.sessionId ?: actualSessionId
@@ -267,7 +278,8 @@ open class AgenticFabric : SystemComponent() {
                 "sessionId" to (sessionId ?: Uuid.randomUuid())
             )
         }
-        if (toolCoordinator?.shouldRouteToAgenticLoop(userIntent) == true) {
+        val extraKeywords = metadataRegistry?.getLocalRoutingKeywords().orEmpty()
+        if (toolCoordinator?.shouldRouteToAgenticLoop(userIntent, extraKeywords) == true) {
             return mapOf(
                 "routeToAgenticLoop" to "true",
                 "taskCategory" to assessment.taskCategory,
@@ -684,19 +696,25 @@ open class AgenticFabric : SystemComponent() {
         traceId: String,
         actorId: String,
         dummyPlugin: Plugin,
-        responseValidator: AiResponseValidator
+        responseValidator: AiResponseValidator,
+        persistInitialUserTurn: Boolean = true
     ): Map<String, Any?> {
         var intentBuffer = initialIntentBuffer
+        val browserUpdatedBefore = ToolActivityHub.getSnapshot().browser.updatedAtMs
+        var browserUsedInLoop = false
         // 3. The Robust Agentic AI Loop
+        enforceSlidingWindow(session)
         for (loopCount in 0 until aiLoopLimit) {
             logger.info("[Fabric] Starting Agentic Loop iteration [${loopCount + 1}/$aiLoopLimit]")
 
-            // Dynamic Context Window & Summarization Management
-            enforceSlidingWindow(session)
-
             var rawResponse: String?
             try {
-                rawResponse = askAi(session, intentBuffer, effectivePreferredProvider)
+                rawResponse = askAi(
+                    session = session,
+                    userPrompt = intentBuffer,
+                    preferredProviderName = effectivePreferredProvider,
+                    recordUserTurn = (loopCount == 0 && persistInitialUserTurn)
+                )
             } catch (e: LlmException) {
                 val errMsg = "ERROR: Failed to get response from LLM: ${e.message}"
                 logger.severe(errMsg)
@@ -754,17 +772,44 @@ open class AgenticFabric : SystemComponent() {
                 }
             }
 
-            val status = jsonResponse[STATUS]?.toString() ?: ""
+            val rawStatus = jsonResponse[STATUS]?.toString() ?: ""
             val reasoning = jsonResponse[REASONING]?.toString() ?: ""
+            val rawResult = jsonResponse[RESULT]?.toString().orEmpty()
+            val rawToolCallObj = jsonResponse[TOOL_CALL] ?: jsonResponse["tool_call"]
+            val hasNonEmptyToolCall = (rawToolCallObj is Map<*, *> && rawToolCallObj.isNotEmpty()) ||
+                (rawToolCallObj is List<*> && rawToolCallObj.isNotEmpty())
+            val status = if (hasNonEmptyToolCall &&
+                (rawStatus.isBlank() || (rawStatus.equals(Constants.AI_STATUS_COMPLETED, ignoreCase = true) && rawResult.isBlank()))
+            ) {
+                Constants.AI_STATUS_TOOL_CALL
+            } else {
+                rawStatus
+            }
             flightRecorder?.recordReasoning(dummyPlugin, reasoning)
 
             // Handle terminal loop statuses
             if (status.equals(Constants.AI_STATUS_COMPLETED, ignoreCase = true)) {
                 recordAuditLog("TASK_COMPLETED", reasoning)
                 flightRecorder?.recordStep(dummyPlugin, "task_completed", jsonResponse.filterValues { it != null }.mapValues { it.value as Any })
+                val browserSnap = ToolActivityHub.getSnapshot().browser
+                val enrichedResponse = jsonResponse.toMutableMap()
+                if ((browserUsedInLoop || browserSnap.updatedAtMs > browserUpdatedBefore) && browserSnap.url.isNotBlank()) {
+                    val isSynthesizedFeed = browserSnap.rawHtml.contains("<!-- reveila-feed-html -->", ignoreCase = true)
+                    val attachmentMap = mapOf(
+                        "tool" to "virtual_browser",
+                        "url" to browserSnap.url,
+                        "title" to browserSnap.title,
+                        "statusCode" to browserSnap.statusCode,
+                        "lastAction" to browserSnap.lastAction,
+                        "contentPreview" to browserSnap.contentPreview.take(1500),
+                        "rawHtml" to if (isSynthesizedFeed) browserSnap.rawHtml.take(12_000) else ""
+                    )
+                    enrichedResponse["toolAttachment"] = attachmentMap
+                    attachToolMetadataToLastAssistantMessage(session, enrichedResponse, attachmentMap)
+                }
                 enforceSlidingWindow(session)
                 sessionManager?.saveSession(session.sessionId, session)
-                return jsonResponse
+                return enrichedResponse
             } else if (status.equals(Constants.AI_STATUS_INSUFFICIENT_CONTEXT, ignoreCase = true)) {
                 recordAuditLog("INSUFFICIENT_CONTEXT", reasoning)
                 flightRecorder?.recordStep(dummyPlugin, "insufficient_context", mapOf("reason" to reasoning))
@@ -834,6 +879,9 @@ open class AgenticFabric : SystemComponent() {
                             toolResults.append(result)
                         }
 
+                        if (ToolActivityHub.getSnapshot().browser.updatedAtMs > browserUpdatedBefore) {
+                            browserUsedInLoop = true
+                        }
                         if (ToolActivityHub.getSnapshot().browser.waitingForUser) {
                             sessionManager?.saveSession(session.sessionId, session)
                             val waitingSnap = ToolActivityHub.getSnapshot().browser
@@ -897,16 +945,21 @@ open class AgenticFabric : SystemComponent() {
         accumulatedResults: String = "",
         originalReasoning: String = ""
     ): String {
-        var pluginId = toolCallObj["plugin"]?.toString() ?: ""
+        val coordinator = toolCoordinator
+        var pluginId = coordinator?.extractToolName(toolCallObj).orEmpty()
         if (pluginId.isEmpty()) {
-            pluginId = toolCallObj["name"]?.toString() ?: ""
+            pluginId = toolCallObj["plugin"]?.toString()
+                ?: toolCallObj["name"]?.toString()
+                ?: ""
         }
 
         @Suppress("UNCHECKED_CAST")
-        val argsMap = (toolCallObj["arguments"] as? Map<String, Any?>)?.toMutableMap() ?: mutableMapOf()
-        if (toolCallObj.containsKey("method") && !argsMap.containsKey("method")) {
-            argsMap["method"] = toolCallObj["method"]
-        }
+        val argsMap = coordinator?.extractArguments(toolCallObj)
+            ?: ((toolCallObj["arguments"] as? Map<String, Any?>)?.toMutableMap() ?: mutableMapOf()).also { m ->
+                if (toolCallObj.containsKey("method") && !m.containsKey("method")) {
+                    m["method"] = toolCallObj["method"]
+                }
+            }
 
         // Dual-Model Governance Audit (Slide 5: If ChatGPT is compromised, Gemini catches it)
         val iv = intentValidator
@@ -919,7 +972,6 @@ open class AgenticFabric : SystemComponent() {
             }
         }
 
-        val coordinator = toolCoordinator
         if (coordinator != null && coordinator.isRegisteredTool(pluginId)) {
             val result = coordinator.authorizeAndExecute(
                 toolCallObj = toolCallObj,
@@ -943,7 +995,38 @@ open class AgenticFabric : SystemComponent() {
     // Live Tool Activity, User Takeover & Interactive Authorization Endpoints
     // =========================================================================
 
+    private fun attachToolMetadataToLastAssistantMessage(
+        session: AgentSession,
+        responseMap: Map<String, Any?>,
+        attachmentMap: Map<String, Any?>
+    ) {
+        val allMsgs = session.chatMemory.messages().toMutableList()
+        val lastAssistantIdx = allMsgs.indexOfLast { it.role == LlmRole.ASSISTANT }
+        if (lastAssistantIdx < 0) return
+        val existing = allMsgs[lastAssistantIdx]
+        val interpreted = interpretAiResponse(responseMap).ifBlank { existing.content }
+        val wrapped = JsonUtil.toJsonString(
+            mapOf(
+                "answer" to interpreted,
+                "status" to (responseMap[STATUS] ?: Constants.AI_STATUS_COMPLETED),
+                "toolAttachment" to attachmentMap
+            )
+        )
+        allMsgs[lastAssistantIdx] = existing.copy(content = wrapped)
+        session.chatMemory.replaceMessages(allMsgs)
+    }
+
     open fun getToolActivitySnapshotJson(): String = ToolActivityHub.getSnapshotJson()
+
+    open fun getBrowserConfigJson(): String {
+        return toolCoordinator?.getBrowserConfigJson()
+            ?: JsonUtil.toJsonString(mapOf("defaultSearchUrl" to "", "presets" to emptyList<Any>()))
+    }
+
+    open fun saveBrowserConfigJson(defaultSearchUrl: String): String {
+        return toolCoordinator?.saveBrowserConfigJson(defaultSearchUrl)
+            ?: JsonUtil.toJsonString(mapOf("defaultSearchUrl" to defaultSearchUrl.trim()))
+    }
 
     @JvmOverloads
     open fun resolvePendingToolAuthorizationJson(
@@ -1074,7 +1157,8 @@ open class AgenticFabric : SystemComponent() {
             traceId = traceId,
             actorId = pending.actorId,
             dummyPlugin = dummyPlugin,
-            responseValidator = AiResponseValidator(governancePolicy)
+            responseValidator = AiResponseValidator(governancePolicy),
+            persistInitialUserTurn = false
         )
         val answer = interpretAiResponse(loopResult)
         return JsonUtil.toJsonString(
@@ -1165,20 +1249,31 @@ open class AgenticFabric : SystemComponent() {
                 if (worker != null) {
                     val historyDump = buildString {
                         if (priorSummary.isNotBlank()) {
-                            appendLine("Previous summary: $priorSummary")
+                            appendLine("Previous summary: ${sanitizeTextForSummary(priorSummary)}")
                         }
                         toSummarize.forEach { msg ->
-                            appendLine("${msg.role().name}: ${msg.content()}")
+                            val cleanBody = sanitizeTextForSummary(msg.content())
+                            if (cleanBody.isNotBlank() &&
+                                !cleanBody.startsWith("The AI has requested to call tools") &&
+                                !cleanBody.startsWith("Authorized tool execution finished with results:")
+                            ) {
+                                appendLine("${msg.role().name}: $cleanBody")
+                            }
                         }
                     }.trim()
 
                     val summaryReq = LlmRequest.builder()
-                        .addMessage(ReveilaMessage.system("Summarize the conversation into 2-3 concise context bullet points, preserving key facts, decisions, and pending questions."))
+                        .addMessage(
+                            ReveilaMessage.system(
+                                "Summarize the conversation into 2-3 concise Markdown bullet points, preserving key facts, decisions, and pending questions. Return ONLY human-readable Markdown bullets — NEVER return JSON, tool call envelopes, or code fences."
+                            )
+                        )
                         .addMessage(ReveilaMessage.user(historyDump))
                         .build()
 
-                    worker.invoke(summaryReq).content?.trim()?.takeIf { it.isNotBlank() }
-                        ?: buildExtractiveSpaceSummary(session.spaceName, toSummarize, priorSummary)
+                    val rawSummary = worker.invoke(summaryReq).content?.trim()
+                    val cleanSummary = rawSummary?.let { sanitizeTextForSummary(it) }?.takeIf { it.isNotBlank() }
+                    cleanSummary ?: buildExtractiveSpaceSummary(session.spaceName, toSummarize, priorSummary)
                 } else {
                     buildExtractiveSpaceSummary(session.spaceName, toSummarize, priorSummary)
                 }
@@ -1274,8 +1369,41 @@ open class AgenticFabric : SystemComponent() {
                 )
             )
         }
-        contextMessages.addAll(recentTurns)
+        contextMessages.addAll(recentTurns.map { sanitizeMessageForLlmContext(it) })
         return contextMessages
+    }
+
+    /**
+     * Strips persisted UI-only metadata (such as `toolAttachment` / `rawHtml`) from historical
+     * assistant messages before sending conversation history back to an LLM provider.
+     */
+    private fun sanitizeMessageForLlmContext(msg: ReveilaMessage): ReveilaMessage {
+        if (msg.role != LlmRole.ASSISTANT) return msg
+        val raw = msg.content.trim()
+        if (!raw.contains("\"toolAttachment\"") && raw.length <= 4000) return msg
+        val clean = sanitizeTextForSummary(raw)
+        return if (clean.isNotBlank()) msg.copy(content = clean.take(4000)) else msg.copy(content = raw.take(4000))
+    }
+
+    private fun sanitizeTextForSummary(raw: String): String {
+        val trimmed = raw.trim()
+            .removePrefix("```json").removePrefix("```markdown").removePrefix("```")
+            .removeSuffix("```").trim()
+        if (trimmed.isBlank()) return ""
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            try {
+                val parsed = JsonUtil.parseJsonStringToMap(trimmed)
+                val extracted = (parsed["summary"] as? String)?.takeIf { it.isNotBlank() && it != "null" }
+                    ?: (parsed["answer"] as? String)?.takeIf { it.isNotBlank() && it != "null" }
+                    ?: (parsed["result"] as? String)?.takeIf { it.isNotBlank() && it != "null" }
+                    ?: (parsed["reasoning"] as? String)?.takeIf { it.isNotBlank() && it != "null" }
+                if (!extracted.isNullOrBlank()) {
+                    return extracted.trim()
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return trimmed
     }
 
     private fun buildExtractiveSpaceSummary(
@@ -1283,18 +1411,26 @@ open class AgenticFabric : SystemComponent() {
         olderTurns: List<ReveilaMessage>,
         priorSummary: String = ""
     ): String {
-        val turnBullets = olderTurns
+        val bullets = mutableListOf<String>()
+        val cleanPrior = sanitizeTextForSummary(priorSummary)
+        if (cleanPrior.isNotBlank()) {
+            bullets.add(cleanPrior)
+        }
+        olderTurns
             .filter { it.role == LlmRole.USER || it.role == LlmRole.ASSISTANT }
             .takeLast(6)
-            .joinToString(" | ") { msg ->
-                val prefix = if (msg.role == LlmRole.USER) "User" else "Assistant"
-                val clipped = msg.content.replace('\n', ' ').trim().take(120)
-                "$prefix: $clipped"
+            .forEach { msg ->
+                val clean = sanitizeTextForSummary(msg.content)
+                if (clean.isNotBlank() &&
+                    !clean.startsWith("The AI has requested to call tools") &&
+                    !clean.startsWith("Authorized tool execution finished with results:")
+                ) {
+                    val prefix = if (msg.role == LlmRole.USER) "**User:**" else "**Aegin:**"
+                    val clipped = clean.replace(Regex("\\s+"), " ").trim().take(160)
+                    bullets.add("- $prefix $clipped")
+                }
             }
-        return listOf(priorSummary.trim(), turnBullets.trim())
-            .filter { it.isNotBlank() }
-            .joinToString(" | ")
-            .ifBlank { "Continued session in $spaceName" }
+        return bullets.joinToString("\n").ifBlank { "Continued session in $spaceName" }
     }
 
     open fun delegate(parent: Plugin, targetIntent: String, taskArguments: Map<String, Any?>): Any? {
@@ -1549,19 +1685,23 @@ open class AgenticFabric : SystemComponent() {
         bridgeArgs["actorId"] = traceCtx?.actorId.orEmpty()
         bridgeArgs["actorType"] = traceCtx?.actorType ?: "SYSTEM"
 
-        var pluginId = toolCallObj["plugin"]?.toString() ?: ""
+        var pluginId = toolCoordinator?.extractToolName(toolCallObj).orEmpty()
         if (pluginId.isEmpty()) {
-            pluginId = toolCallObj["name"]?.toString() ?: ""
+            pluginId = toolCallObj["plugin"]?.toString()
+                ?: toolCallObj["name"]?.toString()
+                ?: ""
         }
 
         val toolCall = ToolCall()
         toolCall.functionName = pluginId
 
         @Suppress("UNCHECKED_CAST")
-        val argsMap = (toolCallObj["arguments"] as? Map<String, Any?>)?.toMutableMap() ?: mutableMapOf()
-        if (toolCallObj.containsKey("method") && !argsMap.containsKey("method")) {
-            argsMap["method"] = toolCallObj["method"]
-        }
+        val argsMap = toolCoordinator?.extractArguments(toolCallObj)
+            ?: ((toolCallObj["arguments"] as? Map<String, Any?>)?.toMutableMap() ?: mutableMapOf()).also { m ->
+                if (toolCallObj.containsKey("method") && !m.containsKey("method")) {
+                    m["method"] = toolCallObj["method"]
+                }
+            }
         toolCall.arguments = argsMap
 
         bridgeArgs["arguments"] = toolCall.arguments
@@ -1602,7 +1742,8 @@ open class AgenticFabric : SystemComponent() {
     private fun askAi(
         session: AgentSession,
         userPrompt: String,
-        preferredProviderName: String? = null
+        preferredProviderName: String? = null,
+        recordUserTurn: Boolean = true
     ): String {
         val worker = if (!preferredProviderName.isNullOrBlank()) {
             llmFactory?.getProvider(preferredProviderName) ?: llmFactory?.getActiveProvider()
@@ -1626,16 +1767,23 @@ open class AgenticFabric : SystemComponent() {
                 null
             }
         val systemHome = context?.properties?.getProperty("system.home")
+        val extraRoutingKeywords = metadataRegistry?.getLocalRoutingKeywords().orEmpty()
         val exposeBuiltinTools = !isOnDevice ||
             !PromptTemplateRegistry.isSmallLocalModel(activeModel, systemHome) ||
-            (toolCoordinator?.shouldRouteToAgenticLoop(userPrompt) == true)
+            (toolCoordinator?.shouldRouteToAgenticLoop(userPrompt, extraRoutingKeywords) == true)
         val builtinNames = toolCoordinator?.getToolNames() ?: emptySet()
 
         val discoveredTools = LinkedHashMap<String, LlmTool>()
         val provider = toolProvider
         if (provider != null) {
             provider.provideTools(userPrompt).forEach { t ->
-                t.name?.let { discoveredTools[it] = t }
+                val toolName = t.name ?: return@forEach
+                if (!exposeBuiltinTools && toolName in builtinNames) return@forEach
+                val manifest = metadataRegistry?.getManifest(toolName)
+                if (manifest != null && toolCoordinator?.isManifestAllowedForTarget(manifest, isOnDevice, activeModel, systemHome) == false) {
+                    return@forEach
+                }
+                discoveredTools[toolName] = t
             }
         } else {
             val mcpData = metadataRegistry?.exportToMCP()
@@ -1645,6 +1793,10 @@ open class AgenticFabric : SystemComponent() {
                 for (toolMap in mcpTools) {
                     val toolName = toolMap["name"] as? String ?: continue
                     if (!exposeBuiltinTools && toolName in builtinNames) continue
+                    val manifest = metadataRegistry?.getManifest(toolName)
+                    if (manifest != null && toolCoordinator?.isManifestAllowedForTarget(manifest, isOnDevice, activeModel, systemHome) == false) {
+                        continue
+                    }
                     val tool = LlmTool()
                     tool.name = toolName
                     tool.description = toolMap["description"] as? String
@@ -1658,11 +1810,19 @@ open class AgenticFabric : SystemComponent() {
             }
         }
         if (exposeBuiltinTools) {
-            toolCoordinator?.getAllLlmTools()?.forEach { t ->
-                t.name?.let { discoveredTools[it] = t }
+            val coordinator = toolCoordinator
+            coordinator?.getAllLlmTools()?.forEach { t ->
+                val toolName = t.name ?: return@forEach
+                val manifest = metadataRegistry?.getManifest(toolName)
+                if (manifest == null || coordinator.isManifestAllowedForTarget(manifest, isOnDevice, activeModel, systemHome)) {
+                    if (!discoveredTools.containsKey(toolName)) {
+                        discoveredTools[toolName] = t
+                    }
+                }
             }
         }
-        val tools: List<LlmTool> = discoveredTools.values.toList()
+        val rawTools: List<LlmTool> = discoveredTools.values.toList()
+        val tools: List<LlmTool> = toolCoordinator?.filterToolsForIntent(userPrompt, rawTools) ?: rawTools
 
         val promptMode = PromptTemplateRegistry.resolvePromptMode(
             isLocalProvider = isOnDevice,
@@ -1705,7 +1865,9 @@ open class AgenticFabric : SystemComponent() {
         }
 
         val currentUserMsg = ReveilaMessage.user(userPrompt, spaceId = session.spaceId)
-        session.addMessage(currentUserMsg)
+        if (recordUserTurn) {
+            session.addMessage(currentUserMsg)
+        }
         requestBuilder.addMessage(currentUserMsg)
 
         val request = requestBuilder.build()
@@ -1729,8 +1891,10 @@ open class AgenticFabric : SystemComponent() {
             throw LlmException("LLM Invocation Failure, caused by: $ec")
         } finally {
             try {
-                session.addMessage(ReveilaMessage.assistant(response ?: "No response received from LLM.", spaceId = session.spaceId))
-                sessionManager?.saveSession(session.sessionId, session)
+                if (response != null) {
+                    session.addMessage(ReveilaMessage.assistant(response, spaceId = session.spaceId))
+                    sessionManager?.saveSession(session.sessionId, session)
+                }
             } catch (e: Exception) {
                 logger.severe("Error recording response in chat memory: ${e.message}")
             }

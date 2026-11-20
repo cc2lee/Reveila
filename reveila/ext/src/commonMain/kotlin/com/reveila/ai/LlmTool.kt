@@ -20,7 +20,12 @@ open class LlmTool {
     }
 
     @Throws(JsonException::class)
-    open fun toJsonString(): String {
+    open fun toJsonString(): String = buildToolJsonString(includeReveilaMetadata = true)
+
+    @Throws(JsonException::class)
+    open fun toOpenAiToolJsonString(): String = buildToolJsonString(includeReveilaMetadata = false)
+
+    private fun buildToolJsonString(includeReveilaMetadata: Boolean): String {
         val functionMap = mutableMapOf<String, Any?>()
         functionMap["name"] = name
         functionMap["description"] = description
@@ -32,7 +37,7 @@ open class LlmTool {
         rootMap["type"] = "function"
         rootMap["function"] = functionMap
 
-        if (reveilaMetadata.isNotEmpty()) {
+        if (includeReveilaMetadata && reveilaMetadata.isNotEmpty()) {
             rootMap["reveila_metadata"] = reveilaMetadata
         }
 

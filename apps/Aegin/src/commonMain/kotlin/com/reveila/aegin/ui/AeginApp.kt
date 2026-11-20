@@ -15,6 +15,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.reveila.aegin.bridge.AeginBridge
+import com.reveila.aegin.ui.mascot.AeginMascotController
+import com.reveila.aegin.ui.mascot.LocalAeginMascotController
 import com.reveila.aegin.ui.screens.HomeScreen
 import com.reveila.aegin.ui.screens.SecurityPortalModal
 import com.reveila.aegin.ui.screens.SettingsScreen
@@ -33,12 +35,14 @@ enum class AeginRoute {
 }
 
 @Composable
-fun AeginApp() {
+fun AeginApp(
+    mascotController: AeginMascotController = remember { AeginMascotController() }
+) {
     var isDark by remember { mutableStateOf(true) }
     var currentRoute by remember { mutableStateOf(AeginRoute.HOME) }
     var previousRoute by remember { mutableStateOf(AeginRoute.HOME) }
     var activeSpaceId by remember { mutableStateOf("main-space") }
-    var activeSpaceName by remember { mutableStateOf("Main Space") }
+    var activeSpaceName by remember { mutableStateOf("Assistant") }
     var pendingSpacePrompt by remember { mutableStateOf<String?>(null) }
     var pendingTaskDraftPrompt by remember { mutableStateOf<String?>(null) }
 
@@ -53,7 +57,10 @@ fun AeginApp() {
     val colors = if (isDark) DarkAeginColors else LightAeginColors
     val materialScheme = if (isDark) darkColorScheme() else lightColorScheme()
 
-    CompositionLocalProvider(LocalAeginColors provides colors) {
+    CompositionLocalProvider(
+        LocalAeginColors provides colors,
+        LocalAeginMascotController provides mascotController
+    ) {
         MaterialTheme(colorScheme = materialScheme) {
             Box(
                 modifier = Modifier
@@ -94,7 +101,7 @@ fun AeginApp() {
                         onClearedActiveSpace = { clearedId ->
                             if (AeginBridge.normalizeSpaceId(clearedId) == AeginBridge.normalizeSpaceId(activeSpaceId)) {
                                 activeSpaceId = "main-space"
-                                activeSpaceName = "Main Space"
+                                activeSpaceName = "Assistant"
                             }
                         }
                     )
