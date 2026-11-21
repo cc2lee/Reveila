@@ -2,7 +2,9 @@ package com.reveila.aegin.bridge
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class ModelManifestTest {
 
@@ -102,5 +104,95 @@ class ModelManifestTest {
         assertEquals(false, reparsed[0].tested)
         assertEquals(true, reparsed[1].tested)
         assertEquals("fp-ollama", reparsed[1].testedFingerprint)
+    }
+
+    @Test
+    fun testV2ManifestTargetFilteringRamGatingAndCautionMessages() {
+        val raw = """
+            {
+              "schemaVersion": 2,
+              "downloadBaseUrl": "https://huggingface.co",
+              "models": [
+                {
+                  "modelId": "qwen2.5-0.5b-instruct-q4_k_m",
+                  "displayName": "Qwen 2.5 0.5B",
+                  "filename": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+                  "format": "gguf",
+                  "role": "preprocessor-router",
+                  "targets": ["android"],
+                  "isDefaultFor": [],
+                  "minRamGb": 4,
+                  "recommendedRamGb": 6,
+                  "capabilityTier": "tiny",
+                  "safetyReviewCapable": false,
+                  "cautionMessage": "Tiny models come with reduced capabilities.",
+                  "repoPath": "Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
+                  "approxSizeBytes": 491400000
+                },
+                {
+                  "modelId": "qwen2.5-1.5b-instruct-q4_k_m",
+                  "displayName": "Qwen 2.5 1.5B",
+                  "filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+                  "format": "gguf",
+                  "role": "local-executor",
+                  "targets": ["android"],
+                  "isDefaultFor": ["android"],
+                  "minRamGb": 6,
+                  "recommendedRamGb": 8,
+                  "capabilityTier": "tiny",
+                  "safetyReviewCapable": false,
+                  "repoPath": "Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+                  "approxSizeBytes": 1117320704
+                },
+                {
+                  "modelId": "qwen2.5-7b-instruct-q4_k_m",
+                  "displayName": "Qwen 2.5 7B",
+                  "filename": "qwen2.5-7b-instruct-q4_k_m.gguf",
+                  "format": "gguf",
+                  "role": "local-executor",
+                  "targets": ["desktop"],
+                  "isDefaultFor": ["desktop"],
+                  "minRamGb": 12,
+                  "recommendedRamGb": 16,
+                  "capabilityTier": "capable",
+                  "safetyReviewCapable": true,
+                  "repoPath": "Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf",
+                  "approxSizeBytes": 4683073952
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val manifest = AeginBridge.parseModelManifest(raw)
+        assertEquals(2, manifest.schemaVersion)
+
+        val androidModels = AeginBridge.modelsForTarget(manifest, "android")
+        val desktopModels = AeginBridge.modelsForTarget(manifest, "desktop")
+        assertEquals(2, androidModels.size)
+        assertEquals(1, desktopModels.size)
+        assertEquals("qwen2.5-7b-instruct-q4_k_m.gguf", desktopModels[0].effectiveFilename())
+
+        val androidRec = AeginBridge.recommendedEntryForHardware(manifest, "android", 8.0)
+        assertNotNull(androidRec)
+        assertEquals("qwen2.5-1.5b-instruct-q4_k_m.gguf", androidRec.effectiveFilename())
+        assertTrue(androidRec.isTiny())
+        assertFalse(androidRec.safetyReviewCapable)
+        assertTrue(androidRec.resolvedCautionMessage().isNotBlank())
+
+        val desktopRec = AeginBridge.recommendedEntryForHardware(manifest, "desktop", 16.0)
+        assertNotNull(desktopRec)
+        assertEquals("qwen2.5-7b-instruct-q4_k_m.gguf", desktopRec.effectiveFilename())
+        assertTrue(desktopRec.safetyReviewCapable)
+        assertFalse(desktopRec.isCompatibleWithRam(8.0))
+        assertTrue(desktopRec.isCompatibleWithRam(12.0))
+
+        // Verify ModelTierCatalog target-aware tiers & safety review heuristics
+        assertEquals(ModelTierCatalog.MODEL_7B, ModelTierCatalog.resolveTier(16.0, "desktop").second)
+        assertEquals(ModelTierCatalog.MODEL_14B, ModelTierCatalog.resolveTier(32.0, "desktop").second)
+        assertEquals(ModelTierCatalog.MODEL_GEMMA_2B, ModelTierCatalog.resolveTier(8.0, "android").second)
+        assertFalse(ModelTierCatalog.isSafetyReviewCapableModel(ModelTierCatalog.MODEL_0_5B))
+        assertFalse(ModelTierCatalog.isSafetyReviewCapableModel(ModelTierCatalog.MODEL_GEMMA_2B))
+        assertTrue(ModelTierCatalog.isSafetyReviewCapableModel(ModelTierCatalog.MODEL_7B))
+        assertTrue(ModelTierCatalog.isSafetyReviewCapableModel("llama-guard-3-1b-q4_k_m.gguf"))
     }
 }

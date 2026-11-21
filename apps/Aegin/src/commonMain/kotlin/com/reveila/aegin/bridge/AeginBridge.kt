@@ -186,7 +186,10 @@ data class LlmProviderConfig(
     val apiKey: String = "",
     val intentOptions: List<String> = emptyList(),
     val tested: Boolean = false,
-    val testedFingerprint: String = ""
+    val testedFingerprint: String = "",
+    val costTier: String = "",
+    val costPer1MTokens: Double? = null,
+    val performanceTier: String = ""
 )
 
 @Serializable
@@ -244,8 +247,17 @@ data class DeviceCapabilityReport(
 @Serializable
 data class LocalModelManifestEntry(
     val modelId: String = "",
+    val displayName: String = "",
     val filename: String = "",
+    val format: String = "gguf",
     val role: String = "",
+    val targets: List<String> = emptyList(),
+    val isDefaultFor: List<String> = emptyList(),
+    val minRamGb: Double = 0.0,
+    val recommendedRamGb: Double = 0.0,
+    val capabilityTier: String = "standard",
+    val safetyReviewCapable: Boolean = false,
+    val cautionMessage: String = "",
     val repoPath: String = "",
     val approxSizeBytes: Long = 0L,
     val sha256: String = "",
@@ -255,10 +267,27 @@ data class LocalModelManifestEntry(
         val fromPath = repoPath.substringAfterLast('/').substringBefore('?')
         return filename.ifBlank { fromPath.ifBlank { if (modelId.endsWith(".gguf", ignoreCase = true)) modelId else "$modelId.gguf" } }
     }
+
+    fun supportsTarget(target: String): Boolean {
+        if (targets.isEmpty()) return true
+        return targets.any { it.equals(target, ignoreCase = true) || it.equals("all", ignoreCase = true) }
+    }
+
+    fun isDefaultForTarget(target: String): Boolean =
+        isDefaultFor.any { it.equals(target, ignoreCase = true) }
+
+    fun isCompatibleWithRam(totalRamGb: Double): Boolean =
+        minRamGb <= 0.0 || totalRamGb >= (minRamGb - 0.5)
+
+    fun isTiny(): Boolean = capabilityTier.equals("tiny", ignoreCase = true)
+
+    fun resolvedCautionMessage(): String =
+        cautionMessage.ifBlank { ModelTierCatalog.cautionMessageForModel(effectiveFilename()) }
 }
 
 @Serializable
 data class LocalModelManifest(
+    val schemaVersion: Int = 1,
     val downloadBaseUrl: String = "https://huggingface.co",
     val models: List<LocalModelManifestEntry> = emptyList()
 )
@@ -382,12 +411,23 @@ data class PendingToolAuthState(
 )
 
 @Serializable
+data class InferenceStepState(
+    val active: Boolean = false,
+    val turnIndex: Int = 0,
+    val maxTurns: Int = 0,
+    val phase: String = "",
+    val label: String = "",
+    val updatedAtMs: Long = 0L
+)
+
+@Serializable
 data class ToolHubSnapshot(
     val browser: BrowserLiveState = BrowserLiveState(),
     val terminal: TerminalLiveState = TerminalLiveState(),
     val downloads: DownloadLiveState = DownloadLiveState(),
     val pendingAuthorization: PendingToolAuthState? = null,
-    val waitingForUserInput: Boolean = false
+    val waitingForUserInput: Boolean = false,
+    val inference: InferenceStepState = InferenceStepState()
 )
 
 data class ToolAuthResolutionResult(
@@ -531,6 +571,22 @@ object AeginBridge {
                 entry.modelId.equals(targetNoExt, ignoreCase = true) ||
                 fname.removeSuffix(".gguf").equals(targetNoExt, ignoreCase = true)
         }
+    }
+
+    fun modelsForTarget(manifest: LocalModelManifest, target: String): List<LocalModelManifestEntry> {
+        return manifest.models.filter { it.supportsTarget(target) }
+    }
+
+    fun recommendedEntryForHardware(
+        manifest: LocalModelManifest,
+        target: String,
+        totalRamGb: Double
+    ): LocalModelManifestEntry? {
+        val eligible = modelsForTarget(manifest, target)
+            .filter { it.isCompatibleWithRam(totalRamGb) }
+        if (eligible.isEmpty()) return null
+        return eligible.firstOrNull { it.isDefaultForTarget(target) }
+            ?: eligible.maxByOrNull { it.recommendedRamGb }
     }
 
     fun buildManifestDownloadUrl(manifest: LocalModelManifest, entry: LocalModelManifestEntry): String {
@@ -1215,6 +1271,9 @@ object AeginBridge {
                     }
                     val tested = (p["Tested"] ?: p["tested"])?.jsonPrimitive?.booleanOrNull ?: false
                     val testedFp = (p["Tested.Fingerprint"] ?: p["tested.fingerprint"])?.jsonPrimitive?.contentOrNull ?: ""
+                    val costTier = (p["Cost.Tier"] ?: p["cost.tier"] ?: p["costTier"])?.jsonPrimitive?.contentOrNull?.trim() ?: ""
+                    val costPer1M = (p["Cost.Per1MTokens"] ?: p["cost.per1m.tokens"] ?: p["costPer1MTokens"])?.jsonPrimitive?.doubleOrNull
+                    val perfTier = (p["Performance.Tier"] ?: p["performance.tier"] ?: p["performanceTier"])?.jsonPrimitive?.contentOrNull?.trim() ?: ""
                     parsedList.add(
                         LlmProviderConfig(
                             name = name,
@@ -1227,7 +1286,10 @@ object AeginBridge {
                             apiKey = if (isLocal) "" else apiKey,
                             intentOptions = effectiveIntents,
                             tested = tested,
-                            testedFingerprint = testedFp
+                            testedFingerprint = testedFp,
+                            costTier = costTier,
+                            costPer1MTokens = costPer1M,
+                            performanceTier = perfTier
                         )
                     )
                 }
@@ -1259,7 +1321,7 @@ object AeginBridge {
 
             Triple(parsedList, worker, gov)
         } catch (_: Exception) {
-            Triple(defaultStandard, "On-Device Model", "On-Device Model")
+            Triple(defaultStandard, "On-Device Model", "Disable")
         }
     }
 
@@ -1297,6 +1359,15 @@ object AeginBridge {
         val localReadyLine = if (localModelReadyHint != null) {
             ",\n              \"localModelReady\": $localModelReadyHint"
         } else ""
+        val costTierLine = if (p.costTier.isNotBlank()) {
+            ",\n              \"Cost.Tier\": \"${escapeJson(p.costTier)}\""
+        } else ""
+        val costPer1MLine = if (p.costPer1MTokens != null && p.costPer1MTokens >= 0.0) {
+            ",\n              \"Cost.Per1MTokens\": ${p.costPer1MTokens}"
+        } else ""
+        val perfTierLine = if (p.performanceTier.isNotBlank()) {
+            ",\n              \"Performance.Tier\": \"${escapeJson(p.performanceTier)}\""
+        } else ""
 
         return """
             {
@@ -1308,7 +1379,7 @@ object AeginBridge {
               "Temperature": ${p.temperature}$apiKeyLine,
               "Tested": ${p.tested},
               "Tested.Fingerprint": "${escapeJson(p.testedFingerprint)}",
-              "Intent.Options": [$intentOpts]$localReadyLine
+              "Intent.Options": [$intentOpts]$costTierLine$costPer1MLine$perfTierLine$localReadyLine
             }
         """.trimIndent()
     }

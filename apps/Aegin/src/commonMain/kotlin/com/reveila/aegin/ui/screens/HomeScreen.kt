@@ -1,10 +1,13 @@
 package com.reveila.aegin.ui.screens
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -55,8 +58,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -140,6 +146,7 @@ fun HomeScreen(
     var isStatusExpanded by remember { mutableStateOf(false) }
     var isMenuExpanded by remember { mutableStateOf(false) }
     var activeProcessNote by remember { mutableStateOf("Idle • Checking configured AI models...") }
+    var activeInferenceStepLabel by remember { mutableStateOf("") }
     val allPersistedSpaces = remember { mutableStateListOf<SpaceThreadSummary>() }
     var toolSnapshot by remember { mutableStateOf(ToolHubSnapshot()) }
     var activeLargeWindow by remember { mutableStateOf(ActiveLargeToolWindow.NONE) }
@@ -547,6 +554,11 @@ fun HomeScreen(
         persistCurrentThreadMessages()
         prompt = ""
         isThinking = true
+        activeInferenceStepLabel = when {
+            isAutoMode -> "Step 1 • Routing request"
+            isLocalMode -> "Step 1 • Preparing local context"
+            else -> "Step 1 • Reasoning ($cloudProviderName)"
+        }
         activeProcessNote = when {
             isAutoMode -> "Choosing the best AI for your request..."
             isLocalMode -> "Searching your Personal Knowledge Folder & thinking privately..."
@@ -627,6 +639,9 @@ fun HomeScreen(
                         spaceName = activeSpaceName
                     ).collect { piece ->
                         chunkCount++
+                        if (chunkCount == 1) {
+                            activeInferenceStepLabel = "Streaming response..."
+                        }
                         val elapsedSec = ((Clock.System.now().toEpochMilliseconds() - streamStartMs).coerceAtLeast(100L)) / 1000f
                         mascotController.onStreamingResponse(tokensPerSecond = chunkCount / elapsedSec)
                         streamedText.append(piece)
@@ -635,6 +650,7 @@ fun HomeScreen(
                     if (streamedText.isNotEmpty()) {
                         streamedText.toString()
                     } else {
+                        activeInferenceStepLabel = "Step 1 • Reasoning"
                         mascotController.onCoordinatingWithModel(cloudProviderName.ifBlank { "AI Model" })
                         val (ans, _) = AeginBridge.askAgentInSpace(
                             prompt = trimmed,
@@ -705,6 +721,7 @@ fun HomeScreen(
             } finally {
                 AeginBridge.setVaultSearchScope(emptyList())
                 isThinking = false
+                activeInferenceStepLabel = ""
                 if (!hadDispatchError) {
                     mascotController.onIdle()
                 }
@@ -866,6 +883,7 @@ fun HomeScreen(
                 toolSnapshot.downloads.items.any { it.status == "DOWNLOADING" }
             delay(
                 when {
+                    isThinking -> 450L
                     fastToolTick -> 750L
                     inFlightTasks.isNotEmpty() -> 1000L
                     else -> 2400L
@@ -1520,6 +1538,117 @@ fun HomeScreen(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
                         )
+                    }
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // 4.5. DEDICATED NON-OVERLAPPING "POWERED BY REVEILA" / ACTIVE STEP STRIP
+        // Visually separated from chat messages by a subtle hairline divider so
+        // system status is never mistaken for chat content.
+        // ─────────────────────────────────────────────────────────────────────
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(0.75.dp)
+                .background(theme.glassBorder.copy(alpha = 0.55f))
+        )
+
+        val backendInferenceStep = toolSnapshot.inference
+            .takeIf { it.active && it.label.isNotBlank() }
+            ?.label
+        val runningTaskStep = inFlightTasks
+            .firstOrNull { it.status == "RUNNING" && it.currentStep.isNotBlank() }
+            ?.let { AeginDisplayMapper.taskStep(it.currentStep, isSuspended = false) }
+        val isPillActive = isThinking || backendInferenceStep != null || runningTaskStep != null
+        val overlayPillText = when {
+            backendInferenceStep != null -> backendInferenceStep
+            isThinking && activeInferenceStepLabel.isNotBlank() -> activeInferenceStepLabel
+            isThinking -> "Reasoning..."
+            runningTaskStep != null -> runningTaskStep
+            else -> "Powered by Reveila"
+        }
+        val glowColor = if (isLocalMode) theme.primary else theme.cyan
+        val letterColor = if (theme.isDark) Color.White else Color(0xFF0B1220)
+        val innerHaloColor = if (theme.isDark) glowColor.copy(alpha = 0.95f) else Color.White.copy(alpha = 0.98f)
+        val outerBloomColor = if (theme.isDark) glowColor.copy(alpha = 0.70f) else glowColor.copy(alpha = 0.55f)
+        val pillHorizontalMist = Brush.horizontalGradient(
+            colorStops = arrayOf(
+                0.0f to Color.Transparent,
+                0.10f to (if (theme.isDark) Color.Black.copy(alpha = 0.36f) else Color.White.copy(alpha = 0.72f)),
+                0.90f to (if (theme.isDark) Color.Black.copy(alpha = 0.36f) else Color.White.copy(alpha = 0.72f)),
+                1.0f to Color.Transparent
+            )
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp, bottom = 0.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 276.dp)
+                    .clip(CircleShape)
+                    .background(pillHorizontalMist)
+                    .padding(horizontal = 18.dp, vertical = 3.dp)
+            ) {
+                AnimatedContent(
+                    targetState = isPillActive to overlayPillText,
+                    transitionSpec = {
+                        fadeIn(animationSpec = tween(180)) togetherWith fadeOut(animationSpec = tween(140))
+                    },
+                    label = "reveila_status_strip_pill"
+                ) { (active, labelText) ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        if (active) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(9.dp),
+                                strokeWidth = 1.4.dp,
+                                color = glowColor
+                            )
+                        }
+                        Box {
+                            Text(
+                                text = labelText,
+                                color = outerBloomColor,
+                                fontSize = 10.sp,
+                                lineHeight = 12.sp,
+                                fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
+                                letterSpacing = if (active) 0.15.sp else 0.35.sp,
+                                style = TextStyle(
+                                    shadow = Shadow(
+                                        color = outerBloomColor,
+                                        offset = Offset.Zero,
+                                        blurRadius = 16f
+                                    )
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = labelText,
+                                color = letterColor,
+                                fontSize = 10.sp,
+                                lineHeight = 12.sp,
+                                fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
+                                letterSpacing = if (active) 0.15.sp else 0.35.sp,
+                                style = TextStyle(
+                                    shadow = Shadow(
+                                        color = innerHaloColor,
+                                        offset = Offset.Zero,
+                                        blurRadius = 6f
+                                    )
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
             }

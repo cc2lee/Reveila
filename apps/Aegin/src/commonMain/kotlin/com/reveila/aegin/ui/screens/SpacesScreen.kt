@@ -46,7 +46,6 @@ import com.reveila.aegin.bridge.AeginDisplayMapper
 import com.reveila.aegin.bridge.SpaceThreadSummary
 import com.reveila.aegin.ui.PlatformBackHandler
 import com.reveila.aegin.ui.theme.AeginIconType
-import com.reveila.aegin.ui.theme.AeginOrbAvatar
 import com.reveila.aegin.ui.theme.AeginVectorIcon
 import com.reveila.aegin.ui.theme.LocalAeginColors
 import kotlinx.coroutines.launch
@@ -127,12 +126,6 @@ fun SpacesScreen(
                         size = 15.dp
                     )
                 }
-                AeginOrbAvatar(
-                    size = 36.dp,
-                    isLocalMode = false,
-                    isThinking = false,
-                    showStatusDot = true
-                )
                 Column {
                     Text(
                         text = "Spaces",

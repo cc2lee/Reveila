@@ -59,7 +59,6 @@ import com.reveila.aegin.bridge.AuditLogItem
 import com.reveila.aegin.bridge.TaskItem
 import com.reveila.aegin.ui.PlatformBackHandler
 import com.reveila.aegin.ui.theme.AeginIconType
-import com.reveila.aegin.ui.theme.AeginOrbAvatar
 import com.reveila.aegin.ui.theme.AeginVectorIcon
 import com.reveila.aegin.ui.theme.LocalAeginColors
 import kotlinx.coroutines.delay
@@ -379,12 +378,6 @@ fun TasksScreen(
                         size = 15.dp
                     )
                 }
-                AeginOrbAvatar(
-                    size = 36.dp,
-                    isLocalMode = false,
-                    isThinking = activeTasks.any { it.status == "RUNNING" },
-                    showStatusDot = true
-                )
                 Column {
                     Text(
                         text = "Tasks",

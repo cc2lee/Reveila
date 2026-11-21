@@ -65,7 +65,14 @@
             "Type": "Local",
             "Endpoint": "http://127.0.0.1:8888/completion",
             "Model": "gemma-2-2b-it-Q4_K_M.gguf",
-            "Model.Options": ["gemma-2-2b-it-Q4_K_M.gguf", "qwen2.5-0.5b-instruct-q4_k_m.gguf"],
+            "Model.Options": [
+                "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+                "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+                "gemma-2-2b-it-Q4_K_M.gguf",
+                "qwen2.5-3b-instruct-q4_k_m.gguf",
+                "qwen2.5-7b-instruct-q4_k_m.gguf",
+                "qwen2.5-14b-instruct-q4_k_m.gguf"
+            ],
             "Temperature": 0.7,
             "Intent.Options": [
                 "LOCAL_TEXT_TRANSFORM",
@@ -75,5 +82,5 @@
         }
     ],
     "ai.worker.llm": "On-Device Model",
-    "ai.governance.llm": "On-Device Model"
+    "ai.governance.llm": "Disable"
 }

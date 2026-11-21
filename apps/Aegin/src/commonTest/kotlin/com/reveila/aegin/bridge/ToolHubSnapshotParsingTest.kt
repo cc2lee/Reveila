@@ -57,7 +57,15 @@ class ToolHubSnapshotParsingTest {
                 "requiresCredentials": false,
                 "credentialType": "NONE"
               },
-              "waitingForUserInput": true
+              "waitingForUserInput": true,
+              "inference": {
+                "active": true,
+                "turnIndex": 2,
+                "maxTurns": 5,
+                "phase": "TOOL_CALL",
+                "label": "Step 2 • Searching Knowledge Vault",
+                "updatedAtMs": 1700000000000
+              }
             }
         """.trimIndent()
 
@@ -69,5 +77,9 @@ class ToolHubSnapshotParsingTest {
         assertEquals(42, snap.downloads.items.first().percentage)
         assertNotNull(snap.pendingAuthorization)
         assertEquals("auth-1234", snap.pendingAuthorization?.requestId)
+        assertTrue(snap.inference.active)
+        assertEquals(2, snap.inference.turnIndex)
+        assertEquals("TOOL_CALL", snap.inference.phase)
+        assertEquals("Step 2 • Searching Knowledge Vault", snap.inference.label)
     }
 }

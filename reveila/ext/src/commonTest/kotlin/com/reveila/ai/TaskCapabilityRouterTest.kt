@@ -275,18 +275,77 @@ class TaskCapabilityRouterTest {
         assertEquals("Disable", disabled.providerName)
         assertEquals(null, disabled.provider)
 
-        val autoLocal = createConfiguredFactory(workerName = "Auto", governanceName = "Auto")
+        // Privacy-first Auto: tiny 2B embedded model is not safety-review capable and Cloud is never silently used
+        val autoTinyOnly = createConfiguredFactory(workerName = "Auto", governanceName = "Auto")
             .resolveGovernanceProviderForIntent("LOCAL_STRUCTURED_EXTRACT")
-        assertTrue(autoLocal.isAutoMode)
-        assertTrue(autoLocal.isCapable)
-        assertEquals("On-Device Model", autoLocal.providerName)
+        assertTrue(autoTinyOnly.isAutoMode)
+        assertTrue(autoTinyOnly.isCapable)
+        assertEquals("Disable", autoTinyOnly.providerName)
+        assertEquals(null, autoTinyOnly.provider)
+        assertTrue(autoTinyOnly.advisoryMessage?.contains("Deterministic policy guardrails remain active") == true)
 
+        // Explicit tiny embedded model is rejected with a clear alert
         val explicitIncapable = createConfiguredFactory(workerName = "Auto", governanceName = "On-Device Model")
             .resolveGovernanceProviderForIntent("CLOUD_DEEP_REASONING")
         assertFalse(explicitIncapable.isAutoMode)
         assertFalse(explicitIncapable.isCapable)
         assertEquals("On-Device Model", explicitIncapable.providerName)
-        assertTrue(explicitIncapable.errorMessage?.contains("cannot handle task type 'CLOUD_DEEP_REASONING'") == true)
+        assertTrue(explicitIncapable.errorMessage?.contains("not powerful enough for reliable AI Safety Review") == true)
+
+        // Privacy-first Auto selects Self-Hosted private-network model when available
+        val selfHostedFactory = object : LlmProviderFactory() {
+            override fun getConfiguredGovernanceName(): String = "Auto"
+            override fun getSettings(tab: String): String = """
+                {
+                  "ai.worker.llm": "Auto",
+                  "ai.governance.llm": "Auto",
+                  "onboarded.providers": [
+                    {
+                      "Name": "On-Device Model",
+                      "Type": "Local",
+                      "Endpoint": "local://on-device",
+                      "Model": "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+                    },
+                    {
+                      "Name": "Ollama LAN",
+                      "Type": "Self-Hosted",
+                      "Provider": "OpenAI",
+                      "Endpoint": "http://192.168.1.50:11434/v1/chat/completions",
+                      "Model": "qwen2.5:14b"
+                    }
+                  ]
+                }
+            """.trimIndent()
+        }
+        selfHostedFactory.loadProviders()
+        val autoSelfHosted = selfHostedFactory.resolveGovernanceProviderForIntent("CLOUD_DEEP_REASONING")
+        assertTrue(autoSelfHosted.isAutoMode)
+        assertTrue(autoSelfHosted.isCapable)
+        assertEquals("Ollama LAN", autoSelfHosted.providerName)
+
+        // Privacy-first Auto selects capable 7B+ desktop local model first
+        val desktop7bFactory = object : LlmProviderFactory() {
+            override fun getConfiguredGovernanceName(): String = "Auto"
+            override fun getSettings(tab: String): String = """
+                {
+                  "ai.worker.llm": "Auto",
+                  "ai.governance.llm": "Auto",
+                  "onboarded.providers": [
+                    {
+                      "Name": "On-Device Model",
+                      "Type": "Local",
+                      "Endpoint": "http://127.0.0.1:8888/completion",
+                      "Model": "qwen2.5-7b-instruct-q4_k_m.gguf"
+                    }
+                  ]
+                }
+            """.trimIndent()
+        }
+        desktop7bFactory.loadProviders()
+        val autoDesktopLocal = desktop7bFactory.resolveGovernanceProviderForIntent("CLOUD_DEEP_REASONING")
+        assertTrue(autoDesktopLocal.isAutoMode)
+        assertTrue(autoDesktopLocal.isCapable)
+        assertEquals("On-Device Model", autoDesktopLocal.providerName)
     }
 
     @Test
@@ -381,5 +440,123 @@ class TaskCapabilityRouterTest {
         val missingSel = factory.resolveExplicitProviderForIntent("OpenAI", "CLOUD_DEEP_REASONING")
         assertFalse(missingSel.isCapable)
         assertTrue(missingSel.errorMessage?.contains("Studio -> Configuration") == true)
+    }
+
+    @Test
+    fun testAutoRouterBalancesCostAndPerformanceAcrossCloudCategories() {
+        val factory = object : LlmProviderFactory() {
+            override fun getConfiguredWorkerName(): String = "Auto"
+            override fun getSettings(tab: String): String = """
+                {
+                  "ai.worker.llm": "Auto",
+                  "ai.governance.llm": "Disable",
+                  "onboarded.providers": [
+                    {
+                      "Name": "OpenAI",
+                      "Type": "Cloud",
+                      "Provider": "OpenAI",
+                      "Endpoint": "https://api.openai.com/v1/chat/completions",
+                      "Model": "gpt-4o",
+                      "api.key": "sk-test-openai",
+                      "Intent.Options": ["CLOUD_LIVE_RETRIEVAL", "CLOUD_DEEP_REASONING", "CLOUD_MULTI_STEP_AGENT"]
+                    },
+                    {
+                      "Name": "Google Gemini",
+                      "Type": "Cloud",
+                      "Provider": "Gemini",
+                      "Endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+                      "Model": "gemini-3-flash",
+                      "api.key": "sk-test-gemini",
+                      "Intent.Options": ["CLOUD_LIVE_RETRIEVAL", "CLOUD_DEEP_REASONING", "CLOUD_MULTI_STEP_AGENT"]
+                    },
+                    {
+                      "Name": "DeepSeek",
+                      "Type": "Cloud",
+                      "Provider": "DeepSeek",
+                      "Endpoint": "https://api.deepseek.com/chat/completions",
+                      "Model": "deepseek-reasoner",
+                      "api.key": "sk-test-deepseek",
+                      "Intent.Options": ["CLOUD_LIVE_RETRIEVAL", "CLOUD_DEEP_REASONING", "CLOUD_MULTI_STEP_AGENT"]
+                    },
+                    {
+                      "Name": "On-Device Model",
+                      "Type": "Local",
+                      "Endpoint": "local://on-device",
+                      "Model": "gemma-2-2b-it-Q4_K_M.gguf",
+                      "Intent.Options": ["LOCAL_TEXT_TRANSFORM", "LOCAL_STRUCTURED_EXTRACT", "LOCAL_DEVICE_ACTION"]
+                    }
+                  ]
+                }
+            """.trimIndent()
+        }
+        factory.loadProviders()
+
+        // Local-first for LOCAL_*
+        assertEquals("On-Device Model", factory.resolveWorkerProviderForIntent("LOCAL_TEXT_TRANSFORM").providerName)
+
+        // Economy/fast cloud (Gemini Flash) wins for CLOUD_LIVE_RETRIEVAL over expensive GPT-4o
+        assertEquals("Google Gemini", factory.resolveWorkerProviderForIntent("CLOUD_LIVE_RETRIEVAL").providerName)
+
+        // Best cost/performance frontier model (DeepSeek Reasoner) wins for CLOUD_DEEP_REASONING
+        assertEquals("DeepSeek", factory.resolveWorkerProviderForIntent("CLOUD_DEEP_REASONING").providerName)
+
+        // Live telemetry: if DeepSeek hits consecutive failures, Auto automatically routes around it to OpenAI
+        factory.recordProviderInvocation("DeepSeek", latencyMs = 1500L, success = false)
+        factory.recordProviderInvocation("DeepSeek", latencyMs = 1500L, success = false)
+        assertEquals("OpenAI", factory.resolveWorkerProviderForIntent("CLOUD_DEEP_REASONING").providerName)
+    }
+
+    @Test
+    fun testAutoRouterPrefersSelfHostedOverPaidCloudAndHonorsUserConfigOverrides() {
+        val factory = object : LlmProviderFactory() {
+            override fun getConfiguredWorkerName(): String = "Auto"
+            override fun getSettings(tab: String): String = """
+                {
+                  "ai.worker.llm": "Auto",
+                  "ai.governance.llm": "Disable",
+                  "onboarded.providers": [
+                    {
+                      "Name": "OpenAI",
+                      "Type": "Cloud",
+                      "Provider": "OpenAI",
+                      "Endpoint": "https://api.openai.com/v1/chat/completions",
+                      "Model": "gpt-4o",
+                      "api.key": "sk-test-openai",
+                      "Intent.Options": ["CLOUD_LIVE_RETRIEVAL", "CLOUD_DEEP_REASONING"]
+                    },
+                    {
+                      "Name": "Ollama LAN",
+                      "Type": "Self-Hosted",
+                      "Provider": "OpenAI",
+                      "Endpoint": "http://192.168.1.50:11434/v1/chat/completions",
+                      "Model": "qwen2.5:7b",
+                      "Intent.Options": ["CLOUD_LIVE_RETRIEVAL", "CLOUD_DEEP_REASONING"]
+                    },
+                    {
+                      "Name": "Custom Enterprise",
+                      "Type": "Cloud",
+                      "Provider": "OpenAI",
+                      "Endpoint": "https://llm.internal.example/v1/chat/completions",
+                      "Model": "custom-model-v1",
+                      "api.key": "sk-test-enterprise",
+                      "Cost.Per1MTokens": 0.20,
+                      "Performance.Tier": "FRONTIER",
+                      "Intent.Options": ["CLOUD_DEEP_REASONING"]
+                    }
+                  ]
+                }
+            """.trimIndent()
+        }
+        factory.loadProviders()
+
+        // Free Self-Hosted 7B beats paid GPT-4o for CLOUD_LIVE_RETRIEVAL
+        assertEquals("Ollama LAN", factory.resolveWorkerProviderForIntent("CLOUD_LIVE_RETRIEVAL").providerName)
+
+        // User-configured Cost.Per1MTokens + Performance.Tier overrides model priors and wins CLOUD_DEEP_REASONING
+        val customProfile = factory.getProviderRoutingProfile("Custom Enterprise")
+        assertEquals("USER_CONFIG", customProfile.source)
+        assertEquals(0.20, customProfile.costPer1MTokens)
+        assertEquals(4.9, customProfile.performanceTier)
+        assertEquals("Custom Enterprise", factory.resolveWorkerProviderForIntent("CLOUD_DEEP_REASONING").providerName)
     }
 }

@@ -29,20 +29,18 @@ open class DefaultVectorStore : VectorStore {
         }
     }
 
-    private val entries = mutableListOf<Entry>()
+    private val entries = linkedMapOf<String, Entry>()
     private val lock = PlatformLock()
 
     override fun insert(id: String, vector: FloatArray, payload: String) {
         lock.withLock {
-            // Replace if existing ID matches, else add
-            entries.removeAll { it.id == id }
-            entries.add(Entry(id, vector, payload))
+            entries[id] = Entry(id, vector, payload)
         }
     }
 
     override fun search(query: FloatArray, limit: Int): List<VectorMatch> {
         val snapshot: List<Entry> = lock.withLock {
-            ArrayList(entries)
+            entries.values.toList()
         }
 
         if (snapshot.isEmpty() || query.isEmpty()) {
@@ -78,7 +76,7 @@ open class DefaultVectorStore : VectorStore {
 
     override fun delete(id: String): Boolean {
         return lock.withLock {
-            entries.removeAll { it.id == id }
+            entries.remove(id) != null
         }
     }
 
@@ -90,7 +88,7 @@ open class DefaultVectorStore : VectorStore {
 
     open fun getAll(): List<Entry> {
         return lock.withLock {
-            ArrayList(entries)
+            entries.values.toList()
         }
     }
 

@@ -2,7 +2,10 @@ package com.reveila.aegin.model
 
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.FileInputStream
 import java.util.zip.InflaterInputStream
+import java.util.zip.ZipInputStream
+import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * Shared JVM/Android recursive scanner and lightweight document text extractor
@@ -39,6 +42,45 @@ object VaultFileScanner {
             }
             .sortedBy { it.relativePath.lowercase() }
             .toList()
+    }
+
+    /**
+     * Extracts plain text from a supported vault document (`.docx`, `.pdf`, or text-based formats).
+     */
+    fun extractFileText(file: File): String {
+        return try {
+            when (file.extension.lowercase()) {
+                "docx" -> extractDocxText(file)
+                "pdf" -> extractPdfText(file)
+                else -> file.readText()
+            }
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    fun extractDocxText(file: File): String {
+        val sb = StringBuilder()
+        try {
+            ZipInputStream(FileInputStream(file)).use { zip ->
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    if (entry.name == "word/document.xml") {
+                        val factory = DocumentBuilderFactory.newInstance()
+                        val builder = factory.newDocumentBuilder()
+                        val doc = builder.parse(zip)
+                        val nodes = doc.getElementsByTagName("w:t")
+                        for (i in 0 until nodes.length) {
+                            sb.append(nodes.item(i).textContent).append(" ")
+                        }
+                        break
+                    }
+                    entry = zip.nextEntry
+                }
+            }
+        } catch (_: Exception) {
+        }
+        return sb.toString().trim()
     }
 
     /**

@@ -15,7 +15,8 @@ open class LlmProviderFactory : SystemComponent() {
         val providerField: String,
         val endpoint: String,
         val model: String,
-        val apiKey: String
+        val apiKey: String,
+        val routingProfile: ProviderRoutingProfile
     )
 
     data class ProviderSelectionResult(
@@ -24,7 +25,8 @@ open class LlmProviderFactory : SystemComponent() {
         val isAutoMode: Boolean,
         val isCapable: Boolean,
         val intentCategory: String,
-        val errorMessage: String? = null
+        val errorMessage: String? = null,
+        val advisoryMessage: String? = null
     )
 
     companion object {
@@ -43,12 +45,28 @@ open class LlmProviderFactory : SystemComponent() {
         )
 
         val ALL_PREDEFINED_INTENTS: List<String> = TaskRoutingCategory.entries.map { it.name }
+
+        /**
+         * Returns true if a local GGUF model is powerful enough (7B+ parameters) or a dedicated
+         * safety classifier (Llama Guard / ShieldGemma) to perform reliable AI Safety Review.
+         */
+        fun isSafetyReviewCapableLocalModel(modelName: String?): Boolean {
+            val lower = modelName?.trim()?.lowercase().orEmpty()
+            if (lower.isEmpty()) return false
+            if (lower.contains("llama-guard") || lower.contains("llamaguard") || lower.contains("shieldgemma")) {
+                return true
+            }
+            val match = Regex("(?<![0-9.])(\\d+(?:\\.\\d+)?)b(?![a-z])").find(lower)
+            val billions = match?.groupValues?.getOrNull(1)?.toDoubleOrNull() ?: return false
+            return billions >= 7.0
+        }
     }
 
     private val providers: MutableMap<String, LlmProvider> = mutableMapOf()
     private val providerMeta: MutableMap<String, ProviderMeta> = mutableMapOf()
     private val testedFlags: MutableMap<String, Boolean> = mutableMapOf()
     private val testedFingerprints: MutableMap<String, String> = mutableMapOf()
+    private val runtimeStats: MutableMap<String, ProviderRuntimeStats> = mutableMapOf()
     private var activeProvider: LlmProvider? = null
 
     open fun setActiveProvider(name: String?) {
@@ -96,6 +114,19 @@ open class LlmProviderFactory : SystemComponent() {
                                 it == true || it.toString().equals("true", ignoreCase = true)
                             } ?: false
                             val testedFp = ((p["Tested.Fingerprint"] ?: p["tested.fingerprint"]) as? String)?.trim().orEmpty()
+                            val userCostTier = ((p["Cost.Tier"] ?: p["cost.tier"] ?: p["costTier"]) as? String)?.trim().orEmpty()
+                            val userCostPer1M = (p["Cost.Per1MTokens"] ?: p["cost.per1m.tokens"] ?: p["costPer1MTokens"])
+                                ?.toString()?.trim()?.toDoubleOrNull()
+                            val userPerfTier = (p["Performance.Tier"] ?: p["performance.tier"] ?: p["performanceTier"])
+                                ?.toString()?.trim().orEmpty()
+                            val routingProfile = AutoModelRouter.resolveProfile(
+                                type = normType,
+                                model = model,
+                                providerField = providerField,
+                                userCostTier = userCostTier.ifBlank { null },
+                                userCostPer1MTokens = userCostPer1M,
+                                userPerformanceTier = userPerfTier.ifBlank { null }
+                            )
 
                             val provider = createProviderInstance(normType, providerField, name)
                             configureProvider(provider, p)
@@ -108,7 +139,8 @@ open class LlmProviderFactory : SystemComponent() {
                                 providerField = providerField,
                                 endpoint = endpoint,
                                 model = model,
-                                apiKey = rawKey
+                                apiKey = rawKey,
+                                routingProfile = routingProfile
                             )
                             testedFlags[keyLower] = testedFlag
                             testedFingerprints[keyLower] = testedFp
@@ -136,7 +168,8 @@ open class LlmProviderFactory : SystemComponent() {
                     providerField = "",
                     endpoint = ep,
                     model = mdl,
-                    apiKey = ""
+                    apiKey = "",
+                    routingProfile = AutoModelRouter.resolveProfile(type = "Local", model = mdl)
                 )
             }
             val parsedConfig = if (jsonConfig.isNotBlank()) JsonUtil.parseJsonStringToMap(jsonConfig) else emptyMap()
@@ -618,6 +651,29 @@ open class LlmProviderFactory : SystemComponent() {
             provider.getName().equals("On-Device Model", ignoreCase = true)
     }
 
+    private fun isSelfHostedProvider(provider: LlmProvider): Boolean {
+        val meta = providerMeta[provider.getName().lowercase()]
+        return meta?.type.equals("Self-Hosted", ignoreCase = true)
+    }
+
+    private fun effectiveLocalModelName(provider: LlmProvider): String {
+        val unwrapped = (provider as? TrackedLlmProvider)?.unwrapDelegate() ?: provider
+        val configured = (unwrapped as? BaseLlmProvider)?.model?.trim().orEmpty()
+        return if (configured.isEmpty() || configured.equals("auto", ignoreCase = true)) {
+            LocalLlamaProvider.nativeDelegate?.getLoadedModelPath()?.substringAfterLast('/')?.substringAfterLast('\\').orEmpty()
+        } else {
+            configured
+        }
+    }
+
+    open fun isSafetyReviewCapableProvider(provider: LlmProvider): Boolean {
+        if (!provider.isEnabled() || !provider.isConfigured()) return false
+        if (isLocalProvider(provider)) {
+            return isSafetyReviewCapableLocalModel(effectiveLocalModelName(provider))
+        }
+        return true
+    }
+
     open fun getConfiguredCloudProvider(): String? {
         val priorityList = listOf("Google Gemini", "OpenAI", "DeepSeek", "Qwen", "Anthropic")
         for (name in priorityList) {
@@ -634,61 +690,106 @@ open class LlmProviderFactory : SystemComponent() {
         return null
     }
 
+    open fun recordProviderInvocation(providerName: String, latencyMs: Long, success: Boolean) {
+        val key = providerName.trim().lowercase()
+        if (key.isEmpty()) return
+        val current = runtimeStats[key] ?: ProviderRuntimeStats()
+        runtimeStats[key] = if (success) {
+            current.recordSuccess(latencyMs)
+        } else {
+            current.recordFailure(latencyMs)
+        }
+    }
+
+    open fun getProviderRuntimeStats(providerName: String): ProviderRuntimeStats {
+        return runtimeStats[providerName.trim().lowercase()] ?: ProviderRuntimeStats()
+    }
+
+    open fun getProviderRoutingProfile(providerName: String): ProviderRoutingProfile {
+        val key = providerName.trim().lowercase()
+        providerMeta[key]?.routingProfile?.let { return it }
+        val p = providers[key]
+        val unwrapped = (p as? TrackedLlmProvider)?.unwrapDelegate() ?: p
+        val type = when {
+            p != null && isLocalProvider(p) -> "Local"
+            p != null && isSelfHostedProvider(p) -> "Self-Hosted"
+            else -> "Cloud"
+        }
+        val model = (unwrapped as? BaseLlmProvider)?.model?.trim().orEmpty()
+        return AutoModelRouter.resolveProfile(type = type, model = model)
+    }
+
+    private fun buildRoutingCandidate(provider: LlmProvider): RoutingCandidate {
+        val name = provider.getName()
+        val key = name.lowercase()
+        val meta = providerMeta[key]
+        val type = meta?.type ?: when {
+            isLocalProvider(provider) -> "Local"
+            isSelfHostedProvider(provider) -> "Self-Hosted"
+            else -> "Cloud"
+        }
+        val unwrapped = (provider as? TrackedLlmProvider)?.unwrapDelegate() ?: provider
+        val model = meta?.model?.takeIf { it.isNotBlank() }
+            ?: (unwrapped as? BaseLlmProvider)?.model?.trim().orEmpty()
+        val profile = meta?.routingProfile ?: AutoModelRouter.resolveProfile(
+            type = type,
+            model = model,
+            providerField = meta?.providerField.orEmpty()
+        )
+        return RoutingCandidate(
+            name = name,
+            type = type,
+            providerField = meta?.providerField.orEmpty(),
+            model = model,
+            isTested = isProviderTested(name),
+            profile = profile,
+            stats = runtimeStats[key] ?: ProviderRuntimeStats()
+        )
+    }
+
     /**
-     * Selects a configured [LlmProvider] capable of handling [intentCategory] based on each
-     * provider's configured `Intent.Options` array in `llm.json`.
-     *
-     * Preference Order:
-     * 1. Local On-Device LLM (`LocalLlamaProvider`) if enabled, configured, and its `Intent.Options` includes [intentCategory].
-     * 2. Active worker Cloud LLM if configured and its `Intent.Options` includes [intentCategory].
-     * 3. Any other configured Cloud LLM whose `Intent.Options` includes [intentCategory].
-     * 4. Fallback to any configured Cloud LLM (for `CLOUD_*` intents) or active provider.
+     * Ranks all enabled, configured providers that support [intentCategory] using
+     * [AutoModelRouter] (capability fit + token cost + performance + tested status + live telemetry).
+     */
+    open fun rankProvidersForIntent(intentCategory: String?): List<ScoredRoutingCandidate> {
+        val category = TaskRoutingCategory.fromRawOrSafeDefault(intentCategory)
+        val targetCategory = category.name
+        val capableCandidates = providers.values
+            .filter { it.isEnabled() && it.isConfigured() && it.supportsIntent(targetCategory) }
+            .map { buildRoutingCandidate(it) }
+        return AutoModelRouter.rankCandidates(capableCandidates, category)
+    }
+
+    /**
+     * Selects the best configured [LlmProvider] capable of handling [intentCategory] using
+     * [AutoModelRouter]'s capability + cost/performance + live-telemetry ranking:
+     * - `LOCAL_*` intents stay local-first (Local > Self-Hosted > Economy Cloud).
+     * - `CLOUD_LIVE_RETRIEVAL` favors fast, low-cost models (Self-Hosted / Economy Cloud).
+     * - `CLOUD_DEEP_REASONING` & `CLOUD_MULTI_STEP_AGENT` favor high-capability models with cost as a tie-breaker.
+     * - Verified (`Tested`) providers are preferred over untested ones, and recent failures/high latency penalize a provider.
+     * - Fallback if no provider declares [intentCategory]: ranks all configured non-local providers for `CLOUD_*`,
+     *   or falls back to On-Device Model / active provider.
      */
     open fun getProviderForIntent(intentCategory: String?): LlmProvider? {
-        val targetCategory = TaskRoutingCategory.fromRawOrSafeDefault(intentCategory).name
-
-        // 1. Highest Preference: Local On-Device LLM that declares support for targetCategory
-        val onDevice = getProvider("On-Device Model")
-        if (onDevice != null && onDevice.isEnabled() && onDevice.isConfigured() && onDevice.supportsIntent(targetCategory)) {
-            return onDevice
-        }
-        for ((_, p) in providers) {
-            if (isLocalProvider(p) && p.isEnabled() && p.isConfigured() && p.supportsIntent(targetCategory)) {
-                return p
-            }
+        val category = TaskRoutingCategory.fromRawOrSafeDefault(intentCategory)
+        val ranked = rankProvidersForIntent(category.name)
+        if (ranked.isNotEmpty()) {
+            val winner = ranked.first()
+            logger.info("AutoModelRouter selected ${winner.reason} for ${category.name}")
+            return providers[winner.candidate.name.lowercase()]
         }
 
-        // 2. Active Worker Provider (if it's a configured Cloud LLM that supports targetCategory)
-        val configuredWorkerName = context?.properties?.getProperty("ai.worker.llm")
-        if (!configuredWorkerName.isNullOrBlank()) {
-            val worker = getProvider(configuredWorkerName)
-            if (worker != null && !isLocalProvider(worker) && worker.isEnabled() && worker.isConfigured() && worker.supportsIntent(targetCategory)) {
-                return worker
+        // Fallback if no provider explicitly declares support for targetCategory in Intent.Options
+        if (category.isCloudRoute) {
+            val cloudFallbackCandidates = providers.values
+                .filter { !isLocalProvider(it) && it.isEnabled() && it.isConfigured() }
+                .map { buildRoutingCandidate(it) }
+            val fallbackWinner = AutoModelRouter.rankCandidates(cloudFallbackCandidates, category).firstOrNull()
+            if (fallbackWinner != null) {
+                return providers[fallbackWinner.candidate.name.lowercase()]
             }
         }
-
-        // 3. Configured Cloud Providers matching targetCategory in priority order
-        val priorityList = listOf("Google Gemini", "OpenAI", "DeepSeek", "Qwen", "Anthropic")
-        for (name in priorityList) {
-            val p = getProvider(name)
-            if (p != null && !isLocalProvider(p) && p.isEnabled() && p.isConfigured() && p.supportsIntent(targetCategory)) {
-                return p
-            }
-        }
-        for ((_, p) in providers) {
-            if (!isLocalProvider(p) && p.isEnabled() && p.isConfigured() && p.supportsIntent(targetCategory)) {
-                return p
-            }
-        }
-
-        // 4. Fallback if no provider with a matching Intent.Option is currently configured with an API key
-        if (targetCategory.startsWith("CLOUD_")) {
-            val fallbackCloudName = getConfiguredCloudProvider()
-            if (!fallbackCloudName.isNullOrBlank()) {
-                return getProvider(fallbackCloudName)
-            }
-        }
-        return onDevice ?: getActiveProvider()
+        return getProvider("On-Device Model") ?: getActiveProvider()
     }
 
     open fun getProviderNameForIntent(intentCategory: String?): String {
@@ -756,11 +857,16 @@ open class LlmProviderFactory : SystemComponent() {
     }
 
     /**
-     * Resolves the Governance LLM for [intentCategory]:
-     * - When `ai.governance.llm` is `"Disable"` or blank, governance LLM is disabled (`isCapable = true`, `provider = null`).
-     * - When `ai.governance.llm` is `"Auto"`, automatically selects the best configured LLM using local-first rule.
-     * - When an explicit Governance LLM is selected, that exact provider MUST be used; if it is not configured
-     *   or cannot handle [intentCategory], returns `isCapable = false` with an alert message.
+     * Resolves the Governance (AI Safety Review) LLM for [intentCategory] using a privacy-first policy:
+     * - When `ai.governance.llm` is `"Disable"` or blank, AI Safety Review is disabled
+     *   (`isCapable = true`, `provider = null`); deterministic `GovernancePolicy` guardrails stay active.
+     * - When `ai.governance.llm` is `"Auto"`, selects strictly in privacy-preserving order:
+     *   1. Capable On-Device Local Model (7B+ or dedicated guard model),
+     *   2. Self-Hosted private-network model (`Type: "Self-Hosted"`),
+     *   3. Disabled with an advisory (never silently sends safety reviews to a public Cloud LLM).
+     * - When an explicit Governance LLM is selected:
+     *   - Rejects underpowered embedded local models (< 7B general models) with a clear alert.
+     *   - Allows capable local, self-hosted, or explicitly opted-in Cloud providers.
      */
     open fun resolveGovernanceProviderForIntent(intentCategory: String?): ProviderSelectionResult {
         val targetCategory = TaskRoutingCategory.fromRawOrSafeDefault(intentCategory).name
@@ -777,14 +883,42 @@ open class LlmProviderFactory : SystemComponent() {
         }
 
         if (configuredName.equals(AUTO_PROVIDER, ignoreCase = true)) {
-            val selected = getProviderForIntent(targetCategory)
-            val selectedName = selected?.getName() ?: "On-Device Model"
+            // 1. Prefer capable on-device local model (7B+ or dedicated guard model)
+            val capableLocal = providers.values.firstOrNull {
+                isLocalProvider(it) && isSafetyReviewCapableProvider(it)
+            }
+            if (capableLocal != null) {
+                return ProviderSelectionResult(
+                    provider = capableLocal,
+                    providerName = capableLocal.getName(),
+                    isAutoMode = true,
+                    isCapable = true,
+                    intentCategory = targetCategory
+                )
+            }
+
+            // 2. Next prefer self-hosted private-network model
+            val selfHosted = providers.values.firstOrNull {
+                isSelfHostedProvider(it) && it.isEnabled() && it.isConfigured()
+            }
+            if (selfHosted != null) {
+                return ProviderSelectionResult(
+                    provider = selfHosted,
+                    providerName = selfHosted.getName(),
+                    isAutoMode = true,
+                    isCapable = true,
+                    intentCategory = targetCategory
+                )
+            }
+
+            // 3. Never silently escalate safety review to public Cloud; disable AI review & keep deterministic guardrails
             return ProviderSelectionResult(
-                provider = selected,
-                providerName = selectedName,
+                provider = null,
+                providerName = "Disable",
                 isAutoMode = true,
-                isCapable = selected != null,
-                intentCategory = targetCategory
+                isCapable = true,
+                intentCategory = targetCategory,
+                advisoryMessage = "AI Safety Review is paused because the embedded local model is not powerful enough and no self-hosted private-network model is configured. Deterministic policy guardrails remain active."
             )
         }
 
@@ -796,20 +930,26 @@ open class LlmProviderFactory : SystemComponent() {
                 isAutoMode = false,
                 isCapable = false,
                 intentCategory = targetCategory,
-                errorMessage = "Selected Governance LLM '$configuredName' is not configured yet. Please configure it, select 'Auto', or set to 'Disable' in Studio -> Configuration."
+                errorMessage = "Selected Safety Review AI '$configuredName' is not configured yet. Please configure it, select 'Auto', or set to 'Disable' in Settings."
             )
         }
 
-        val supported = explicit.getSupportedIntents()
-        if (supported.isNotEmpty() && !explicit.supportsIntent(targetCategory)) {
+        if (isLocalProvider(explicit) && !isSafetyReviewCapableProvider(explicit)) {
+            val modelLabel = effectiveLocalModelName(explicit).ifBlank { "current embedded model" }
             return ProviderSelectionResult(
                 provider = explicit,
                 providerName = explicit.getName(),
                 isAutoMode = false,
                 isCapable = false,
                 intentCategory = targetCategory,
-                errorMessage = "Selected Governance LLM '${explicit.getName()}' cannot handle task type '$targetCategory' (supported: ${supported.joinToString(", ")}). Please choose a different Governance LLM or select 'Auto' in Studio -> Configuration."
+                errorMessage = "Embedded local model '$modelLabel' is not powerful enough for reliable AI Safety Review (requires a 7B+ desktop local model, a dedicated guard model, or a self-hosted private-network model). Deterministic policy guardrails remain active; set Safety Review AI to 'Disable' or connect a self-hosted model."
             )
+        }
+
+        val cloudAdvisory = if (!isLocalProvider(explicit) && !isSelfHostedProvider(explicit)) {
+            "Note: Using cloud provider '${explicit.getName()}' for AI Safety Review sends prompts off-device for auditing."
+        } else {
+            null
         }
 
         return ProviderSelectionResult(
@@ -817,7 +957,8 @@ open class LlmProviderFactory : SystemComponent() {
             providerName = explicit.getName(),
             isAutoMode = false,
             isCapable = true,
-            intentCategory = targetCategory
+            intentCategory = targetCategory,
+            advisoryMessage = cloudAdvisory
         )
     }
 
@@ -890,7 +1031,17 @@ open class LlmProviderFactory : SystemComponent() {
         return try {
             val sp = context?.getProxy("UsageTracker")
             val tracker = sp?.getInstance() as? UsageTracker
-            if (tracker != null) TrackedLlmProvider(provider, tracker) else provider
+            if (tracker != null) {
+                TrackedLlmProvider(
+                    delegate = provider,
+                    tracker = tracker,
+                    onInvocationResult = { name, latencyMs, success ->
+                        recordProviderInvocation(name, latencyMs, success)
+                    }
+                )
+            } else {
+                provider
+            }
         } catch (e: Exception) {
             logger.warning("Failed to create UsageTracker: ${e.message}")
             provider

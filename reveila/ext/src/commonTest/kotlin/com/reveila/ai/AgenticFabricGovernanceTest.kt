@@ -99,4 +99,17 @@ class AgenticFabricGovernanceTest {
         assertEquals("TASK_COMPLETED", fetched.get().attributes["action"])
         assertEquals("trace-101", fetched.get().attributes["traceId"])
     }
+
+    @Test
+    fun testSafetyReviewLocalModelCapabilityThresholds() {
+        assertFalse(LlmProviderFactory.isSafetyReviewCapableLocalModel("qwen2.5-0.5b-instruct-q4_k_m.gguf"))
+        assertFalse(LlmProviderFactory.isSafetyReviewCapableLocalModel("qwen2.5-1.5b-instruct-q4_k_m.gguf"))
+        assertFalse(LlmProviderFactory.isSafetyReviewCapableLocalModel("gemma-2-2b-it-Q4_K_M.gguf"))
+        assertFalse(LlmProviderFactory.isSafetyReviewCapableLocalModel("qwen2.5-3b-instruct-q4_k_m.gguf"))
+
+        assertTrue(LlmProviderFactory.isSafetyReviewCapableLocalModel("qwen2.5-7b-instruct-q4_k_m.gguf"))
+        assertTrue(LlmProviderFactory.isSafetyReviewCapableLocalModel("qwen2.5-14b-instruct-q4_k_m.gguf"))
+        assertTrue(LlmProviderFactory.isSafetyReviewCapableLocalModel("llama-guard-3-1b-q4_k_m.gguf"))
+        assertTrue(LlmProviderFactory.isSafetyReviewCapableLocalModel("shieldgemma-2b-q4_k_m.gguf"))
+    }
 }

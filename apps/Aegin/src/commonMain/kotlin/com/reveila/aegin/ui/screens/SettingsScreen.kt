@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.reveila.aegin.bridge.AeginBridge
+import com.reveila.aegin.bridge.ModelTierCatalog
 import com.reveila.aegin.bridge.AeginDisplayMapper
 import com.reveila.aegin.bridge.DeviceCapabilityReport
 import com.reveila.aegin.bridge.LlmProviderConfig
@@ -68,7 +69,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import com.reveila.aegin.ui.PlatformBackHandler
 import com.reveila.aegin.ui.components.VaultFolderPickerDialog
 import com.reveila.aegin.ui.theme.AeginIconType
-import com.reveila.aegin.ui.theme.AeginOrbAvatar
 import com.reveila.aegin.ui.theme.AeginVectorIcon
 import com.reveila.aegin.ui.theme.LocalAeginColors
 import kotlinx.coroutines.delay
@@ -395,6 +395,23 @@ fun SettingsScreen(
             } catch (_: Exception) {
             }
             refreshConfiguredAndTestedStates()
+            val localFile = activeLocalModelName()
+            val localSafetyReady = (localModelCheck?.existsLocally == true) &&
+                (localModelCatalog.firstOrNull {
+                    it.effectiveFilename().equals(localFile, ignoreCase = true)
+                }?.safetyReviewCapable ?: ModelTierCatalog.isSafetyReviewCapableModel(localFile))
+            val hasPrivateSelfHosted = providersList.any { p ->
+                p.type.equals("Self-Hosted", ignoreCase = true) &&
+                    p.endpoint.isNotBlank() &&
+                    p.model.isNotBlank() &&
+                    !isPublicCloudEndpoint(p.endpoint)
+            }
+            if ((governanceProvider.equals("Auto", ignoreCase = true) && !localSafetyReady && !hasPrivateSelfHosted) ||
+                (governanceProvider.equals("On-Device Model", ignoreCase = true) && !localSafetyReady)
+            ) {
+                governanceProvider = "Disable"
+                persistSettingsPreservingAssistant()
+            }
         }
 
         while (true) {
@@ -751,14 +768,6 @@ fun SettingsScreen(
                                 size = 15.dp
                             )
                         }
-                        AeginOrbAvatar(
-                            size = 36.dp,
-                            isLocalMode = workerProvider == "On-Device Model",
-                            isThinking = isVaultScanning ||
-                                modelDownloadState.status == "DOWNLOADING" ||
-                                modelDownloadState.status == "VERIFYING",
-                            showStatusDot = true
-                        )
                         Column {
                             Text(
                                 text = "Design Your AI Studio",
@@ -871,7 +880,9 @@ fun SettingsScreen(
                     isGovVerified = governanceProvider == "Disable" || isProviderTested(governanceProvider),
                     onOpenWorkerSelectModal = { isWorkerModalVisible = true },
                     onOpenGovSelectModal = { isGovModalVisible = true },
-                    onSaveConfiguration = ::handleSaveLLM
+                    onSaveConfiguration = ::handleSaveLLM,
+                    capabilities = capabilities,
+                    localModelCatalog = localModelCatalog
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -1447,7 +1458,7 @@ fun SettingsScreen(
         val testedCandidates = eligibleCandidateNames()
         val workerItems = listOf("Auto") + testedCandidates
         ProviderListDialog(
-            title = "Select Worker AI Model",
+            title = "Select Task Execution AI",
             items = workerItems,
             isConfigured = { isProviderConfigured(it) },
             isTested = { isProviderTested(it) },
@@ -1462,16 +1473,37 @@ fun SettingsScreen(
         )
     }
 
-    // Governance AI Model Selection Modal (Disable, Auto + Configured & Tested models only)
+    // Governance AI Model Selection Modal (Disable, optional Auto when private safety model is available + Capable Verified models)
     if (isGovModalVisible) {
-        val testedCandidates = eligibleCandidateNames()
+        val localModelFile = providersList.find { it.name == "On-Device Model" }?.model
+            ?.ifBlank { capabilities.recommendedModel }.orEmpty()
+        val localCanAudit = (localModelCheck?.existsLocally == true) &&
+            (localModelCatalog.firstOrNull {
+                it.effectiveFilename().equals(localModelFile, ignoreCase = true)
+            }?.safetyReviewCapable ?: ModelTierCatalog.isSafetyReviewCapableModel(localModelFile))
+        val hasPrivateSelfHosted = providersList.any { p ->
+            p.type.equals("Self-Hosted", ignoreCase = true) &&
+                isProviderConfigured(p.name) &&
+                !isPublicCloudEndpoint(p.endpoint)
+        }
+
+        val testedCandidates = eligibleCandidateNames().filter { candidate ->
+            if (candidate.equals("On-Device Model", ignoreCase = true)) localCanAudit else true
+        }
+        val govChoices = buildList {
+            add("Disable")
+            if (localCanAudit || hasPrivateSelfHosted) {
+                add("Auto")
+            }
+            addAll(testedCandidates)
+        }
         ProviderListDialog(
-            title = "Select governance AI model",
-            items = listOf("Disable", "Auto") + testedCandidates,
+            title = "Select Safety Guard AI",
+            items = govChoices,
             isConfigured = { isProviderConfigured(it) },
             isTested = { isProviderTested(it) },
             emptyHint = if (testedCandidates.isEmpty()) {
-                "No verified AI models yet. Select a model in AI Setup above, configure it, and run Test connection."
+                "Embedded local model is too small or not downloaded for reliable AI Safety Review. Connect a Self-Hosted private-network model (or a 7B+ desktop model) and run Test connection, or keep Safety Review set to Off."
             } else null,
             onSelect = { chosen ->
                 governanceProvider = chosen
@@ -1519,6 +1551,7 @@ fun SettingsScreen(
             stagedGgufNames = capabilities.stagedModels.map { it.substringBefore(" (").trim() },
             localModelCheck = localModelCheck,
             recommendedLocalModel = capabilities.recommendedModel,
+            capabilities = capabilities,
             onEditDataChange = { updated ->
                 val connectionChanged = updated.type != editData.type ||
                     updated.provider != editData.provider ||
@@ -2055,7 +2088,9 @@ private fun AiSetupCard(
     isGovVerified: Boolean,
     onOpenWorkerSelectModal: () -> Unit,
     onOpenGovSelectModal: () -> Unit,
-    onSaveConfiguration: () -> Unit
+    onSaveConfiguration: () -> Unit,
+    capabilities: DeviceCapabilityReport = DeviceCapabilityReport(),
+    localModelCatalog: List<LocalModelManifestEntry> = emptyList()
 ) {
     val theme = LocalAeginColors.current
     Spacer(modifier = Modifier.height(4.dp))
@@ -2274,6 +2309,30 @@ private fun AiSetupCard(
                     lineHeight = 15.sp
                 )
             }
+
+            if (isLocal) {
+                val activeLocalFilename = activeModel.model.ifBlank { recommendedLocalModel }
+                val catalogMatch = localModelCatalog.firstOrNull {
+                    it.effectiveFilename().equals(activeLocalFilename, ignoreCase = true)
+                }
+                val cautionText = catalogMatch?.resolvedCautionMessage()
+                    ?: ModelTierCatalog.cautionMessageForModel(activeLocalFilename)
+                if (!capabilities.canRunLocalGguf) {
+                    Text(
+                        text = "⚠️ ${capabilities.statusSummary}",
+                        color = theme.warning,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                } else if (cautionText.isNotBlank()) {
+                    Text(
+                        text = "⚠️ $cautionText",
+                        color = theme.warning,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+            }
         }
 
         Row(
@@ -2375,7 +2434,7 @@ private fun AiSetupCard(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         ProviderSelectorRow(
-            label = "Background Tasks AI",
+            label = "Task Execution AI",
             description = "Default model for automated tasks and smart routing.",
             selectedProvider = workerProvider,
             isLoading = isLoadingProviders,
@@ -2384,13 +2443,39 @@ private fun AiSetupCard(
         )
 
         ProviderSelectorRow(
-            label = "Safety Review AI",
-            description = "Reviews requests and tasks for safety and policy risks.",
+            label = "Safety Guard AI",
+            description = "Reviews requests and tasks for safety and policy risks (prefers private on-device or self-hosted models).",
             selectedProvider = governanceProvider,
             isLoading = isLoadingProviders,
             isVerified = isGovVerified,
             onOpenSelectModal = onOpenGovSelectModal
         )
+
+        val localProviderCfg = models.find { it.name.equals("On-Device Model", ignoreCase = true) }
+        val localFile = localProviderCfg?.model?.ifBlank { recommendedLocalModel }.orEmpty()
+        val localSafetyCapable = localModelCatalog.firstOrNull {
+            it.effectiveFilename().equals(localFile, ignoreCase = true)
+        }?.safetyReviewCapable ?: ModelTierCatalog.isSafetyReviewCapableModel(localFile)
+        val hasSelfHosted = models.any { it.type.equals("Self-Hosted", ignoreCase = true) && isProviderConfigured(it.name) }
+        val selectedGovCfg = models.find { it.name.equals(governanceProvider, ignoreCase = true) }
+        val govNotice: Pair<String, Color>? = when {
+            governanceProvider.equals("On-Device Model", ignoreCase = true) && !localSafetyCapable ->
+                "⚠️ Embedded model (${AeginDisplayMapper.modelDisplayName(localFile)}) is not powerful enough for reliable AI Safety Review. Deterministic policy guardrails remain active; set to 'Disable' or connect a Self-Hosted private-network model." to theme.warning
+            selectedGovCfg != null && selectedGovCfg.type.equals("Cloud", ignoreCase = true) ->
+                "ℹ️ Privacy notice: Using cloud provider '${selectedGovCfg.name}' for Safety Review sends prompts off-device. For full privacy, use a Self-Hosted model on your private network or a 7B+ desktop local model." to theme.subText
+            (governanceProvider.equals("Disable", ignoreCase = true) ||
+                (governanceProvider.equals("Auto", ignoreCase = true) && !localSafetyCapable && !hasSelfHosted)) ->
+                "🛡️ Deterministic policy guardrails remain active on-device. Connect a Self-Hosted private-network model or a 7B+ desktop local model to enable private AI Safety Review." to theme.subText
+            else -> null
+        }
+        if (govNotice != null) {
+            Text(
+                text = govNotice.first,
+                color = govNotice.second,
+                fontSize = 11.sp,
+                lineHeight = 15.sp
+            )
+        }
 
         Box(
             modifier = Modifier
@@ -2409,6 +2494,19 @@ private fun AiSetupCard(
             )
         }
     }
+}
+
+private fun isPublicCloudEndpoint(endpoint: String): Boolean {
+    val lower = endpoint.trim().lowercase()
+    if (lower.isEmpty()) return false
+    return lower.contains("api.openai.com") ||
+        lower.contains("generativelanguage.googleapis.com") ||
+        lower.contains("api.deepseek.com") ||
+        lower.contains("dashscope.aliyuncs.com") ||
+        lower.contains("api.anthropic.com") ||
+        lower.contains("api.groq.com") ||
+        lower.contains("api.mistral.ai") ||
+        lower.contains("openrouter.ai")
 }
 
 private fun mergeLocalGgufChoices(
@@ -2450,6 +2548,7 @@ private fun EditProviderDialog(
     stagedGgufNames: List<String>,
     localModelCheck: LocalModelCheckResult?,
     recommendedLocalModel: String,
+    capabilities: DeviceCapabilityReport = DeviceCapabilityReport(),
     onEditDataChange: (LlmProviderConfig) -> Unit,
     onTestConnection: () -> Unit,
     onDownloadLocalModel: () -> Unit,
@@ -2607,6 +2706,26 @@ private fun EditProviderDialog(
                             fontWeight = FontWeight.SemiBold
                         )
                     }
+                    val selectedEntry = localModelCatalog.firstOrNull {
+                        it.effectiveFilename().equals(targetName, ignoreCase = true)
+                    }
+                    val cautionMsg = selectedEntry?.resolvedCautionMessage()
+                        ?: ModelTierCatalog.cautionMessageForModel(targetName)
+                    if (!capabilities.canRunLocalGguf) {
+                        Text(
+                            text = "⚠️ ${capabilities.statusSummary}",
+                            color = theme.warning,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                    } else if (cautionMsg.isNotBlank()) {
+                        Text(
+                            text = "⚠️ $cautionMsg",
+                            color = theme.warning,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                    }
                 }
             } else {
                 if (isAddingNewProvider) {
@@ -2718,17 +2837,27 @@ private fun EditProviderDialog(
                                 } else {
                                     ""
                                 }
+                                val ramCompatible = entry.isCompatibleWithRam(capabilities.totalRamGb)
+                                val ramHint = if (entry.minRamGb > 0.0) " • ${entry.minRamGb.toInt()} GB+ RAM" else ""
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(if (isSelected) theme.primary.copy(alpha = 0.12f) else theme.inputBg)
+                                        .background(
+                                            when {
+                                                !ramCompatible -> theme.inputBg.copy(alpha = 0.5f)
+                                                isSelected -> theme.primary.copy(alpha = 0.12f)
+                                                else -> theme.inputBg
+                                            }
+                                        )
                                         .border(
                                             width = 1.dp,
                                             color = if (isSelected) theme.primary else theme.border,
                                             shape = RoundedCornerShape(10.dp)
                                         )
-                                        .clickable { onEditDataChange(editData.copy(model = fname)) }
+                                        .clickable(enabled = ramCompatible) {
+                                            onEditDataChange(editData.copy(model = fname))
+                                        }
                                         .padding(horizontal = 10.dp, vertical = 9.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
@@ -2738,15 +2867,19 @@ private fun EditProviderDialog(
                                         verticalArrangement = Arrangement.spacedBy(2.dp)
                                     ) {
                                         Text(
-                                            text = AeginDisplayMapper.modelDisplayName(fname),
-                                            color = if (isSelected) theme.primary else theme.text,
+                                            text = entry.displayName.ifBlank { AeginDisplayMapper.modelDisplayName(fname) },
+                                            color = when {
+                                                !ramCompatible -> theme.subText
+                                                isSelected -> theme.primary
+                                                else -> theme.text
+                                            },
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            text = "$fname$sizeText",
+                                            text = "$fname$sizeText$ramHint",
                                             color = theme.subText,
                                             fontSize = 10.sp,
                                             maxLines = 1,
@@ -2755,12 +2888,14 @@ private fun EditProviderDialog(
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
                                     val badgeLabel = when {
+                                        !ramCompatible -> "Needs ${entry.minRamGb.toInt()} GB"
                                         isStaged -> "Downloaded"
                                         isSelected && hasAnyStagedGguf -> "Replace"
                                         isSelected -> "Selected"
                                         else -> "Choose"
                                     }
                                     val badgeColor = when {
+                                        !ramCompatible -> theme.warning
                                         isStaged -> theme.success
                                         isSelected -> theme.primary
                                         else -> theme.subText

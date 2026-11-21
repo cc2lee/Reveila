@@ -104,12 +104,23 @@ data class PendingToolAuthorizationView(
 )
 
 @Serializable
+data class InferenceStepActivity(
+    val active: Boolean = false,
+    val turnIndex: Int = 0,
+    val maxTurns: Int = 0,
+    val phase: String = "",
+    val label: String = "",
+    val updatedAtMs: Long = 0L
+)
+
+@Serializable
 data class ToolActivitySnapshot(
     val browser: BrowserLiveActivity = BrowserLiveActivity(),
     val terminal: TerminalLiveActivity = TerminalLiveActivity(),
     val downloads: DownloadLiveActivity = DownloadLiveActivity(),
     val pendingAuthorization: PendingToolAuthorizationView? = null,
-    val waitingForUserInput: Boolean = false
+    val waitingForUserInput: Boolean = false,
+    val inference: InferenceStepActivity = InferenceStepActivity()
 )
 
 /**
@@ -333,6 +344,38 @@ object ToolActivityHub {
     fun setPendingAuthorization(auth: PendingToolAuthorizationView?) {
         lock.withLock {
             publishLocked(currentSnapshot.copy(pendingAuthorization = auth))
+        }
+    }
+
+    fun updateInferenceStep(
+        active: Boolean,
+        turnIndex: Int = 0,
+        maxTurns: Int = 0,
+        phase: String = "",
+        label: String = ""
+    ) {
+        val now = PlatformSystem.currentTimeMillis()
+        lock.withLock {
+            publishLocked(
+                currentSnapshot.copy(
+                    inference = InferenceStepActivity(
+                        active = active,
+                        turnIndex = turnIndex,
+                        maxTurns = maxTurns,
+                        phase = phase,
+                        label = label,
+                        updatedAtMs = now
+                    )
+                )
+            )
+        }
+    }
+
+    fun clearInferenceStep() {
+        lock.withLock {
+            if (currentSnapshot.inference.active || currentSnapshot.inference.label.isNotBlank()) {
+                publishLocked(currentSnapshot.copy(inference = InferenceStepActivity()))
+            }
         }
     }
 

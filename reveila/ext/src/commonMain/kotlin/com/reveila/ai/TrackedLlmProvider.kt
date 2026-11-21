@@ -5,14 +5,22 @@ import com.reveila.util.json.JsonUtil
 
 open class TrackedLlmProvider(
     private val delegate: LlmProvider,
-    private val tracker: UsageTracker
+    private val tracker: UsageTracker,
+    private val onInvocationResult: ((providerName: String, latencyMs: Long, success: Boolean) -> Unit)? = null
 ) : LlmProvider {
 
     @Throws(LlmException::class)
     override fun invoke(request: LlmRequest): LlmResponse {
         val startTime = PlatformSystem.currentTimeMillis()
-        val response = delegate.invoke(request)
+        val response = try {
+            delegate.invoke(request)
+        } catch (e: Exception) {
+            val failureLatency = PlatformSystem.currentTimeMillis() - startTime
+            onInvocationResult?.invoke(delegate.getName(), failureLatency, false)
+            throw e
+        }
         val latency = PlatformSystem.currentTimeMillis() - startTime
+        onInvocationResult?.invoke(delegate.getName(), latency, true)
 
         val tenantId = request.metadata["tenantId"]?.toString() ?: "default"
         val requestId = response.requestId

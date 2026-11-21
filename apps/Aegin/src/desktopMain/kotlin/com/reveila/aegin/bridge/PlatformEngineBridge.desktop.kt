@@ -1,8 +1,10 @@
 package com.reveila.aegin.bridge
 
+import com.reveila.aegin.model.DesktopLlamaServerManager
 import com.reveila.aegin.model.DesktopModelDownloadManager
 import com.reveila.aegin.model.ResumableModelDownloader
-import com.reveila.aegin.model.VaultFileScanner
+import com.reveila.aegin.model.VaultDeltaScanner
+import com.reveila.aegin.model.VaultIndexSink
 import com.reveila.system.DefaultPlatformAdapter
 import com.reveila.system.Properties
 import com.reveila.system.Reveila
@@ -16,17 +18,19 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileInputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.zip.ZipInputStream
-import javax.xml.parsers.DocumentBuilderFactory
 
 actual object PlatformEngineBridge {
     private val engine = Reveila()
     private val isStarted = AtomicBoolean(false)
     private val isStarting = AtomicBoolean(false)
     private val desktopDownloadManager = DesktopModelDownloadManager()
+    private val desktopLlamaServer = DesktopLlamaServerManager(host = "127.0.0.1", port = 8888)
+    private val llamaControlExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "aegin-desktop-llama-control").apply { isDaemon = true }
+    }
+    private val vaultDeltaScanner = VaultDeltaScanner()
     private val storageMap = ConcurrentHashMap<String, String>()
     private var activeSystemHome: File = resolveWritableSystemHome()
     private var storageFile: File = File(activeSystemHome, "data/aegin_prefs.properties")
@@ -79,7 +83,8 @@ actual object PlatformEngineBridge {
         val loader = PlatformEngineBridge::class.java.classLoader
         for (rel in bundledFiles) {
             val dst = File(targetDir, rel)
-            if (!dst.exists()) {
+            val alwaysRefresh = rel == "models/manifest.json"
+            if (!dst.exists() || alwaysRefresh) {
                 val stream = loader?.getResourceAsStream("reveila/$rel")
                 if (stream != null) {
                     dst.parentFile?.mkdirs()
@@ -145,6 +150,7 @@ actual object PlatformEngineBridge {
 
             // Initial vault scan so vectors are ready immediately
             performLocalVaultScan(getVaultFolder().folder)
+            startDesktopLocalLlmIfAvailableAsync()
             engine.isRunning()
         } catch (e: Exception) {
             e.printStackTrace()
@@ -180,7 +186,7 @@ actual object PlatformEngineBridge {
         val freeDiskGb = usableDiskBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
 
         val arch = System.getProperty("os.arch") ?: "x86_64"
-        val (tier, recModel, recSizeMb) = ModelTierCatalog.resolveTier(totalRamGb)
+        val (tier, recModel, recSizeMb) = ModelTierCatalog.resolveTier(totalRamGb, target = "desktop")
 
         val requiredBytes = recSizeMb.toLong() * 1024L * 1024L
         val bufferBytes = (1.5 * 1024.0 * 1024.0 * 1024.0).toLong()
@@ -191,7 +197,14 @@ actual object PlatformEngineBridge {
             ?.map { "${it.name} (${it.length() / (1024 * 1024)} MB)" }
             .orEmpty()
 
-        val canRunLocal = totalRamGb >= 5.5 && hasEnoughDisk
+        val runtimeAvailable = desktopLlamaServer.isRuntimeAvailable(activeSystemHome)
+        val canRunLocal = totalRamGb >= 5.5 && hasEnoughDisk && runtimeAvailable
+        val summary = when {
+            totalRamGb < 5.5 -> "Desktop ($arch) has < 6 GB RAM ($tier). Use a Self-Hosted or Cloud AI."
+            !hasEnoughDisk -> "Insufficient disk space (${kotlin.math.round(freeDiskGb * 10.0) / 10.0} GB free) for $recModel (~$recSizeMb MB)."
+            !runtimeAvailable -> "Desktop local GGUF runtime (llama-server) not found in ${File(activeSystemHome, "bin").absolutePath} or PATH. Install llama.cpp llama-server or use a Self-Hosted / Cloud AI."
+            else -> "Desktop ($arch) verified ($tier). Recommended model: $recModel (~$recSizeMb MB)."
+        }
 
         DeviceCapabilityReport(
             totalRamGb = kotlin.math.round(totalRamGb * 10.0) / 10.0,
@@ -209,7 +222,7 @@ actual object PlatformEngineBridge {
             canRunLocalGguf = canRunLocal,
             modelsStagingPath = modelsDir.absolutePath,
             stagedModels = stagedFiles,
-            statusSummary = "Desktop ($arch) verified ($tier). Recommended model: $recModel (~$recSizeMb MB)."
+            statusSummary = summary
         )
     }
 
@@ -278,6 +291,7 @@ actual object PlatformEngineBridge {
     }
 
     actual suspend fun triggerEmergencyStop(): Boolean = withContext(Dispatchers.IO) {
+        desktopLlamaServer.stop()
         if (engine.isRunning()) {
             engine.shutdown()
         }
@@ -424,6 +438,7 @@ actual object PlatformEngineBridge {
 
     actual fun clearStorage() {
         storageMap.clear()
+        vaultDeltaScanner.reset()
         saveStorageToDisk()
     }
 
@@ -456,117 +471,77 @@ actual object PlatformEngineBridge {
         return dir
     }
 
-    private fun performLocalVaultScan(folderPath: String): VaultScanResult {
-        val dir = resolveVaultDirectory(folderPath)
-        val scannedFiles = VaultFileScanner.collectSupportedFiles(dir)
+    private val engineVaultSink = object : VaultIndexSink {
+        override val isReady: Boolean
+            get() = engine.isRunning()
 
-        val keywordsCsv = getStorageItem("vault_focus_keywords") ?: "strategy, confidential, roadmap, architectural"
-        val keywords = keywordsCsv
-            .split(",")
-            .map { it.trim().lowercase() }
-            .filter { it.isNotEmpty() }
-
-        // Clear previous embeddings and sync priority focus keywords so switching folders refreshes the vector database cleanly
-        if (engine.isRunning()) {
+        override fun clear() {
             try {
                 engine.invoke("KnowledgeVault", "clear", emptyArray(), "127.0.0.1", uiSubject)
+            } catch (_: Exception) {
+            }
+        }
+
+        override fun setFocusKeywords(keywordsCsv: String) {
+            try {
                 engine.invoke("KnowledgeVault", "setFocusKeywords", arrayOf<Any?>(keywordsCsv), "127.0.0.1", uiSubject)
             } catch (_: Exception) {
             }
         }
 
-        var filesScanned = 0
-        var entitiesFound = 0
-
-        for (item in scannedFiles) {
-            val file = item.file
-            val content = extractFileText(file)
-            if (file.name == "Reveila_Sovereign_Overview.md" && content.contains(VaultFileScanner.LEGACY_STUB_MARKER)) {
-                try {
-                    file.delete()
-                } catch (_: Exception) {
-                }
-                continue
-            }
-            if (content.isNotBlank()) {
-                filesScanned++
-                val matchedKeywords = keywords.count { kw ->
-                    item.relativePath.lowercase().contains(kw) || content.lowercase().contains(kw)
-                }
-                entitiesFound += (matchedKeywords + 2)
-
-                if (engine.isRunning()) {
-                    try {
-                        val meta = mapOf(
-                            "title" to file.name,
-                            "relativePath" to item.relativePath,
-                            "uri" to file.toURI().toString()
-                        )
-                        engine.invoke(
-                            "KnowledgeVault",
-                            "indexDocument",
-                            arrayOf<Any?>(item.relativePath, content, meta),
-                            "127.0.0.1",
-                            uiSubject
-                        )
-                    } catch (_: Exception) {
-                    }
-                }
+        override fun indexDocument(id: String, content: String, metadata: Map<String, Any?>) {
+            try {
+                engine.invoke(
+                    "KnowledgeVault",
+                    "indexDocument",
+                    arrayOf<Any?>(id, content, metadata),
+                    "127.0.0.1",
+                    uiSubject
+                )
+            } catch (_: Exception) {
             }
         }
 
-        val stats = if (engine.isRunning()) {
-            val c = try {
+        override fun removeDocument(id: String) {
+            try {
+                engine.invoke("KnowledgeVault", "removeDocument", arrayOf<Any?>(id), "127.0.0.1", uiSubject)
+            } catch (_: Exception) {
+            }
+        }
+
+        override fun getDocumentCount(): Int {
+            return try {
+                (engine.invoke("KnowledgeVault", "getDocumentCount", emptyArray(), "127.0.0.1", uiSubject) as? Number)?.toInt() ?: 0
+            } catch (_: Exception) {
+                0
+            }
+        }
+
+        override fun getChunkCount(): Int {
+            return try {
                 (engine.invoke("KnowledgeVault", "getChunkCount", emptyArray(), "127.0.0.1", uiSubject) as? Number)?.toInt() ?: 0
             } catch (_: Exception) {
                 0
             }
-            c
-        } else 0
+        }
+    }
+
+    private fun performLocalVaultScan(folderPath: String): VaultScanResult {
+        val dir = resolveVaultDirectory(folderPath)
+        val keywordsCsv = getStorageItem("vault_focus_keywords") ?: "strategy, confidential, roadmap, architectural"
+        val summary = vaultDeltaScanner.scan(
+            rootDir = dir,
+            keywordsCsv = keywordsCsv,
+            sink = engineVaultSink
+        )
 
         return VaultScanResult(
             folder = folderPath,
-            filesScanned = filesScanned,
-            entitiesFound = entitiesFound,
-            chunkCount = stats,
+            filesScanned = summary.totalIndexedFiles,
+            entitiesFound = summary.totalEntitiesFound,
+            chunkCount = summary.chunkCount,
             status = "SUCCESS"
         )
-    }
-
-    private fun extractFileText(file: File): String {
-        return try {
-            when (file.extension.lowercase()) {
-                "docx" -> extractDocxText(file)
-                "pdf" -> VaultFileScanner.extractPdfText(file)
-                else -> file.readText()
-            }
-        } catch (_: Exception) {
-            ""
-        }
-    }
-
-    private fun extractDocxText(file: File): String {
-        val sb = StringBuilder()
-        try {
-            ZipInputStream(FileInputStream(file)).use { zip ->
-                var entry = zip.nextEntry
-                while (entry != null) {
-                    if (entry.name == "word/document.xml") {
-                        val factory = DocumentBuilderFactory.newInstance()
-                        val builder = factory.newDocumentBuilder()
-                        val doc = builder.parse(zip)
-                        val nodes = doc.getElementsByTagName("w:t")
-                        for (i in 0 until nodes.length) {
-                            sb.append(nodes.item(i).textContent).append(" ")
-                        }
-                        break
-                    }
-                    entry = zip.nextEntry
-                }
-            }
-        } catch (_: Exception) {
-        }
-        return sb.toString().trim()
     }
 
     actual suspend fun verifyModelPreflight(modelSizeBytes: Long): PreflightCheckResult =
@@ -615,7 +590,7 @@ actual object PlatformEngineBridge {
 
     actual suspend fun getLocalModelCatalog(): List<LocalModelManifestEntry> =
         withContext(Dispatchers.IO) {
-            readDesktopModelManifest().models
+            AeginBridge.modelsForTarget(readDesktopModelManifest(), "desktop")
         }
 
     actual suspend fun checkLocalModelAvailability(modelName: String): LocalModelCheckResult =
@@ -695,6 +670,9 @@ actual object PlatformEngineBridge {
                     directories = listOf(modelsDir),
                     keepFilename = check.modelName
                 )
+                if (desktopLlamaServer.isRuntimeAvailable(activeSystemHome)) {
+                    desktopLlamaServer.startOrReload(activeSystemHome, targetFile)
+                }
             }
         }
         return ok
@@ -738,6 +716,34 @@ actual object PlatformEngineBridge {
         emit(raw)
     }.flowOn(Dispatchers.IO)
 
-    actual suspend fun releaseLocalModel() {
+    private fun startDesktopLocalLlmIfAvailableAsync() {
+        llamaControlExecutor.execute {
+            try {
+                if (!desktopLlamaServer.isRuntimeAvailable(activeSystemHome)) return@execute
+                val modelsDir = File(activeSystemHome, "models")
+                val preferredModel = try {
+                    val raw = engine.invoke("LlmProviderFactory", "getSettings", arrayOf<Any?>("llm.json"), "127.0.0.1", uiSubject)?.toString().orEmpty()
+                    val (providers, _, _) = AeginBridge.parseLlmSettingsJson(raw)
+                    providers.firstOrNull { it.name.equals("On-Device Model", ignoreCase = true) }?.model?.trim().orEmpty()
+                } catch (_: Exception) {
+                    ""
+                }
+                val candidate = if (preferredModel.isNotEmpty()) {
+                    File(modelsDir, preferredModel).takeIf { ResumableModelDownloader.hasValidGgufHeader(it) }
+                } else {
+                    null
+                } ?: modelsDir.listFiles { f -> f.isFile && f.extension.equals("gguf", ignoreCase = true) }
+                    ?.firstOrNull { ResumableModelDownloader.hasValidGgufHeader(it) }
+
+                if (candidate != null) {
+                    desktopLlamaServer.startOrReload(activeSystemHome, candidate)
+                }
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    actual suspend fun releaseLocalModel() = withContext(Dispatchers.IO) {
+        desktopLlamaServer.stop()
     }
 }

@@ -704,8 +704,17 @@ open class AgenticFabric : SystemComponent() {
         var browserUsedInLoop = false
         // 3. The Robust Agentic AI Loop
         enforceSlidingWindow(session)
+        try {
         for (loopCount in 0 until aiLoopLimit) {
-            logger.info("[Fabric] Starting Agentic Loop iteration [${loopCount + 1}/$aiLoopLimit]")
+            val turn = loopCount + 1
+            logger.info("[Fabric] Starting Agentic Loop iteration [$turn/$aiLoopLimit]")
+            ToolActivityHub.updateInferenceStep(
+                active = true,
+                turnIndex = turn,
+                maxTurns = aiLoopLimit,
+                phase = "REASONING",
+                label = if (turn == 1) "Step 1 • Reasoning" else "Step $turn • Refining reasoning"
+            )
 
             var rawResponse: String?
             try {
@@ -734,6 +743,13 @@ open class AgenticFabric : SystemComponent() {
 
             if (validationResult.isRepeating) {
                 logger.warning("[Fabric] AI entered repetitive hallucination loop. Feeding correction prompt back to agent.")
+                ToolActivityHub.updateInferenceStep(
+                    active = true,
+                    turnIndex = turn,
+                    maxTurns = aiLoopLimit,
+                    phase = "RETHINKING",
+                    label = "Step $turn • Self-correcting"
+                )
                 intentBuffer = "System Guardrail Warning: You are repeating previous outputs without making progress. Please rethink your reasoning and provide either a valid tool call or final completed answer."
                 continue
             }
@@ -789,6 +805,13 @@ open class AgenticFabric : SystemComponent() {
 
             // Handle terminal loop statuses
             if (status.equals(Constants.AI_STATUS_COMPLETED, ignoreCase = true)) {
+                ToolActivityHub.updateInferenceStep(
+                    active = true,
+                    turnIndex = turn,
+                    maxTurns = aiLoopLimit,
+                    phase = "SYNTHESIZING",
+                    label = "Step $turn • Finalizing response"
+                )
                 recordAuditLog("TASK_COMPLETED", reasoning)
                 flightRecorder?.recordStep(dummyPlugin, "task_completed", jsonResponse.filterValues { it != null }.mapValues { it.value as Any })
                 val browserSnap = ToolActivityHub.getSnapshot().browser
@@ -843,6 +866,13 @@ open class AgenticFabric : SystemComponent() {
                         if (toolCallObj is List<*>) {
                             val callsList = toolCallObj.filterIsInstance<Map<String, Any?>>()
                             for ((idx, singleToolCall) in callsList.withIndex()) {
+                                ToolActivityHub.updateInferenceStep(
+                                    active = true,
+                                    turnIndex = turn,
+                                    maxTurns = aiLoopLimit,
+                                    phase = "TOOL_CALL",
+                                    label = "Step $turn • ${formatToolStepLabel(singleToolCall)}"
+                                )
                                 val remaining = if (idx + 1 < callsList.size) callsList.drop(idx + 1) else emptyList()
                                 val result = handleGuardedToolCall(
                                     session = session,
@@ -865,6 +895,13 @@ open class AgenticFabric : SystemComponent() {
                         } else if (toolCallObj is Map<*, *>) {
                             @Suppress("UNCHECKED_CAST")
                             val singleToolCall = toolCallObj as Map<String, Any?>
+                            ToolActivityHub.updateInferenceStep(
+                                active = true,
+                                turnIndex = turn,
+                                maxTurns = aiLoopLimit,
+                                phase = "TOOL_CALL",
+                                label = "Step $turn • ${formatToolStepLabel(singleToolCall)}"
+                            )
                             val result = handleGuardedToolCall(
                                 session = session,
                                 toolCallObj = singleToolCall,
@@ -929,6 +966,29 @@ open class AgenticFabric : SystemComponent() {
         return buildErrorResponse(
             "AI_LOOP_LIMIT_REACHED: The task could not be completed within the execution limit of $aiLoopLimit iteration(s)."
         )
+        } finally {
+            ToolActivityHub.clearInferenceStep()
+        }
+    }
+
+    private fun formatToolStepLabel(toolCallObj: Map<String, Any?>): String {
+        val rawName = toolCoordinator?.extractToolName(toolCallObj).orEmpty()
+            .ifBlank {
+                toolCallObj["name"]?.toString()
+                    ?: toolCallObj["plugin"]?.toString()
+                    ?: toolCallObj["method"]?.toString()
+                    ?: "tool"
+            }
+        val lower = rawName.lowercase()
+        val friendly = when {
+            lower.contains("browser") || lower.contains("web") -> "Searching web"
+            lower.contains("knowledge") || lower.contains("vault") -> "Searching Knowledge Vault"
+            lower.contains("terminal") || lower.contains("shell") || lower.contains("script") -> "Running terminal"
+            lower.contains("download") -> "Downloading file"
+            lower.contains("secret") || lower.contains("password") -> "Checking credentials"
+            else -> "Running ${rawName.replace('_', ' ')}"
+        }
+        return friendly
     }
 
     /**

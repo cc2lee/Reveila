@@ -18,7 +18,8 @@ import com.reveila.aegin.AeginEngineService
 import com.reveila.aegin.model.AeginModelLoader
 import com.reveila.aegin.model.ModelDownloadWorker
 import com.reveila.aegin.model.ResumableModelDownloader
-import com.reveila.aegin.model.VaultFileScanner
+import com.reveila.aegin.model.VaultDeltaScanner
+import com.reveila.aegin.model.VaultIndexSink
 import com.reveila.system.DefaultPlatformAdapter
 import com.reveila.system.Properties
 import com.reveila.system.Reveila
@@ -46,12 +47,11 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.zip.ZipInputStream
-import javax.xml.parsers.DocumentBuilderFactory
 
 actual object PlatformEngineBridge {
     private const val TAG = "AeginEngineBridge"
     private val engine = Reveila()
+    private val vaultDeltaScanner = VaultDeltaScanner()
     private val isStarting = AtomicBoolean(false)
     private val llmStarting = AtomicBoolean(false)
     private val modelDownloadInProgress = AtomicBoolean(false)
@@ -181,7 +181,8 @@ actual object PlatformEngineBridge {
                     // user data (settings, properties, tasks) is only seeded when missing.
                     val isBundledDefinition = childAssetPath.startsWith("reveila/configs/shared/") ||
                         childAssetPath.startsWith("reveila/configs/android/") ||
-                        childAssetPath.startsWith("reveila/configs/java/")
+                        childAssetPath.startsWith("reveila/configs/java/") ||
+                        childAssetPath == "reveila/models/manifest.json"
                     if (!childTarget.exists() || isBundledDefinition) {
                         try {
                             context.assets.open(childAssetPath).use { input ->
@@ -567,7 +568,7 @@ actual object PlatformEngineBridge {
 
     actual suspend fun getLocalModelCatalog(): List<LocalModelManifestEntry> =
         withContext(Dispatchers.IO) {
-            readModelManifest().models
+            AeginBridge.modelsForTarget(readModelManifest(), "android")
         }
 
     actual suspend fun checkLocalModelAvailability(modelName: String): LocalModelCheckResult =
@@ -1139,9 +1140,9 @@ actual object PlatformEngineBridge {
             false
         }
 
-        // Hardware Tiering Matrix (< 6 GB blocked, 6–8 GB 1.5B, 8–12 GB 3B, 12 GB+ 7B)
+        // Hardware Tiering Matrix (< 6 GB blocked, 6–8 GB 1.5B, 8–12 GB 2B, 12 GB+ 3B)
         // Note: 5.5 GiB accounts for kernel/GPU carveouts on 6 GB physical RAM devices.
-        val (tier, recModel, recSizeMb) = ModelTierCatalog.resolveTier(totalRamGb)
+        val (tier, recModel, recSizeMb) = ModelTierCatalog.resolveTier(totalRamGb, target = "android")
 
         val modelsDir = resolveModelsStagingDir()
         val statFs = try {
@@ -1561,6 +1562,7 @@ actual object PlatformEngineBridge {
 
     actual fun clearStorage() {
         fallbackStorage.clear()
+        vaultDeltaScanner.reset()
         appContext?.getSharedPreferences("aegin_prefs", Context.MODE_PRIVATE)
             ?.edit()
             ?.clear()
@@ -1636,112 +1638,79 @@ actual object PlatformEngineBridge {
         }
     }
 
-    private fun performLocalVaultScan(folderPath: String): VaultScanResult {
-        val dir = resolveVaultDirectory(folderPath)
-        var scannedFiles = VaultFileScanner.collectSupportedFiles(dir)
-        if (scannedFiles.isEmpty()) {
-            val bundledVault = File(resolveSystemHomeDir(), "ReveilaVault")
-            scannedFiles = VaultFileScanner.collectSupportedFiles(bundledVault)
-        }
+    private val engineVaultSink = object : VaultIndexSink {
+        override val isReady: Boolean
+            get() = engine.isRunning()
 
-        val keywordsCsv = getStorageItem("vault_focus_keywords") ?: "strategy, confidential, roadmap, architectural"
-        val keywords = keywordsCsv
-            .split(",")
-            .map { it.trim().lowercase() }
-            .filter { it.isNotEmpty() }
-
-        // Clear previous embeddings and sync priority focus keywords so switching folders refreshes the vector database cleanly
-        if (engine.isRunning()) {
+        override fun clear() {
             try {
                 engine.invoke("KnowledgeVault", "clear", emptyArray(), "127.0.0.1", uiSubject)
+            } catch (_: Exception) {
+            }
+        }
+
+        override fun setFocusKeywords(keywordsCsv: String) {
+            try {
                 engine.invoke("KnowledgeVault", "setFocusKeywords", arrayOf<Any?>(keywordsCsv), "127.0.0.1", uiSubject)
             } catch (_: Exception) {
             }
         }
 
-        var filesScanned = 0
-        var entitiesFound = 0
-
-        for (item in scannedFiles) {
-            val file = item.file
-            val content = extractFileText(file)
-            if (file.name == "Reveila_Sovereign_Overview.md" && content.contains(VaultFileScanner.LEGACY_STUB_MARKER)) {
-                try {
-                    file.delete()
-                } catch (_: Exception) {
-                }
-                continue
-            }
-            if (content.isNotBlank()) {
-                filesScanned++
-                val matched = keywords.count { kw ->
-                    item.relativePath.lowercase().contains(kw) || content.lowercase().contains(kw)
-                }
-                entitiesFound += (matched + 2)
-
-                if (engine.isRunning()) {
-                    try {
-                        val meta = mapOf(
-                            "title" to file.name,
-                            "relativePath" to item.relativePath,
-                            "uri" to file.toURI().toString()
-                        )
-                        engine.invoke(
-                            "KnowledgeVault",
-                            "indexDocument",
-                            arrayOf<Any?>(item.relativePath, content, meta),
-                            "127.0.0.1",
-                            uiSubject
-                        )
-                    } catch (_: Exception) {
-                    }
-                }
+        override fun indexDocument(id: String, content: String, metadata: Map<String, Any?>) {
+            try {
+                engine.invoke(
+                    "KnowledgeVault",
+                    "indexDocument",
+                    arrayOf<Any?>(id, content, metadata),
+                    "127.0.0.1",
+                    uiSubject
+                )
+            } catch (_: Exception) {
             }
         }
 
-        val chunks = if (engine.isRunning()) {
+        override fun removeDocument(id: String) {
             try {
+                engine.invoke("KnowledgeVault", "removeDocument", arrayOf<Any?>(id), "127.0.0.1", uiSubject)
+            } catch (_: Exception) {
+            }
+        }
+
+        override fun getDocumentCount(): Int {
+            return try {
+                (engine.invoke("KnowledgeVault", "getDocumentCount", emptyArray(), "127.0.0.1", uiSubject) as? Number)?.toInt() ?: 0
+            } catch (_: Exception) {
+                0
+            }
+        }
+
+        override fun getChunkCount(): Int {
+            return try {
                 (engine.invoke("KnowledgeVault", "getChunkCount", emptyArray(), "127.0.0.1", uiSubject) as? Number)?.toInt() ?: 0
             } catch (_: Exception) {
                 0
             }
-        } else 0
+        }
+    }
+
+    private fun performLocalVaultScan(folderPath: String): VaultScanResult {
+        val dir = resolveVaultDirectory(folderPath)
+        val bundledVault = File(resolveSystemHomeDir(), "ReveilaVault")
+        val keywordsCsv = getStorageItem("vault_focus_keywords") ?: "strategy, confidential, roadmap, architectural"
+
+        val summary = vaultDeltaScanner.scan(
+            rootDir = dir,
+            keywordsCsv = keywordsCsv,
+            sink = engineVaultSink,
+            fallbackDir = bundledVault
+        )
 
         return VaultScanResult(
             folder = folderPath,
-            filesScanned = filesScanned,
-            entitiesFound = entitiesFound,
-            chunkCount = chunks,
+            filesScanned = summary.totalIndexedFiles,
+            entitiesFound = summary.totalEntitiesFound,
+            chunkCount = summary.chunkCount,
             status = "SUCCESS"
         )
-    }
-
-    private fun extractFileText(file: File): String {
-        return try {
-            when (file.extension.lowercase()) {
-                "docx" -> {
-                    val sb = StringBuilder()
-                    ZipInputStream(FileInputStream(file)).use { zip ->
-                        var entry = zip.nextEntry
-                        while (entry != null) {
-                            if (entry.name == "word/document.xml") {
-                                val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(zip)
-                                val nodes = doc.getElementsByTagName("w:t")
-                                for (i in 0 until nodes.length) {
-                                    sb.append(nodes.item(i).textContent).append(" ")
-                                }
-                                break
-                            }
-                            entry = zip.nextEntry
-                        }
-                    }
-                    sb.toString().trim()
-                }
-                "pdf" -> VaultFileScanner.extractPdfText(file)
-                else -> file.readText()
-            }
-        } catch (_: Exception) {
-            ""
-        }
     }
 }
