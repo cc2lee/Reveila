@@ -1,7 +1,7 @@
 # ADR 0010: Scaling Plugins via Sovereign Registry
 
 ## Status
-**ACCEPTED** | March 15, 2026
+**ACCEPTED** | March 15, 2026 *(Cluster synchronization evolved in [ADR 0026: Reveila Runtime Cluster Architecture](0026%20Reveila%20Runtime%20Cluster%20Architecture.md) to use native zero-database `ClusterService` broadcasts with optional PostgreSQL bridging.)*
 
 ## Context
 As the Reveila AI Fabric moves from a single-node prototype to a distributed cluster environment, the original method of manual JSON configuration for plugins and settings has become a bottleneck. We need a way to dynamically register agents, manage their lifecycle across multiple nodes, and ensure real-time configuration consistency without system restarts.

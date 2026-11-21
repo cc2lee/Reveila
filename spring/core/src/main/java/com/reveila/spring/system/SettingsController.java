@@ -177,13 +177,24 @@ public class SettingsController {
             mainProps.store(os, "Merged from Settings tab: " + tab);
         }
 
-        // 3. Update the Global Settings table (Triggers Postgres Pulse)
-        flattenedUpdates.forEach((key, value) -> {
-            GlobalSetting setting = new GlobalSetting(key, value);
-            globalSettingRepository.save(setting);
-        });
+        // 3. Update the Global Settings table (optional when Enterprise DB is active)
+        try {
+            flattenedUpdates.forEach((key, value) -> {
+                GlobalSetting setting = new GlobalSetting(key, value);
+                globalSettingRepository.save(setting);
+            });
+        } catch (Exception dbEx) {
+            System.err.println("⚠️ [SETTINGS] Database persistence skipped/unavailable: " + dbEx.getMessage());
+        }
 
-        // 4. Trigger Hot Reload in the engine locally
+        // 4. Broadcast configuration updates natively across the Reveila cluster (zero DB dependency)
+        com.reveila.cluster.ClusterService clusterService = reveila.getClusterService();
+        if (clusterService != null) {
+            Map<String, Object> broadcastPayload = new HashMap<>(flattenedUpdates);
+            clusterService.publishConfigUpdate(broadcastPayload);
+        }
+
+        // 5. Trigger Hot Reload in the engine locally
         reveila.getSystemContext().getPlatformAdapter().loadProperties(null);
 
         return ResponseEntity.ok().build();

@@ -70,6 +70,18 @@ public class SecurityConfig {
                     @NonNull HttpServletResponse response,
                     @NonNull FilterChain filterChain) throws ServletException, IOException {
                 if (SecurityContextHolder.getContext().getAuthentication() == null) {
+                    // 1. Authenticate inter-node ClusterService RPCs carrying a valid cluster secret token
+                    String clusterToken = request.getHeader(com.reveila.system.Constants.CLUSTER_TOKEN_HEADER);
+                    if (clusterToken != null && !clusterToken.isBlank() && isValidClusterToken(clusterToken)) {
+                        UsernamePasswordAuthenticationToken clusterAuth =
+                                new UsernamePasswordAuthenticationToken(
+                                        "reveila-cluster-peer",
+                                        clusterToken,
+                                        List.of(new SimpleGrantedAuthority("ROLE_SYSTEM")));
+                        SecurityContextHolder.getContext().setAuthentication(clusterAuth);
+                    }
+                }
+                if (SecurityContextHolder.getContext().getAuthentication() == null) {
                     String authHeader = request.getHeader("Authorization");
                     if (authHeader != null && authHeader.regionMatches(true, 0, "Bearer ", 0, 7)) {
                         String token = authHeader.substring(7).trim();
@@ -89,6 +101,18 @@ public class SecurityConfig {
                 filterChain.doFilter(request, response);
             }
         };
+    }
+
+    private boolean isValidClusterToken(String token) {
+        try {
+            if (reveila != null && reveila.getSystemContext() != null) {
+                String expected = reveila.getSystemContext().getProperties()
+                        .getProperty(com.reveila.system.Constants.CLUSTER_SECRET);
+                return expected != null && !expected.isBlank() && expected.equals(token);
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
     }
 
     private boolean isValidJitToken(String token) {

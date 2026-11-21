@@ -107,6 +107,14 @@ class SystemContext(
         cryptographer = null
     }
 
+    fun hasProxy(name: String): Boolean {
+        return proxiesByName.containsKey(name)
+    }
+
+    fun getRegisteredComponentNames(): Set<String> {
+        return proxiesByName.keys.toSet()
+    }
+
     @Throws(SecurityException::class, IllegalArgumentException::class)
     override fun getProxy(name: String): Proxy {
         return getProxy(name, this.subject)

@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import com.reveila.system.logging.PlatformLogger
+import com.reveila.cluster.ClusterService
 import com.reveila.crypto.CryptoException
 import com.reveila.crypto.Cryptographer
 import com.reveila.crypto.DefaultCryptographer
@@ -102,7 +103,8 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
         this.startExecutor = (platformAdapter as? BasePlatformAdapter)?.getExecutor() ?: Executors.newFixedThreadPool(4)
         platformAdapter.getProperties()?.let { this.properties.putAll(it) }
         this.logger = platformAdapter.getLogger()
-        this.localUrl = localhostUrlString
+        val configuredNodeUrl = this.properties.getProperty(Constants.CLUSTER_NODE_URL)?.trim()?.trimEnd('/')
+        this.localUrl = if (!configuredNodeUrl.isNullOrBlank()) configuredNodeUrl else localhostUrlString
 
         printLogo()
         logStartupBanner()
@@ -172,6 +174,10 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
 
         val sortedPlugins = sortMetaObjects(pluginMetaObjects)
         startComponents(Constants.PLUGIN, sortedPlugins, timeoutSeconds)
+
+        // Refresh ClusterService local service registry now that all components & plugins are loaded
+        getClusterService()?.refreshLocalServices()
+
         isRunningFlag.set(true)
         logStartupCompletion(beginTime)
 
@@ -211,10 +217,39 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
             logger?.info("Received invocation request from $callerIp for target: $componentName, method: $methodName")
         }
 
-        if (!standalone) {
-            // Use the fastest node in the cluster to handle the request
-            val url = PerformanceTracker.getInstance().getBestNodeUrl()
+        // 1. Cluster control-plane RPCs and locally hosted components always execute locally
+        val isClusterControlCall = componentName == Constants.CLUSTER_SERVICE
+        if (isClusterControlCall || ctx.hasProxy(componentName)) {
+            return try {
+                val proxy = ctx.getProxy(componentName, effectiveSubject)
+                val result = proxy.invoke(methodName, params)
+                val timeUsed = System.currentTimeMillis() - startTime
+                PerformanceTracker.getInstance().track(timeUsed, this.localUrl)
+                result
+            } catch (e: IllegalArgumentException) {
+                throw ConfigurationException("Component '$componentName' not found.", e)
+            }
+        }
 
+        // 2. Service missing locally in cluster mode -> resolve via ClusterService (local cache -> Lead Node query)
+        if (!standalone) {
+            val clusterService = getClusterService()
+            if (clusterService != null) {
+                val targetUrl = clusterService.resolveRemoteNodeUrl(componentName)
+                if (!targetUrl.isNullOrBlank() && targetUrl != this.localUrl) {
+                    return invokeOnClusterNode(
+                        clusterService = clusterService,
+                        targetUrl = targetUrl,
+                        componentName = componentName,
+                        methodName = methodName,
+                        params = params,
+                        startTime = startTime
+                    )
+                }
+            }
+
+            // Legacy fallback when ClusterService is not configured
+            val url = PerformanceTracker.getInstance().getBestNodeUrl()
             if (url != null && url != this.localUrl) {
                 try {
                     val proxy = ctx.getProxy(Constants.REMOTE_REVEILA, effectiveSubject)
@@ -226,20 +261,57 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
                     // Ignore, Remote Reveila not configured
                 } catch (e: Exception) {
                     PerformanceTracker.getInstance().track(PerformanceTracker.DEFAULT_PENALTY_MS, url)
-                    logger?.severe("Remote invocation failed. Falling back to local invocation. Error: ${e.message}")
-                    e.printStackTrace()
+                    logger?.severe("Remote invocation failed. Error: ${e.message}")
                 }
             }
         }
 
+        throw ConfigurationException("Component '$componentName' not found locally or in cluster routing table.")
+    }
+
+    open fun getClusterService(): ClusterService? {
+        val ctx = systemContext ?: return null
+        if (!ctx.hasProxy(Constants.CLUSTER_SERVICE)) return null
         return try {
-            val proxy = ctx.getProxy(componentName, effectiveSubject)
-            val result = proxy.invoke(methodName, params)
+            ctx.getProxy(Constants.CLUSTER_SERVICE).getInstance() as? ClusterService
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun invokeOnClusterNode(
+        clusterService: ClusterService,
+        targetUrl: String,
+        componentName: String,
+        methodName: String,
+        params: Array<Any?>?,
+        startTime: Long
+    ): Any? {
+        val secret = systemContext?.properties?.getProperty(Constants.CLUSTER_SECRET)?.takeIf { it.isNotBlank() }
+        val headers = if (secret != null) mapOf(Constants.CLUSTER_TOKEN_HEADER to secret) else emptyMap()
+        val client = ReveilaClient(baseUrl = targetUrl, version = getVersion(), defaultHeaders = headers)
+
+        return try {
+            val result = client.invoke(componentName, methodName, params, targetUrl)
             val timeUsed = System.currentTimeMillis() - startTime
-            PerformanceTracker.getInstance().track(timeUsed, this.localUrl)
+            PerformanceTracker.getInstance().track(timeUsed, targetUrl)
             result
-        } catch (e: IllegalArgumentException) {
-            throw ConfigurationException("Component '$componentName' not found.", e)
+        } catch (firstError: Exception) {
+            PerformanceTracker.getInstance().track(PerformanceTracker.DEFAULT_PENALTY_MS, targetUrl)
+            clusterService.invalidateRemoteNode(componentName, targetUrl)
+            logger?.warning(
+                "Cluster invocation of '$componentName.$methodName' on $targetUrl failed (${firstError.message}). " +
+                    "Re-querying Lead Node for an alternate route..."
+            )
+            val retryUrl = clusterService.resolveRemoteNodeUrl(componentName)
+            if (!retryUrl.isNullOrBlank() && retryUrl != targetUrl && retryUrl != this.localUrl) {
+                val retryClient = ReveilaClient(baseUrl = retryUrl, version = getVersion(), defaultHeaders = headers)
+                val result = retryClient.invoke(componentName, methodName, params, retryUrl)
+                val timeUsed = System.currentTimeMillis() - startTime
+                PerformanceTracker.getInstance().track(timeUsed, retryUrl)
+                return result
+            }
+            throw firstError
         }
     }
 

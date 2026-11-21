@@ -1,6 +1,6 @@
 # ADR 0024: Database Architecture & Sovereign Persistence Strategy
 
-**Status:** Accepted  
+**Status:** Accepted *(Cluster Control Plane decoupled from PostgreSQL in [ADR 0026](0026%20Reveila%20Runtime%20Cluster%20Architecture.md) — PostgreSQL remains an optional Enterprise Data Plane adapter.)*  
 **Date:** November 2026  
 **Deciders:** Charles Lee (Founder & Chief Architect)  
 **Consulted:** Core Architecture Team, InfoSec Stakeholders  

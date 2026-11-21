@@ -222,5 +222,13 @@
                 "method.name": "runHousekeeping"
             }
         }
+    },
+    {
+        "component": {
+            "name": "ClusterService",
+            "class": "com.reveila.cluster.ClusterService",
+            "description": "Resilient, self-healing cluster manager handling Lead/Worker coordination, active service routing, native state sync, and dynamic leader election without PostgreSQL dependency.",
+            "thread-safe": true
+        }
     }
 ]
