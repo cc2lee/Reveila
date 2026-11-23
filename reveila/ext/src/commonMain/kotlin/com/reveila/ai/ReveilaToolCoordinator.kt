@@ -171,11 +171,24 @@ class ReveilaToolCoordinator(
         browserProvider = { virtualBrowser }
     )
     val knowledgeVaultTool = KnowledgeVaultTool(knowledgeVaultProvider)
+    val vaultDocumentTool = com.reveila.tools.VaultDocumentTool(
+        vaultRootProvider = { fs.resolve(systemHome, "vault") },
+        extraAllowedRootsProvider = { knowledgeVaultProvider()?.getSearchScope().orEmpty() }
+    )
+    val enterpriseChannelHub = com.reveila.channels.EnterpriseChannelHub(
+        systemHomeProvider = { systemHome },
+        secretManagerProvider = secretManagerProvider
+    )
+    val enterpriseChannelTool = com.reveila.channels.EnterpriseChannelTool(
+        hubProvider = { enterpriseChannelHub }
+    )
 
     private val toolsByName: MutableMap<String, ReveilaTool> by lazy {
         linkedMapOf(
             virtualBrowserTool.getName() to virtualBrowserTool,
             knowledgeVaultTool.getName() to knowledgeVaultTool,
+            vaultDocumentTool.getName() to vaultDocumentTool,
+            enterpriseChannelTool.getName() to enterpriseChannelTool,
             downloadTool.getName() to downloadTool,
             terminalTool.getName() to terminalTool,
             secretManagerTool.getName() to secretManagerTool,
@@ -207,6 +220,8 @@ class ReveilaToolCoordinator(
         return when (clean) {
             "browser", "web", "virtualbrowser", "web_browser" -> "virtual_browser"
             "knowledge", "knowledgevault", "vault_files", "folder_analysis", "documents" -> "knowledge_vault"
+            "save_document", "vault_save", "save_file", "write_document", "save_to_vault" -> "vault_save_document"
+            "notify", "slack", "teams", "email", "send_alert", "enterprise_channel" -> "enterprise_notify"
             "download", "downloader", "resumabledownload" -> "resumable_download"
             "shell", "bash", "powershell", "script" -> "terminal"
             "secret", "secrets", "secretmanager", "vault" -> "secret_manager"

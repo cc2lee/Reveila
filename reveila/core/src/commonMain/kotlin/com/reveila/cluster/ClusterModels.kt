@@ -27,6 +27,41 @@ enum class NodeStatus {
 }
 
 /**
+ * Declared or auto-detected compute capacity tier of a Reveila cluster node.
+ *
+ * - [LOW]: Small desktop PC, laptop, or edge device.
+ * - [MEDIUM]: Tower workstation or mid-range machine.
+ * - [HIGH]: Powerful server.
+ * - [SUPER]: Specialized high-compute / multi-GPU machine (optional).
+ */
+enum class ComputePower(val weight: Int) {
+    LOW(1),
+    MEDIUM(2),
+    HIGH(3),
+    SUPER(4);
+
+    companion object {
+        fun parseOrNull(raw: String?): ComputePower? {
+            if (raw.isNullOrBlank()) return null
+            return when (raw.trim().uppercase()) {
+                "LOW" -> LOW
+                "MEDIUM", "MIDIUM", "MED" -> MEDIUM
+                "HIGH" -> HIGH
+                "SUPER" -> SUPER
+                else -> null
+            }
+        }
+
+        fun detect(cpuCores: Int, totalMemoryMb: Long): ComputePower = when {
+            cpuCores >= 64 || totalMemoryMb >= 131_072L -> SUPER
+            cpuCores >= 16 || totalMemoryMb >= 32_768L -> HIGH
+            cpuCores >= 6 || totalMemoryMb >= 8_192L -> MEDIUM
+            else -> LOW
+        }
+    }
+}
+
+/**
  * Metadata describing a node in the Reveila cluster.
  */
 data class ClusterNodeInfo(
@@ -38,7 +73,10 @@ data class ClusterNodeInfo(
     val term: Long = 0L,
     val lastHeartbeatMs: Long = 0L,
     val status: NodeStatus = NodeStatus.UP,
-    val version: String = "1.0.0"
+    val version: String = "1.0.0",
+    val computePower: ComputePower = ComputePower.MEDIUM,
+    val cpuCores: Int = 0,
+    val totalMemoryMb: Long = 0L
 ) {
     fun toMap(): Map<String, Any?> = linkedMapOf(
         "nodeId" to nodeId,
@@ -49,7 +87,10 @@ data class ClusterNodeInfo(
         "term" to term,
         "lastHeartbeatMs" to lastHeartbeatMs,
         "status" to status.name,
-        "version" to version
+        "version" to version,
+        "computePower" to computePower.name,
+        "cpuCores" to cpuCores,
+        "totalMemoryMb" to totalMemoryMb
     )
 
     companion object {
@@ -58,6 +99,7 @@ data class ClusterNodeInfo(
             val services = servicesRaw?.mapNotNull { it?.toString() } ?: emptyList()
             val roleStr = map["role"]?.toString() ?: NodeRole.WORKER.name
             val statusStr = map["status"]?.toString() ?: NodeStatus.UP.name
+            val power = ComputePower.parseOrNull(map["computePower"]?.toString()) ?: ComputePower.MEDIUM
             return ClusterNodeInfo(
                 nodeId = map["nodeId"]?.toString() ?: "",
                 baseUrl = map["baseUrl"]?.toString() ?: "",
@@ -68,7 +110,12 @@ data class ClusterNodeInfo(
                 lastHeartbeatMs = (map["lastHeartbeatMs"] as? Number)?.toLong()
                     ?: map["lastHeartbeatMs"]?.toString()?.toLongOrNull() ?: 0L,
                 status = runCatching { NodeStatus.valueOf(statusStr) }.getOrDefault(NodeStatus.UP),
-                version = map["version"]?.toString() ?: "1.0.0"
+                version = map["version"]?.toString() ?: "1.0.0",
+                computePower = power,
+                cpuCores = (map["cpuCores"] as? Number)?.toInt()
+                    ?: map["cpuCores"]?.toString()?.toIntOrNull() ?: 0,
+                totalMemoryMb = (map["totalMemoryMb"] as? Number)?.toLong()
+                    ?: map["totalMemoryMb"]?.toString()?.toLongOrNull() ?: 0L
             )
         }
     }
@@ -270,7 +317,8 @@ data class HeartbeatRequest(
     val services: List<String> = emptyList(),
     val term: Long = 0L,
     val configVersion: Long = 0L,
-    val routingVersion: Long = 0L
+    val routingVersion: Long = 0L,
+    val computePower: ComputePower = ComputePower.MEDIUM
 ) {
     fun toMap(): Map<String, Any?> = linkedMapOf(
         "nodeId" to nodeId,
@@ -279,7 +327,8 @@ data class HeartbeatRequest(
         "services" to services,
         "term" to term,
         "configVersion" to configVersion,
-        "routingVersion" to routingVersion
+        "routingVersion" to routingVersion,
+        "computePower" to computePower.name
     )
 
     companion object {
@@ -292,7 +341,8 @@ data class HeartbeatRequest(
             configVersion = (map["configVersion"] as? Number)?.toLong()
                 ?: map["configVersion"]?.toString()?.toLongOrNull() ?: 0L,
             routingVersion = (map["routingVersion"] as? Number)?.toLong()
-                ?: map["routingVersion"]?.toString()?.toLongOrNull() ?: 0L
+                ?: map["routingVersion"]?.toString()?.toLongOrNull() ?: 0L,
+            computePower = ComputePower.parseOrNull(map["computePower"]?.toString()) ?: ComputePower.MEDIUM
         )
     }
 }
@@ -328,6 +378,61 @@ data class HeartbeatResponse(
             routingVersion = (map["routingVersion"] as? Number)?.toLong()
                 ?: map["routingVersion"]?.toString()?.toLongOrNull() ?: 0L
         )
+    }
+}
+
+/**
+ * Portable pairing payload exchanged between Aegin Desktop (Lead Node) and Aegin Mobile
+ * (`EDGE_CLIENT` Citizen Node) via QR code or copy/paste.
+ */
+data class PairingDescriptor(
+    val leaderId: String,
+    val lanUrls: List<String> = emptyList(),
+    val remoteUrl: String = "",
+    val port: Int = 8080,
+    val clusterSecret: String = "",
+    val computePower: String = ComputePower.HIGH.name,
+    val version: Int = 1
+) {
+    fun primaryLeaderUrl(): String =
+        lanUrls.firstOrNull { it.isNotBlank() } ?: remoteUrl.trim()
+
+    fun fallbackUrls(): List<String> {
+        val all = LinkedHashSet<String>()
+        lanUrls.map { it.trim().trimEnd('/') }.filter { it.isNotBlank() }.forEach { all.add(it) }
+        remoteUrl.trim().trimEnd('/').takeIf { it.isNotBlank() }?.let { all.add(it) }
+        val primary = primaryLeaderUrl().trim().trimEnd('/')
+        all.remove(primary)
+        return all.toList()
+    }
+
+    fun toMap(): Map<String, Any?> = linkedMapOf(
+        "version" to version,
+        "leaderId" to leaderId,
+        "lanUrls" to lanUrls,
+        "remoteUrl" to remoteUrl,
+        "port" to port,
+        "clusterSecret" to clusterSecret,
+        "computePower" to computePower
+    )
+
+    companion object {
+        fun fromMap(map: Map<*, *>): PairingDescriptor {
+            val lanRaw = map["lanUrls"] as? Iterable<*>
+            val lanList = lanRaw?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } } ?: emptyList()
+            return PairingDescriptor(
+                leaderId = map["leaderId"]?.toString()?.trim() ?: "",
+                lanUrls = lanList,
+                remoteUrl = map["remoteUrl"]?.toString()?.trim() ?: "",
+                port = (map["port"] as? Number)?.toInt()
+                    ?: map["port"]?.toString()?.toIntOrNull() ?: 8080,
+                clusterSecret = map["clusterSecret"]?.toString()?.trim() ?: "",
+                computePower = map["computePower"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                    ?: ComputePower.HIGH.name,
+                version = (map["version"] as? Number)?.toInt()
+                    ?: map["version"]?.toString()?.toIntOrNull() ?: 1
+            )
+        }
     }
 }
 

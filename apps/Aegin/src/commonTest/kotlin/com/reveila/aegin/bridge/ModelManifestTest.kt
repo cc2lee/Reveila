@@ -195,4 +195,113 @@ class ModelManifestTest {
         assertTrue(ModelTierCatalog.isSafetyReviewCapableModel(ModelTierCatalog.MODEL_7B))
         assertTrue(ModelTierCatalog.isSafetyReviewCapableModel("llama-guard-3-1b-q4_k_m.gguf"))
     }
+
+    @Test
+    fun testLlmSettingsRoundTripsCostPer1MAndModelPricing() {
+        val raw = """
+            {
+              "ai.worker.llm": "Auto",
+              "ai.governance.llm": "Disable",
+              "onboarded.providers": [
+                {
+                  "Name": "DeepSeek",
+                  "Type": "Cloud",
+                  "Provider": "DeepSeek",
+                  "Endpoint": "https://api.deepseek.com/chat/completions",
+                  "Model": "deepseek-reasoner",
+                  "Model.Options": ["deepseek-chat", "deepseek-reasoner"],
+                  "Cost.Per1MTokens": 0.4,
+                  "Model.Pricing": {
+                    "deepseek-chat": 0.4,
+                    "deepseek-reasoner": 1.2
+                  },
+                  "Intent.Options": ["CLOUD_DEEP_REASONING"]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val (providers, worker, gov) = AeginBridge.parseLlmSettingsJson(raw)
+        val deepSeek = providers.first { it.name == "DeepSeek" }
+        assertEquals(0.4, deepSeek.costPer1MTokens)
+        assertEquals(0.4, deepSeek.modelPricing["deepseek-chat"])
+        assertEquals(1.2, deepSeek.modelPricing["deepseek-reasoner"])
+
+        val rebuilt = AeginBridge.buildLlmSettingsJson(providers, worker, gov, "Auto")
+        val (reparsed, _, _) = AeginBridge.parseLlmSettingsJson(rebuilt)
+        val reparsedDeepSeek = reparsed.first { it.name == "DeepSeek" }
+        assertEquals(0.4, reparsedDeepSeek.costPer1MTokens)
+        assertEquals(0.4, reparsedDeepSeek.modelPricing["deepseek-chat"])
+        assertEquals(1.2, reparsedDeepSeek.modelPricing["deepseek-reasoner"])
+    }
+
+    @Test
+    fun testAlertChannelsRoundTripParsingAndSerialization() {
+        val channels = listOf(
+            AlertChannelConfig(
+                id = "slack-ops",
+                type = "SLACK",
+                enabled = true,
+                endpoint = "REF:SLACK_OPS_WEBHOOK_URL",
+                channel = "#general",
+                minSeverity = "SUCCESS"
+            ),
+            AlertChannelConfig(
+                id = "email-digest",
+                type = "EMAIL",
+                enabled = true,
+                endpoint = "https://api.resend.com/emails",
+                apiKey = "REF:EMAIL_DIGEST_API_KEY",
+                from = "alerts@aegin.app",
+                to = listOf("me@example.com", "team@example.com"),
+                minSeverity = "WARNING"
+            )
+        )
+
+        val serialized = AeginBridge.buildChannelsSettingsJson(channels)
+        val reparsed = AeginBridge.parseChannelsSettingsJson(serialized)
+        assertEquals(2, reparsed.size)
+        assertEquals("SLACK", reparsed[0].type)
+        assertTrue(reparsed[0].enabled)
+        assertEquals("REF:SLACK_OPS_WEBHOOK_URL", reparsed[0].endpoint)
+        assertEquals("#general", reparsed[0].channel)
+        assertEquals("EMAIL", reparsed[1].type)
+        assertEquals("REF:EMAIL_DIGEST_API_KEY", reparsed[1].apiKey)
+        assertEquals(listOf("me@example.com", "team@example.com"), reparsed[1].to)
+    }
+
+    @Test
+    fun testGovernancePolicyParsingAndUpdatePayload() {
+        val sample = """
+            {
+              "policyName": "SOVEREIGN_ACCESS_CONTROL_v2",
+              "version": "2.0.0",
+              "restrictedKeywords": ["SSN", "TAX_ID"],
+              "promptInjectionPatterns": ["jailbreak", "ignore previous instructions"],
+              "prohibitedSystemCommands": ["rm -rf"],
+              "sensitiveDataPatterns": ["\\b\\d{3}-\\d{2}-\\d{4}\\b"],
+              "thresholds": {
+                "alertThreshold": 0.55,
+                "hitlApprovalThreshold": 0.65,
+                "blockThreshold": 0.85
+              },
+              "dataRetention": {
+                "auditLogRetentionDays": 90
+              }
+            }
+        """.trimIndent()
+
+        val parsed = AeginBridge.parseGovernancePolicyJson(sample)
+        assertEquals(listOf("SSN", "TAX_ID"), parsed.restrictedKeywords)
+        assertEquals("STRICT", parsed.detectedPreset())
+        assertEquals(90, parsed.auditLogRetentionDays)
+        assertEquals(2, parsed.promptInjectionPatternCount)
+        assertEquals(1, parsed.prohibitedCommandCount)
+        assertEquals(1, parsed.sensitiveDataPatternCount)
+
+        val updateJson = AeginBridge.buildGovernancePolicyUpdateJson(parsed.copy(auditLogRetentionDays = 30))
+        val reparsed = AeginBridge.parseGovernancePolicyJson(updateJson)
+        assertEquals(30, reparsed.auditLogRetentionDays)
+        assertEquals(listOf("SSN", "TAX_ID"), reparsed.restrictedKeywords)
+    }
 }

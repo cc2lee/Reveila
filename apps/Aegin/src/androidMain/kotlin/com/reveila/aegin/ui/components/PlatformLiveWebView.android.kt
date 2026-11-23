@@ -51,12 +51,21 @@ private fun looksLikeRawXml(content: String): Boolean {
 private fun buildFallbackPreviewHtml(title: String, url: String, contentPreview: String): String {
     fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
     val lines = contentPreview.lines().map { it.trim() }.filter { it.isNotBlank() }.take(25)
+    val urlRegex = Regex("""https?://[^\s<>"]+""")
     val itemsHtml = if (lines.isEmpty()) {
         """<div style="color:#94a3b8;font-size:13px;">Loading feed content...</div>"""
     } else {
         lines.joinToString("\n") { line ->
             val cleaned = line.removePrefix("•").removePrefix("-").trim()
-            """<article style="background:#161b26;border:1px solid #2a3347;border-radius:10px;padding:9px 11px;margin-bottom:7px;font-size:13px;line-height:1.4;color:#e2e8f0;">${esc(cleaned)}</article>"""
+            val urlMatch = urlRegex.find(cleaned)
+            val contentHtml = if (urlMatch != null) {
+                val matchedUrl = urlMatch.value.trimEnd('.', ',', ';', ')', ']')
+                val label = cleaned.replace(urlMatch.value, "").trim().trimEnd('-', '|', ':').ifBlank { matchedUrl }
+                """<a href="${esc(matchedUrl)}" style="color:#67e8f9;text-decoration:none;font-weight:600;">${esc(label)}</a>"""
+            } else {
+                esc(cleaned)
+            }
+            """<article style="background:#161b26;border:1px solid #2a3347;border-radius:10px;padding:9px 11px;margin-bottom:7px;font-size:13px;line-height:1.4;color:#e2e8f0;">$contentHtml</article>"""
         }
     }
     return """

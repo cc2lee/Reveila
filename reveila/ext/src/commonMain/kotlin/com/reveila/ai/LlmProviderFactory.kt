@@ -108,7 +108,7 @@ open class LlmProviderFactory : SystemComponent() {
                         if (!name.isNullOrBlank()) {
                             val endpoint = ((p["endpoint"] ?: p["Endpoint"]) as? String)?.trim().orEmpty()
                             val model = ((p["model"] ?: p["Model"]) as? String)?.trim().orEmpty()
-                            val rawKey = ((p["api.key"] ?: p["apiKey"] ?: p["API.Key"]) as? String)?.trim().orEmpty()
+                            val rawKey = ((p["Api.Key"] ?: p["api.key"] ?: p["apiKey"] ?: p["API.Key"]) as? String)?.trim().orEmpty()
                             val normType = normalizeType(rawType, name)
                             val testedFlag = (p["Tested"] ?: p["tested"])?.let {
                                 it == true || it.toString().equals("true", ignoreCase = true)
@@ -117,6 +117,12 @@ open class LlmProviderFactory : SystemComponent() {
                             val userCostTier = ((p["Cost.Tier"] ?: p["cost.tier"] ?: p["costTier"]) as? String)?.trim().orEmpty()
                             val userCostPer1M = (p["Cost.Per1MTokens"] ?: p["cost.per1m.tokens"] ?: p["costPer1MTokens"])
                                 ?.toString()?.trim()?.toDoubleOrNull()
+                            val rawModelPricing = (p["Model.Pricing"] ?: p["model.pricing"] ?: p["modelPricing"] ?: p["Cost.Per1MTokens.ByModel"]) as? Map<*, *>
+                            val modelPricing: Map<String, Double> = rawModelPricing?.entries?.mapNotNull { (k, v) ->
+                                val modelKey = k?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                                val price = v?.toString()?.trim()?.toDoubleOrNull()?.takeIf { it >= 0.0 } ?: return@mapNotNull null
+                                modelKey to price
+                            }?.toMap().orEmpty()
                             val userPerfTier = (p["Performance.Tier"] ?: p["performance.tier"] ?: p["performanceTier"])
                                 ?.toString()?.trim().orEmpty()
                             val routingProfile = AutoModelRouter.resolveProfile(
@@ -125,7 +131,8 @@ open class LlmProviderFactory : SystemComponent() {
                                 providerField = providerField,
                                 userCostTier = userCostTier.ifBlank { null },
                                 userCostPer1MTokens = userCostPer1M,
-                                userPerformanceTier = userPerfTier.ifBlank { null }
+                                userPerformanceTier = userPerfTier.ifBlank { null },
+                                modelPricing = modelPricing
                             )
 
                             val provider = createProviderInstance(normType, providerField, name)
@@ -314,7 +321,7 @@ open class LlmProviderFactory : SystemComponent() {
                     val rawType = (p["type"] as? String) ?: (p["Type"] as? String) ?: "Cloud"
                     val normType = normalizeType(rawType, pName)
                     val pField = (p["provider"] as? String) ?: (p["Provider"] as? String) ?: ""
-                    val pKey = (p["api.key"] as? String) ?: (p["apiKey"] as? String) ?: (p["API.Key"] as? String)
+                    val pKey = (p["Api.Key"] as? String) ?: (p["api.key"] as? String) ?: (p["apiKey"] as? String) ?: (p["API.Key"] as? String)
                     val pEndpoint = ((p["endpoint"] ?: p["Endpoint"]) as? String)?.trim().orEmpty()
                     val pModel = ((p["model"] ?: p["Model"]) as? String)?.trim().orEmpty()
 
@@ -324,14 +331,15 @@ open class LlmProviderFactory : SystemComponent() {
                             context?.getProxy("SecretManager")?.invoke("storeSecret", arrayOf<Any?>(sKey, pKey))
                             p.remove("apiKey")
                             p.remove("API.Key")
-                            p["api.key"] = "REF:$sKey"
+                            p.remove("api.key")
+                            p["Api.Key"] = "REF:$sKey"
                             modifiedConfig = true
                         } catch (e: Exception) {
                             logger.warning("Failed to store provider API key in SecretManager: ${e.message}")
                         }
                     }
 
-                    val effectiveKey = (p["api.key"] as? String) ?: pKey
+                    val effectiveKey = (p["Api.Key"] as? String) ?: (p["api.key"] as? String) ?: pKey
                     val isTestedFlag = (p["Tested"] ?: p["tested"])?.let {
                         it == true || it.toString().equals("true", ignoreCase = true)
                     } ?: false
@@ -444,7 +452,7 @@ open class LlmProviderFactory : SystemComponent() {
             val providerField = ((params["provider"] ?: params["Provider"]) as? String)?.trim().orEmpty()
             val endpoint = ((params["endpoint"] ?: params["Endpoint"]) as? String)?.trim().orEmpty()
             val model = ((params["model"] ?: params["Model"]) as? String)?.trim().orEmpty()
-            val rawKey = ((params["api.key"] ?: params["apiKey"] ?: params["API.Key"]) as? String)?.trim().orEmpty()
+            val rawKey = ((params["Api.Key"] ?: params["api.key"] ?: params["apiKey"] ?: params["API.Key"]) as? String)?.trim().orEmpty()
             val localReadyHint = (params["localModelReady"] ?: params["local_model_ready"])?.let {
                 it == true || it.toString().equals("true", ignoreCase = true)
             } ?: false
@@ -1008,7 +1016,7 @@ open class LlmProviderFactory : SystemComponent() {
         provider.setName(name)
         provider.endpoint = endpoint
         provider.model = (params["model"] as? String) ?: (params["Model"] as? String)
-        provider.apiKey = (params["api.key"] as? String) ?: (params["apiKey"] as? String) ?: (params["API.Key"] as? String)
+        provider.apiKey = (params["Api.Key"] as? String) ?: (params["api.key"] as? String) ?: (params["apiKey"] as? String) ?: (params["API.Key"] as? String)
         val tempObj = params["temperature"] ?: params["Temperature"] ?: 0.7
         provider.temperature = tempObj.toString().toDouble()
 

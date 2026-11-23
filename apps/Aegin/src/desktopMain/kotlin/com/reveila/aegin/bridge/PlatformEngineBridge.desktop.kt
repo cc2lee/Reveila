@@ -1,5 +1,6 @@
 package com.reveila.aegin.bridge
 
+import com.reveila.aegin.cluster.DesktopClusterHttpServer
 import com.reveila.aegin.model.DesktopLlamaServerManager
 import com.reveila.aegin.model.DesktopModelDownloadManager
 import com.reveila.aegin.model.ResumableModelDownloader
@@ -27,6 +28,7 @@ actual object PlatformEngineBridge {
     private val isStarting = AtomicBoolean(false)
     private val desktopDownloadManager = DesktopModelDownloadManager()
     private val desktopLlamaServer = DesktopLlamaServerManager(host = "127.0.0.1", port = 8888)
+    private val clusterHttpServer by lazy { DesktopClusterHttpServer(engine, uiSubject) }
     private val llamaControlExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
         Thread(r, "aegin-desktop-llama-control").apply { isDaemon = true }
     }
@@ -180,17 +182,31 @@ actual object PlatformEngineBridge {
         val availRamBytes = sunBean?.freeMemorySize ?: Runtime.getRuntime().freeMemory()
         val totalRamGb = totalRamBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
         val availRamGb = availRamBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+        val cpuCores = Runtime.getRuntime().availableProcessors()
 
         val modelsDir = File(activeSystemHome, "models").apply { mkdirs() }
         val usableDiskBytes = modelsDir.usableSpace
         val freeDiskGb = usableDiskBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
 
         val arch = System.getProperty("os.arch") ?: "x86_64"
-        val (tier, recModel, recSizeMb) = ModelTierCatalog.resolveTier(totalRamGb, target = "desktop")
-
-        val requiredBytes = recSizeMb.toLong() * 1024L * 1024L
-        val bufferBytes = (1.5 * 1024.0 * 1024.0 * 1024.0).toLong()
-        val hasEnoughDisk = usableDiskBytes > (requiredBytes + bufferBytes)
+        val gpuInfo = com.reveila.aegin.model.DesktopHardwareProbe.detectGpu(totalRamGb)
+        val recommendation = ModelTierCatalog.recommendModel(
+            EnvironmentProfile(
+                target = "desktop",
+                totalRamGb = totalRamGb,
+                availableRamGb = availRamGb,
+                freeDiskGb = freeDiskGb,
+                gpuVramGb = gpuInfo.vramGb,
+                hasDiscreteGpu = gpuInfo.hasDiscreteGpu,
+                hasUnifiedMemoryGpu = gpuInfo.hasUnifiedMemoryGpu,
+                cpuCores = cpuCores,
+                isLowMemory = availRamGb < 1.0
+            )
+        )
+        val tier = recommendation.hardwareTier
+        val recModel = recommendation.recommendedModel
+        val recSizeMb = recommendation.recommendedModelSizeMb
+        val hasEnoughDisk = recommendation.hasEnoughStorage
 
         val stagedFiles = modelsDir.listFiles()
             ?.filter { it.isFile && it.extension.equals("gguf", ignoreCase = true) }
@@ -199,11 +215,17 @@ actual object PlatformEngineBridge {
 
         val runtimeAvailable = desktopLlamaServer.isRuntimeAvailable(activeSystemHome)
         val canRunLocal = totalRamGb >= 5.5 && hasEnoughDisk && runtimeAvailable
+        val gpuLabel = when {
+            gpuInfo.hasDiscreteGpu && gpuInfo.gpuName.isNotBlank() -> "GPU: ${gpuInfo.gpuName} (${gpuInfo.vramGb} GB VRAM)"
+            gpuInfo.hasUnifiedMemoryGpu -> "GPU: ${gpuInfo.gpuName} (${gpuInfo.vramGb} GB Unified)"
+            else -> "CPU-only ($cpuCores cores)"
+        }
         val summary = when {
             totalRamGb < 5.5 -> "Desktop ($arch) has < 6 GB RAM ($tier). Use a Self-Hosted or Cloud AI."
-            !hasEnoughDisk -> "Insufficient disk space (${kotlin.math.round(freeDiskGb * 10.0) / 10.0} GB free) for $recModel (~$recSizeMb MB)."
-            !runtimeAvailable -> "Desktop local GGUF runtime (llama-server) not found in ${File(activeSystemHome, "bin").absolutePath} or PATH. Install llama.cpp llama-server or use a Self-Hosted / Cloud AI."
-            else -> "Desktop ($arch) verified ($tier). Recommended model: $recModel (~$recSizeMb MB)."
+            !hasEnoughDisk -> "Insufficient disk space (${kotlin.math.round(freeDiskGb * 10.0) / 10.0} GB free) even for compact $recModel (~$recSizeMb MB + 1.5 GB buffer)."
+            !runtimeAvailable -> "Local GGUF runtime (llama-server) is not installed yet. Place llama-server in ~/.reveila/aegin-home/bin (or PATH) to run offline models, or use a Self-Hosted / Cloud AI."
+            recommendation.downgradedReason.isNotBlank() -> "Desktop ($arch, $gpuLabel). Recommended: $recModel (~$recSizeMb MB). ${recommendation.downgradedReason}."
+            else -> "Desktop ($arch, $gpuLabel) verified ($tier). Recommended model: $recModel (~$recSizeMb MB)."
         }
 
         DeviceCapabilityReport(
@@ -213,12 +235,18 @@ actual object PlatformEngineBridge {
             freeDiskGb = kotlin.math.round(freeDiskGb * 10.0) / 10.0,
             hasEnoughStorage = hasEnoughDisk,
             cpuAbi = arch,
+            cpuCores = cpuCores,
+            gpuName = gpuInfo.gpuName,
+            gpuVramGb = gpuInfo.vramGb,
+            hasDiscreteGpu = gpuInfo.hasDiscreteGpu,
+            hasUnifiedMemoryGpu = gpuInfo.hasUnifiedMemoryGpu,
             supportsSimdDotProd = true,
             supportsFp16 = true,
-            supportsVulkanCompute = true,
+            supportsVulkanCompute = gpuInfo.hasDiscreteGpu || gpuInfo.hasUnifiedMemoryGpu,
             hardwareTier = tier,
             recommendedModel = recModel,
             recommendedModelSizeMb = recSizeMb,
+            downgradedReason = recommendation.downgradedReason,
             canRunLocalGguf = canRunLocal,
             modelsStagingPath = modelsDir.absolutePath,
             stagedModels = stagedFiles,
@@ -745,5 +773,171 @@ actual object PlatformEngineBridge {
 
     actual suspend fun releaseLocalModel() = withContext(Dispatchers.IO) {
         desktopLlamaServer.stop()
+    }
+
+    private fun persistDesktopClusterProps(updates: Map<String, String>) {
+        try {
+            val propFile = File(activeSystemHome, "configs/reveila.properties")
+            val props = java.util.Properties()
+            if (propFile.exists()) {
+                propFile.inputStream().use { props.load(it) }
+            }
+            updates.forEach { (k, v) -> props.setProperty(k, v) }
+            propFile.parentFile?.mkdirs()
+            propFile.outputStream().use { props.store(it, "Updated by Aegin Paired Cluster Mode") }
+        } catch (_: Exception) {
+        }
+    }
+
+    actual suspend fun getPairedClusterStatus(): PairedClusterStatus = withContext(Dispatchers.IO) {
+        val mode = getStorageItem("paired_cluster_mode") ?: "STANDALONE"
+        val port = getStorageItem("paired_cluster_port")?.toIntOrNull() ?: DesktopClusterHttpServer.DEFAULT_HTTP_PORT
+        val remoteUrl = getStorageItem("paired_cluster_remote_url").orEmpty()
+        val secret = getStorageItem("paired_cluster_secret").orEmpty()
+        val lanUrls = clusterHttpServer.getLanUrls()
+        val cluster = engine.getClusterService()
+        val computePower = cluster?.computePower?.name ?: com.reveila.cluster.ComputePower.detect(
+            com.reveila.system.platform.PlatformSystem.getAvailableProcessors(),
+            com.reveila.system.platform.PlatformSystem.getTotalMemoryMb()
+        ).name
+        val leaderId = cluster?.nodeId?.takeIf { it.isNotBlank() } ?: "aegin-desktop"
+        val descriptorMap = linkedMapOf<String, Any?>(
+            "version" to 1,
+            "leaderId" to leaderId,
+            "lanUrls" to lanUrls,
+            "remoteUrl" to remoteUrl,
+            "port" to port,
+            "clusterSecret" to secret,
+            "computePower" to computePower
+        )
+        val connectedNodes = cluster?.getKnownNodes()?.count { it.status == com.reveila.cluster.NodeStatus.UP } ?: 0
+        val isLead = mode == "DESKTOP_LEAD" && clusterHttpServer.isRunning()
+
+        PairedClusterStatus(
+            mode = if (isLead) "DESKTOP_LEAD" else "STANDALONE",
+            isDesktopHost = true,
+            isServerRunning = clusterHttpServer.isRunning(),
+            leaderUrl = lanUrls.firstOrNull().orEmpty(),
+            lanUrls = lanUrls,
+            remoteUrl = remoteUrl,
+            port = port,
+            clusterSecret = secret,
+            computePower = computePower,
+            leaderReachable = isLead,
+            connectedNodesCount = connectedNodes,
+            pairingPayloadJson = if (isLead) JsonUtil.toJsonString(descriptorMap) else "",
+            statusMessage = if (isLead) {
+                "Desktop Lead active on port $port (${lanUrls.firstOrNull() ?: "localhost"}). $connectedNodes node(s) online."
+            } else {
+                "Running in standalone mode. Enable Desktop Lead Mode to pair Aegin Mobile."
+            }
+        )
+    }
+
+    actual suspend fun enableDesktopLeadMode(port: Int, remoteUrl: String): PairedClusterStatus = withContext(Dispatchers.IO) {
+        startService(null)
+        val safePort = port.coerceIn(1024, 65535)
+        val secret = getStorageItem("paired_cluster_secret")?.takeIf { it.isNotBlank() }
+            ?: com.reveila.util.Uuid.randomUuid().replace("-", "") + com.reveila.util.Uuid.randomUuid().replace("-", "")
+        val trimmedRemote = remoteUrl.trim().trimEnd('/')
+
+        clusterHttpServer.start(port = safePort, secret = secret)
+        val primaryLan = clusterHttpServer.getLanUrls().firstOrNull() ?: "http://127.0.0.1:$safePort"
+
+        setStorageItem("paired_cluster_mode", "DESKTOP_LEAD")
+        setStorageItem("paired_cluster_port", safePort.toString())
+        setStorageItem("paired_cluster_remote_url", trimmedRemote)
+        setStorageItem("paired_cluster_secret", secret)
+
+        persistDesktopClusterProps(
+            mapOf(
+                "system.standalone" to "false",
+                "cluster.leader.url" to primaryLan,
+                "cluster.node.url" to primaryLan,
+                "cluster.node.port" to safePort.toString(),
+                "cluster.secret" to secret
+            )
+        )
+
+        getPairedClusterStatus()
+    }
+
+    actual suspend fun pairWithDesktop(pairingPayloadOrUrl: String, clusterSecret: String): PairedClusterStatus =
+        getPairedClusterStatus()
+
+    actual suspend fun disablePairedClusterMode(): PairedClusterStatus = withContext(Dispatchers.IO) {
+        clusterHttpServer.stop()
+        setStorageItem("paired_cluster_mode", "STANDALONE")
+        persistDesktopClusterProps(
+            mapOf("system.standalone" to "true")
+        )
+        getPairedClusterStatus()
+    }
+
+    actual suspend fun discoverLanDesktopLeads(): List<String> = withContext(Dispatchers.IO) {
+        clusterHttpServer.getLanUrls()
+    }
+
+    actual suspend fun installLocalRuntime(): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        desktopLlamaServer.installRuntime(activeSystemHome)
+    }
+
+    actual suspend fun detectLocalDesktopLlmApps(): List<DetectedLocalLlmApp> = withContext(Dispatchers.IO) {
+        val detected = mutableListOf<DetectedLocalLlmApp>()
+
+        // 1. Probe Ollama Desktop (default port 11434)
+        probeLocalJson("http://127.0.0.1:11434/api/tags")?.let { body ->
+            try {
+                val root = JsonUtil.parseJsonStringToMap(body)
+                val models = (root["models"] as? List<*>)
+                    ?.mapNotNull { (it as? Map<*, *>)?.get("name")?.toString()?.trim()?.takeIf { n -> n.isNotEmpty() } }
+                    .orEmpty()
+                detected.add(
+                    DetectedLocalLlmApp(
+                        appName = "Ollama Desktop",
+                        endpoint = "http://127.0.0.1:11434/v1/chat/completions",
+                        models = models
+                    )
+                )
+            } catch (_: Exception) {
+            }
+        }
+
+        // 2. Probe LM Studio (default port 1234)
+        probeLocalJson("http://127.0.0.1:1234/v1/models")?.let { body ->
+            try {
+                val root = JsonUtil.parseJsonStringToMap(body)
+                val models = (root["data"] as? List<*>)
+                    ?.mapNotNull { (it as? Map<*, *>)?.get("id")?.toString()?.trim()?.takeIf { n -> n.isNotEmpty() } }
+                    .orEmpty()
+                detected.add(
+                    DetectedLocalLlmApp(
+                        appName = "LM Studio",
+                        endpoint = "http://127.0.0.1:1234/v1/chat/completions",
+                        models = models
+                    )
+                )
+            } catch (_: Exception) {
+            }
+        }
+
+        detected
+    }
+
+    private fun probeLocalJson(url: String): String? {
+        return try {
+            val conn = java.net.URI.create(url).toURL().openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 400
+            conn.readTimeout = 800
+            val code = conn.responseCode
+            val text = if (code in 200..299) {
+                conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            } else null
+            conn.disconnect()
+            text
+        } catch (_: Exception) {
+            null
+        }
     }
 }

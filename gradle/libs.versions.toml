@@ -51,6 +51,7 @@ androidMinSdk = "26"
 androidTargetSdk = "35"
 androidJvmTarget = "17"
 androidGradlePlugin = "8.7.2" # Android Gradle Plugin version
+gradlePlayPublisher = "3.12.1"
 androidxCore = "1.15.0"
 androidxBiometric = "1.2.0-alpha05"
 androidxWork = "2.9.1"
@@ -81,6 +82,7 @@ shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
 # Android:
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
 android-library = { id = "com.android.library", version.ref = "androidGradlePlugin" }
+play-publisher = { id = "com.github.triplet.play", version.ref = "gradlePlayPublisher" }
 
 # Kotlin
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

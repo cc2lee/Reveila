@@ -2,11 +2,14 @@ package com.reveila.aegin.model
 
 import java.io.BufferedReader
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URI
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.zip.ZipInputStream
+import com.reveila.util.json.JsonUtil
 
 /**
  * Manages a local `llama-server` subprocess on Desktop (Windows, macOS, Linux) so downloaded
@@ -196,6 +199,150 @@ class DesktopLlamaServerManager(
     fun stop() {
         synchronized(lock) {
             stopLocked()
+        }
+    }
+
+    /**
+     * Downloads and extracts the official prebuilt `llama-server` binary (plus companion shared libraries)
+     * from `ggml-org/llama.cpp` GitHub Releases into `<systemHome>/bin`.
+     */
+    fun installRuntime(systemHome: File): Pair<Boolean, String> {
+        if (findExecutable(systemHome) != null) {
+            return true to "Local AI runtime (llama-server) is already installed."
+        }
+        val osName = (System.getProperty("os.name") ?: "").lowercase()
+        val arch = (System.getProperty("os.arch") ?: "").lowercase()
+        val isWin = osName.contains("win")
+        val isMac = osName.contains("mac")
+        val isArm = arch.contains("aarch64") || arch.contains("arm64")
+
+        val assetMatchers: List<List<String>> = when {
+            isWin && isArm -> listOf(
+                listOf("win", "arm64", ".zip"),
+                listOf("win", "cpu", "arm64", ".zip")
+            )
+            isWin -> listOf(
+                listOf("win", "cpu", "x64", ".zip"),
+                listOf("win", "vulkan", "x64", ".zip"),
+                listOf("win", "x64", ".zip")
+            )
+            isMac && isArm -> listOf(
+                listOf("macos", "arm64", ".zip")
+            )
+            isMac -> listOf(
+                listOf("macos", "x64", ".zip")
+            )
+            else -> listOf(
+                listOf("ubuntu", "x64", ".zip"),
+                listOf("linux", "x64", ".zip")
+            )
+        }
+
+        val binDir = File(systemHome, "bin").apply { mkdirs() }
+        val tempZip = File(systemHome, "temp/llama-server-download.zip").apply {
+            parentFile?.mkdirs()
+            if (exists()) delete()
+        }
+
+        return try {
+            val apiConn = URI.create("https://api.github.com/repos/ggml-org/llama.cpp/releases/latest")
+                .toURL().openConnection() as HttpURLConnection
+            apiConn.requestMethod = "GET"
+            apiConn.connectTimeout = 10_000
+            apiConn.readTimeout = 20_000
+            apiConn.setRequestProperty("Accept", "application/vnd.github+json")
+            apiConn.setRequestProperty("User-Agent", "Aegin-Desktop")
+            val apiCode = apiConn.responseCode
+            if (apiCode !in 200..299) {
+                return false to "Could not reach llama.cpp releases (HTTP $apiCode)."
+            }
+            val releaseJson = apiConn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            apiConn.disconnect()
+
+            val root = JsonUtil.parseJsonStringToMap(releaseJson)
+            val assets = (root["assets"] as? List<*>)?.filterIsInstance<Map<*, *>>().orEmpty()
+            var chosenUrl: String? = null
+            var chosenName = ""
+            for (tokens in assetMatchers) {
+                val match = assets.firstOrNull { asset ->
+                    val name = asset["name"]?.toString()?.lowercase().orEmpty()
+                    tokens.all { tok -> name.contains(tok) } &&
+                        !name.contains("cudart") &&
+                        !name.contains("sycl") &&
+                        !name.contains("hip")
+                }
+                val url = match?.get("browser_download_url")?.toString()?.trim()
+                if (!url.isNullOrBlank()) {
+                    chosenUrl = url
+                    chosenName = match["name"]?.toString().orEmpty()
+                    break
+                }
+            }
+            if (chosenUrl == null) {
+                return false to "No prebuilt llama-server archive found for this OS/architecture ($osName / $arch)."
+            }
+
+            val dlConn = URI.create(chosenUrl).toURL().openConnection() as HttpURLConnection
+            dlConn.requestMethod = "GET"
+            dlConn.instanceFollowRedirects = true
+            dlConn.connectTimeout = 15_000
+            dlConn.readTimeout = 120_000
+            dlConn.setRequestProperty("User-Agent", "Aegin-Desktop")
+            val dlCode = dlConn.responseCode
+            if (dlCode !in 200..299) {
+                dlConn.disconnect()
+                return false to "Download failed for $chosenName (HTTP $dlCode)."
+            }
+            dlConn.inputStream.use { input ->
+                FileOutputStream(tempZip).use { output ->
+                    val buf = ByteArray(32 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        output.write(buf, 0, n)
+                    }
+                }
+            }
+            dlConn.disconnect()
+
+            var extractedServer = false
+            ZipInputStream(tempZip.inputStream()).use { zis ->
+                while (true) {
+                    val entry = zis.nextEntry ?: break
+                    if (!entry.isDirectory) {
+                        val baseName = entry.name.substringAfterLast('/').substringAfterLast('\\')
+                        val lower = baseName.lowercase()
+                        val isServerBin = lower == "llama-server.exe" || lower == "llama-server"
+                        val isSharedLib = lower.endsWith(".dll") || lower.endsWith(".dylib") ||
+                            lower.endsWith(".so") || lower.contains(".so.")
+                        if (isServerBin || isSharedLib) {
+                            val outFile = File(binDir, baseName)
+                            FileOutputStream(outFile).use { fos ->
+                                val buf = ByteArray(16 * 1024)
+                                while (true) {
+                                    val n = zis.read(buf)
+                                    if (n < 0) break
+                                    fos.write(buf, 0, n)
+                                }
+                            }
+                            if (isServerBin) {
+                                outFile.setExecutable(true, false)
+                                extractedServer = true
+                            }
+                        }
+                    }
+                    zis.closeEntry()
+                }
+            }
+            tempZip.delete()
+
+            if (!extractedServer || findExecutable(systemHome) == null) {
+                return false to "Archive '$chosenName' did not contain a runnable llama-server binary."
+            }
+            true to "Installed local AI runtime ($chosenName) successfully. You can now download an offline model."
+        } catch (e: Exception) {
+            tempZip.delete()
+            false to "Failed to install local AI runtime: ${e.message ?: "unknown error"}"
         }
     }
 

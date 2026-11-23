@@ -7,8 +7,13 @@
             "Endpoint": "https://api.openai.com/v1/chat/completions",
             "Model": "gpt-4o",
             "Model.Options": ["gpt-4o"],
+            "Cost.Per1MTokens": 4.0,
+            "Model.Pricing": {
+                "gpt-4o": 4.0,
+                "gpt-4o-mini": 0.4
+            },
             "Temperature": 0.7,
-            "api.key": "REF:OPENAI_KEY",
+            "Api.Key": "REF:OPENAI_KEY",
             "Intent.Options": [
                 "CLOUD_LIVE_RETRIEVAL",
                 "CLOUD_DEEP_REASONING",
@@ -22,8 +27,14 @@
             "Endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
             "Model": "gemini-3-flash",
             "Model.Options": ["gemini-3-flash"],
+            "Cost.Per1MTokens": 0.3,
+            "Model.Pricing": {
+                "gemini-3-flash": 0.3,
+                "gemini-2.5-flash": 0.3,
+                "gemini-2.5-pro": 2.5
+            },
             "Temperature": 0.1,
-            "api.key": "REF:GEMINI_KEY",
+            "Api.Key": "REF:GEMINI_KEY",
             "Intent.Options": [
                 "CLOUD_LIVE_RETRIEVAL",
                 "CLOUD_DEEP_REASONING",
@@ -37,8 +48,13 @@
             "Endpoint": "https://api.deepseek.com/chat/completions",
             "Model": "deepseek-chat",
             "Model.Options": ["deepseek-chat", "deepseek-reasoner"],
+            "Cost.Per1MTokens": 0.4,
+            "Model.Pricing": {
+                "deepseek-chat": 0.4,
+                "deepseek-reasoner": 1.2
+            },
             "Temperature": 0.7,
-            "api.key": "REF:DEEPSEEK_KEY",
+            "Api.Key": "REF:DEEPSEEK_KEY",
             "Intent.Options": [
                 "CLOUD_LIVE_RETRIEVAL",
                 "CLOUD_DEEP_REASONING",
@@ -52,8 +68,14 @@
             "Endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
             "Model": "qwen-plus",
             "Model.Options": ["qwen-plus", "qwen-turbo", "qwen-max"],
+            "Cost.Per1MTokens": 0.5,
+            "Model.Pricing": {
+                "qwen-turbo": 0.15,
+                "qwen-plus": 0.5,
+                "qwen-max": 2.0
+            },
             "Temperature": 0.7,
-            "api.key": "REF:QWEN_KEY",
+            "Api.Key": "REF:QWEN_KEY",
             "Intent.Options": [
                 "CLOUD_LIVE_RETRIEVAL",
                 "CLOUD_DEEP_REASONING",
@@ -73,6 +95,7 @@
                 "qwen2.5-7b-instruct-q4_k_m.gguf",
                 "qwen2.5-14b-instruct-q4_k_m.gguf"
             ],
+            "Cost.Per1MTokens": 0.0,
             "Temperature": 0.7,
             "Intent.Options": [
                 "LOCAL_TEXT_TRANSFORM",

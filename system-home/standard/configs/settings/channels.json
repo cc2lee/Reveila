@@ -1,0 +1,29 @@
+{
+    "channels": [
+        {
+            "Id": "slack-ops",
+            "Type": "SLACK",
+            "Enabled": false,
+            "Endpoint": "REF:SLACK_WEBHOOK_URL",
+            "Channel": "#reveila-alerts",
+            "Min.Severity": "SUCCESS"
+        },
+        {
+            "Id": "teams-ops",
+            "Type": "MICROSOFT_TEAMS",
+            "Enabled": false,
+            "Endpoint": "REF:TEAMS_WEBHOOK_URL",
+            "Min.Severity": "ACTION_REQUIRED"
+        },
+        {
+            "Id": "email-digest",
+            "Type": "EMAIL",
+            "Enabled": false,
+            "Endpoint": "https://api.resend.com/emails",
+            "Api.Key": "REF:EMAIL_GATEWAY_API_KEY",
+            "From": "reveila-alerts@example.com",
+            "To": ["ops@example.com"],
+            "Min.Severity": "WARNING"
+        }
+    ]
+}

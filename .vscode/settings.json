@@ -1,4 +1,7 @@
 {
+    // Enable running code blocks in the terminal for Markdown files
+    "markdown.experimental.codeBlockActions.runInTerminal": true,
+
     // Ensure Gradle imports all nested subprojects
     "java.import.gradle.enabled": true,
     "java.import.gradle.wrapper.enabled": true,

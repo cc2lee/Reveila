@@ -25,6 +25,8 @@ local.properties
 *.keystore
 *.jks
 google-services.json
+*play-service-account*.json
+play-account.json
 
 # ------------------------------------------------------------------------------
 # 2. Android NDK, CMake & Native JNI Builds (llama.cpp / Aegin)

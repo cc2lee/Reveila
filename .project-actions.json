@@ -1,0 +1,22 @@
+{
+  "actions": [
+    {
+      "text": "$(repo-pull) Pull",
+      "command": "git pull",
+      "tooltip": "Pull changes from the remote repository",
+      "color": "#b0eb93"
+    },
+    {
+      "text": "$(repo-push) Push",
+      "command": "git add .; git commit; git push",
+      "tooltip": "Add, commit, and push changes to the remote repository",
+      "color": "#ffc384"
+    },
+    {
+      "text": "Start Aegin Desktop",
+      "command": "cd (git rev-parse --show-toplevel); ./gradlew :apps:Aegin:run",
+      "tooltip": "Start the Aegin desktop application",
+      "color": "#05e885"
+    }
+  ]
+}

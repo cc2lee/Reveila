@@ -1,5 +1,6 @@
 package com.reveila.cluster
 
+import com.reveila.service.RemoteService
 import com.reveila.system.Constants
 import com.reveila.system.ReveilaClient
 
@@ -18,8 +19,39 @@ interface ClusterTransport {
 }
 
 /**
- * Default production [ClusterTransport] backed by [ReveilaClient].
- * Invokes `POST {targetBaseUrl}/api/components/ClusterService/invoke`.
+ * Primary production [ClusterTransport] backed by [RemoteService] (`remote.reveila`).
+ * Ensures all dynamic Reveila nodes use [RemoteService] to contact the Lead Node and peer nodes,
+ * benefiting from unified auth headers, timeout configuration, and [com.reveila.system.PerformanceTracker]
+ * latency/penalty tracking.
+ */
+class RemoteServiceClusterTransport(
+    val remoteService: RemoteService,
+    private val clusterSecret: String? = null
+) : ClusterTransport {
+
+    override fun invokeClusterMethod(
+        targetBaseUrl: String,
+        methodName: String,
+        args: Array<Any?>
+    ): Any? {
+        val headers = if (!clusterSecret.isNullOrBlank()) {
+            mapOf(Constants.CLUSTER_TOKEN_HEADER to clusterSecret)
+        } else {
+            emptyMap()
+        }
+        return remoteService.invokeOnNode(
+            baseUrl = targetBaseUrl,
+            componentName = Constants.CLUSTER_SERVICE,
+            methodName = methodName,
+            args = args,
+            extraHeaders = headers
+        )
+    }
+}
+
+/**
+ * Direct [ReveilaClient]-backed [ClusterTransport] retained for backwards compatibility.
+ * Production cluster nodes default to [RemoteServiceClusterTransport].
  */
 class ReveilaClientClusterTransport(
     private val version: String = Constants.DEFAULT_SYSTEM_VERSION,

@@ -225,10 +225,22 @@
     },
     {
         "component": {
+            "name": "remote.reveila",
+            "class": "com.reveila.service.RemoteService",
+            "version": "1",
+            "description": "Invokes services, components, and plugins hosted on remote Reveila cluster nodes.",
+            "thread-safe": true
+        }
+    },
+    {
+        "component": {
             "name": "ClusterService",
             "class": "com.reveila.cluster.ClusterService",
             "description": "Resilient, self-healing cluster manager handling Lead/Worker coordination, active service routing, native state sync, and dynamic leader election without PostgreSQL dependency.",
-            "thread-safe": true
+            "thread-safe": true,
+            "dependencies": [
+                "remote.reveila"
+            ]
         }
     }
 ]

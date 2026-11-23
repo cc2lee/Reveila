@@ -1,7 +1,9 @@
 // C:\IDE\Projects\Reveila-Suite\apps\Aegin\build.gradle.kts
+import com.github.triplet.gradle.androidpublisher.ReleaseStatus
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -9,7 +11,21 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.jetbrains.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.play.publisher)
     id("reveila-app-packager")
+}
+
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) {
+        f.inputStream().use { load(it) }
+    }
+}
+
+fun resolveReleaseSetting(propName: String, envName: String): String? {
+    return (findProperty(propName) as? String)?.trim()?.takeIf { it.isNotEmpty() }
+        ?: localProps.getProperty(propName)?.trim()?.takeIf { it.isNotEmpty() }
+        ?: System.getenv(envName)?.trim()?.takeIf { it.isNotEmpty() }
 }
 
 // ===========================================================================
@@ -24,7 +40,9 @@ reveilaApp {
             "OrchestrationService",
             "KnowledgeVault",
             "HttpClientService",
-            "LlmProviderFactory"
+            "LlmProviderFactory",
+            "ClusterService",
+            "remote.reveila"
         )
     )
     requiredPlugins.set(emptyList())
@@ -152,8 +170,8 @@ android {
         applicationId = "com.reveila.aegin"
         minSdk = libs.versions.androidMinSdk.get().toInt()
         targetSdk = libs.versions.androidTargetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = resolveReleaseSetting("aeginVersionCode", "AEGIN_VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = resolveReleaseSetting("aeginVersionName", "AEGIN_VERSION_NAME") ?: "1.0.0"
 
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
@@ -186,6 +204,26 @@ android {
 
     sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/assets/androidMain"))
 
+    val releaseKeystorePath = resolveReleaseSetting("aegin.keystore.file", "AEGIN_KEYSTORE_FILE")
+    val releaseKeystorePassword = resolveReleaseSetting("aegin.keystore.password", "AEGIN_KEYSTORE_PASSWORD")
+    val releaseKeyAlias = resolveReleaseSetting("aegin.key.alias", "AEGIN_KEY_ALIAS")
+    val releaseKeyPassword = resolveReleaseSetting("aegin.key.password", "AEGIN_KEY_PASSWORD")
+    val hasReleaseSigning = !releaseKeystorePath.isNullOrBlank() &&
+        !releaseKeystorePassword.isNullOrBlank() &&
+        !releaseKeyAlias.isNullOrBlank() &&
+        !releaseKeyPassword.isNullOrBlank()
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = rootProject.file(releaseKeystorePath!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -194,7 +232,11 @@ android {
             // Aggressive R8 code shrinking, obfuscation & resource shrinking for minimal mobile/wearable APK size
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -221,14 +263,27 @@ android {
     }
 }
 
+play {
+    val serviceAccountPath = resolveReleaseSetting("aegin.play.serviceAccountJson", "AEGIN_PLAY_SERVICE_ACCOUNT_JSON")
+    if (!serviceAccountPath.isNullOrBlank()) {
+        serviceAccountCredentials.set(rootProject.file(serviceAccountPath))
+    }
+    track.set(resolveReleaseSetting("aeginPlayTrack", "AEGIN_PLAY_TRACK") ?: "internal")
+    val statusName = (resolveReleaseSetting("aeginPlayReleaseStatus", "AEGIN_PLAY_RELEASE_STATUS") ?: "DRAFT").uppercase()
+    releaseStatus.set(
+        when (statusName) {
+            "COMPLETED" -> ReleaseStatus.COMPLETED
+            "IN_PROGRESS" -> ReleaseStatus.IN_PROGRESS
+            "HALTED" -> ReleaseStatus.HALTED
+            else -> ReleaseStatus.DRAFT
+        }
+    )
+    defaultToAppBundles.set(true)
+}
+
 compose.desktop {
     application {
         mainClass = "com.reveila.aegin.MainKt"
-
-        // Point Desktop runtime to the slim system-home when running from Gradle
-        jvmArgs(
-            "-Dsystem.home=${layout.buildDirectory.dir("reveila-slim/system-home").get().asFile.absolutePath}"
-        )
 
         buildTypes.release.proguard {
             isEnabled.set(true)

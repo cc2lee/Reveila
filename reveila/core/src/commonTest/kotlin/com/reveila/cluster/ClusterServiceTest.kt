@@ -73,6 +73,9 @@ class ClusterServiceTest {
                 "handleHeartbeat" -> service.handleHeartbeat(args[0] as Map<String, Any?>)
                 "fetchSnapshot" -> service.fetchSnapshot()
                 "lookupServiceRoute" -> service.lookupServiceRoute(args[0] as String)
+                "dispatchService" -> service.dispatchService(args[0] as String)
+                "getNodeDirectory" -> service.getNodeDirectory()
+                "getComputeProfile" -> service.getComputeProfile(args.getOrNull(0) as? String)
                 "handleLeaderClaim" -> service.handleLeaderClaim(args[0] as Map<String, Any?>)
                 "handleLeaderAnnouncement" -> service.handleLeaderAnnouncement(args[0] as Map<String, Any?>)
                 "receivePulse" -> service.receivePulse(args[0] as Map<String, Any?>)
@@ -394,5 +397,268 @@ class ClusterServiceTest {
         assertTrue(lead.lookupServiceRoute("WorkerOnlySvc").isEmpty())
         val workerInfo = lead.getKnownNodes().first { it.nodeId == "node-2" }
         assertEquals(NodeStatus.DOWN, workerInfo.status)
+    }
+
+    @Test
+    fun presetLeaderMatchingOwnIpStartsDirectlyAsLeadWithoutRemoteLookup() {
+        var now = 10_000L
+        var remoteRpcCount = 0
+        val countingTransport = object : ClusterTransport {
+            override fun invokeClusterMethod(targetBaseUrl: String, methodName: String, args: Array<Any?>): Any? {
+                remoteRpcCount++
+                throw AssertionError("Preset leader matching own IP should not perform remote lookup ($methodName)")
+            }
+        }
+
+        // Standard config: standalone=false, cluster.leader.url preset, no explicit cluster.node.url
+        val standardProps = mapOf(
+            Constants.STANDALONE_MODE to "false",
+            Constants.CLUSTER_LEADER_URL to "http://192.168.10.50:8080",
+            Constants.CLUSTER_COMPUTE_POWER to "HIGH"
+        )
+        val lead = ClusterService(
+            transport = countingTransport,
+            clock = { now },
+            autoSchedule = false,
+            localIpProvider = { setOf("192.168.10.50", "127.0.0.1", "localhost") }
+        )
+        lead.context = FakeContext(standardProps)
+        lead.start()
+
+        assertTrue(lead.isPresetLeaderSelf())
+        assertEquals(NodeRole.LEAD, lead.role)
+        assertEquals("http://192.168.10.50:8080", lead.nodeUrl)
+        assertEquals(ComputePower.HIGH, lead.computePower)
+        assertEquals(0, remoteRpcCount)
+    }
+
+    @Test
+    fun dynamicWorkerUsesRemoteServiceToRegisterComputePowerWithPresetLeader() {
+        var now = 10_000L
+        val net = InMemoryClusterNetwork()
+
+        // 1. Lead node starts with standard config matching its own IP
+        val leadProps = mapOf(
+            Constants.STANDALONE_MODE to "false",
+            Constants.CLUSTER_NODE_ID to "lead-1",
+            Constants.CLUSTER_LEADER_URL to "http://10.0.0.10:8080",
+            Constants.CLUSTER_COMPUTE_POWER to "HIGH",
+            Constants.CLUSTER_SECRET to "cluster-secret-xyz"
+        )
+        val lead = ClusterService(
+            transport = net.transportFor("http://10.0.0.10:8080"),
+            clock = { now },
+            autoSchedule = false,
+            localIpProvider = { setOf("10.0.0.10", "127.0.0.1") }
+        )
+        lead.context = FakeContext(leadProps)
+        net.register("http://10.0.0.10:8080", lead)
+        lead.start()
+        assertEquals(NodeRole.LEAD, lead.role)
+
+        // 2. Dynamic worker starts with identical preset leader URL (different host IP) and RemoteService
+        val recordedCalls = mutableListOf<Triple<String, String, Map<String, String>>>()
+        val workerRemoteService = com.reveila.service.RemoteService { baseUrl, componentName, methodName, args, headers, _, _ ->
+            recordedCalls.add(Triple(baseUrl, "$componentName.$methodName", headers))
+            net.invokeClusterMethod(baseUrl, methodName, args)
+        }
+        val workerProps = mapOf(
+            Constants.STANDALONE_MODE to "false",
+            Constants.CLUSTER_NODE_ID to "worker-tower-1",
+            Constants.CLUSTER_LEADER_URL to "http://10.0.0.10:8080",
+            Constants.CLUSTER_COMPUTE_POWER to "MEDIUM",
+            Constants.CLUSTER_SECRET to "cluster-secret-xyz"
+        )
+        val workerContext = object : Context {
+            override val properties: Properties = Properties(workerProps)
+            override val platformAdapter: PlatformAdapter? = null
+            override fun getLogger(): PlatformLogger = PlatformLogger("WorkerTest")
+            override fun getProxy(name: String): Proxy {
+                if (name == Constants.REMOTE_REVEILA) {
+                    return object : Proxy {
+                        override fun getName(): String = Constants.REMOTE_REVEILA
+                        override fun getRequiredRoles(): List<String> = emptyList()
+                        override fun getInstance(): Any = workerRemoteService
+                        override fun invoke(methodName: String, args: Array<out Any?>?): Any? = null
+                    }
+                }
+                throw IllegalArgumentException("No proxy for $name")
+            }
+        }
+        workerRemoteService.context = workerContext
+        workerRemoteService.setRemoteURLs(arrayOf("http://10.0.0.10:8080, 1"))
+        workerRemoteService.start()
+
+        // No custom transport passed -> ClusterService resolves RemoteService from context automatically!
+        val worker = ClusterService(
+            transport = null,
+            clock = { now },
+            autoSchedule = false,
+            localIpProvider = { setOf("10.0.0.25", "127.0.0.1") }
+        )
+        worker.context = workerContext
+        worker.registerLocalService("VisionInference")
+        net.register("http://10.0.0.25:8080", worker)
+        worker.start()
+
+        // Verify RemoteService was used directly to call ClusterService.registerWorker with auth header
+        assertEquals(NodeRole.WORKER, worker.role)
+        assertEquals("http://10.0.0.25:8080", worker.nodeUrl)
+        assertEquals("http://10.0.0.10:8080", worker.leaderUrl)
+        assertTrue(recordedCalls.any { (url, target, headers) ->
+            url == "http://10.0.0.10:8080" &&
+                target == "ClusterService.registerWorker" &&
+                headers[Constants.CLUSTER_TOKEN_HEADER] == "cluster-secret-xyz"
+        })
+
+        // Verify Lead Node received worker's ComputePower in its node registry
+        val registeredWorker = lead.getKnownNodes().first { it.nodeId == "worker-tower-1" }
+        assertEquals(ComputePower.MEDIUM, registeredWorker.computePower)
+        assertEquals("http://10.0.0.25:8080", registeredWorker.baseUrl)
+        assertTrue(registeredWorker.services.contains("VisionInference"))
+        assertEquals("HIGH", lead.getClusterStatus()["computePower"])
+    }
+
+    @Test
+    fun leadNodeReferenceTableAndComputeAwareDispatcher() {
+        var now = 10_000L
+        val net = InMemoryClusterNetwork()
+        val seeds = listOf("http://lead:8080")
+
+        val lead = createNode(
+            net, "lead-1", "http://lead:8080", seeds, { now },
+            extraProps = mapOf(Constants.CLUSTER_COMPUTE_POWER to "MEDIUM")
+        )
+        val lowWorker = createNode(
+            net, "worker-low", "http://low:8080", seeds, { now },
+            extraProps = mapOf(Constants.CLUSTER_COMPUTE_POWER to "LOW"),
+            localServices = listOf("HeavyAnalytics")
+        )
+        val highWorkerA = createNode(
+            net, "worker-high-a", "http://high-a:8080", seeds, { now },
+            extraProps = mapOf(Constants.CLUSTER_COMPUTE_POWER to "HIGH"),
+            localServices = listOf("HeavyAnalytics")
+        )
+        val highWorkerB = createNode(
+            net, "worker-high-b", "http://high-b:8080", seeds, { now },
+            extraProps = mapOf(Constants.CLUSTER_COMPUTE_POWER to "HIGH"),
+            localServices = listOf("HeavyAnalytics")
+        )
+
+        lead.start()
+        lowWorker.start()
+        highWorkerA.start()
+        highWorkerB.start()
+
+        // Reference table lists all 4 nodes ordered by ComputePower descending
+        val directory = lead.getNodeDirectory()
+        assertEquals(4, directory.size)
+        assertEquals("HIGH", directory[0]["computePower"])
+        assertEquals("HIGH", directory[1]["computePower"])
+        assertEquals("MEDIUM", directory[2]["computePower"])
+        assertEquals("LOW", directory[3]["computePower"])
+
+        // Dispatcher prefers HIGH nodes over LOW node and round-robins across equal-power HIGH peers
+        val firstDispatch = lead.dispatchService("HeavyAnalytics")
+        val secondDispatch = lead.dispatchService("HeavyAnalytics")
+        assertEquals("HIGH", firstDispatch["selectedComputePower"])
+        assertEquals("HIGH", secondDispatch["selectedComputePower"])
+        assertNotEquals(firstDispatch["targetUrl"], secondDispatch["targetUrl"])
+        val candidates = firstDispatch["candidates"] as List<*>
+        assertEquals("http://low:8080", candidates.last())
+    }
+
+    @Test
+    fun citizenNodeFetchesMatchingComputeProfileFromLeadNode() {
+        var now = 10_000L
+        val net = InMemoryClusterNetwork()
+        val seeds = listOf("http://lead:8080")
+
+        val lead = createNode(
+            net, "lead-1", "http://lead:8080", seeds, { now },
+            extraProps = mapOf(Constants.CLUSTER_COMPUTE_POWER to "HIGH")
+        )
+        lead.registerComputeProfile(
+            ComputePower.LOW,
+            """[{"component":{"name":"EdgePing","class":"com.reveila.service.HttpClientService"}}]"""
+        )
+        lead.registerComputeProfile(
+            ComputePower.HIGH,
+            """[{"component":{"name":"ServerFabric","class":"com.reveila.ai.AgenticFabric"}}]"""
+        )
+        lead.start()
+
+        val lowCitizen = createNode(
+            net, "citizen-low", "http://citizen-low:8080", seeds, { now },
+            extraProps = mapOf(Constants.CLUSTER_COMPUTE_POWER to "LOW")
+        )
+        lowCitizen.start()
+
+        val superCitizen = createNode(
+            net, "citizen-super", "http://citizen-super:8080", seeds, { now },
+            extraProps = mapOf(Constants.CLUSTER_COMPUTE_POWER to "SUPER")
+        )
+        superCitizen.start()
+
+        val lowProfile = lowCitizen.fetchComputeProfileFromLeader()
+        assertNotNull(lowProfile)
+        assertTrue(lowProfile.contains("EdgePing"))
+
+        // SUPER falls back to HIGH profile when no dedicated SUPER profile is defined
+        val superProfile = superCitizen.fetchComputeProfileFromLeader()
+        assertNotNull(superProfile)
+        assertTrue(superProfile.contains("ServerFabric"))
+    }
+
+    @Test
+    fun mobileEdgeClientNeverElectsItselfAndFailsOverToRemoteUrl() {
+        var now = 10_000L
+        val net = InMemoryClusterNetwork()
+
+        val desktopLan = "http://192.168.1.50:8080"
+        val desktopTailscale = "http://100.64.0.50:8080"
+
+        val desktopLead = createNode(
+            net, "aegin-desktop", desktopLan, emptyList(), { now },
+            extraProps = mapOf(
+                Constants.CLUSTER_LEADER_URL to desktopLan,
+                Constants.CLUSTER_COMPUTE_POWER to "HIGH"
+            ),
+            localServices = listOf("KnowledgeVault", "AgenticFabric")
+        )
+        // Register the same Desktop Lead under its Tailscale virtual IP as well
+        net.register(desktopTailscale, desktopLead)
+        desktopLead.start()
+        assertEquals(NodeRole.LEAD, desktopLead.role)
+
+        val mobileClient = createNode(
+            net, "aegin-mobile", "http://192.168.1.88:8080", emptyList(), { now },
+            extraProps = mapOf(
+                Constants.CLUSTER_LEADER_URL to desktopLan,
+                Constants.CLUSTER_LEADER_FALLBACK_URLS to desktopTailscale,
+                Constants.CLUSTER_ROLE to Constants.CLUSTER_ROLE_EDGE_CLIENT,
+                Constants.CLUSTER_COMPUTE_POWER to "LOW"
+            )
+        )
+        mobileClient.start()
+
+        assertFalse(mobileClient.canElectLeader)
+        assertEquals(NodeRole.WORKER, mobileClient.role)
+        assertTrue(mobileClient.leaderReachable)
+        assertEquals(desktopLan, mobileClient.leaderUrl)
+
+        // User leaves home Wi-Fi -> LAN IP unreachable, Tailscale URL still reachable -> fails over cleanly
+        net.setOffline(desktopLan, true)
+        now += 5_000L
+        mobileClient.tick()
+        assertEquals(NodeRole.WORKER, mobileClient.role)
+        assertTrue(mobileClient.leaderReachable)
+
+        // Desktop goes to sleep -> both LAN and Tailscale unreachable -> Mobile NEVER promotes to LEAD
+        net.setOffline(desktopTailscale, true)
+        now += 10_000L
+        mobileClient.tick()
+        assertEquals(NodeRole.WORKER, mobileClient.role)
+        assertFalse(mobileClient.leaderReachable)
     }
 }

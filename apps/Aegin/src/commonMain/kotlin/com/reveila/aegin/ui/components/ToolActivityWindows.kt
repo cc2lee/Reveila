@@ -1020,7 +1020,8 @@ fun LargeBrowserTakeoverDialog(
         ) {
             PlatformLiveWebView(
                 state = state,
-                isInteractive = isUser,
+                // Always allow scrolling and clicking links inside the expanded browser window.
+                isInteractive = true,
                 isMiniPreview = false,
                 captureTrigger = captureTrigger,
                 onCapturedForReturn = onReturnControlWithCapture,

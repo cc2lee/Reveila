@@ -15,6 +15,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -93,8 +94,10 @@ import com.reveila.aegin.ui.mascot.AeginRobotDogMascot
 import com.reveila.aegin.ui.mascot.LocalAeginMascotController
 import com.reveila.aegin.ui.theme.AeginIconType
 import com.reveila.aegin.ui.theme.AeginOrbAvatar
+import com.reveila.aegin.ui.theme.AeginPillButton
 import com.reveila.aegin.ui.theme.AeginVectorIcon
 import com.reveila.aegin.ui.theme.LocalAeginColors
+import com.reveila.aegin.ui.theme.LocalAeginTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
@@ -939,7 +942,7 @@ fun HomeScreen(
         // ─────────────────────────────────────────────────────────────────────
         // 1. TOP HEADER: MODEL PILL (LEFT) • CENTERED ROBOT DOG • TOOLS (RIGHT)
         // ─────────────────────────────────────────────────────────────────────
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(
@@ -951,6 +954,8 @@ fun HomeScreen(
                 }
                 .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
+            val isWideDesktop = maxWidth >= 600.dp
+            val headerMascotSize = if (isWideDesktop) 72.dp else 54.dp
             // Very Left: AI Model Type Pill (Tap to expand selection card)
             Row(
                 modifier = Modifier
@@ -1024,8 +1029,8 @@ fun HomeScreen(
             ) {
                 AeginRobotDogMascot(
                     state = mascotState,
-                    mode = AeginMascotMode.SMALL_BADGE,
-                    size = 54.dp,
+                    mode = if (isWideDesktop) AeginMascotMode.COMPANION else AeginMascotMode.SMALL_BADGE,
+                    size = headerMascotSize,
                     showTelemetryEffects = true
                 )
             }
@@ -1434,26 +1439,43 @@ fun HomeScreen(
                                     (it.url.isNotBlank() || it.rawHtml.isNotBlank())
                             }
                             if (browserAttachment != null) {
-                                MiniBrowserCard(
-                                    state = browserAttachment.toBrowserLiveState(),
-                                    onClick = {
-                                        activeLargeWindow = ActiveLargeToolWindow.BROWSER
-                                        scope.launch {
-                                            toolSnapshot = if (browserAttachment.rawHtml.isNotBlank()) {
-                                                AeginBridge.browserUserAction(
-                                                    action = "sync_webview",
-                                                    url = browserAttachment.url,
-                                                    rawHtml = browserAttachment.rawHtml
-                                                )
-                                            } else {
-                                                AeginBridge.browserUserAction(
-                                                    action = "navigate",
-                                                    url = browserAttachment.url
-                                                )
-                                            }
+                                val openAttachedBrowser: () -> Unit = {
+                                    activeLargeWindow = ActiveLargeToolWindow.BROWSER
+                                    scope.launch {
+                                        toolSnapshot = if (browserAttachment.rawHtml.isNotBlank()) {
+                                            AeginBridge.browserUserAction(
+                                                action = "sync_webview",
+                                                url = browserAttachment.url,
+                                                rawHtml = browserAttachment.rawHtml
+                                            )
+                                        } else {
+                                            AeginBridge.browserUserAction(
+                                                action = "navigate",
+                                                url = browserAttachment.url
+                                            )
                                         }
                                     }
-                                )
+                                }
+                                // Avoid duplicating the same news/web list in two formats when the text answer
+                                // already summarizes the content: show a compact source pill instead of a full preview card.
+                                val isRedundantFeedOrSummaryPreview = msg.text.trim().length >= 80 &&
+                                    !browserAttachment.rawHtml.contains("<!-- reveila-mermaid-html -->", ignoreCase = true)
+                                if (isRedundantFeedOrSummaryPreview) {
+                                    val sourceLabel = browserAttachment.title
+                                        .ifBlank { browserAttachment.url.removePrefix("https://").removePrefix("http://").substringBefore("/") }
+                                        .ifBlank { "Web Source" }
+                                        .take(36)
+                                    AeginPillButton(
+                                        text = "Source: $sourceLabel • Open",
+                                        leadingIcon = AeginIconType.CLOUD,
+                                        onClick = openAttachedBrowser
+                                    )
+                                } else {
+                                    MiniBrowserCard(
+                                        state = browserAttachment.toBrowserLiveState(),
+                                        onClick = openAttachedBrowser
+                                    )
+                                }
                             }
 
                             if (!msg.id.startsWith("init-") && !isThinking) {
@@ -2310,6 +2332,8 @@ private fun HomeQuickActionPillsBar(
     onDispatchShortcut: (key: String, prompt: String) -> Unit
 ) {
     val theme = LocalAeginColors.current
+    val resolvedTheme = LocalAeginTheme.current
+    val pillStyle = resolvedTheme.pillButton
     val quickChips = remember {
         listOf(
             QuickChipSpec("Summarize", "Summarize Files", AeginIconType.SPARKLES, "Summarize the key insights and decisions from the files in my Personal Knowledge Folder."),
@@ -2319,7 +2343,6 @@ private fun HomeQuickActionPillsBar(
             QuickChipSpec("Privacy", "Privacy Check", AeginIconType.SHIELD, "Review the files in my Personal Knowledge Folder and flag any sensitive or confidential details.")
         )
     }
-    val disabledAlpha = 0.42f
     val hasPinnedScope = pinnedFolderCount > 0
 
     Row(
@@ -2328,11 +2351,11 @@ private fun HomeQuickActionPillsBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         val folderTint = when {
-            !pillsEnabled -> theme.subText.copy(alpha = disabledAlpha)
-            hasPinnedScope -> theme.cyan
-            else -> theme.subText
+            !pillsEnabled -> pillStyle.disabledIcon
+            hasPinnedScope -> pillStyle.selectedIcon
+            else -> pillStyle.enabledIcon
         }
-        // Circular icon-only Folder scope button (matching the leading composer icon style)
+        // Circular icon-only Folder scope button (driven by configurable pill button tokens)
         Box(
             modifier = Modifier
                 .size(32.dp)
@@ -2344,13 +2367,19 @@ private fun HomeQuickActionPillsBar(
                     .fillMaxSize()
                     .clip(CircleShape)
                     .background(
-                        if (pillsEnabled && hasPinnedScope) theme.cyan.copy(alpha = 0.18f)
-                        else theme.card.copy(alpha = if (pillsEnabled) 1f else 0.6f)
+                        when {
+                            !pillsEnabled -> pillStyle.disabledBackground
+                            hasPinnedScope -> pillStyle.selectedBackground
+                            else -> pillStyle.enabledBackground
+                        }
                     )
                     .border(
-                        width = 1.dp,
-                        color = if (pillsEnabled && hasPinnedScope) theme.cyan
-                        else theme.glassBorder.copy(alpha = if (pillsEnabled) 1f else 0.5f),
+                        width = pillStyle.borderWidth,
+                        color = when {
+                            !pillsEnabled -> pillStyle.disabledBorder
+                            hasPinnedScope -> pillStyle.selectedBorder
+                            else -> pillStyle.enabledBorder
+                        },
                         shape = CircleShape
                     ),
                 contentAlignment = Alignment.Center
@@ -2367,13 +2396,13 @@ private fun HomeQuickActionPillsBar(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .clip(CircleShape)
-                        .background(if (pillsEnabled) theme.cyan else theme.subText.copy(alpha = disabledAlpha))
+                        .background(if (pillsEnabled) pillStyle.selectedBorder else pillStyle.disabledText)
                         .padding(horizontal = 4.dp, vertical = 0.5.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "$pinnedFolderCount",
-                        color = Color.Black,
+                        color = theme.onPrimary,
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Black,
                         lineHeight = 9.sp
@@ -2389,35 +2418,12 @@ private fun HomeQuickActionPillsBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             quickChips.forEach { chip ->
-                Row(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(theme.card.copy(alpha = if (pillsEnabled) 1f else 0.6f))
-                        .border(
-                            width = 1.dp,
-                            color = theme.glassBorder.copy(alpha = if (pillsEnabled) 1f else 0.5f),
-                            shape = CircleShape
-                        )
-                        .clickable(enabled = pillsEnabled) {
-                            onDispatchShortcut(chip.key, chip.prompt)
-                        }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    AeginVectorIcon(
-                        type = chip.icon,
-                        tint = theme.subText.copy(alpha = if (pillsEnabled) 1f else disabledAlpha),
-                        size = 12.dp,
-                        strokeWidth = 1.6.dp
-                    )
-                    Text(
-                        text = chip.label,
-                        color = if (pillsEnabled) theme.text else theme.subText.copy(alpha = disabledAlpha),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+                AeginPillButton(
+                    text = chip.label,
+                    leadingIcon = chip.icon,
+                    enabled = pillsEnabled,
+                    onClick = { onDispatchShortcut(chip.key, chip.prompt) }
+                )
             }
         }
     }

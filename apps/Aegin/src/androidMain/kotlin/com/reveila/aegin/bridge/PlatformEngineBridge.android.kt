@@ -1140,10 +1140,6 @@ actual object PlatformEngineBridge {
             false
         }
 
-        // Hardware Tiering Matrix (< 6 GB blocked, 6–8 GB 1.5B, 8–12 GB 2B, 12 GB+ 3B)
-        // Note: 5.5 GiB accounts for kernel/GPU carveouts on 6 GB physical RAM devices.
-        val (tier, recModel, recSizeMb) = ModelTierCatalog.resolveTier(totalRamGb, target = "android")
-
         val modelsDir = resolveModelsStagingDir()
         val statFs = try {
             StatFs(modelsDir.absolutePath)
@@ -1156,9 +1152,23 @@ actual object PlatformEngineBridge {
         }
         val availableDiskBytes = statFs?.availableBytes ?: 0L
         val freeDiskGb = availableDiskBytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
-        val requiredBytes = recSizeMb.toLong() * 1024L * 1024L
-        val bufferBytes = (1.5 * 1024.0 * 1024.0 * 1024.0).toLong()
-        val hasEnoughDisk = availableDiskBytes > (requiredBytes + bufferBytes)
+        val cpuCores = Runtime.getRuntime().availableProcessors()
+
+        // Environment-validated Hardware Tiering Matrix with automatic disk & available-RAM step-down
+        val recommendation = ModelTierCatalog.recommendModel(
+            EnvironmentProfile(
+                target = "android",
+                totalRamGb = totalRamGb,
+                availableRamGb = availRamGb,
+                freeDiskGb = freeDiskGb,
+                cpuCores = cpuCores,
+                isLowMemory = isLowMem
+            )
+        )
+        val tier = recommendation.hardwareTier
+        val recModel = recommendation.recommendedModel
+        val recSizeMb = recommendation.recommendedModelSizeMb
+        val hasEnoughDisk = recommendation.hasEnoughStorage
 
         val stagedFiles = modelsDir.listFiles()
             ?.filter { it.isFile && it.extension.equals("gguf", ignoreCase = true) }
@@ -1175,6 +1185,7 @@ actual object PlatformEngineBridge {
             !hasRequiredSimd -> "ARM64 CPU lacks asimddp/dotprod SIMD instructions required for local Q4_K_M GGUF inference."
             totalRamGb < 5.5 || isLowMem -> "Insufficient physical RAM (${String.format("%.1f", totalRamGb)} GB < 6 GB). Android LMK would terminate local GGUF; Cloud/RAG mode recommended."
             !hasEnoughDisk -> "Insufficient free storage (${String.format("%.1f", freeDiskGb)} GB free). Need ${recSizeMb} MB + 1.5 GB cache buffer."
+            recommendation.downgradedReason.isNotBlank() -> "Compatible ($tier). Recommended: $recModel (~$recSizeMb MB). ${recommendation.downgradedReason}."
             else -> "Compatible ($tier). Recommended quantized profile: $recModel (~$recSizeMb MB)."
         }
 
@@ -1185,12 +1196,14 @@ actual object PlatformEngineBridge {
             freeDiskGb = kotlin.math.round(freeDiskGb * 10.0) / 10.0,
             hasEnoughStorage = hasEnoughDisk,
             cpuAbi = cpuAbi,
+            cpuCores = cpuCores,
             supportsSimdDotProd = supportsDotProd,
             supportsFp16 = supportsFp16,
             supportsVulkanCompute = supportsVulkan,
             hardwareTier = tier,
             recommendedModel = recModel,
             recommendedModelSizeMb = recSizeMb,
+            downgradedReason = recommendation.downgradedReason,
             canRunLocalGguf = canRunLocal,
             modelsStagingPath = modelsDir.absolutePath,
             stagedModels = stagedFiles,
@@ -1713,4 +1726,151 @@ actual object PlatformEngineBridge {
             status = "SUCCESS"
         )
     }
+
+    private fun persistAndroidClusterProps(updates: Map<String, String>) {
+        try {
+            val propFile = File(resolveSystemHomeDir(), "configs/reveila.properties")
+            val props = java.util.Properties()
+            if (propFile.exists()) {
+                propFile.inputStream().use { props.load(it) }
+            }
+            updates.forEach { (k, v) -> props.setProperty(k, v) }
+            propFile.parentFile?.mkdirs()
+            propFile.outputStream().use { props.store(it, "Updated by Aegin Mobile Paired Cluster") }
+        } catch (_: Exception) {
+        }
+    }
+
+    actual suspend fun getPairedClusterStatus(): PairedClusterStatus = withContext(Dispatchers.IO) {
+        val mode = getStorageItem("paired_cluster_mode") ?: "STANDALONE"
+        val leaderUrl = getStorageItem("paired_cluster_leader_url").orEmpty()
+        val remoteUrl = getStorageItem("paired_cluster_remote_url").orEmpty()
+        val secret = getStorageItem("paired_cluster_secret").orEmpty()
+        val cluster = engine.getClusterService()
+        val reachable = cluster?.leaderReachable == true
+        val isPaired = mode == "MOBILE_PAIRED" && (leaderUrl.isNotBlank() || remoteUrl.isNotBlank())
+
+        PairedClusterStatus(
+            mode = if (isPaired) "MOBILE_PAIRED" else "STANDALONE",
+            isDesktopHost = false,
+            isServerRunning = false,
+            leaderUrl = leaderUrl,
+            lanUrls = if (leaderUrl.isNotBlank()) listOf(leaderUrl) else emptyList(),
+            remoteUrl = remoteUrl,
+            port = 8080,
+            clusterSecret = secret,
+            computePower = "LOW",
+            leaderReachable = reachable,
+            connectedNodesCount = cluster?.getKnownNodes()?.count { it.status == com.reveila.cluster.NodeStatus.UP } ?: 0,
+            pairingPayloadJson = "",
+            statusMessage = when {
+                !isPaired -> "Running standalone on mobile. Pair with Aegin Desktop to offload heavy AI & Vault tasks."
+                reachable -> "Paired with Desktop Lead ($leaderUrl) as LOW-power EDGE_CLIENT."
+                else -> "Paired with Desktop Lead ($leaderUrl) — currently offline, using local/cloud fallback."
+            }
+        )
+    }
+
+    actual suspend fun enableDesktopLeadMode(port: Int, remoteUrl: String): PairedClusterStatus =
+        getPairedClusterStatus()
+
+    actual suspend fun pairWithDesktop(
+        pairingPayloadOrUrl: String,
+        clusterSecret: String
+    ): PairedClusterStatus = withContext(Dispatchers.IO) {
+        ensureStartedBlocking()
+        val trimmed = pairingPayloadOrUrl.trim()
+        val parsedLanUrls = mutableListOf<String>()
+        var parsedRemoteUrl = ""
+        var parsedSecret = clusterSecret.trim()
+
+        if (trimmed.startsWith("{")) {
+            try {
+                val map = JsonUtil.parseJsonStringToMap(trimmed)
+                val lanRaw = map["lanUrls"] as? List<*>
+                lanRaw?.mapNotNull { it?.toString()?.trim()?.takeIf { s -> s.isNotEmpty() } }
+                    ?.forEach { parsedLanUrls.add(it.trimEnd('/')) }
+                parsedRemoteUrl = map["remoteUrl"]?.toString()?.trim()?.trimEnd('/').orEmpty()
+                val s = map["clusterSecret"]?.toString()?.trim().orEmpty()
+                if (s.isNotEmpty()) parsedSecret = s
+            } catch (_: Exception) {
+                if (trimmed.startsWith("http")) parsedLanUrls.add(trimmed.trimEnd('/'))
+            }
+        } else if (trimmed.isNotBlank()) {
+            parsedLanUrls.add(trimmed.trimEnd('/'))
+        }
+
+        // Try live LAN UDP discovery first so dynamic DHCP IP changes resolve automatically
+        val discoveredLan = com.reveila.aegin.cluster.AndroidLanDiscoveryClient.discoverDesktopLeadUrls(1200)
+        val orderedCandidates = LinkedHashSet<String>()
+        discoveredLan.forEach { orderedCandidates.add(it.trimEnd('/')) }
+        parsedLanUrls.forEach { orderedCandidates.add(it) }
+        parsedRemoteUrl.takeIf { it.isNotBlank() }?.let { orderedCandidates.add(it) }
+
+        val primaryUrl = orderedCandidates.firstOrNull().orEmpty()
+        val fallbacks = orderedCandidates.drop(1)
+
+        setStorageItem("paired_cluster_mode", "MOBILE_PAIRED")
+        setStorageItem("paired_cluster_leader_url", primaryUrl)
+        setStorageItem("paired_cluster_remote_url", parsedRemoteUrl)
+        setStorageItem("paired_cluster_secret", parsedSecret)
+
+        persistAndroidClusterProps(
+            mapOf(
+                "system.standalone" to "false",
+                "cluster.leader.url" to primaryUrl,
+                "cluster.leader.fallback.urls" to fallbacks.joinToString(","),
+                "cluster.role" to "EDGE_CLIENT",
+                "cluster.can.elect.leader" to "false",
+                "cluster.node.compute.power" to "LOW",
+                "cluster.secret" to parsedSecret
+            )
+        )
+
+        // Attempt live join immediately via ClusterService + RemoteService
+        val cluster = engine.getClusterService()
+        var joined = false
+        if (cluster != null) {
+            for (candidateUrl in orderedCandidates) {
+                if (cluster.joinLeader(candidateUrl)) {
+                    setStorageItem("paired_cluster_leader_url", candidateUrl)
+                    joined = true
+                    break
+                }
+            }
+        }
+
+        getPairedClusterStatus().copy(
+            leaderReachable = joined,
+            statusMessage = if (joined) {
+                "Paired and connected to Desktop Lead ($primaryUrl) as LOW-power EDGE_CLIENT."
+            } else {
+                "Pairing saved ($primaryUrl). Desktop Lead is not reachable right now — will auto-connect when online."
+            }
+        )
+    }
+
+    actual suspend fun disablePairedClusterMode(): PairedClusterStatus = withContext(Dispatchers.IO) {
+        setStorageItem("paired_cluster_mode", "STANDALONE")
+        setStorageItem("paired_cluster_leader_url", "")
+        setStorageItem("paired_cluster_remote_url", "")
+        setStorageItem("paired_cluster_secret", "")
+        persistAndroidClusterProps(
+            mapOf(
+                "system.standalone" to "true",
+                "cluster.leader.url" to "",
+                "cluster.leader.fallback.urls" to ""
+            )
+        )
+        getPairedClusterStatus()
+    }
+
+    actual suspend fun discoverLanDesktopLeads(): List<String> = withContext(Dispatchers.IO) {
+        com.reveila.aegin.cluster.AndroidLanDiscoveryClient.discoverDesktopLeadUrls(1500)
+    }
+
+    actual suspend fun installLocalRuntime(): Pair<Boolean, String> =
+        true to "Built-in on-device AI runtime is already included on Android."
+
+    actual suspend fun detectLocalDesktopLlmApps(): List<DetectedLocalLlmApp> = emptyList()
 }

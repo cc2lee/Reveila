@@ -82,6 +82,7 @@ data class ScoredRoutingCandidate(
 object AutoModelRouter {
 
     private val paramBillionsRegex = Regex("(?<![0-9.])(\\d+(?:\\.\\d+)?)b(?![a-z])")
+    private val miniModelRegex = Regex("(?<![a-z])mini(?![a-z])")
 
     /**
      * Resolves a provider's [ProviderRoutingProfile] by starting with built-in model priors
@@ -93,7 +94,8 @@ object AutoModelRouter {
         providerField: String = "",
         userCostTier: String? = null,
         userCostPer1MTokens: Double? = null,
-        userPerformanceTier: String? = null
+        userPerformanceTier: String? = null,
+        modelPricing: Map<String, Double> = emptyMap()
     ): ProviderRoutingProfile {
         val prior = inferDefaultProfile(type = type, model = model, providerField = providerField)
 
@@ -101,7 +103,16 @@ object AutoModelRouter {
         var perf = prior.performanceTier
         var hasUserOverride = false
 
-        if (userCostPer1MTokens != null && userCostPer1MTokens >= 0.0) {
+        val matchedModelPrice = if (model.isNotBlank() && modelPricing.isNotEmpty()) {
+            modelPricing.entries.firstOrNull { it.key.equals(model.trim(), ignoreCase = true) }?.value
+        } else {
+            null
+        }
+
+        if (matchedModelPrice != null && matchedModelPrice >= 0.0) {
+            cost = matchedModelPrice
+            hasUserOverride = true
+        } else if (userCostPer1MTokens != null && userCostPer1MTokens >= 0.0) {
             cost = userCostPer1MTokens
             hasUserOverride = true
         } else if (!userCostTier.isNullOrBlank()) {
@@ -179,7 +190,10 @@ object AutoModelRouter {
             lowerModel.contains("flash") ->
                 ProviderRoutingProfile(costPer1MTokens = 0.30, performanceTier = 3.9)
 
-            lowerModel.contains("mini") || lowerModel.contains("haiku") ->
+            lowerModel.contains("gemini") && lowerModel.contains("pro") ->
+                ProviderRoutingProfile(costPer1MTokens = 2.50, performanceTier = 4.7)
+
+            miniModelRegex.containsMatchIn(lowerModel) || lowerModel.contains("haiku") ->
                 ProviderRoutingProfile(costPer1MTokens = 0.40, performanceTier = 3.8)
 
             lowerModel.contains("qwen-plus") ->
@@ -190,9 +204,6 @@ object AutoModelRouter {
 
             lowerModel.contains("opus") ->
                 ProviderRoutingProfile(costPer1MTokens = 15.00, performanceTier = 5.0)
-
-            lowerModel.contains("gemini") && lowerModel.contains("pro") ->
-                ProviderRoutingProfile(costPer1MTokens = 2.50, performanceTier = 4.7)
 
             lowerModel.contains("o1") || lowerModel.contains("o3") || lowerModel.contains("o4") ||
                 lowerModel.contains("gpt-5") || lowerModel.contains("gpt-4.1") ||
@@ -246,6 +257,12 @@ object AutoModelRouter {
             else -> 0.0
         }
 
+        // Capability floor ensures $0 local/economy models cannot outscore frontier reasoning
+        // models on deep-reasoning or multi-step agent tasks when they fall short on capability.
+        val capabilityFloor = requiredCapabilityFloor(category)
+        val capabilityDeficit = (capabilityFloor - candidate.profile.performanceTier).coerceAtLeast(0.0)
+        val capabilityFloorPenalty = capabilityDeficit * 0.22
+
         val testedBonus = if (hasAnyTestedCandidate && candidate.isTested) 0.18 else 0.0
 
         val consecutiveFailurePenalty = (0.25 * candidate.stats.consecutiveFailures).coerceAtMost(0.75)
@@ -260,6 +277,7 @@ object AutoModelRouter {
             (wLatency * latencyScore) +
             localityBonus +
             testedBonus -
+            capabilityFloorPenalty -
             consecutiveFailurePenalty -
             failureRatePenalty
 
@@ -303,6 +321,19 @@ object AutoModelRouter {
                     .thenBy { it.candidate.profile.costPer1MTokens }
                     .thenBy { it.candidate.name.lowercase() }
             )
+    }
+
+    fun requiredCapabilityFloor(category: TaskRoutingCategory): Double {
+        return when (category) {
+            TaskRoutingCategory.LOCAL_TEXT_TRANSFORM,
+            TaskRoutingCategory.LOCAL_STRUCTURED_EXTRACT,
+            TaskRoutingCategory.LOCAL_DEVICE_ACTION -> 2.0
+
+            TaskRoutingCategory.CLOUD_LIVE_RETRIEVAL -> 3.2
+
+            TaskRoutingCategory.CLOUD_DEEP_REASONING,
+            TaskRoutingCategory.CLOUD_MULTI_STEP_AGENT -> 4.2
+        }
     }
 
     private fun parseCostTier(raw: String): Double? {

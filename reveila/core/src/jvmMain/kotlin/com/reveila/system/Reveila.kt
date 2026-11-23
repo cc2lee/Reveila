@@ -168,15 +168,52 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
             handleStartError("Configuration validation failed.", e)
         }
 
-        // PHASE 3: EXECUTION (Starting components in dependency-aware order)
-        val sortedComponents = sortMetaObjects(finalComponentList)
-        startComponents(Constants.COMPONENT, sortedComponents, timeoutSeconds)
+        // PHASE 3: EXECUTION
+        val provisioner = createLibraryProvisioner()
+        if (!standalone) {
+            val bootstrapNames = setOf(Constants.REMOTE_REVEILA, Constants.CLUSTER_SERVICE)
+            val bootstrapComponents = sortMetaObjects(finalComponentList.filter { it.getName() in bootstrapNames })
+            val remainingComponents = finalComponentList.filter { it.getName() !in bootstrapNames }
 
-        val sortedPlugins = sortMetaObjects(pluginMetaObjects)
-        startComponents(Constants.PLUGIN, sortedPlugins, timeoutSeconds)
+            // 3a. Start cluster bootstrap core (remote.reveila -> ClusterService)
+            startComponents(Constants.COMPONENT, bootstrapComponents, timeoutSeconds, provisioner)
 
-        // Refresh ClusterService local service registry now that all components & plugins are loaded
-        getClusterService()?.refreshLocalServices()
+            val clusterSvc = getClusterService()
+            val citizenProfileJson = if (clusterSvc != null && clusterSvc.role == com.reveila.cluster.NodeRole.WORKER) {
+                clusterSvc.fetchComputeProfileFromLeader()
+            } else {
+                null
+            }
+
+            if (!citizenProfileJson.isNullOrBlank()) {
+                logger?.info(
+                    "🧩 Citizen node (${clusterSvc?.computePower}) received preset compute profile from Lead Node. " +
+                        "Provisioning libraries and starting assigned components..."
+                )
+                val profileMetaObjects = Configuration(citizenProfileJson).getMetaObjects()
+                    .filter { it.getName() !in bootstrapNames }
+                val sortedProfile = sortMetaObjects(profileMetaObjects)
+                startComponents(Constants.COMPONENT, sortedProfile, timeoutSeconds, provisioner)
+                clusterSvc?.refreshLocalServices()
+                clusterSvc?.sendHeartbeat()
+            } else {
+                val sortedRemaining = sortMetaObjects(remainingComponents)
+                startComponents(Constants.COMPONENT, sortedRemaining, timeoutSeconds, provisioner)
+
+                val sortedPlugins = sortMetaObjects(pluginMetaObjects)
+                startComponents(Constants.PLUGIN, sortedPlugins, timeoutSeconds, provisioner)
+                clusterSvc?.refreshLocalServices()
+            }
+        } else {
+            // Standalone execution: start all components & plugins in dependency-aware order
+            val sortedComponents = sortMetaObjects(finalComponentList)
+            startComponents(Constants.COMPONENT, sortedComponents, timeoutSeconds, provisioner)
+
+            val sortedPlugins = sortMetaObjects(pluginMetaObjects)
+            startComponents(Constants.PLUGIN, sortedPlugins, timeoutSeconds, provisioner)
+
+            getClusterService()?.refreshLocalServices()
+        }
 
         isRunningFlag.set(true)
         logStartupCompletion(beginTime)
@@ -279,6 +316,16 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
         }
     }
 
+    open fun getRemoteService(): com.reveila.service.RemoteService? {
+        val ctx = systemContext ?: return null
+        if (!ctx.hasProxy(Constants.REMOTE_REVEILA)) return null
+        return try {
+            ctx.getProxy(Constants.REMOTE_REVEILA).getInstance() as? com.reveila.service.RemoteService
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun invokeOnClusterNode(
         clusterService: ClusterService,
         targetUrl: String,
@@ -289,15 +336,14 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
     ): Any? {
         val secret = systemContext?.properties?.getProperty(Constants.CLUSTER_SECRET)?.takeIf { it.isNotBlank() }
         val headers = if (secret != null) mapOf(Constants.CLUSTER_TOKEN_HEADER to secret) else emptyMap()
-        val client = ReveilaClient(baseUrl = targetUrl, version = getVersion(), defaultHeaders = headers)
+        val remoteService = getRemoteService() ?: com.reveila.service.RemoteService().apply {
+            this.context = systemContext
+        }
+        val effectiveArgs = params ?: emptyArray()
 
         return try {
-            val result = client.invoke(componentName, methodName, params, targetUrl)
-            val timeUsed = System.currentTimeMillis() - startTime
-            PerformanceTracker.getInstance().track(timeUsed, targetUrl)
-            result
+            remoteService.invokeOnNode(targetUrl, componentName, methodName, effectiveArgs, headers)
         } catch (firstError: Exception) {
-            PerformanceTracker.getInstance().track(PerformanceTracker.DEFAULT_PENALTY_MS, targetUrl)
             clusterService.invalidateRemoteNode(componentName, targetUrl)
             logger?.warning(
                 "Cluster invocation of '$componentName.$methodName' on $targetUrl failed (${firstError.message}). " +
@@ -305,11 +351,7 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
             )
             val retryUrl = clusterService.resolveRemoteNodeUrl(componentName)
             if (!retryUrl.isNullOrBlank() && retryUrl != targetUrl && retryUrl != this.localUrl) {
-                val retryClient = ReveilaClient(baseUrl = retryUrl, version = getVersion(), defaultHeaders = headers)
-                val result = retryClient.invoke(componentName, methodName, params, retryUrl)
-                val timeUsed = System.currentTimeMillis() - startTime
-                PerformanceTracker.getInstance().track(timeUsed, retryUrl)
-                return result
+                return remoteService.invokeOnNode(retryUrl, componentName, methodName, effectiveArgs, headers)
             }
             throw firstError
         }
@@ -551,8 +593,24 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
         return manifest
     }
 
+    private fun createLibraryProvisioner(): LibraryProvisioner {
+        val sysHome = this.properties.getProperty(Constants.SYSTEM_HOME)?.takeIf { it.isNotBlank() } ?: "."
+        val libsDir = File(sysHome, Constants.LIB_DIR_NAME)
+        val downloadBaseUrl = this.properties.getProperty(Constants.DOWNLOAD_BASE_URL)?.takeIf { it.isNotBlank() }
+        return LibraryProvisioner(
+            libsDir = libsDir,
+            downloadBaseUrl = downloadBaseUrl,
+            logger = logger
+        )
+    }
+
     @Throws(Exception::class)
-    private fun startComponents(tag: String, metaObjectList: List<MetaObject>?, timeoutSeconds: Long) {
+    private fun startComponents(
+        tag: String,
+        metaObjectList: List<MetaObject>?,
+        timeoutSeconds: Long,
+        provisioner: LibraryProvisioner? = null
+    ) {
         if (metaObjectList.isNullOrEmpty()) return
 
         if (startedProxies == null) {
@@ -574,6 +632,23 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
             val subject = Subject()
             subject.principals.add(RolePrincipal(type))
 
+            var parentLoader: ClassLoader = javaClass.classLoader
+
+            // Pre-flight library verification & download from download.base.url before starting component
+            if (provisioner != null && mObj.getRequiredLibraries().isNotEmpty()) {
+                try {
+                    val report = provisioner.ensureLibraries(mObj)
+                    val libLoader = provisioner.buildClassLoader(parentLoader, report.resolvedFiles)
+                    if (libLoader != null) {
+                        parentLoader = libLoader
+                        proxy.setClassLoader(libLoader)
+                    }
+                } catch (e: Exception) {
+                    handleStartError("Failed to provision required libraries for $tag [$compName].", e)
+                    continue
+                }
+            }
+
             if (!Constants.COMPONENT.equals(type, ignoreCase = true)) {
                 try {
                     var pluginsRootDir = this.properties.getProperty("plugin.local.dir")
@@ -582,7 +657,7 @@ open class Reveila : AutoCloseable, EventConsumer, ReveilaEngine {
                     }
                     val pluginFolder = File(pluginsRootDir, compName)
                     if (pluginFolder.exists() && pluginFolder.isDirectory) {
-                        val loader = RuntimeUtil.createPluginClassLoader(pluginFolder.absolutePath, javaClass.classLoader)
+                        val loader = RuntimeUtil.createPluginClassLoader(pluginFolder.absolutePath, parentLoader)
                         proxy.setClassLoader(loader)
                     }
                 } catch (e: Exception) {

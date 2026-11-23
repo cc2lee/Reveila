@@ -1,5 +1,9 @@
 package com.reveila.ai
 
+import com.reveila.channels.AlertSeverity
+import com.reveila.channels.ChannelDeliveryResult
+import com.reveila.channels.EnterpriseChannelHub
+import com.reveila.channels.ProactiveAlertMessage
 import com.reveila.safety.CommandChainAudit
 import com.reveila.safety.CommandChainReport
 import com.reveila.safety.DefaultFlightRecorder
@@ -7,6 +11,7 @@ import com.reveila.safety.FlightRecorder
 import com.reveila.safety.GuardedRuntime
 import com.reveila.safety.KillSwitch
 import com.reveila.safety.SafetyStatus
+import com.reveila.safety.SecretManager
 import com.reveila.safety.TraceContextHolder
 import com.reveila.safety.TraceContextSnapshot
 import com.reveila.service.DataService
@@ -59,6 +64,29 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
     private val fallbackTraceHashes: MutableMap<String, String> = mutableMapOf()
     private var lastFallbackTimestamp: Long = 0L
     private var globalEmergencyStopped: Boolean = false
+
+    /**
+     * Enterprise channel hub for proactive push alerts (Slack, Microsoft Teams, Email).
+     * Can be replaced in tests or customized at runtime via [EnterpriseChannelHub.registerChannel].
+     */
+    var channelHub: EnterpriseChannelHub = EnterpriseChannelHub(
+        systemHomeProvider = { context?.properties?.getProperty("system.home") },
+        secretManagerProvider = {
+            try {
+                val p = context?.getProxy("SecretManager")
+                (p?.getInstance() as? SecretManager) ?: p as? SecretManager
+            } catch (_: Exception) {
+                null
+            }
+        },
+        allowCustomChannelsProvider = { !isEnterpriseEdition() }
+    )
+
+    /**
+     * Optional real-time listener invoked whenever a proactive alert is emitted (e.g., to surface
+     * native Desktop/Mobile OS push notifications alongside Slack/Teams/Email channel deliveries).
+     */
+    var proactiveAlertListener: ((ProactiveAlertMessage, List<ChannelDeliveryResult>) -> Unit)? = null
 
     @Throws(Exception::class)
     override fun onStart() {
@@ -884,7 +912,7 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             lower.contains("ask for approval")
     }
 
-    private fun emitTaskNotification(
+    internal fun emitTaskNotification(
         taskId: String,
         title: String,
         status: String,
@@ -892,14 +920,46 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         toolAttachment: Map<String, Any?>? = null
     ) {
         val now = PlatformSystem.currentTimeMillis()
+        val eventId = "evt-$now-${Uuid.randomUuid().take(4)}"
+        val alert = ProactiveAlertMessage(
+            eventId = eventId,
+            taskId = taskId,
+            title = title,
+            status = status,
+            summary = summary,
+            severity = AlertSeverity.fromStatus(status),
+            timestampMs = now
+        )
+        val deliveries = try {
+            channelHub.dispatchAlert(alert)
+        } catch (e: Exception) {
+            logger.warning("Proactive channel dispatch error for task [$taskId]: ${e.message}")
+            emptyList()
+        }
+        try {
+            proactiveAlertListener?.invoke(alert, deliveries)
+        } catch (_: Exception) {
+        }
+
         val event = linkedMapOf<String, Any?>(
-            "eventId" to "evt-$now-${Uuid.randomUuid().take(4)}",
+            "eventId" to eventId,
             "taskId" to taskId,
             "title" to title,
             "status" to status,
+            "severity" to alert.severity.name,
             "summary" to summary,
             "timestamp" to now
         )
+        if (deliveries.isNotEmpty()) {
+            event["channelDeliveries"] = deliveries.map {
+                mapOf(
+                    "channelId" to it.channelId,
+                    "type" to it.channelType.name,
+                    "ok" to it.ok,
+                    "message" to it.message
+                )
+            }
+        }
         if (toolAttachment != null) {
             event["toolAttachment"] = toolAttachment
         }
@@ -1599,5 +1659,350 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             logger.warning("Failed to fetch AuditLog entries: ${e.message}")
             emptyList()
         }
+    }
+
+    // =========================================================================
+    // Enterprise / Consumer Channel Configuration & Test Alert RPCs
+    // =========================================================================
+
+    /**
+     * Returns the configured deployment edition from `reveila.properties` (`app.edition`):
+     * `"enterprise"` or `"individual"` (default).
+     */
+    open fun getAppEdition(): String {
+        val raw = context?.properties?.getProperty("app.edition")?.trim()?.lowercase()
+        return if (raw == "enterprise") "enterprise" else "individual"
+    }
+
+    open fun isEnterpriseEdition(): Boolean = getAppEdition() == "enterprise"
+
+    private fun resolveChannelsConfigPath(): String {
+        val fs = PlatformFileSystem()
+        val home = context?.properties?.getProperty("system.home")
+            ?.trim()?.takeIf { it.isNotEmpty() }
+            ?: fs.getDefaultSystemHome()
+        return fs.resolve(home, "configs/settings/channels.json")
+    }
+
+    open fun getChannelsConfigJson(): String {
+        val fs = PlatformFileSystem()
+        val path = resolveChannelsConfigPath()
+        if (fs.exists(path)) {
+            return try {
+                fs.readText(path)
+            } catch (_: Exception) {
+                defaultChannelsConfigJson()
+            }
+        }
+        return defaultChannelsConfigJson()
+    }
+
+    open fun saveChannelsConfigJson(rawJson: String): String {
+        return try {
+            val fs = PlatformFileSystem()
+            val root = JsonUtil.parseJsonStringToMap(rawJson).toMutableMap<String, Any?>()
+            val rawChannels = (root["channels"] ?: root["Channels"]) as? List<*>
+                ?: return "Error: 'channels' array is required."
+
+            val enterpriseMode = isEnterpriseEdition()
+            val approvedIds = if (enterpriseMode) {
+                com.reveila.channels.EnterpriseChannelHub.parseChannelsJson(getChannelsConfigJson())
+                    .map { it.id.lowercase() }
+                    .toSet()
+            } else {
+                emptySet()
+            }
+
+            val sanitizedChannels = mutableListOf<MutableMap<String, Any?>>()
+            for (item in rawChannels) {
+                val map = (item as? Map<*, *>)?.entries
+                    ?.associate { (k, v) -> k.toString() to v }
+                    ?.toMutableMap()
+                    ?: continue
+                val id = ((map["Id"] ?: map["id"]) as? String)?.trim().orEmpty()
+                val type = ((map["Type"] ?: map["type"]) as? String)?.trim()?.uppercase().orEmpty()
+                if (id.isBlank()) continue
+                if (enterpriseMode) {
+                    val parsedType = com.reveila.channels.ChannelType.fromRaw(type)
+                    if (parsedType == com.reveila.channels.ChannelType.CUSTOM_WEBHOOK) {
+                        return "Error: Custom webhook channels are disabled in enterprise edition."
+                    }
+                    if (approvedIds.isNotEmpty() && !approvedIds.contains(id.lowercase())) {
+                        return "Error: Adding unapproved channel '$id' is disabled in enterprise edition."
+                    }
+                }
+                val safePrefix = id.replace(Regex("[^A-Za-z0-9]+"), "_").uppercase()
+
+                // Store raw Api.Key blindly in SecretManager and replace with REF:
+                val rawApiKey = ((map["Api.Key"] ?: map["Secret.Ref"] ?: map["secretRef"]) as? String)?.trim().orEmpty()
+                if (rawApiKey.isNotBlank() && !rawApiKey.startsWith("REF:", ignoreCase = true) && !rawApiKey.startsWith("SEC:", ignoreCase = true)) {
+                    val secretKey = "${safePrefix}_API_KEY"
+                    try {
+                        context?.getProxy("SecretManager")?.invoke("storeSecret", arrayOf<Any?>(secretKey, rawApiKey))
+                        map.remove("secretRef")
+                        map.remove("Secret.Ref")
+                        map["Api.Key"] = "REF:$secretKey"
+                    } catch (e: Exception) {
+                        logger.warning("Failed to store channel API key in SecretManager: ${e.message}")
+                    }
+                }
+
+                // Store raw Slack/Teams/Custom webhook URLs in SecretManager so webhook tokens aren't left in plaintext
+                val rawEndpoint = ((map["Endpoint"] ?: map["endpoint"] ?: map["Webhook.Url"]) as? String)?.trim().orEmpty()
+                if ((type == "SLACK" || type == "MICROSOFT_TEAMS" || type == "CUSTOM_WEBHOOK") &&
+                    rawEndpoint.startsWith("https://", ignoreCase = true) &&
+                    (rawEndpoint.contains("webhook", ignoreCase = true) ||
+                        rawEndpoint.contains("hooks.slack.com", ignoreCase = true) ||
+                        rawEndpoint.contains("discord.com/api/webhooks", ignoreCase = true))
+                ) {
+                    val secretKey = "${safePrefix}_WEBHOOK_URL"
+                    try {
+                        context?.getProxy("SecretManager")?.invoke("storeSecret", arrayOf<Any?>(secretKey, rawEndpoint))
+                        map.remove("endpoint")
+                        map.remove("Webhook.Url")
+                        map["Endpoint"] = "REF:$secretKey"
+                    } catch (e: Exception) {
+                        logger.warning("Failed to store channel webhook URL in SecretManager: ${e.message}")
+                    }
+                }
+
+                sanitizedChannels.add(map)
+            }
+
+            val outMap = linkedMapOf<String, Any?>("channels" to sanitizedChannels)
+            val path = resolveChannelsConfigPath()
+            val parentDir = path.replace('\\', '/').substringBeforeLast('/', "")
+            if (parentDir.isNotBlank() && !fs.exists(parentDir)) {
+                fs.createDirectories(parentDir)
+            }
+            fs.writeText(path, JsonUtil.toPrettyJsonString(outMap), append = false)
+            recordAuditLog("CHANNELS_CONFIG_UPDATED", "Updated ${sanitizedChannels.size} proactive alert channels.")
+            "OK"
+        } catch (e: Exception) {
+            "Error: ${e.message}"
+        }
+    }
+
+    open fun sendTestChannelAlert(channelId: String): String {
+        val cleanId = channelId.trim()
+        if (cleanId.isBlank()) {
+            return JsonUtil.toJsonString(mapOf("ok" to false, "message" to "Channel ID is required."))
+        }
+        val configured = channelHub.loadConfiguredChannels()
+            .firstOrNull { it.id.equals(cleanId, ignoreCase = true) }
+            ?: return JsonUtil.toJsonString(
+                mapOf("ok" to false, "message" to "Channel '$cleanId' not found. Save your configuration first.")
+            )
+        if (!configured.enabled) {
+            return JsonUtil.toJsonString(
+                mapOf("ok" to false, "message" to "Channel '${configured.id}' is currently disabled. Enable it before testing.")
+            )
+        }
+        val testAlert = ProactiveAlertMessage(
+            eventId = "test-${PlatformSystem.currentTimeMillis()}",
+            taskId = "channel-test",
+            title = "Aegin Test Alert",
+            status = "COMPLETED",
+            summary = "Your ${configured.type.name.replace('_', ' ')} alert connector (${configured.id}) is connected and ready for proactive notifications.",
+            severity = AlertSeverity.CRITICAL,
+            timestampMs = PlatformSystem.currentTimeMillis()
+        )
+        val result = channelHub.dispatchAlert(testAlert, onlyChannelIds = setOf(configured.id)).firstOrNull()
+            ?: return JsonUtil.toJsonString(
+                mapOf("ok" to false, "message" to "No delivery attempted for '${configured.id}'.")
+            )
+        return JsonUtil.toJsonString(
+            mapOf(
+                "ok" to result.ok,
+                "channelId" to result.channelId,
+                "type" to result.channelType.name,
+                "message" to result.message
+            )
+        )
+    }
+
+    private fun defaultChannelsConfigJson(): String {
+        return JsonUtil.toPrettyJsonString(
+            mapOf(
+                "channels" to listOf(
+                    mapOf(
+                        "Id" to "slack-ops",
+                        "Type" to "SLACK",
+                        "Enabled" to false,
+                        "Endpoint" to "",
+                        "Channel" to "#alerts",
+                        "Min.Severity" to "SUCCESS"
+                    ),
+                    mapOf(
+                        "Id" to "teams-ops",
+                        "Type" to "MICROSOFT_TEAMS",
+                        "Enabled" to false,
+                        "Endpoint" to "",
+                        "Min.Severity" to "ACTION_REQUIRED"
+                    ),
+                    mapOf(
+                        "Id" to "email-digest",
+                        "Type" to "EMAIL",
+                        "Enabled" to false,
+                        "Endpoint" to "https://api.resend.com/emails",
+                        "Api.Key" to "",
+                        "From" to "",
+                        "To" to emptyList<String>(),
+                        "Min.Severity" to "WARNING"
+                    )
+                )
+            )
+        )
+    }
+
+    // =========================================================================
+    // Governance Policy RPCs (Editable in Individual Edition, Read-Only in Enterprise)
+    // =========================================================================
+
+    private fun resolveGovernancePolicyPath(): String {
+        val fs = PlatformFileSystem()
+        val home = context?.properties?.getProperty("system.home")
+            ?.trim()?.takeIf { it.isNotEmpty() }
+            ?: fs.getDefaultSystemHome()
+        return fs.resolve(fs.resolve(home, "configs"), "governance-policy.json")
+    }
+
+    open fun getGovernancePolicyJson(): String {
+        val fs = PlatformFileSystem()
+        val path = resolveGovernancePolicyPath()
+        if (fs.exists(path)) {
+            return try {
+                fs.readText(path)
+            } catch (_: Exception) {
+                defaultGovernancePolicyJson()
+            }
+        }
+        return defaultGovernancePolicyJson()
+    }
+
+    open fun saveGovernancePolicyJson(rawJson: String): String {
+        if (isEnterpriseEdition()) {
+            return "Error: Governance policy is read-only and managed by IT in enterprise edition."
+        }
+        return try {
+            val fs = PlatformFileSystem()
+            val incoming = JsonUtil.parseJsonStringToMap(rawJson)
+            val existing = try {
+                JsonUtil.parseJsonStringToMap(getGovernancePolicyJson()).toMutableMap<String, Any?>()
+            } catch (_: Exception) {
+                JsonUtil.parseJsonStringToMap(defaultGovernancePolicyJson()).toMutableMap<String, Any?>()
+            }
+
+            // Update user-customizable restricted keywords
+            val rawKeywords = incoming["restrictedKeywords"] as? List<*>
+            if (rawKeywords != null) {
+                val cleanedKeywords = rawKeywords
+                    .mapNotNull { it?.toString()?.trim()?.uppercase()?.takeIf { s -> s.isNotEmpty() } }
+                    .distinct()
+                existing["restrictedKeywords"] = cleanedKeywords
+            }
+
+            // Update risk thresholds with safe clamping while keeping core anti-malware patterns untouched
+            val existingThresholds = (existing["thresholds"] as? Map<*, *>)
+                ?.entries?.associate { (k, v) -> k.toString() to v }
+                ?.toMutableMap()
+                ?: mutableMapOf()
+            val incomingThresholds = incoming["thresholds"] as? Map<*, *>
+            val rawAlert = (incomingThresholds?.get("alertThreshold") ?: incoming["alertThreshold"])
+                ?.toString()?.toDoubleOrNull()?.coerceIn(0.20, 0.95)
+            val rawHitl = (incomingThresholds?.get("hitlApprovalThreshold") ?: incoming["hitlApprovalThreshold"])
+                ?.toString()?.toDoubleOrNull()?.coerceIn(0.25, 0.98)
+            val rawBlock = (incomingThresholds?.get("blockThreshold") ?: incoming["blockThreshold"])
+                ?.toString()?.toDoubleOrNull()?.coerceIn(0.40, 0.99)
+
+            val alertVal = rawAlert ?: (existingThresholds["alertThreshold"]?.toString()?.toDoubleOrNull() ?: 0.75)
+            val hitlVal = (rawHitl ?: (existingThresholds["hitlApprovalThreshold"]?.toString()?.toDoubleOrNull() ?: 0.80))
+                .coerceAtLeast(alertVal)
+            val blockVal = (rawBlock ?: (existingThresholds["blockThreshold"]?.toString()?.toDoubleOrNull() ?: 0.95))
+                .coerceAtLeast(hitlVal)
+
+            existingThresholds["alertThreshold"] = alertVal
+            existingThresholds["hitlApprovalThreshold"] = hitlVal
+            existingThresholds["blockThreshold"] = blockVal
+            existing["thresholds"] = existingThresholds
+            existing["alertThreshold"] = alertVal
+
+            // Update audit log retention days
+            val incomingRetention = incoming["dataRetention"] as? Map<*, *>
+            val retentionDays = (incomingRetention?.get("auditLogRetentionDays") ?: incoming["auditLogRetentionDays"])
+                ?.toString()?.toIntOrNull()?.coerceIn(7, 3650)
+            if (retentionDays != null) {
+                val existingRetention = (existing["dataRetention"] as? Map<*, *>)
+                    ?.entries?.associate { (k, v) -> k.toString() to v }
+                    ?.toMutableMap()
+                    ?: mutableMapOf()
+                existingRetention["auditLogRetentionDays"] = retentionDays
+                existing["dataRetention"] = existingRetention
+            }
+
+            val path = resolveGovernancePolicyPath()
+            val parentDir = path.replace('\\', '/').substringBeforeLast('/', "")
+            if (parentDir.isNotBlank() && !fs.exists(parentDir)) {
+                fs.createDirectories(parentDir)
+            }
+            fs.writeText(path, JsonUtil.toPrettyJsonString(existing), append = false)
+            resolveFabric()?.reloadGovernancePolicy()
+            recordAuditLog(
+                "GOVERNANCE_POLICY_UPDATED",
+                "Personal edition governance policy updated (keywords=${(existing["restrictedKeywords"] as? List<*>)?.size ?: 0}, alert=$alertVal, hitl=$hitlVal, block=$blockVal)."
+            )
+            "OK"
+        } catch (e: Exception) {
+            "Error: ${e.message}"
+        }
+    }
+
+    open fun resetGovernancePolicyToDefaults(): String {
+        if (isEnterpriseEdition()) {
+            return "Error: Governance policy is read-only and managed by IT in enterprise edition."
+        }
+        return try {
+            val fs = PlatformFileSystem()
+            val path = resolveGovernancePolicyPath()
+            val parentDir = path.replace('\\', '/').substringBeforeLast('/', "")
+            if (parentDir.isNotBlank() && !fs.exists(parentDir)) {
+                fs.createDirectories(parentDir)
+            }
+            fs.writeText(path, defaultGovernancePolicyJson(), append = false)
+            resolveFabric()?.reloadGovernancePolicy()
+            recordAuditLog("GOVERNANCE_POLICY_RESET", "Reset personal governance policy to safe defaults.")
+            "OK"
+        } catch (e: Exception) {
+            "Error: ${e.message}"
+        }
+    }
+
+    private fun defaultGovernancePolicyJson(): String {
+        val def = com.reveila.safety.GovernancePolicy.defaultPolicy()
+        return JsonUtil.toPrettyJsonString(
+            linkedMapOf(
+                "policyName" to def.policyName,
+                "version" to def.version,
+                "restrictedKeywords" to def.restrictedKeywords,
+                "alertThreshold" to def.alertThreshold,
+                "promptInjectionPatterns" to def.promptInjectionPatterns,
+                "prohibitedSystemCommands" to def.prohibitedSystemCommands,
+                "sensitiveDataPatterns" to def.sensitiveDataPatterns,
+                "thresholds" to linkedMapOf(
+                    "baseRiskScore" to def.baseRiskScore,
+                    "keywordPenalty" to def.keywordPenalty,
+                    "injectionPenalty" to def.injectionPenalty,
+                    "commandPenalty" to def.commandPenalty,
+                    "alertThreshold" to def.alertThreshold,
+                    "hitlApprovalThreshold" to def.hitlApprovalThreshold,
+                    "blockThreshold" to def.blockThreshold
+                ),
+                "dataRetention" to linkedMapOf(
+                    "auditLogRetentionDays" to 365,
+                    "forensicStorageMoat" to "sovereign-local-data",
+                    "immutableLineage" to true
+                )
+            )
+        )
     }
 }

@@ -27,7 +27,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -35,13 +40,16 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlinx.coroutines.delay
-import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.imageResource
 import reveila_suite.apps.aegin.generated.resources.Res
 import reveila_suite.apps.aegin.generated.resources.aegin_robot_dog
 
@@ -248,6 +256,7 @@ fun AeginRobotDogMascot(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
+                    compositingStrategy = CompositingStrategy.ModulateAlpha
                     translationX = translationXPx
                     translationY = translationYPx
                     rotationZ = tiltDegrees
@@ -256,10 +265,16 @@ fun AeginRobotDogMascot(
                     scaleY = scalePulse
                 }
         ) {
+            val rawDogBitmap = imageResource(Res.drawable.aegin_robot_dog)
+            val targetPx = with(LocalDensity.current) { size.roundToPx().coerceAtLeast(32) }
+            val prefilteredDogBitmap = remember(rawDogBitmap, targetPx) {
+                downscaleProgressivelyForDisplay(rawDogBitmap, targetPx)
+            }
             Image(
-                painter = painterResource(Res.drawable.aegin_robot_dog),
+                bitmap = prefilteredDogBitmap,
                 contentDescription = "Aegin Robot Dog (${state.statusLabel})",
                 contentScale = ContentScale.Fit,
+                filterQuality = FilterQuality.High,
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -393,4 +408,45 @@ private fun DrawScope.drawEyelidBlink(
         path = eyelidPath,
         color = Color(0xFF94A3B8) // Brushed metallic silver eyelid
     )
+}
+
+/**
+ * Progressively downscales a high-resolution [ImageBitmap] in <= 2x steps down to ~2x the
+ * target display pixel size (supersampled mipmap level). This eliminates Skia/Desktop
+ * aliasing and pixel-shimmering noise when downscaling a 512x512 PNG into a 54-96px slot
+ * under continuous rotation/translation animations.
+ */
+private fun downscaleProgressivelyForDisplay(
+    source: ImageBitmap,
+    targetDisplayPx: Int
+): ImageBitmap {
+    val desiredPx = (targetDisplayPx * 2).coerceIn(64, maxOf(source.width, source.height))
+    if (source.width <= desiredPx && source.height <= desiredPx) {
+        return source
+    }
+    return try {
+        var current = source
+        val paint = Paint().apply {
+            isAntiAlias = true
+            filterQuality = FilterQuality.High
+        }
+        while (current.width > desiredPx * 1.5f && current.height > desiredPx * 1.5f) {
+            val nextW = (current.width / 2).coerceAtLeast(desiredPx)
+            val nextH = (current.height / 2).coerceAtLeast(desiredPx)
+            val next = ImageBitmap(nextW, nextH)
+            val canvas = Canvas(next)
+            canvas.drawImageRect(
+                image = current,
+                srcOffset = IntOffset.Zero,
+                srcSize = IntSize(current.width, current.height),
+                dstOffset = IntOffset.Zero,
+                dstSize = IntSize(nextW, nextH),
+                paint = paint
+            )
+            current = next
+        }
+        current
+    } catch (_: Exception) {
+        source
+    }
 }

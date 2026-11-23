@@ -220,4 +220,12 @@ actual object PlatformEngineBridge {
 
     actual suspend fun releaseLocalModel() {
     }
+
+    actual suspend fun getPairedClusterStatus(): PairedClusterStatus = PairedClusterStatus()
+    actual suspend fun enableDesktopLeadMode(port: Int, remoteUrl: String): PairedClusterStatus = PairedClusterStatus()
+    actual suspend fun pairWithDesktop(pairingPayloadOrUrl: String, clusterSecret: String): PairedClusterStatus = PairedClusterStatus()
+    actual suspend fun disablePairedClusterMode(): PairedClusterStatus = PairedClusterStatus()
+    actual suspend fun discoverLanDesktopLeads(): List<String> = emptyList()
+    actual suspend fun installLocalRuntime(): Pair<Boolean, String> = true to "Built-in runtime."
+    actual suspend fun detectLocalDesktopLlmApps(): List<DetectedLocalLlmApp> = emptyList()
 }

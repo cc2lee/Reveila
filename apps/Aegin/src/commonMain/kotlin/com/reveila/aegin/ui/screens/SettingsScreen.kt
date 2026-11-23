@@ -68,9 +68,13 @@ import com.reveila.aegin.bridge.LocalModelManifestEntry
 import androidx.compose.foundation.layout.windowInsetsPadding
 import com.reveila.aegin.ui.PlatformBackHandler
 import com.reveila.aegin.ui.components.VaultFolderPickerDialog
+import com.reveila.aegin.ui.theme.AeginBrandPreset
 import com.reveila.aegin.ui.theme.AeginIconType
+import com.reveila.aegin.ui.theme.AeginPillButton
+import com.reveila.aegin.ui.theme.AeginPillButtonVariant
 import com.reveila.aegin.ui.theme.AeginVectorIcon
 import com.reveila.aegin.ui.theme.LocalAeginColors
+import com.reveila.aegin.ui.theme.LocalAeginTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -78,9 +82,15 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(
     onClose: () -> Unit,
-    onOpenSecurityPortal: () -> Unit
+    onOpenSecurityPortal: () -> Unit,
+    availableThemePresets: List<AeginBrandPreset> = emptyList(),
+    selectedThemePresetId: String = "",
+    isDarkMode: Boolean = true,
+    onSelectThemePreset: (String) -> Unit = {},
+    onToggleDarkMode: (Boolean) -> Unit = {}
 ) {
     val theme = LocalAeginColors.current
+    val resolvedTheme = LocalAeginTheme.current
     val scope = rememberCoroutineScope()
 
     val tabs = listOf("General", "Security", "Advanced")
@@ -130,6 +140,29 @@ fun SettingsScreen(
     var localModelCatalog by remember { mutableStateOf<List<LocalModelManifestEntry>>(emptyList()) }
     var localModelCheck by remember { mutableStateOf<LocalModelCheckResult?>(null) }
     var pendingModelDownloadPrompt by remember { mutableStateOf<LocalModelCheckResult?>(null) }
+    var pairedStatus by remember { mutableStateOf(com.reveila.aegin.bridge.PairedClusterStatus()) }
+    var pairingInputDraft by remember { mutableStateOf("") }
+    var desktopRemoteUrlDraft by remember { mutableStateOf("") }
+    var isPairingBusy by remember { mutableStateOf(false) }
+    var isInstallingLocalRuntime by remember { mutableStateOf(false) }
+    var detectedLocalApps by remember { mutableStateOf<List<com.reveila.aegin.bridge.DetectedLocalLlmApp>>(emptyList()) }
+    var alertChannels by remember { mutableStateOf(AeginBridge.defaultAlertChannels()) }
+    var appEdition by remember { mutableStateOf("individual") }
+    var governancePolicy by remember { mutableStateOf(com.reveila.aegin.bridge.GovernancePolicyConfig()) }
+    var isSavingGovernancePolicy by remember { mutableStateOf(false) }
+    var editingAlertChannel by remember { mutableStateOf<com.reveila.aegin.bridge.AlertChannelConfig?>(null) }
+    var isAddingCustomChannel by remember { mutableStateOf(false) }
+    var testingAlertChannelId by remember { mutableStateOf<String?>(null) }
+    var isSavingAlertChannel by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        try {
+            appEdition = AeginBridge.getAppEdition()
+            alertChannels = AeginBridge.getAlertChannels()
+            governancePolicy = AeginBridge.getGovernancePolicy()
+        } catch (_: Exception) {
+        }
+    }
 
     fun showAlert(title: String, message: String) {
         alertTitle = title
@@ -369,6 +402,17 @@ fun SettingsScreen(
         }
 
         try {
+            pairedStatus = AeginBridge.getPairedClusterStatus()
+            desktopRemoteUrlDraft = pairedStatus.remoteUrl
+        } catch (_: Exception) {
+        }
+
+        try {
+            detectedLocalApps = AeginBridge.detectLocalDesktopLlmApps()
+        } catch (_: Exception) {
+        }
+
+        try {
             val res = AeginBridge.invoke("LlmProviderFactory", "getSettings", listOf("llm.json"))
             val (parsed, wProv, gProv) = AeginBridge.parseLlmSettingsJson(res, capabilities)
             providersList.clear()
@@ -379,7 +423,9 @@ fun SettingsScreen(
             selectedModelName = if (wProv != "Auto" && wProv != "Disable" && providersList.any { it.name == wProv }) {
                 wProv
             } else {
-                providersList.firstOrNull()?.name ?: "On-Device Model"
+                providersList.firstOrNull { it.name == "On-Device Model" }?.name
+                    ?: providersList.firstOrNull()?.name
+                    ?: "On-Device Model"
             }
         } catch (_: Exception) {
             val (defaults, wProv, gProv) = AeginBridge.parseLlmSettingsJson("{}", capabilities)
@@ -390,6 +436,19 @@ fun SettingsScreen(
             selectedModelName = providersList.firstOrNull()?.name ?: "On-Device Model"
         } finally {
             isLoadingProviders = false
+            val localIdx = providersList.indexOfFirst { it.name.equals("On-Device Model", ignoreCase = true) }
+            if (localIdx >= 0 && capabilities.recommendedModel.endsWith(".gguf", ignoreCase = true)) {
+                val curLocal = providersList[localIdx]
+                val staged = capabilities.stagedModels
+                val curDownloaded = staged.any { it.equals(curLocal.model, ignoreCase = true) }
+                if (!curDownloaded &&
+                    (curLocal.model.isBlank() ||
+                        curLocal.model.equals("gemma-2-2b-it-Q4_K_M.gguf", ignoreCase = true)) &&
+                    !curLocal.model.equals(capabilities.recommendedModel, ignoreCase = true)
+                ) {
+                    providersList[localIdx] = curLocal.copy(model = capabilities.recommendedModel)
+                }
+            }
             try {
                 localModelCheck = AeginBridge.checkLocalModelAvailability(activeLocalModelName())
             } catch (_: Exception) {
@@ -435,8 +494,7 @@ fun SettingsScreen(
         if (pName == "Disable" || pName == "Custom" || pName == "+ New") return false
         val p = providersList.find { it.name == pName } ?: return false
         if (p.type.equals("Local", ignoreCase = true) || p.name == "On-Device Model") {
-            return (localModelCheck?.existsLocally == true) ||
-                ((p.endpoint.startsWith("http://") || p.endpoint.startsWith("https://")) && p.model.isNotBlank())
+            return capabilities.canRunLocalGguf && (localModelCheck?.existsLocally == true)
         }
         if (p.type.equals("Self-Hosted", ignoreCase = true)) {
             return p.endpoint.isNotBlank() && p.model.isNotBlank()
@@ -810,7 +868,7 @@ fun SettingsScreen(
                                 .weight(1f)
                                 .clip(CircleShape)
                                 .background(
-                                    if (isSelected) theme.primaryGradient
+                                    if (isSelected) resolvedTheme.pillButton.primaryEnabledBrush
                                     else androidx.compose.ui.graphics.Brush.linearGradient(
                                         listOf(Color.Transparent, Color.Transparent)
                                     )
@@ -821,7 +879,7 @@ fun SettingsScreen(
                         ) {
                             Text(
                                 text = tabLabel,
-                                color = if (isSelected) Color.White else theme.subText,
+                                color = if (isSelected) resolvedTheme.pillButton.primaryEnabledText else theme.subText,
                                 fontSize = 12.sp,
                                 fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold
                             )
@@ -839,6 +897,120 @@ fun SettingsScreen(
         ) {
             if (activeTab == "General") {
                 val eligibleModels = providersList.filter { it.name != "Disable" && it.name != "Custom" }
+
+                // 0. APPEARANCE & CORPORATE BRAND THEME (app_theme.json)
+                if (availableThemePresets.isNotEmpty()) {
+                    AppearanceThemeCard(
+                        presets = availableThemePresets,
+                        selectedPresetId = selectedThemePresetId,
+                        isDarkMode = isDarkMode,
+                        onSelectPreset = onSelectThemePreset,
+                        onToggleDarkMode = onToggleDarkMode
+                    )
+                }
+
+                // 0b. PROACTIVE ALERTS & CHANNELS (Slack / Microsoft Teams / Email [+ Custom in Individual edition])
+                ProactiveAlertChannelsCard(
+                    channels = alertChannels,
+                    appEdition = appEdition,
+                    testingChannelId = testingAlertChannelId,
+                    onToggleEnabled = { ch, enabled ->
+                        val updated = alertChannels.map {
+                            if (it.id.equals(ch.id, ignoreCase = true)) it.copy(enabled = enabled) else it
+                        }
+                        alertChannels = updated
+                        scope.launch {
+                            val (ok, msg) = AeginBridge.saveAlertChannels(updated)
+                            if (ok) {
+                                alertChannels = AeginBridge.getAlertChannels()
+                            } else {
+                                showAlert("Save Failed", msg)
+                            }
+                        }
+                    },
+                    onConfigure = { ch ->
+                        isAddingCustomChannel = false
+                        editingAlertChannel = ch
+                    },
+                    onAddCustomChannel = {
+                        isAddingCustomChannel = true
+                        editingAlertChannel = com.reveila.aegin.bridge.AlertChannelConfig(
+                            id = "custom-${alertChannels.count { it.isCustomChannel() } + 1}",
+                            type = "CUSTOM_WEBHOOK",
+                            enabled = true,
+                            endpoint = "",
+                            minSeverity = "SUCCESS"
+                        )
+                    },
+                    onTest = { ch ->
+                        scope.launch {
+                            testingAlertChannelId = ch.id
+                            try {
+                                val (ok, msg) = AeginBridge.sendTestChannelAlert(ch.id)
+                                showAlert(if (ok) "Test Alert Sent" else "Test Alert Failed", msg)
+                            } finally {
+                                testingAlertChannelId = null
+                            }
+                        }
+                    }
+                )
+
+                editingAlertChannel?.let { channelToEdit ->
+                    AlertChannelConfigDialog(
+                        initial = channelToEdit,
+                        isNewCustom = isAddingCustomChannel,
+                        canDelete = !appEdition.equals("enterprise", ignoreCase = true) && channelToEdit.isCustomChannel() && !isAddingCustomChannel,
+                        isSaving = isSavingAlertChannel,
+                        onDismiss = {
+                            editingAlertChannel = null
+                            isAddingCustomChannel = false
+                        },
+                        onDelete = { toRemove ->
+                            scope.launch {
+                                isSavingAlertChannel = true
+                                try {
+                                    val updatedList = alertChannels.filterNot { it.id.equals(toRemove.id, ignoreCase = true) }
+                                    val (ok, msg) = AeginBridge.saveAlertChannels(updatedList)
+                                    if (ok) {
+                                        alertChannels = AeginBridge.getAlertChannels()
+                                        editingAlertChannel = null
+                                        isAddingCustomChannel = false
+                                    } else {
+                                        showAlert("Remove Failed", msg)
+                                    }
+                                } finally {
+                                    isSavingAlertChannel = false
+                                }
+                            }
+                        },
+                        onSave = { updatedChannel ->
+                            scope.launch {
+                                isSavingAlertChannel = true
+                                try {
+                                    val exists = alertChannels.any { it.id.equals(updatedChannel.id, ignoreCase = true) }
+                                    val updatedList = if (exists) {
+                                        alertChannels.map {
+                                            if (it.id.equals(updatedChannel.id, ignoreCase = true)) updatedChannel else it
+                                        }
+                                    } else {
+                                        alertChannels + updatedChannel
+                                    }
+                                    val (ok, msg) = AeginBridge.saveAlertChannels(updatedList)
+                                    if (ok) {
+                                        alertChannels = AeginBridge.getAlertChannels()
+                                        editingAlertChannel = null
+                                        isAddingCustomChannel = false
+                                        showAlert("Channel Saved", "${updatedChannel.displayName()} credentials stored securely.")
+                                    } else {
+                                        showAlert("Save Failed", msg)
+                                    }
+                                } finally {
+                                    isSavingAlertChannel = false
+                                }
+                            }
+                        }
+                    )
+                }
 
                 // 1. UNIFIED AI SETUP (Model Catalog + Worker & Governance Assignments)
                 AiSetupCard(
@@ -882,7 +1054,24 @@ fun SettingsScreen(
                     onOpenGovSelectModal = { isGovModalVisible = true },
                     onSaveConfiguration = ::handleSaveLLM,
                     capabilities = capabilities,
-                    localModelCatalog = localModelCatalog
+                    localModelCatalog = localModelCatalog,
+                    isInstallingRuntime = isInstallingLocalRuntime,
+                    onInstallLocalRuntime = {
+                        scope.launch {
+                            isInstallingLocalRuntime = true
+                            try {
+                                val (ok, msg) = AeginBridge.installLocalRuntime()
+                                capabilities = AeginBridge.getDeviceCapabilities()
+                                localModelCheck = AeginBridge.checkLocalModelAvailability(activeLocalModelName())
+                                refreshConfiguredAndTestedStates()
+                                showAlert(if (ok) "Runtime Installed" else "Install Failed", msg)
+                            } catch (e: Exception) {
+                                showAlert("Install Failed", e.message ?: "Unable to install local AI runtime.")
+                            } finally {
+                                isInstallingLocalRuntime = false
+                            }
+                        }
+                    }
                 )
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -1171,6 +1360,44 @@ fun SettingsScreen(
                     fontWeight = FontWeight.Bold
                 )
 
+                GovernancePolicyEditorCard(
+                    policy = governancePolicy,
+                    appEdition = appEdition,
+                    isSaving = isSavingGovernancePolicy,
+                    onSavePolicy = { updated ->
+                        scope.launch {
+                            isSavingGovernancePolicy = true
+                            try {
+                                val (ok, msg) = AeginBridge.saveGovernancePolicy(updated)
+                                if (ok) {
+                                    governancePolicy = AeginBridge.getGovernancePolicy()
+                                    showAlert("Policy Saved", msg)
+                                } else {
+                                    showAlert("Save Failed", msg)
+                                }
+                            } finally {
+                                isSavingGovernancePolicy = false
+                            }
+                        }
+                    },
+                    onResetDefaults = {
+                        scope.launch {
+                            isSavingGovernancePolicy = true
+                            try {
+                                val (ok, msg) = AeginBridge.resetGovernancePolicy()
+                                if (ok) {
+                                    governancePolicy = AeginBridge.getGovernancePolicy()
+                                    showAlert("Policy Reset", msg)
+                                } else {
+                                    showAlert("Reset Failed", msg)
+                                }
+                            } finally {
+                                isSavingGovernancePolicy = false
+                            }
+                        }
+                    }
+                )
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1414,6 +1641,210 @@ fun SettingsScreen(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
                         .background(theme.card)
+                        .border(1.dp, theme.border, RoundedCornerShape(12.dp))
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Paired Desktop + Mobile Cluster",
+                        color = theme.text,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = pairedStatus.statusMessage,
+                        color = theme.subText,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+
+                    if (pairedStatus.isDesktopHost) {
+                        OutlinedTextField(
+                            value = desktopRemoteUrlDraft,
+                            onValueChange = { desktopRemoteUrlDraft = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("Optional Remote URL (Tailscale / Relay)", fontSize = 12.sp) },
+                            placeholder = { Text("e.g. http://my-pc.tailnet:8080", fontSize = 12.sp) }
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(CircleShape)
+                                    .background(theme.primaryGradient)
+                                    .clickable(enabled = !isPairingBusy) {
+                                        scope.launch {
+                                            isPairingBusy = true
+                                            try {
+                                                pairedStatus = AeginBridge.enableDesktopLeadMode(
+                                                    port = pairedStatus.port,
+                                                    remoteUrl = desktopRemoteUrlDraft
+                                                )
+                                            } catch (e: Exception) {
+                                                showAlert("Lead Mode Error", e.message ?: "Failed to start Desktop Lead.")
+                                            } finally {
+                                                isPairingBusy = false
+                                            }
+                                        }
+                                    }
+                                    .padding(10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (pairedStatus.isServerRunning) "Refresh Lead" else "Enable Desktop Lead",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            if (pairedStatus.isServerRunning) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(CircleShape)
+                                        .background(theme.inputBg)
+                                        .border(1.dp, theme.border, CircleShape)
+                                        .clickable(enabled = !isPairingBusy) {
+                                            scope.launch {
+                                                isPairingBusy = true
+                                                try {
+                                                    pairedStatus = AeginBridge.disablePairedClusterMode()
+                                                } finally {
+                                                    isPairingBusy = false
+                                                }
+                                            }
+                                        }
+                                        .padding(10.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Disable Lead",
+                                        color = theme.text,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+                        if (pairedStatus.pairingPayloadJson.isNotBlank()) {
+                            Text(
+                                text = "PAIRING CODE (PASTE ON MOBILE)",
+                                color = theme.subText,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text(
+                                text = pairedStatus.pairingPayloadJson,
+                                color = theme.primary,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(theme.inputBg)
+                                    .padding(10.dp)
+                            )
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = pairingInputDraft,
+                            onValueChange = { pairingInputDraft = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            maxLines = 4,
+                            label = { Text("Desktop Pairing Code or URL", fontSize = 12.sp) },
+                            placeholder = { Text("Paste pairing JSON from Desktop or http://192.168.1.x:8080", fontSize = 12.sp) }
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(CircleShape)
+                                    .background(theme.inputBg)
+                                    .border(1.dp, theme.border, CircleShape)
+                                    .clickable(enabled = !isPairingBusy) {
+                                        scope.launch {
+                                            isPairingBusy = true
+                                            try {
+                                                val found = AeginBridge.discoverLanDesktopLeads()
+                                                if (found.isNotEmpty()) {
+                                                    pairingInputDraft = found.first()
+                                                    showAlert("Desktop Found", "Discovered Aegin Desktop on Wi-Fi: ${found.first()}")
+                                                } else {
+                                                    showAlert("Not Found", "No Aegin Desktop Lead found on Wi-Fi. Ensure Desktop Lead Mode is enabled on the same network.")
+                                                }
+                                            } finally {
+                                                isPairingBusy = false
+                                            }
+                                        }
+                                    }
+                                    .padding(10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Scan Wi-Fi", color = theme.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(CircleShape)
+                                    .background(theme.primaryGradient)
+                                    .clickable(enabled = !isPairingBusy && pairingInputDraft.isNotBlank()) {
+                                        scope.launch {
+                                            isPairingBusy = true
+                                            try {
+                                                pairedStatus = AeginBridge.pairWithDesktop(pairingInputDraft)
+                                                showAlert("Paired Mode", pairedStatus.statusMessage)
+                                            } catch (e: Exception) {
+                                                showAlert("Pairing Failed", e.message ?: "Unable to pair with Desktop.")
+                                            } finally {
+                                                isPairingBusy = false
+                                            }
+                                        }
+                                    }
+                                    .padding(10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Pair Desktop", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                        if (pairedStatus.mode == "MOBILE_PAIRED") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(CircleShape)
+                                    .background(theme.inputBg)
+                                    .border(1.dp, theme.border, CircleShape)
+                                    .clickable(enabled = !isPairingBusy) {
+                                        scope.launch {
+                                            isPairingBusy = true
+                                            try {
+                                                pairedStatus = AeginBridge.disablePairedClusterMode()
+                                            } finally {
+                                                isPairingBusy = false
+                                            }
+                                        }
+                                    }
+                                    .padding(10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Unpair (Return to Standalone)", color = theme.subText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(theme.card)
                         .border(1.dp, theme.danger, RoundedCornerShape(12.dp))
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -1552,17 +1983,78 @@ fun SettingsScreen(
             localModelCheck = localModelCheck,
             recommendedLocalModel = capabilities.recommendedModel,
             capabilities = capabilities,
+            isInstallingRuntime = isInstallingLocalRuntime,
+            detectedLocalApps = detectedLocalApps,
+            onConnectDetectedApp = { app ->
+                val defaultModel = app.models.firstOrNull()?.takeIf { it.isNotBlank() } ?: "llama3.2"
+                val newCfg = LlmProviderConfig(
+                    name = app.appName,
+                    type = "Self-Hosted",
+                    provider = "OpenAI",
+                    endpoint = app.endpoint,
+                    model = defaultModel,
+                    modelOptions = app.models.ifEmpty { listOf(defaultModel) },
+                    temperature = 0.7,
+                    apiKey = "",
+                    intentOptions = AeginBridge.DEFAULT_LOCAL_INTENTS + listOf("CLOUD_DEEP_REASONING"),
+                    tested = false,
+                    testedFingerprint = ""
+                )
+                val existingIdx = providersList.indexOfFirst { it.name.equals(app.appName, ignoreCase = true) }
+                if (existingIdx >= 0) {
+                    providersList[existingIdx] = newCfg
+                } else {
+                    providersList.add(newCfg)
+                }
+                selectedModelName = app.appName
+                isEditModalVisible = false
+                scope.launch {
+                    persistSettingsPreservingAssistant()
+                    refreshConfiguredAndTestedStates()
+                    runConnectionTestAndPersist(app.appName, showFeedbackDialog = true)
+                }
+            },
+            onInstallLocalRuntime = {
+                scope.launch {
+                    isInstallingLocalRuntime = true
+                    try {
+                        val (ok, msg) = AeginBridge.installLocalRuntime()
+                        capabilities = AeginBridge.getDeviceCapabilities()
+                        localModelCheck = AeginBridge.checkLocalModelAvailability(
+                            editData.model.ifBlank { capabilities.recommendedModel }
+                        )
+                        refreshConfiguredAndTestedStates()
+                        showAlert(if (ok) "Runtime Installed" else "Install Failed", msg)
+                    } catch (e: Exception) {
+                        showAlert("Install Failed", e.message ?: "Unable to install local AI runtime.")
+                    } finally {
+                        isInstallingLocalRuntime = false
+                    }
+                }
+            },
             onEditDataChange = { updated ->
+                val modelChanged = updated.model != editData.model
                 val connectionChanged = updated.type != editData.type ||
                     updated.provider != editData.provider ||
                     updated.endpoint != editData.endpoint ||
-                    updated.model != editData.model ||
+                    modelChanged ||
                     updated.apiKey != editData.apiKey
                 if (connectionChanged) {
                     editTestFeedback = null
                     editData = updated.copy(tested = false, testedFingerprint = "")
                 } else {
                     editData = updated
+                }
+                if (modelChanged && updated.name.equals("On-Device Model", ignoreCase = true)) {
+                    scope.launch {
+                        try {
+                            capabilities = AeginBridge.getDeviceCapabilities()
+                            localModelCheck = AeginBridge.checkLocalModelAvailability(
+                                updated.model.ifBlank { capabilities.recommendedModel }
+                            )
+                        } catch (_: Exception) {
+                        }
+                    }
                 }
             },
             onTestConnection = ::handleTestEditConnection,
@@ -2090,7 +2582,9 @@ private fun AiSetupCard(
     onOpenGovSelectModal: () -> Unit,
     onSaveConfiguration: () -> Unit,
     capabilities: DeviceCapabilityReport = DeviceCapabilityReport(),
-    localModelCatalog: List<LocalModelManifestEntry> = emptyList()
+    localModelCatalog: List<LocalModelManifestEntry> = emptyList(),
+    isInstallingRuntime: Boolean = false,
+    onInstallLocalRuntime: () -> Unit = {}
 ) {
     val theme = LocalAeginColors.current
     Spacer(modifier = Modifier.height(4.dp))
@@ -2340,7 +2834,25 @@ private fun AiSetupCard(
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isLocal &&
+            if (isLocal && !capabilities.canRunLocalGguf &&
+                capabilities.statusSummary.contains("llama-server", ignoreCase = true)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isInstallingRuntime) theme.border else theme.primary)
+                        .clickable(enabled = !isInstallingRuntime) { onInstallLocalRuntime() }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = if (isInstallingRuntime) "Installing Runtime..." else "⬇️ Install Runtime",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            } else if (isLocal &&
+                capabilities.canRunLocalGguf &&
                 localModelCheck?.existsLocally == false &&
                 modelDownloadState.status != "DOWNLOADING" &&
                 modelDownloadState.status != "VERIFYING"
@@ -2522,7 +3034,10 @@ private fun mergeLocalGgufChoices(
             result.add(entry.copy(filename = fname))
         }
     }
-    for (raw in providerOptions + listOf(currentModel)) {
+    // When platform-filtered manifest catalog is available, avoid appending off-target models
+    // (e.g. Android-only 0.5B/1.5B entries) unless the user has explicitly selected one.
+    val extras = if (result.isNotEmpty()) listOf(currentModel) else (providerOptions + listOf(currentModel))
+    for (raw in extras) {
         val fname = raw.trim()
         if (fname.endsWith(".gguf", ignoreCase = true) && seen.add(fname.lowercase())) {
             result.add(
@@ -2549,6 +3064,10 @@ private fun EditProviderDialog(
     localModelCheck: LocalModelCheckResult?,
     recommendedLocalModel: String,
     capabilities: DeviceCapabilityReport = DeviceCapabilityReport(),
+    isInstallingRuntime: Boolean = false,
+    detectedLocalApps: List<com.reveila.aegin.bridge.DetectedLocalLlmApp> = emptyList(),
+    onConnectDetectedApp: (com.reveila.aegin.bridge.DetectedLocalLlmApp) -> Unit = {},
+    onInstallLocalRuntime: () -> Unit = {},
     onEditDataChange: (LlmProviderConfig) -> Unit,
     onTestConnection: () -> Unit,
     onDownloadLocalModel: () -> Unit,
@@ -2647,6 +3166,31 @@ private fun EditProviderDialog(
                                 }
                             }
                         }
+                    } else if (!capabilities.canRunLocalGguf) {
+                        Text(
+                            text = "⚠️ ${capabilities.statusSummary}",
+                            color = theme.warning,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                        if (capabilities.statusSummary.contains("llama-server", ignoreCase = true)) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isInstallingRuntime) theme.border else theme.primary)
+                                    .clickable(enabled = !isInstallingRuntime) { onInstallLocalRuntime() }
+                                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (isInstallingRuntime) "Installing Local AI Runtime..." else "⬇️ Install Local AI Runtime (llama-server)",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     } else if (!isReadyLocally) {
                         val partial = localModelCheck?.partialBytes ?: 0L
                         val friendlyTarget = AeginDisplayMapper.modelDisplayName(targetName)
@@ -2700,7 +3244,7 @@ private fun EditProviderDialog(
                         }
                     } else {
                         Text(
-                            text = "✓ Offline AI model is ready on this device.",
+                            text = "✓ Offline AI model and runtime are ready on this device.",
                             color = theme.success,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
@@ -2711,20 +3255,74 @@ private fun EditProviderDialog(
                     }
                     val cautionMsg = selectedEntry?.resolvedCautionMessage()
                         ?: ModelTierCatalog.cautionMessageForModel(targetName)
-                    if (!capabilities.canRunLocalGguf) {
-                        Text(
-                            text = "⚠️ ${capabilities.statusSummary}",
-                            color = theme.warning,
-                            fontSize = 11.sp,
-                            lineHeight = 15.sp
-                        )
-                    } else if (cautionMsg.isNotBlank()) {
+                    if (capabilities.canRunLocalGguf && cautionMsg.isNotBlank()) {
                         Text(
                             text = "⚠️ $cautionMsg",
                             color = theme.warning,
                             fontSize = 11.sp,
                             lineHeight = 15.sp
                         )
+                    }
+                }
+
+                if (detectedLocalApps.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(theme.success.copy(alpha = 0.10f))
+                            .border(1.dp, theme.success.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "✨ Already Running a Local AI App?",
+                            color = theme.success,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Connect directly without downloading duplicate model files:",
+                            color = theme.subText,
+                            fontSize = 10.sp
+                        )
+                        detectedLocalApps.forEach { app ->
+                            val modelHint = if (app.models.isNotEmpty()) {
+                                "${app.models.first()} (${app.models.size} available)"
+                            } else {
+                                "Ready on localhost"
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = app.appName,
+                                        color = theme.text,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = modelHint,
+                                        color = theme.subText,
+                                        fontSize = 10.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(theme.success)
+                                        .clickable { onConnectDetectedApp(app) }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Connect", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
                     }
                 }
             } else {
@@ -2819,16 +3417,80 @@ private fun EditProviderDialog(
                     fontWeight = FontWeight.Black
                 )
                 if (isDeviceModel) {
+                    var isModelDropdownExpanded by remember { mutableStateOf(false) }
                     val ggufChoices = remember(localModelCatalog, editData.modelOptions, editData.model) {
                         mergeLocalGgufChoices(localModelCatalog, editData.modelOptions, editData.model)
                     }
-                    val hasAnyStagedGguf = stagedGgufNames.any { it.endsWith(".gguf", ignoreCase = true) } ||
-                        (localModelCheck?.existsLocally == true)
-                    if (ggufChoices.isNotEmpty()) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val currentFilename = editData.model.ifBlank { recommendedLocalModel }
+                    val currentEntry = ggufChoices.firstOrNull {
+                        it.effectiveFilename().equals(currentFilename, ignoreCase = true)
+                    }
+                    val currentTitle = currentEntry?.displayName?.ifBlank { null }
+                        ?: AeginDisplayMapper.modelDisplayName(currentFilename)
+                    val currentSize = currentEntry?.approxSizeBytes?.takeIf { it > 0L }
+                        ?.let { " • ${AeginBridge.formatByteSize(it)}" } ?: ""
+                    val currentRam = currentEntry?.minRamGb?.takeIf { it > 0.0 }
+                        ?.let { " • ${it.toInt()} GB+ RAM" } ?: ""
+
+                    // Compact Dropdown Trigger
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(theme.inputBg)
+                            .border(
+                                width = 1.dp,
+                                color = if (isModelDropdownExpanded) theme.primary else theme.border,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .clickable { isModelDropdownExpanded = !isModelDropdownExpanded }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = currentTitle,
+                                color = theme.text,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "$currentFilename$currentSize$currentRam",
+                                color = theme.subText,
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isModelDropdownExpanded) "▴" else "▾",
+                            color = theme.subText,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    // Expandable Dropdown Options
+                    if (isModelDropdownExpanded && ggufChoices.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(theme.bg)
+                                .border(1.dp, theme.border, RoundedCornerShape(10.dp))
+                                .padding(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             ggufChoices.forEach { entry ->
                                 val fname = entry.effectiveFilename()
-                                val isSelected = editData.model.equals(fname, ignoreCase = true)
+                                val isSelected = currentFilename.equals(fname, ignoreCase = true)
                                 val isStaged = stagedGgufNames.any { it.equals(fname, ignoreCase = true) } ||
                                     (localModelCheck?.existsLocally == true &&
                                         localModelCheck.modelName.equals(fname, ignoreCase = true))
@@ -2842,23 +3504,19 @@ private fun EditProviderDialog(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
+                                        .clip(RoundedCornerShape(8.dp))
                                         .background(
                                             when {
-                                                !ramCompatible -> theme.inputBg.copy(alpha = 0.5f)
-                                                isSelected -> theme.primary.copy(alpha = 0.12f)
-                                                else -> theme.inputBg
+                                                !ramCompatible -> theme.inputBg.copy(alpha = 0.4f)
+                                                isSelected -> theme.primary.copy(alpha = 0.14f)
+                                                else -> Color.Transparent
                                             }
                                         )
-                                        .border(
-                                            width = 1.dp,
-                                            color = if (isSelected) theme.primary else theme.border,
-                                            shape = RoundedCornerShape(10.dp)
-                                        )
                                         .clickable(enabled = ramCompatible) {
+                                            isModelDropdownExpanded = false
                                             onEditDataChange(editData.copy(model = fname))
                                         }
-                                        .padding(horizontal = 10.dp, vertical = 9.dp),
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -2890,22 +3548,15 @@ private fun EditProviderDialog(
                                     val badgeLabel = when {
                                         !ramCompatible -> "Needs ${entry.minRamGb.toInt()} GB"
                                         isStaged -> "Downloaded"
-                                        isSelected && hasAnyStagedGguf -> "Replace"
-                                        isSelected -> "Selected"
-                                        else -> "Choose"
+                                        isSelected -> "✓"
+                                        else -> ""
                                     }
-                                    val badgeColor = when {
-                                        !ramCompatible -> theme.warning
-                                        isStaged -> theme.success
-                                        isSelected -> theme.primary
-                                        else -> theme.subText
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(badgeColor.copy(alpha = 0.14f))
-                                            .padding(horizontal = 7.dp, vertical = 3.dp)
-                                    ) {
+                                    if (badgeLabel.isNotEmpty()) {
+                                        val badgeColor = when {
+                                            !ramCompatible -> theme.warning
+                                            isStaged -> theme.success
+                                            else -> theme.primary
+                                        }
                                         Text(
                                             text = badgeLabel,
                                             color = badgeColor,
@@ -2917,13 +3568,6 @@ private fun EditProviderDialog(
                             }
                         }
                     }
-                    OutlinedTextField(
-                        value = editData.model,
-                        onValueChange = { onEditDataChange(editData.copy(model = it)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        placeholder = { Text("Custom .gguf filename", color = theme.subText, fontSize = 12.sp) }
-                    )
                 } else {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -2955,37 +3599,49 @@ private fun EditProviderDialog(
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = if (isDeviceModel) "LOCAL ENGINE ADDRESS" else "ENDPOINT URL",
-                    color = theme.text,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Black
-                )
-                OutlinedTextField(
-                    value = editData.endpoint,
-                    onValueChange = { onEditDataChange(editData.copy(endpoint = it)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+            if (!isDeviceModel) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "ENDPOINT URL",
+                        color = theme.text,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    OutlinedTextField(
+                        value = editData.endpoint,
+                        onValueChange = { onEditDataChange(editData.copy(endpoint = it)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = "CAPABILITIES",
+                    text = if (isDeviceModel) "SUPPORTED ON-DEVICE CAPABILITIES" else "CAPABILITIES",
                     color = theme.text,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Black
                 )
                 Text(
-                    text = "Choose what this model can handle. On-Device AI is preferred when available.",
+                    text = if (isDeviceModel) {
+                        "Automatically managed for offline on-device models. Cloud-only tasks (Live Web Info, Deep Analysis, Multi-Step Workflow) automatically route to a Cloud or Self-Hosted AI."
+                    } else {
+                        "Choose what this model can handle. On-Device AI is preferred when available."
+                    },
                     color = theme.subText,
                     fontSize = 11.sp,
                     lineHeight = 15.sp
                 )
 
-                AeginBridge.PREDEFINED_TASK_INTENTS.forEach { intentKey ->
-                    val isSelected = editData.intentOptions.any { it.equals(intentKey, ignoreCase = true) }
+                val visibleIntents = if (isDeviceModel) {
+                    AeginBridge.DEFAULT_LOCAL_INTENTS
+                } else {
+                    AeginBridge.PREDEFINED_TASK_INTENTS
+                }
+
+                visibleIntents.forEach { intentKey ->
+                    val isSelected = isDeviceModel || editData.intentOptions.any { it.equals(intentKey, ignoreCase = true) }
                     val isCloudIntent = intentKey.startsWith("CLOUD_")
                     val accentColor = if (isCloudIntent) theme.cyan else theme.success
                     val friendlyLabel = AeginDisplayMapper.taskCategory(intentKey)
@@ -3004,14 +3660,20 @@ private fun EditProviderDialog(
                                 color = if (isSelected) accentColor else theme.border,
                                 shape = RoundedCornerShape(10.dp)
                             )
-                            .clickable {
-                                val updated = if (isSelected) {
-                                    editData.intentOptions.filterNot { it.equals(intentKey, ignoreCase = true) }
+                            .then(
+                                if (!isDeviceModel) {
+                                    Modifier.clickable {
+                                        val updated = if (isSelected) {
+                                            editData.intentOptions.filterNot { it.equals(intentKey, ignoreCase = true) }
+                                        } else {
+                                            editData.intentOptions + intentKey
+                                        }
+                                        onEditDataChange(editData.copy(intentOptions = updated))
+                                    }
                                 } else {
-                                    editData.intentOptions + intentKey
+                                    Modifier
                                 }
-                                onEditDataChange(editData.copy(intentOptions = updated))
-                            }
+                            )
                             .padding(horizontal = 12.dp, vertical = 9.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
@@ -3063,13 +3725,18 @@ private fun EditProviderDialog(
                 }
             }
 
+            val isSelectedLocalReady = localModelCheck?.existsLocally == true &&
+                localModelCheck.modelName.equals(editData.model.ifBlank { recommendedLocalModel }, ignoreCase = true)
+            val canTestConnection = !isTestingConnection &&
+                (!isDeviceModel || (capabilities.canRunLocalGguf && isSelectedLocalReady))
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(CircleShape)
-                    .border(1.dp, theme.cyan, CircleShape)
-                    .background(theme.cyan.copy(alpha = 0.1f))
-                    .clickable(enabled = !isTestingConnection) { onTestConnection() }
+                    .border(1.dp, if (canTestConnection) theme.cyan else theme.border, CircleShape)
+                    .background(if (canTestConnection) theme.cyan.copy(alpha = 0.1f) else theme.inputBg)
+                    .clickable(enabled = canTestConnection) { onTestConnection() }
                     .padding(11.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -3082,7 +3749,12 @@ private fun EditProviderDialog(
                         Text("Testing connection...", color = theme.cyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 } else {
-                    Text("🧪 Test connection", color = theme.cyan, fontWeight = FontWeight.ExtraBold, fontSize = 12.sp)
+                    Text(
+                        text = "🧪 Test connection",
+                        color = if (canTestConnection) theme.cyan else theme.subText,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 12.sp
+                    )
                 }
             }
 
@@ -3125,6 +3797,821 @@ private fun EditProviderDialog(
                     contentAlignment = Alignment.Center
                 ) {
                     Text("🗑️ Delete Provider", color = theme.danger, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppearanceThemeCard(
+    presets: List<AeginBrandPreset>,
+    selectedPresetId: String,
+    isDarkMode: Boolean,
+    onSelectPreset: (String) -> Unit,
+    onToggleDarkMode: (Boolean) -> Unit
+) {
+    val theme = LocalAeginColors.current
+    val resolvedTheme = LocalAeginTheme.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(theme.card)
+            .border(1.dp, theme.border, RoundedCornerShape(16.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "APPEARANCE & BRAND THEME",
+                    color = theme.subText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp
+                )
+                Text(
+                    text = "Configured via app_theme.json • Font: ${resolvedTheme.typography.fontFamilyName}",
+                    color = theme.mutedText,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AeginPillButton(
+                    text = "Dark",
+                    leadingIcon = AeginIconType.MOON,
+                    selected = isDarkMode,
+                    variant = if (isDarkMode) AeginPillButtonVariant.PRIMARY else AeginPillButtonVariant.SURFACE,
+                    onClick = { onToggleDarkMode(true) }
+                )
+                AeginPillButton(
+                    text = "Light",
+                    leadingIcon = AeginIconType.SUN,
+                    selected = !isDarkMode,
+                    variant = if (!isDarkMode) AeginPillButtonVariant.PRIMARY else AeginPillButtonVariant.SURFACE,
+                    onClick = { onToggleDarkMode(false) }
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            presets.forEach { preset ->
+                val isSelected = preset.id.equals(selectedPresetId, ignoreCase = true)
+                val previewColors = preset.forMode(isDarkMode).colors
+                Column(
+                    modifier = Modifier
+                        .width(168.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isSelected) theme.primary.copy(alpha = 0.12f) else theme.cardAlt)
+                        .border(
+                            width = if (isSelected) 1.5.dp else 1.dp,
+                            color = if (isSelected) theme.primary else theme.border,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .clickable { onSelectPreset(preset.id) }
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(previewColors.bg)
+                                    .border(1.dp, theme.border, CircleShape)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(previewColors.primary)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(previewColors.accent)
+                            )
+                        }
+                        if (isSelected) {
+                            AeginVectorIcon(
+                                type = AeginIconType.CHECK,
+                                tint = theme.primary,
+                                size = 13.dp
+                            )
+                        }
+                    }
+                    Text(
+                        text = preset.displayName,
+                        color = theme.text,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (preset.description.isNotBlank()) {
+                        Text(
+                            text = preset.description,
+                            color = theme.subText,
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        // Compact live preview of pill button states driven by app_theme.json
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AeginPillButton(
+                text = "Enabled",
+                leadingIcon = AeginIconType.SPARKLES,
+                enabled = true,
+                onClick = {}
+            )
+            AeginPillButton(
+                text = "Selected",
+                leadingIcon = AeginIconType.CHECK,
+                enabled = true,
+                selected = true,
+                onClick = {}
+            )
+            AeginPillButton(
+                text = "Disabled",
+                leadingIcon = AeginIconType.SHIELD,
+                enabled = false,
+                onClick = {}
+            )
+            AeginPillButton(
+                text = "Primary",
+                variant = AeginPillButtonVariant.PRIMARY,
+                enabled = true,
+                onClick = {}
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProactiveAlertChannelsCard(
+    channels: List<com.reveila.aegin.bridge.AlertChannelConfig>,
+    appEdition: String,
+    testingChannelId: String?,
+    onToggleEnabled: (com.reveila.aegin.bridge.AlertChannelConfig, Boolean) -> Unit,
+    onConfigure: (com.reveila.aegin.bridge.AlertChannelConfig) -> Unit,
+    onAddCustomChannel: () -> Unit,
+    onTest: (com.reveila.aegin.bridge.AlertChannelConfig) -> Unit
+) {
+    val theme = LocalAeginColors.current
+    val isEnterprise = appEdition.equals("enterprise", ignoreCase = true)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(theme.card)
+            .border(1.dp, theme.border, RoundedCornerShape(16.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "PROACTIVE ALERTS & CHANNELS",
+                        color = theme.subText,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp
+                    )
+                    Text(
+                        text = if (isEnterprise) "ENTERPRISE" else "INDIVIDUAL",
+                        color = if (isEnterprise) theme.accent else theme.cyan,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+                Text(
+                    text = if (isEnterprise) {
+                        "Enterprise edition: sign in to IT-approved channels from channels.json. Custom webhooks are disabled."
+                    } else {
+                        "Connect Slack, Teams, Email, or custom webhooks (Discord, ntfy, Zapier). Secrets are encrypted via SecretManager."
+                    },
+                    color = theme.mutedText,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+            }
+            if (!isEnterprise) {
+                AeginPillButton(
+                    text = "+ Custom",
+                    leadingIcon = AeginIconType.PLUS,
+                    onClick = onAddCustomChannel
+                )
+            }
+        }
+
+        channels.forEach { ch ->
+            val isConfigured = ch.hasCredentialsConfigured()
+            val isTesting = testingChannelId == ch.id
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(theme.cardAlt)
+                    .border(
+                        width = 1.dp,
+                        color = if (ch.enabled && isConfigured) theme.success.copy(alpha = 0.45f) else theme.border,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = ch.displayName(),
+                            color = theme.text,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        val badgeText = when {
+                            ch.enabled && isConfigured -> "ACTIVE"
+                            isConfigured -> "READY"
+                            else -> "NOT SET"
+                        }
+                        val badgeColor = when {
+                            ch.enabled && isConfigured -> theme.success
+                            isConfigured -> theme.cyan
+                            else -> theme.mutedText
+                        }
+                        Text(
+                            text = badgeText,
+                            color = badgeColor,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    val subtitle = when (ch.type.uppercase()) {
+                        "SLACK" -> "Channel: ${ch.channel.ifBlank { "#alerts" }} • Min: ${ch.minSeverity}"
+                        "MICROSOFT_TEAMS" -> "Adaptive Card Webhook • Min: ${ch.minSeverity}"
+                        "EMAIL" -> "${ch.to.joinToString(", ").ifBlank { "No recipients" }} • Min: ${ch.minSeverity}"
+                        else -> "Min: ${ch.minSeverity}"
+                    }
+                    Text(
+                        text = subtitle,
+                        color = theme.subText,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AeginPillButton(
+                        text = if (isTesting) "Sending..." else "Test",
+                        enabled = ch.enabled && isConfigured && !isTesting,
+                        onClick = { onTest(ch) }
+                    )
+                    AeginPillButton(
+                        text = "Configure",
+                        variant = if (isConfigured) AeginPillButtonVariant.SURFACE else AeginPillButtonVariant.PRIMARY,
+                        onClick = { onConfigure(ch) }
+                    )
+                    Switch(
+                        checked = ch.enabled,
+                        onCheckedChange = { onToggleEnabled(ch, it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = theme.onPrimary,
+                            checkedTrackColor = theme.primary
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlertChannelConfigDialog(
+    initial: com.reveila.aegin.bridge.AlertChannelConfig,
+    isNewCustom: Boolean = false,
+    canDelete: Boolean = false,
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onDelete: (com.reveila.aegin.bridge.AlertChannelConfig) -> Unit = {},
+    onSave: (com.reveila.aegin.bridge.AlertChannelConfig) -> Unit
+) {
+    val theme = LocalAeginColors.current
+    val isSlack = initial.type.equals("SLACK", ignoreCase = true)
+    val isTeams = initial.type.equals("MICROSOFT_TEAMS", ignoreCase = true)
+    val isEmail = initial.type.equals("EMAIL", ignoreCase = true)
+    val isCustom = initial.type.equals("CUSTOM_WEBHOOK", ignoreCase = true)
+
+    var channelId by remember(initial) { mutableStateOf(initial.id) }
+    var enabled by remember(initial) { mutableStateOf(initial.enabled || !initial.hasCredentialsConfigured()) }
+    var endpoint by remember(initial) { mutableStateOf(initial.endpoint) }
+    var apiKey by remember(initial) { mutableStateOf(initial.apiKey) }
+    var channel by remember(initial) { mutableStateOf(initial.channel) }
+    var fromAddr by remember(initial) { mutableStateOf(initial.from) }
+    var toCsv by remember(initial) { mutableStateOf(initial.to.joinToString(", ")) }
+    var minSeverity by remember(initial) { mutableStateOf(initial.minSeverity.ifBlank { "SUCCESS" }) }
+
+    val severities = listOf("INFO", "SUCCESS", "WARNING", "ACTION_REQUIRED", "CRITICAL")
+
+    Dialog(onDismissRequest = { if (!isSaving) onDismiss() }) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(theme.card)
+                .border(1.dp, theme.border, RoundedCornerShape(18.dp))
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (isNewCustom) "Add Custom Webhook Channel" else "Configure ${initial.displayName()}",
+                    color = theme.text,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text("Enabled", color = theme.subText, fontSize = 11.sp)
+                    Switch(
+                        checked = enabled,
+                        onCheckedChange = { enabled = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = theme.onPrimary,
+                            checkedTrackColor = theme.primary
+                        )
+                    )
+                }
+            }
+
+            if (isNewCustom) {
+                OutlinedTextField(
+                    value = channelId,
+                    onValueChange = { channelId = it },
+                    label = { Text("Channel ID (e.g. discord-home, ntfy-phone)", fontSize = 11.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = theme.text,
+                        unfocusedTextColor = theme.text,
+                        focusedContainerColor = theme.inputBg,
+                        unfocusedContainerColor = theme.inputBg,
+                        focusedBorderColor = theme.primary,
+                        unfocusedBorderColor = theme.border
+                    )
+                )
+            }
+
+            OutlinedTextField(
+                value = endpoint,
+                onValueChange = { endpoint = it },
+                label = {
+                    Text(
+                        when {
+                            isSlack -> "Slack Webhook URL (or https://slack.com/api/chat.postMessage)"
+                            isTeams -> "Microsoft Teams Webhook / Workflow URL"
+                            isCustom -> "Custom Webhook URL (Discord, ntfy, Zapier, etc.)"
+                            else -> "Email Gateway Endpoint URL (e.g. Resend / SendGrid)"
+                        },
+                        fontSize = 11.sp
+                    )
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = theme.text,
+                    unfocusedTextColor = theme.text,
+                    focusedContainerColor = theme.inputBg,
+                    unfocusedContainerColor = theme.inputBg,
+                    focusedBorderColor = theme.primary,
+                    unfocusedBorderColor = theme.border
+                )
+            )
+
+            if (isSlack) {
+                OutlinedTextField(
+                    value = channel,
+                    onValueChange = { channel = it },
+                    label = { Text("Target Channel (e.g. #alerts)", fontSize = 11.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = theme.text,
+                        unfocusedTextColor = theme.text,
+                        focusedContainerColor = theme.inputBg,
+                        unfocusedContainerColor = theme.inputBg,
+                        focusedBorderColor = theme.primary,
+                        unfocusedBorderColor = theme.border
+                    )
+                )
+            }
+
+            if (isSlack || isEmail || isCustom) {
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    label = {
+                        Text(
+                            when {
+                                isSlack -> "Bot Token (Optional if using Incoming Webhook)"
+                                isCustom -> "Bearer Token / Secret (Optional)"
+                                else -> "Email Gateway API Key"
+                            },
+                            fontSize = 11.sp
+                        )
+                    },
+                    singleLine = true,
+                    visualTransformation = if (apiKey.startsWith("REF:")) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = theme.text,
+                        unfocusedTextColor = theme.text,
+                        focusedContainerColor = theme.inputBg,
+                        unfocusedContainerColor = theme.inputBg,
+                        focusedBorderColor = theme.primary,
+                        unfocusedBorderColor = theme.border
+                    )
+                )
+            }
+
+            if (isEmail) {
+                OutlinedTextField(
+                    value = fromAddr,
+                    onValueChange = { fromAddr = it },
+                    label = { Text("From Address (e.g. alerts@yourdomain.com)", fontSize = 11.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = theme.text,
+                        unfocusedTextColor = theme.text,
+                        focusedContainerColor = theme.inputBg,
+                        unfocusedContainerColor = theme.inputBg,
+                        focusedBorderColor = theme.primary,
+                        unfocusedBorderColor = theme.border
+                    )
+                )
+                OutlinedTextField(
+                    value = toCsv,
+                    onValueChange = { toCsv = it },
+                    label = { Text("Recipient Emails (comma-separated)", fontSize = 11.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = theme.text,
+                        unfocusedTextColor = theme.text,
+                        focusedContainerColor = theme.inputBg,
+                        unfocusedContainerColor = theme.inputBg,
+                        focusedBorderColor = theme.primary,
+                        unfocusedBorderColor = theme.border
+                    )
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = "Minimum Alert Severity",
+                    color = theme.subText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    severities.forEach { sev ->
+                        AeginPillButton(
+                            text = sev,
+                            selected = minSeverity.equals(sev, ignoreCase = true),
+                            variant = if (minSeverity.equals(sev, ignoreCase = true)) {
+                                AeginPillButtonVariant.PRIMARY
+                            } else {
+                                AeginPillButtonVariant.SURFACE
+                            },
+                            onClick = { minSeverity = sev }
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AeginPillButton(
+                    text = if (isSaving) "Saving..." else "Save Credentials",
+                    variant = AeginPillButtonVariant.PRIMARY,
+                    enabled = !isSaving,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        val parsedTo = toCsv.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                        onSave(
+                            initial.copy(
+                                id = channelId.trim().ifBlank { initial.id },
+                                enabled = enabled,
+                                endpoint = endpoint.trim(),
+                                apiKey = apiKey.trim(),
+                                channel = channel.trim(),
+                                from = fromAddr.trim(),
+                                to = parsedTo,
+                                minSeverity = minSeverity
+                            )
+                        )
+                    }
+                )
+                AeginPillButton(
+                    text = "Cancel",
+                    enabled = !isSaving,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDismiss
+                )
+            }
+            if (canDelete) {
+                AeginPillButton(
+                    text = "Remove Custom Channel",
+                    enabled = !isSaving,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onDelete(initial) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GovernancePolicyEditorCard(
+    policy: com.reveila.aegin.bridge.GovernancePolicyConfig,
+    appEdition: String,
+    isSaving: Boolean,
+    onSavePolicy: (com.reveila.aegin.bridge.GovernancePolicyConfig) -> Unit,
+    onResetDefaults: () -> Unit
+) {
+    val theme = LocalAeginColors.current
+    val isEnterprise = appEdition.equals("enterprise", ignoreCase = true)
+
+    var draftKeywords by remember(policy) { mutableStateOf(policy.restrictedKeywords) }
+    var newKeywordDraft by remember { mutableStateOf("") }
+    var alertThreshold by remember(policy) { mutableStateOf(policy.alertThreshold) }
+    var hitlThreshold by remember(policy) { mutableStateOf(policy.hitlApprovalThreshold) }
+    var blockThreshold by remember(policy) { mutableStateOf(policy.blockThreshold) }
+    var retentionDays by remember(policy) { mutableStateOf(policy.auditLogRetentionDays) }
+
+    val activePreset = when {
+        hitlThreshold <= 0.68 -> "STRICT"
+        hitlThreshold >= 0.88 -> "RELAXED"
+        else -> "BALANCED"
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(theme.card)
+            .border(1.dp, theme.border, RoundedCornerShape(16.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "GOVERNANCE POLICY",
+                        color = theme.subText,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp
+                    )
+                    Text(
+                        text = if (isEnterprise) "ENTERPRISE • READ-ONLY" else "INDIVIDUAL • EDITABLE",
+                        color = if (isEnterprise) theme.accent else theme.success,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+                Text(
+                    text = if (isEnterprise) {
+                        "Managed by Enterprise IT policy (${policy.policyName}). Local edits are disabled."
+                    } else {
+                        "Tailor restricted keywords & safety sensitivity for your personal workflow. Core prompt-injection and destructive-command guardrails remain protected."
+                    },
+                    color = theme.mutedText,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+            }
+        }
+
+        // Core protected guardrails summary
+        Text(
+            text = "Protected core rules: ${policy.promptInjectionPatternCount} prompt-injection patterns • ${policy.prohibitedCommandCount} blocked shell commands • ${policy.sensitiveDataPatternCount} DLP patterns",
+            color = theme.subText,
+            fontSize = 10.sp
+        )
+
+        // Safety sensitivity presets
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = "Safety Sensitivity (Alert ${(alertThreshold * 100).toInt()}% • Approval ${(hitlThreshold * 100).toInt()}% • Block ${(blockThreshold * 100).toInt()}%)",
+                color = theme.subText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    Triple("STRICT", "Strict", Triple(0.55, 0.65, 0.85)),
+                    Triple("BALANCED", "Balanced", Triple(0.75, 0.80, 0.95)),
+                    Triple("RELAXED", "Relaxed", Triple(0.85, 0.90, 0.98))
+                ).forEach { (key, label, values) ->
+                    val selected = activePreset == key
+                    AeginPillButton(
+                        text = label,
+                        enabled = !isEnterprise && !isSaving,
+                        selected = selected,
+                        variant = if (selected) AeginPillButtonVariant.PRIMARY else AeginPillButtonVariant.SURFACE,
+                        onClick = {
+                            alertThreshold = values.first
+                            hitlThreshold = values.second
+                            blockThreshold = values.third
+                        }
+                    )
+                }
+            }
+        }
+
+        // Audit log retention
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = "Audit Log Retention ($retentionDays days)",
+                color = theme.subText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(30, 90, 365).forEach { days ->
+                    val selected = retentionDays == days
+                    AeginPillButton(
+                        text = "${days}d",
+                        enabled = !isEnterprise && !isSaving,
+                        selected = selected,
+                        variant = if (selected) AeginPillButtonVariant.PRIMARY else AeginPillButtonVariant.SURFACE,
+                        onClick = { retentionDays = days }
+                    )
+                }
+            }
+        }
+
+        // Restricted keywords
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                text = "Restricted Keywords (${draftKeywords.size})",
+                color = theme.subText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            if (draftKeywords.isEmpty()) {
+                Text("No custom restricted keywords.", color = theme.mutedText, fontSize = 11.sp)
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    draftKeywords.forEach { kw ->
+                        AeginPillButton(
+                            text = if (isEnterprise) kw else "$kw ×",
+                            enabled = !isEnterprise && !isSaving,
+                            onClick = {
+                                draftKeywords = draftKeywords.filterNot { it.equals(kw, ignoreCase = true) }
+                            }
+                        )
+                    }
+                }
+            }
+
+            if (!isEnterprise) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = newKeywordDraft,
+                        onValueChange = { newKeywordDraft = it },
+                        placeholder = { Text("Add keyword (e.g. TAX_ID, SECRET_PROJ)", color = theme.mutedText, fontSize = 11.sp) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = theme.text,
+                            unfocusedTextColor = theme.text,
+                            focusedContainerColor = theme.inputBg,
+                            unfocusedContainerColor = theme.inputBg,
+                            focusedBorderColor = theme.primary,
+                            unfocusedBorderColor = theme.border
+                        )
+                    )
+                    AeginPillButton(
+                        text = "Add",
+                        leadingIcon = AeginIconType.PLUS,
+                        enabled = !isSaving && newKeywordDraft.trim().isNotEmpty(),
+                        onClick = {
+                            val clean = newKeywordDraft.trim().uppercase()
+                            if (clean.isNotEmpty() && draftKeywords.none { it.equals(clean, ignoreCase = true) }) {
+                                draftKeywords = draftKeywords + clean
+                            }
+                            newKeywordDraft = ""
+                        }
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    AeginPillButton(
+                        text = if (isSaving) "Saving..." else "Save Policy",
+                        variant = AeginPillButtonVariant.PRIMARY,
+                        enabled = !isSaving,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            onSavePolicy(
+                                policy.copy(
+                                    restrictedKeywords = draftKeywords,
+                                    alertThreshold = alertThreshold,
+                                    hitlApprovalThreshold = hitlThreshold,
+                                    blockThreshold = blockThreshold,
+                                    auditLogRetentionDays = retentionDays
+                                )
+                            )
+                        }
+                    )
+                    AeginPillButton(
+                        text = "Reset Defaults",
+                        enabled = !isSaving,
+                        modifier = Modifier.weight(1f),
+                        onClick = onResetDefaults
+                    )
                 }
             }
         }

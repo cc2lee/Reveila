@@ -1,0 +1,46 @@
+[
+    {
+        "component": {
+            "name": "HttpClientService",
+            "version": "1",
+            "displayName": "Http Client Service",
+            "description": "Provides HTTP client capabilities for making web requests.",
+            "author": "Charles Lee",
+            "class": "com.reveila.service.HttpClientService",
+            "thread-safe": true,
+            "arguments": [
+                {
+                    "name": "connectTimeout",
+                    "type": "long",
+                    "value": 10
+                },
+                {
+                    "name": "writeTimeout",
+                    "type": "long",
+                    "value": 10
+                },
+                {
+                    "name": "readTimeout",
+                    "type": "long",
+                    "value": 30
+                }
+            ]
+        }
+    },
+    {
+        "component": {
+            "name": "DataService",
+            "class": "com.reveila.service.DataService",
+            "description": "Bridges the Reveila API and the platform dependent repositories.",
+            "thread-safe": true
+        }
+    },
+    {
+        "component": {
+            "name": "MetadataRegistry",
+            "class": "com.reveila.safety.MetadataRegistry",
+            "description": "Registry for all plugin manifests and capabilities.",
+            "thread-safe": true
+        }
+    }
+]

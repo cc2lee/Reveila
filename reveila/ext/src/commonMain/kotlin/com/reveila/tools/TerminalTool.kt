@@ -12,14 +12,17 @@ import com.reveila.util.json.JsonUtil
 class TerminalTool(
     val terminal: Terminal,
     private val secretManagerProvider: () -> SecretManager? = { null },
-    private val defaultWorkingDirProvider: () -> String? = { null }
+    private val defaultWorkingDirProvider: () -> String? = { null },
+    private val allowedRootsProvider: () -> List<String> = { emptyList() }
 ) : ReveilaTool {
 
     override fun getName(): String = "terminal"
 
     override fun getDescription(): String = """
         Executes local OS scripts or shell commands on the target device inside a governed terminal sandbox.
-        Use ONLY for local filesystem, developer, or OS tasks. NEVER use terminal (curl, wget, python requests) to search the web, fetch news, or read web pages — ALWAYS use 'virtual_browser' instead.
+        Use ONLY for developer or OS tasks.
+        - NEVER use terminal (curl, wget, python requests) to search the web, fetch news, or read web pages — ALWAYS use 'virtual_browser' instead.
+        - NEVER use terminal to save AI-generated documents, reports, or to-do lists — ALWAYS use 'vault_save_document' instead.
         Supports live output streaming into the Terminal UI window and blind secret injection via SecretManager.
         Actions:
         - execute_script: { "action": "execute_script", "script": "...", "workingDir": "...", "timeoutSeconds": 30, "secretEnv": { "API_KEY": "SEC:my_api_key" } }
@@ -57,6 +60,12 @@ class TerminalTool(
                         ?: Terminal.DEFAULT_TIMEOUT_SECONDS
                     val workingDir = (args["workingDir"] as? String)?.trim()?.takeIf { it.isNotBlank() }
                         ?: defaultWorkingDirProvider()
+                    val allowedRoots = allowedRootsProvider().filter { it.isNotBlank() }
+                    if (allowedRoots.isNotEmpty() && !workingDir.isNullOrBlank() &&
+                        !VaultPathGuard.isPathWithinAllowedRoots(workingDir, allowedRoots)
+                    ) {
+                        return "Blocked: workingDir '$workingDir' is outside the allowed Knowledge Vault / workspace sandbox roots."
+                    }
                     val extraEnv = resolveSecretEnv(args["secretEnv"] as? Map<*, *>)
 
                     ToolActivityHub.updateTerminal(
@@ -117,6 +126,12 @@ class TerminalTool(
                         ?: Terminal.DEFAULT_TIMEOUT_SECONDS
                     val workingDir = (args["workingDir"] as? String)?.trim()?.takeIf { it.isNotBlank() }
                         ?: defaultWorkingDirProvider()
+                    val allowedRoots = allowedRootsProvider().filter { it.isNotBlank() }
+                    if (allowedRoots.isNotEmpty() && !workingDir.isNullOrBlank() &&
+                        !VaultPathGuard.isPathWithinAllowedRoots(workingDir, allowedRoots)
+                    ) {
+                        return "Blocked: workingDir '$workingDir' is outside the allowed Knowledge Vault / workspace sandbox roots."
+                    }
                     val extraEnv = resolveSecretEnv(args["secretEnv"] as? Map<*, *>)
 
                     ToolActivityHub.updateTerminal(

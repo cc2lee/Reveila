@@ -189,6 +189,7 @@ data class LlmProviderConfig(
     val testedFingerprint: String = "",
     val costTier: String = "",
     val costPer1MTokens: Double? = null,
+    val modelPricing: Map<String, Double> = emptyMap(),
     val performanceTier: String = ""
 )
 
@@ -198,6 +199,57 @@ data class ConnectionTestResult(
     val message: String,
     val fingerprint: String = ""
 )
+
+@Serializable
+data class AlertChannelConfig(
+    val id: String,
+    val type: String, // "SLACK" | "MICROSOFT_TEAMS" | "EMAIL"
+    val enabled: Boolean = false,
+    val endpoint: String = "",
+    val apiKey: String = "",
+    val channel: String = "",
+    val from: String = "",
+    val to: List<String> = emptyList(),
+    val minSeverity: String = "SUCCESS"
+) {
+    fun displayName(): String = when (type.uppercase()) {
+        "SLACK" -> "Slack"
+        "MICROSOFT_TEAMS" -> "Microsoft Teams"
+        "EMAIL" -> "Email"
+        "CUSTOM_WEBHOOK" -> "Custom ($id)"
+        else -> id
+    }
+
+    fun isCustomChannel(): Boolean = type.equals("CUSTOM_WEBHOOK", ignoreCase = true)
+
+    fun hasCredentialsConfigured(): Boolean = when (type.uppercase()) {
+        "SLACK" -> endpoint.isNotBlank() || apiKey.isNotBlank()
+        "MICROSOFT_TEAMS" -> endpoint.isNotBlank()
+        "EMAIL" -> endpoint.isNotBlank() && to.isNotEmpty()
+        "CUSTOM_WEBHOOK" -> endpoint.isNotBlank()
+        else -> endpoint.isNotBlank()
+    }
+}
+
+@Serializable
+data class GovernancePolicyConfig(
+    val policyName: String = "SOVEREIGN_ACCESS_CONTROL_v2",
+    val version: String = "2.0.0",
+    val restrictedKeywords: List<String> = emptyList(),
+    val alertThreshold: Double = 0.75,
+    val hitlApprovalThreshold: Double = 0.80,
+    val blockThreshold: Double = 0.95,
+    val auditLogRetentionDays: Int = 365,
+    val promptInjectionPatternCount: Int = 0,
+    val prohibitedCommandCount: Int = 0,
+    val sensitiveDataPatternCount: Int = 0
+) {
+    fun detectedPreset(): String = when {
+        hitlApprovalThreshold <= 0.68 -> "STRICT"
+        hitlApprovalThreshold >= 0.88 -> "RELAXED"
+        else -> "BALANCED"
+    }
+}
 
 @Serializable
 data class ChatMessage(
@@ -232,12 +284,18 @@ data class DeviceCapabilityReport(
     val freeDiskGb: Double = 10.0,
     val hasEnoughStorage: Boolean = true,
     val cpuAbi: String = "arm64-v8a",
+    val cpuCores: Int = 0,
+    val gpuName: String = "",
+    val gpuVramGb: Double = 0.0,
+    val hasDiscreteGpu: Boolean = false,
+    val hasUnifiedMemoryGpu: Boolean = false,
     val supportsSimdDotProd: Boolean = true,
     val supportsFp16: Boolean = true,
     val supportsVulkanCompute: Boolean = false,
     val hardwareTier: String = "STANDARD (8-12 GB)",
     val recommendedModel: String = "qwen2.5-3b-instruct-q4_k_m.gguf",
     val recommendedModelSizeMb: Int = 2200,
+    val downgradedReason: String = "",
     val canRunLocalGguf: Boolean = true,
     val modelsStagingPath: String = "",
     val stagedModels: List<String> = emptyList(),
@@ -437,6 +495,41 @@ data class ToolAuthResolutionResult(
     val sessionId: String? = null
 )
 
+@Serializable
+data class DetectedLocalLlmApp(
+    val appName: String,
+    val endpoint: String,
+    val models: List<String> = emptyList()
+)
+
+@Serializable
+data class AeginPairingPayload(
+    val version: Int = 1,
+    val leaderId: String = "",
+    val lanUrls: List<String> = emptyList(),
+    val remoteUrl: String = "",
+    val port: Int = 8080,
+    val clusterSecret: String = "",
+    val computePower: String = "HIGH"
+)
+
+@Serializable
+data class PairedClusterStatus(
+    val mode: String = "STANDALONE", // "STANDALONE" | "DESKTOP_LEAD" | "MOBILE_PAIRED"
+    val isDesktopHost: Boolean = false,
+    val isServerRunning: Boolean = false,
+    val leaderUrl: String = "",
+    val lanUrls: List<String> = emptyList(),
+    val remoteUrl: String = "",
+    val port: Int = 8080,
+    val clusterSecret: String = "",
+    val computePower: String = "LOW",
+    val leaderReachable: Boolean = false,
+    val connectedNodesCount: Int = 0,
+    val pairingPayloadJson: String = "",
+    val statusMessage: String = "Running in standalone mode."
+)
+
 /**
  * Multiplatform expect declaration for connecting the Compose UI to the underlying
  * Reveila Sovereign Engine (JVM Desktop, Android Service, iOS Native, or Web Wasm).
@@ -476,6 +569,13 @@ expect object PlatformEngineBridge {
     fun getStorageItem(key: String): String?
     fun setStorageItem(key: String, value: String)
     fun clearStorage()
+    suspend fun getPairedClusterStatus(): PairedClusterStatus
+    suspend fun enableDesktopLeadMode(port: Int = 8080, remoteUrl: String = ""): PairedClusterStatus
+    suspend fun pairWithDesktop(pairingPayloadOrUrl: String, clusterSecret: String = ""): PairedClusterStatus
+    suspend fun disablePairedClusterMode(): PairedClusterStatus
+    suspend fun discoverLanDesktopLeads(): List<String>
+    suspend fun installLocalRuntime(): Pair<Boolean, String>
+    suspend fun detectLocalDesktopLlmApps(): List<DetectedLocalLlmApp>
 }
 
 /**
@@ -1256,7 +1356,7 @@ object AeginBridge {
                     val optionsArr = (p["Model.Options"] ?: p["model.options"] ?: p["model_options"])?.jsonArray
                     val options = optionsArr?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
                     val temp = (p["Temperature"] ?: p["temperature"])?.jsonPrimitive?.doubleOrNull ?: 0.7
-                    val apiKey = (p["Api.Key"] ?: p["api.key"] ?: p["apiKey"])?.jsonPrimitive?.contentOrNull ?: ""
+                    val apiKey = (p["Api.Key"] ?: p["api.key"] ?: p["API.Key"] ?: p["apiKey"])?.jsonPrimitive?.contentOrNull ?: ""
                     val intentArr = (p["Intent.Options"] ?: p["intent.options"] ?: p["intent_options"])?.jsonArray
                     val parsedIntents = intentArr
                         ?.mapNotNull { it.jsonPrimitive.contentOrNull?.trim() }
@@ -1273,6 +1373,11 @@ object AeginBridge {
                     val testedFp = (p["Tested.Fingerprint"] ?: p["tested.fingerprint"])?.jsonPrimitive?.contentOrNull ?: ""
                     val costTier = (p["Cost.Tier"] ?: p["cost.tier"] ?: p["costTier"])?.jsonPrimitive?.contentOrNull?.trim() ?: ""
                     val costPer1M = (p["Cost.Per1MTokens"] ?: p["cost.per1m.tokens"] ?: p["costPer1MTokens"])?.jsonPrimitive?.doubleOrNull
+                    val modelPricingObj = (p["Model.Pricing"] ?: p["model.pricing"] ?: p["modelPricing"] ?: p["Cost.Per1MTokens.ByModel"]) as? kotlinx.serialization.json.JsonObject
+                    val modelPricing: Map<String, Double> = modelPricingObj?.entries?.mapNotNull { (k, v) ->
+                        val price = (v as? kotlinx.serialization.json.JsonPrimitive)?.doubleOrNull?.takeIf { it >= 0.0 } ?: return@mapNotNull null
+                        k.trim() to price
+                    }?.toMap().orEmpty()
                     val perfTier = (p["Performance.Tier"] ?: p["performance.tier"] ?: p["performanceTier"])?.jsonPrimitive?.contentOrNull?.trim() ?: ""
                     parsedList.add(
                         LlmProviderConfig(
@@ -1289,6 +1394,7 @@ object AeginBridge {
                             testedFingerprint = testedFp,
                             costTier = costTier,
                             costPer1MTokens = costPer1M,
+                            modelPricing = modelPricing,
                             performanceTier = perfTier
                         )
                     )
@@ -1354,7 +1460,7 @@ object AeginBridge {
             "\n              \"Provider\": \"${escapeJson(p.provider)}\","
         } else ""
         val apiKeyLine = if (!isLocal) {
-            ",\n              \"api.key\": \"${escapeJson(p.apiKey)}\""
+            ",\n              \"Api.Key\": \"${escapeJson(p.apiKey)}\""
         } else ""
         val localReadyLine = if (localModelReadyHint != null) {
             ",\n              \"localModelReady\": $localModelReadyHint"
@@ -1364,6 +1470,12 @@ object AeginBridge {
         } else ""
         val costPer1MLine = if (p.costPer1MTokens != null && p.costPer1MTokens >= 0.0) {
             ",\n              \"Cost.Per1MTokens\": ${p.costPer1MTokens}"
+        } else ""
+        val modelPricingLine = if (p.modelPricing.isNotEmpty()) {
+            val entries = p.modelPricing.entries.joinToString(", ") { (m, price) ->
+                "\"${escapeJson(m)}\": $price"
+            }
+            ",\n              \"Model.Pricing\": {$entries}"
         } else ""
         val perfTierLine = if (p.performanceTier.isNotBlank()) {
             ",\n              \"Performance.Tier\": \"${escapeJson(p.performanceTier)}\""
@@ -1379,7 +1491,7 @@ object AeginBridge {
               "Temperature": ${p.temperature}$apiKeyLine,
               "Tested": ${p.tested},
               "Tested.Fingerprint": "${escapeJson(p.testedFingerprint)}",
-              "Intent.Options": [$intentOpts]$costTierLine$costPer1MLine$perfTierLine$localReadyLine
+              "Intent.Options": [$intentOpts]$costTierLine$costPer1MLine$modelPricingLine$perfTierLine$localReadyLine
             }
         """.trimIndent()
     }
@@ -1782,6 +1894,247 @@ object AeginBridge {
             )
         } catch (e: Exception) {
             """{"error":"${escapeJson(e.message ?: "Vault unavailable")}"}"""
+        }
+    }
+
+    suspend fun getPairedClusterStatus(): PairedClusterStatus =
+        PlatformEngineBridge.getPairedClusterStatus()
+
+    suspend fun enableDesktopLeadMode(port: Int = 8080, remoteUrl: String = ""): PairedClusterStatus =
+        PlatformEngineBridge.enableDesktopLeadMode(port, remoteUrl)
+
+    suspend fun pairWithDesktop(pairingPayloadOrUrl: String, clusterSecret: String = ""): PairedClusterStatus =
+        PlatformEngineBridge.pairWithDesktop(pairingPayloadOrUrl, clusterSecret)
+
+    suspend fun disablePairedClusterMode(): PairedClusterStatus =
+        PlatformEngineBridge.disablePairedClusterMode()
+
+    suspend fun discoverLanDesktopLeads(): List<String> =
+        PlatformEngineBridge.discoverLanDesktopLeads()
+
+    suspend fun installLocalRuntime(): Pair<Boolean, String> =
+        PlatformEngineBridge.installLocalRuntime()
+
+    suspend fun detectLocalDesktopLlmApps(): List<DetectedLocalLlmApp> =
+        PlatformEngineBridge.detectLocalDesktopLlmApps()
+
+    // =========================================================================
+    // Proactive Alert Channels (Slack / Microsoft Teams / Email)
+    // =========================================================================
+
+    fun defaultAlertChannels(): List<AlertChannelConfig> = listOf(
+        AlertChannelConfig(
+            id = "slack-ops",
+            type = "SLACK",
+            enabled = false,
+            endpoint = "",
+            channel = "#alerts",
+            minSeverity = "SUCCESS"
+        ),
+        AlertChannelConfig(
+            id = "teams-ops",
+            type = "MICROSOFT_TEAMS",
+            enabled = false,
+            endpoint = "",
+            minSeverity = "ACTION_REQUIRED"
+        ),
+        AlertChannelConfig(
+            id = "email-digest",
+            type = "EMAIL",
+            enabled = false,
+            endpoint = "https://api.resend.com/emails",
+            apiKey = "",
+            from = "",
+            to = emptyList(),
+            minSeverity = "WARNING"
+        )
+    )
+
+    fun parseChannelsSettingsJson(rawJson: String): List<AlertChannelConfig> {
+        if (rawJson.isBlank()) return defaultAlertChannels()
+        return try {
+            val root = json.parseToJsonElement(rawJson).jsonObject
+            val arr = (root["channels"] ?: root["Channels"])?.jsonArray ?: return defaultAlertChannels()
+            val parsed = arr.mapNotNull { elem ->
+                val obj = elem as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+                val id = (obj["Id"] ?: obj["id"])?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                val type = (obj["Type"] ?: obj["type"])?.jsonPrimitive?.contentOrNull?.trim()?.uppercase().orEmpty()
+                if (id.isBlank() || type.isBlank()) return@mapNotNull null
+                val enabled = (obj["Enabled"] ?: obj["enabled"])?.jsonPrimitive?.booleanOrNull ?: false
+                val endpoint = (obj["Endpoint"] ?: obj["endpoint"] ?: obj["Webhook.Url"])?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                val apiKey = (obj["Api.Key"] ?: obj["Secret.Ref"] ?: obj["secretRef"])?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                val channel = (obj["Channel"] ?: obj["channel"])?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                val from = (obj["From"] ?: obj["from"])?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                val toElem = obj["To"] ?: obj["to"] ?: obj["Recipients"]
+                val toList = when (toElem) {
+                    is kotlinx.serialization.json.JsonArray -> toElem.mapNotNull { it.jsonPrimitive.contentOrNull?.trim()?.takeIf { s -> s.isNotEmpty() } }
+                    is kotlinx.serialization.json.JsonPrimitive -> toElem.contentOrNull.orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                    else -> emptyList()
+                }
+                val minSev = (obj["Min.Severity"] ?: obj["minSeverity"])?.jsonPrimitive?.contentOrNull?.trim()?.uppercase()?.ifBlank { "SUCCESS" } ?: "SUCCESS"
+                AlertChannelConfig(
+                    id = id,
+                    type = type,
+                    enabled = enabled,
+                    endpoint = endpoint,
+                    apiKey = apiKey,
+                    channel = channel,
+                    from = from,
+                    to = toList,
+                    minSeverity = minSev
+                )
+            }
+            if (parsed.isEmpty()) defaultAlertChannels() else parsed
+        } catch (_: Exception) {
+            defaultAlertChannels()
+        }
+    }
+
+    fun buildChannelsSettingsJson(channels: List<AlertChannelConfig>): String {
+        val entries = channels.joinToString(",\n") { ch ->
+            val toJson = ch.to.joinToString(", ") { "\"${escapeJson(it)}\"" }
+            val parts = mutableListOf(
+                "\"Id\": \"${escapeJson(ch.id)}\"",
+                "\"Type\": \"${escapeJson(ch.type.uppercase())}\"",
+                "\"Enabled\": ${ch.enabled}",
+                "\"Endpoint\": \"${escapeJson(ch.endpoint)}\""
+            )
+            if (ch.apiKey.isNotBlank()) parts.add("\"Api.Key\": \"${escapeJson(ch.apiKey)}\"")
+            if (ch.channel.isNotBlank()) parts.add("\"Channel\": \"${escapeJson(ch.channel)}\"")
+            if (ch.from.isNotBlank()) parts.add("\"From\": \"${escapeJson(ch.from)}\"")
+            if (ch.type.equals("EMAIL", ignoreCase = true) || ch.to.isNotEmpty()) {
+                parts.add("\"To\": [$toJson]")
+            }
+            parts.add("\"Min.Severity\": \"${escapeJson(ch.minSeverity.uppercase())}\"")
+            "        {\n            ${parts.joinToString(",\n            ")}\n        }"
+        }
+        return "{\n    \"channels\": [\n$entries\n    ]\n}"
+    }
+
+    suspend fun getAppEdition(): String {
+        return try {
+            val raw = invoke("AutonomousAgent", "getAppEdition", emptyList()).trim().lowercase()
+            if (raw == "enterprise") "enterprise" else "individual"
+        } catch (_: Exception) {
+            "individual"
+        }
+    }
+
+    suspend fun getAlertChannels(): List<AlertChannelConfig> {
+        return try {
+            val raw = invoke("AutonomousAgent", "getChannelsConfigJson", emptyList())
+            parseChannelsSettingsJson(raw)
+        } catch (_: Exception) {
+            defaultAlertChannels()
+        }
+    }
+
+    suspend fun saveAlertChannels(channels: List<AlertChannelConfig>): Pair<Boolean, String> {
+        return try {
+            val payload = buildChannelsSettingsJson(channels)
+            val res = invoke("AutonomousAgent", "saveChannelsConfigJson", listOf(payload))
+            val ok = res.trim().equals("OK", ignoreCase = true)
+            ok to if (ok) "Alert channels saved securely." else res
+        } catch (e: Exception) {
+            false to (e.message ?: "Failed to save alert channels.")
+        }
+    }
+
+    suspend fun sendTestChannelAlert(channelId: String): Pair<Boolean, String> {
+        return try {
+            val raw = invoke("AutonomousAgent", "sendTestChannelAlert", listOf(channelId))
+            val obj = json.parseToJsonElement(raw).jsonObject
+            val ok = obj["ok"]?.jsonPrimitive?.booleanOrNull ?: false
+            val msg = obj["message"]?.jsonPrimitive?.contentOrNull ?: raw
+            ok to msg
+        } catch (e: Exception) {
+            false to (e.message ?: "Failed to send test alert.")
+        }
+    }
+
+    // =========================================================================
+    // Governance Policy (Editable in Individual Edition, Read-Only in Enterprise)
+    // =========================================================================
+
+    fun parseGovernancePolicyJson(rawJson: String): GovernancePolicyConfig {
+        if (rawJson.isBlank()) return GovernancePolicyConfig()
+        return try {
+            val root = json.parseToJsonElement(rawJson).jsonObject
+            val policyName = root["policyName"]?.jsonPrimitive?.contentOrNull ?: "SOVEREIGN_ACCESS_CONTROL_v2"
+            val version = root["version"]?.jsonPrimitive?.contentOrNull ?: "2.0.0"
+            val keywords = root["restrictedKeywords"]?.jsonArray
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull?.trim()?.takeIf { s -> s.isNotEmpty() } }
+                .orEmpty()
+            val thresholds = root["thresholds"] as? kotlinx.serialization.json.JsonObject
+            val alert = (thresholds?.get("alertThreshold") ?: root["alertThreshold"])?.jsonPrimitive?.doubleOrNull ?: 0.75
+            val hitl = thresholds?.get("hitlApprovalThreshold")?.jsonPrimitive?.doubleOrNull ?: 0.80
+            val block = thresholds?.get("blockThreshold")?.jsonPrimitive?.doubleOrNull ?: 0.95
+            val retention = (root["dataRetention"] as? kotlinx.serialization.json.JsonObject)
+                ?.get("auditLogRetentionDays")?.jsonPrimitive?.intOrNull ?: 365
+            val injectionCount = root["promptInjectionPatterns"]?.jsonArray?.size ?: 0
+            val cmdCount = root["prohibitedSystemCommands"]?.jsonArray?.size ?: 0
+            val sensitiveCount = root["sensitiveDataPatterns"]?.jsonArray?.size ?: 0
+            GovernancePolicyConfig(
+                policyName = policyName,
+                version = version,
+                restrictedKeywords = keywords,
+                alertThreshold = alert,
+                hitlApprovalThreshold = hitl,
+                blockThreshold = block,
+                auditLogRetentionDays = retention,
+                promptInjectionPatternCount = injectionCount,
+                prohibitedCommandCount = cmdCount,
+                sensitiveDataPatternCount = sensitiveCount
+            )
+        } catch (_: Exception) {
+            GovernancePolicyConfig()
+        }
+    }
+
+    fun buildGovernancePolicyUpdateJson(config: GovernancePolicyConfig): String {
+        val kwJson = config.restrictedKeywords.joinToString(", ") { "\"${escapeJson(it)}\"" }
+        return """
+            {
+              "restrictedKeywords": [$kwJson],
+              "thresholds": {
+                "alertThreshold": ${config.alertThreshold},
+                "hitlApprovalThreshold": ${config.hitlApprovalThreshold},
+                "blockThreshold": ${config.blockThreshold}
+              },
+              "dataRetention": {
+                "auditLogRetentionDays": ${config.auditLogRetentionDays}
+              }
+            }
+        """.trimIndent()
+    }
+
+    suspend fun getGovernancePolicy(): GovernancePolicyConfig {
+        return try {
+            val raw = invoke("AutonomousAgent", "getGovernancePolicyJson", emptyList())
+            parseGovernancePolicyJson(raw)
+        } catch (_: Exception) {
+            GovernancePolicyConfig()
+        }
+    }
+
+    suspend fun saveGovernancePolicy(config: GovernancePolicyConfig): Pair<Boolean, String> {
+        return try {
+            val payload = buildGovernancePolicyUpdateJson(config)
+            val res = invoke("AutonomousAgent", "saveGovernancePolicyJson", listOf(payload))
+            val ok = res.trim().equals("OK", ignoreCase = true)
+            ok to if (ok) "Governance policy saved and reloaded." else res
+        } catch (e: Exception) {
+            false to (e.message ?: "Failed to save governance policy.")
+        }
+    }
+
+    suspend fun resetGovernancePolicy(): Pair<Boolean, String> {
+        return try {
+            val res = invoke("AutonomousAgent", "resetGovernancePolicyToDefaults", emptyList())
+            val ok = res.trim().equals("OK", ignoreCase = true)
+            ok to if (ok) "Governance policy reset to safe defaults." else res
+        } catch (e: Exception) {
+            false to (e.message ?: "Failed to reset governance policy.")
         }
     }
 }

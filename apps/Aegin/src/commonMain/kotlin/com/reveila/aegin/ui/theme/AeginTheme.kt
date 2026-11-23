@@ -65,6 +65,7 @@ data class AeginColors(
     val inputBg: Color,
     val primary: Color = Color(0xFFFF6B2C),
     val primaryEnd: Color = Color(0xFFFF9F43),
+    val onPrimary: Color = Color.White,
     val success: Color = Color(0xFF10B981),
     val accent: Color = Color(0xFF4F46E5),
     val accentEnd: Color = Color(0xFF06B6D4),
@@ -82,29 +83,15 @@ data class AeginColors(
     val museHeroGradient: Brush
         get() = Brush.linearGradient(
             listOf(
-                Color(0xFFFF6B2C),
-                Color(0xFFEC4899),
-                Color(0xFF6366F1),
-                Color(0xFF06B6D4)
+                primary,
+                violet,
+                accent,
+                cyan
             )
         )
 
     val subtleSurfaceGradient: Brush
-        get() = if (isDark) {
-            Brush.verticalGradient(
-                listOf(
-                    Color(0xFF131B2E),
-                    Color(0xFF0D1322)
-                )
-            )
-        } else {
-            Brush.verticalGradient(
-                listOf(
-                    Color(0xFFFFFFFF),
-                    Color(0xFFF8FAFC)
-                )
-            )
-        }
+        get() = Brush.verticalGradient(listOf(card, tabBar))
 }
 
 val DarkAeginColors = AeginColors(

@@ -51,6 +51,27 @@ class MetaObject(
         return if (value is List<*>) value as List<String> else emptyList()
     }
 
+    /**
+     * Returns required library descriptors declared under `"required-libraries"`.
+     * Supports both plain string entries (`"reveila-ext-1.0.0.jar"`) and structured maps
+     * (`{"name": "...", "version": "...", "publishedAt": "...", "sha256": "...", "url": "..."}`).
+     */
+    @Suppress("UNCHECKED_CAST")
+    fun getRequiredLibraries(): List<Map<String, Any?>> {
+        val raw = dataMap[Constants.REQUIRED_LIBRARIES] as? List<*> ?: return emptyList()
+        return raw.mapNotNull { entry ->
+            when (entry) {
+                is String -> entry.trim().takeIf { it.isNotEmpty() }?.let { mapOf("name" to it) }
+                is Map<*, *> -> {
+                    val m = LinkedHashMap<String, Any?>()
+                    entry.forEach { (k, v) -> if (k != null) m[k.toString()] = v }
+                    if (m["name"]?.toString().isNullOrBlank()) null else m
+                }
+                else -> null
+            }
+        }
+    }
+
     @Suppress("UNCHECKED_CAST")
     fun requiresRuntimeIsolation(): Boolean {
         val perimeter = dataMap[Constants.SECURITY_PERIMETER]

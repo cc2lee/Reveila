@@ -63,6 +63,17 @@ open class AgenticFabric : SystemComponent() {
     var aiLoopLimit: Int = 5
     private var showReasoning: Boolean = false
 
+    open fun reloadGovernancePolicy() {
+        val fs = PlatformFileSystem()
+        val home = context?.properties?.getProperty("system.home") ?: "system-home/standard"
+        val policyPath = fs.resolve(fs.resolve(home, "configs"), "governance-policy.json")
+        this.governancePolicy = if (fs.exists(policyPath)) {
+            GovernancePolicy.load(fs, policyPath)
+        } else {
+            GovernancePolicy.defaultPolicy()
+        }
+    }
+
     @Throws(Exception::class)
     override fun onStart() {
         showReasoning = context?.properties?.getProperty("ai.show.reasoning", "false")?.equals("true", ignoreCase = true) == true
@@ -118,15 +129,9 @@ open class AgenticFabric : SystemComponent() {
         }
 
         // Load Governance Policy from governance-policy.json
-        val fs = PlatformFileSystem()
-        val home = context?.properties?.getProperty("system.home") ?: "system-home/standard"
-        val policyPath = fs.resolve(fs.resolve(home, "configs"), "governance-policy.json")
-        this.governancePolicy = if (fs.exists(policyPath)) {
-            GovernancePolicy.load(fs, policyPath)
-        } else {
-            GovernancePolicy.defaultPolicy()
-        }
+        reloadGovernancePolicy()
 
+        val home = context?.properties?.getProperty("system.home") ?: "system-home/standard"
         val coordinator = ReveilaToolCoordinator(
             systemHome = home,
             secretManagerProvider = {

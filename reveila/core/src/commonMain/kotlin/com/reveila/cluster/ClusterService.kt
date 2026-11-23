@@ -1,5 +1,6 @@
 package com.reveila.cluster
 
+import com.reveila.service.RemoteService
 import com.reveila.system.Constants
 import com.reveila.system.PerformanceTracker
 import com.reveila.system.SystemComponent
@@ -7,6 +8,7 @@ import com.reveila.system.SystemContext
 import com.reveila.system.concurrency.PlatformCancellable
 import com.reveila.system.concurrency.PlatformLock
 import com.reveila.system.concurrency.PlatformScheduler
+import com.reveila.system.io.PlatformFileSystem
 import com.reveila.system.platform.PlatformSystem
 import com.reveila.util.Uuid
 
@@ -27,7 +29,8 @@ import com.reveila.util.Uuid
 open class ClusterService @kotlin.jvm.JvmOverloads constructor(
     private var transport: ClusterTransport? = null,
     private val clock: () -> Long = { PlatformSystem.currentTimeMillis() },
-    private val autoSchedule: Boolean = true
+    private val autoSchedule: Boolean = true,
+    private val localIpProvider: () -> Set<String> = { PlatformSystem.getLocalIpAddresses() }
 ) : SystemComponent() {
 
     private val lock = PlatformLock()
@@ -42,12 +45,23 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
         private set
     var standalone: Boolean = true
         private set
+    var canElectLeader: Boolean = true
+        private set
+    var leaderReachable: Boolean = false
+        private set
+    var computePower: ComputePower = ComputePower.MEDIUM
+        private set
+    var cpuCores: Int = 0
+        private set
+    var totalMemoryMb: Long = 0L
+        private set
 
     private var heartbeatIntervalMs: Long = 3_000L
     private var leaderTimeoutMs: Long = 10_000L
     private var nodeTimeoutMs: Long = 15_000L
     private var clusterSecret: String? = null
     private var configuredLeaderUrl: String? = null
+    private val leaderFallbackUrls: MutableList<String> = mutableListOf()
     private val seedUrls: MutableSet<String> = LinkedHashSet()
 
     // Consensus & leadership state
@@ -72,6 +86,8 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
     private val localServices: MutableSet<String> = LinkedHashSet()
     private val nodesById: MutableMap<String, ClusterNodeInfo> = LinkedHashMap()
     private val routingTable: MutableMap<String, MutableSet<String>> = LinkedHashMap() // serviceName -> Set<baseUrl>
+    private val presetProfiles: MutableMap<ComputePower, String> = LinkedHashMap()
+    private val dispatchRoundRobinCounters: MutableMap<String, Int> = LinkedHashMap()
 
     // Background scheduler
     private var scheduler: PlatformScheduler? = null
@@ -191,18 +207,48 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
 
     private fun loadConfiguration() {
         val props = context?.properties
-        val version = props?.getProperty(Constants.SYSTEM_VERSION, Constants.DEFAULT_SYSTEM_VERSION)
-            ?.takeIf { it.isNotBlank() } ?: Constants.DEFAULT_SYSTEM_VERSION
+        val localIps = runCatching { localIpProvider() }.getOrDefault(setOf("127.0.0.1", "localhost"))
+        val detectedCores = PlatformSystem.getAvailableProcessors()
+        val detectedMemMb = PlatformSystem.getTotalMemoryMb()
 
         lock.withLock {
             standalone = !"false".equals(props?.getProperty(Constants.STANDALONE_MODE), ignoreCase = true)
             nodeId = props?.getProperty(Constants.CLUSTER_NODE_ID)?.takeIf { it.isNotBlank() }
                 ?: "node-${Uuid.randomUuid().substring(0, 8)}"
-            nodeUrl = normalizeUrl(
-                props?.getProperty(Constants.CLUSTER_NODE_URL)?.takeIf { it.isNotBlank() }
-                    ?: "http://localhost:8080"
-            )
+            configuredLeaderUrl = props?.getProperty(Constants.CLUSTER_LEADER_URL)
+                ?.takeIf { it.isNotBlank() }?.let { normalizeUrl(it) }
+
+            val explicitNodeUrl = props?.getProperty(Constants.CLUSTER_NODE_URL)?.takeIf { it.isNotBlank() }
+            val configuredPort = props?.getProperty(Constants.CLUSTER_NODE_PORT)?.toIntOrNull()
+                ?: configuredLeaderUrl?.let { extractPort(it) }
+                ?: 8080
+
+            nodeUrl = if (explicitNodeUrl != null) {
+                normalizeUrl(explicitNodeUrl)
+            } else {
+                val primaryIp = localIps.firstOrNull { ip ->
+                    ip.isNotBlank() && ip != "127.0.0.1" && ip != "localhost" && ip != "::1" && !ip.contains(":")
+                } ?: "127.0.0.1"
+                normalizeUrl("http://$primaryIp:$configuredPort")
+            }
+
+            // If preset leader URL belongs to this host's own IP & port, advertise the exact preset leader URL
+            if (configuredLeaderUrl != null && isPresetLeaderSelfLocked(localIps)) {
+                nodeUrl = configuredLeaderUrl!!
+            }
+
             clusterRole = props?.getProperty(Constants.CLUSTER_ROLE)?.takeIf { it.isNotBlank() } ?: "GENERAL"
+            val explicitCanElect = props?.getProperty(Constants.CLUSTER_CAN_ELECT_LEADER)?.trim()
+            canElectLeader = when {
+                !explicitCanElect.isNullOrBlank() -> !"false".equals(explicitCanElect, ignoreCase = true)
+                clusterRole.equals(Constants.CLUSTER_ROLE_EDGE_CLIENT, ignoreCase = true) -> false
+                else -> true
+            }
+            cpuCores = detectedCores
+            totalMemoryMb = detectedMemMb
+            computePower = ComputePower.parseOrNull(props?.getProperty(Constants.CLUSTER_COMPUTE_POWER))
+                ?: ComputePower.detect(detectedCores, detectedMemMb)
+
             heartbeatIntervalMs = props?.getProperty(Constants.CLUSTER_HEARTBEAT_INTERVAL_MS)?.toLongOrNull()
                 ?.coerceAtLeast(250L) ?: 3_000L
             leaderTimeoutMs = props?.getProperty(Constants.CLUSTER_LEADER_TIMEOUT_MS)?.toLongOrNull()
@@ -210,8 +256,12 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
             nodeTimeoutMs = props?.getProperty(Constants.CLUSTER_NODE_TIMEOUT_MS)?.toLongOrNull()
                 ?.coerceAtLeast(2_000L) ?: 15_000L
             clusterSecret = props?.getProperty(Constants.CLUSTER_SECRET)?.takeIf { it.isNotBlank() }
-            configuredLeaderUrl = props?.getProperty(Constants.CLUSTER_LEADER_URL)
-                ?.takeIf { it.isNotBlank() }?.let { normalizeUrl(it) }
+
+            leaderFallbackUrls.clear()
+            props?.getProperty(Constants.CLUSTER_LEADER_FALLBACK_URLS)?.split(",")
+                ?.map { normalizeUrl(it) }
+                ?.filter { it.isNotBlank() && it != nodeUrl && it != configuredLeaderUrl }
+                ?.forEach { leaderFallbackUrls.add(it) }
 
             seedUrls.clear()
             props?.getProperty(Constants.CLUSTER_SEEDS)?.split(",")
@@ -219,10 +269,23 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
                 ?.filter { it.isNotBlank() && it != nodeUrl }
                 ?.forEach { seedUrls.add(it) }
             configuredLeaderUrl?.takeIf { it.isNotBlank() && it != nodeUrl }?.let { seedUrls.add(it) }
+            leaderFallbackUrls.forEach { seedUrls.add(it) }
 
             if (transport == null) {
-                transport = ReveilaClientClusterTransport(
-                    version = version,
+                val remoteService = resolveOrCreateRemoteServiceLocked()
+                configuredLeaderUrl?.takeIf { it.isNotBlank() && it != nodeUrl }?.let {
+                    remoteService.addRemoteNode(it, 1L)
+                }
+                seedUrls.forEach { seed ->
+                    if (seed != nodeUrl) {
+                        remoteService.addRemoteNode(seed, 2L)
+                    }
+                }
+                if (!clusterSecret.isNullOrBlank()) {
+                    remoteService.putDefaultHeader(Constants.CLUSTER_TOKEN_HEADER, clusterSecret!!)
+                }
+                transport = RemoteServiceClusterTransport(
+                    remoteService = remoteService,
                     clusterSecret = clusterSecret
                 )
             }
@@ -234,6 +297,43 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
                 }
             }
         }
+    }
+
+    private fun resolveOrCreateRemoteServiceLocked(): RemoteService {
+        val existing = try {
+            context?.getProxy(Constants.REMOTE_REVEILA)?.getInstance() as? RemoteService
+        } catch (_: Exception) {
+            null
+        }
+        if (existing != null) return existing
+        return RemoteService().apply {
+            this.context = this@ClusterService.context
+            this.timeoutSeconds = 5L
+            try {
+                this.start()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * Returns true when `cluster.leader.url` is configured and matches this node's own
+     * URL or one of this host's local IP addresses (on the same port).
+     */
+    fun isPresetLeaderSelf(): Boolean {
+        val localIps = runCatching { localIpProvider() }.getOrDefault(setOf("127.0.0.1", "localhost"))
+        return lock.withLock { isPresetLeaderSelfLocked(localIps) }
+    }
+
+    private fun isPresetLeaderSelfLocked(localIps: Set<String>): Boolean {
+        val preset = configuredLeaderUrl?.takeIf { it.isNotBlank() } ?: return false
+        if (preset.equals(nodeUrl, ignoreCase = true)) return true
+        val presetHost = extractHost(preset) ?: return false
+        val presetPort = extractPort(preset)
+        val selfPort = extractPort(nodeUrl)
+        if (presetPort != selfPort) return false
+        val normalizedIps = localIps.map { it.trim().lowercase() }.toSet()
+        return normalizedIps.contains(presetHost.lowercase())
     }
 
     private fun startMaintenanceLoop() {
@@ -260,16 +360,52 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
     // =========================================================================
 
     /**
-     * Discovers an existing Lead Node from configured leader/seeds and joins as a Worker.
-     * If no active Lead Node is reachable and the node is not standalone, claims leadership.
+     * Bootstraps cluster membership on startup:
+     * 1. If the preset `cluster.leader.url` matches this node's own IP/URL, immediately assumes
+     *    the Lead Node role with no leader lookup required.
+     * 2. If `cluster.leader.url` points to a remote Lead Node, directly calls `registerWorker` on
+     *    that Lead Node (via [RemoteService]) with this node's metadata & [ComputePower].
+     * 3. Otherwise (or if the preset leader is unreachable), probes configured seeds for an active
+     *    Lead Node; if none is reachable, initiates dynamic leader election.
      */
     fun bootstrapCluster() {
         if (standalone) return
 
+        // 1. Preset leader URL matches this instance's own IP/URL -> become Lead Node immediately
+        if (isPresetLeaderSelf()) {
+            val termToClaim = lock.withLock {
+                if (currentTerm < 1L) 1L else currentTerm
+            }
+            logger.info(
+                "Preset leader URL ($configuredLeaderUrl) matches this instance's own address ($nodeUrl). " +
+                    "Assuming LEAD role immediately (nodeId=$nodeId, computePower=$computePower)."
+            )
+            promoteToLead(termToClaim)
+            return
+        }
+
+        // 2. Preset leader URL (plus any LAN/Tailscale/Relay fallback URLs) is remote -> register directly
+        val orderedLeaderCandidates = lock.withLock {
+            val list = LinkedHashSet<String>()
+            configuredLeaderUrl?.takeIf { it.isNotBlank() && it != nodeUrl }?.let { list.add(it) }
+            leaderFallbackUrls.filter { it.isNotBlank() && it != nodeUrl }.forEach { list.add(it) }
+            list.toList()
+        }
+        for (candidateLeader in orderedLeaderCandidates) {
+            logger.info(
+                "Contacting Lead Node candidate at $candidateLeader via RemoteService " +
+                    "(nodeId=$nodeId, role=$clusterRole, computePower=$computePower)."
+            )
+            if (joinLeader(candidateLeader)) {
+                return
+            }
+        }
+
+        // 3. Fallback: probe remaining seeds for an active Lead Node
         val probeTargets = lock.withLock {
             val targets = LinkedHashSet<String>()
-            configuredLeaderUrl?.takeIf { it.isNotBlank() && it != nodeUrl }?.let { targets.add(it) }
             targets.addAll(seedUrls)
+            orderedLeaderCandidates.forEach { targets.remove(it) }
             targets.remove(nodeUrl)
             targets.toList()
         }
@@ -280,6 +416,23 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
             if (joinLeader(discoveredLeader)) {
                 return
             }
+        }
+
+        // Non-electable EDGE_CLIENT (e.g. Aegin Mobile) never triggers leader election or split-brain;
+        // it stays in WORKER offline-fallback mode and automatically reconnects when Desktop Lead returns.
+        if (!canElectLeader) {
+            lock.withLock {
+                role = NodeRole.WORKER
+                leaderReachable = false
+                if (leaderUrl.isNullOrBlank()) {
+                    leaderUrl = orderedLeaderCandidates.firstOrNull()
+                }
+            }
+            logger.info(
+                "Lead Node unreachable for non-electable EDGE_CLIENT '$nodeId'. " +
+                    "Operating in graceful local/cloud fallback until Desktop Lead is reachable."
+            )
+            return
         }
 
         logger.info("No active Lead Node reachable during bootstrap. Claiming Lead Node role (nodeId=$nodeId).")
@@ -322,7 +475,7 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
      * First node to claim leadership without rejection from any reachable peer becomes the new Lead Node.
      */
     fun initiateElection(): Boolean {
-        if (standalone) return false
+        if (standalone || !canElectLeader) return false
 
         val (claim, peers, activeTransport) = lock.withLock {
             role = NodeRole.CANDIDATE
@@ -672,8 +825,9 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
 
     /**
      * Registers this node with the specified Lead Node and applies its initial [ClusterSnapshot].
+     * Follows a single redirect if the contacted node reports a different active Lead Node.
      */
-    fun joinLeader(targetLeaderUrl: String): Boolean {
+    fun joinLeader(targetLeaderUrl: String, allowRedirect: Boolean = true): Boolean {
         val normalizedLeader = normalizeUrl(targetLeaderUrl)
         val (nodeInfo, activeTransport) = lock.withLock {
             val info = buildSelfNodeInfoLocked(NodeRole.WORKER)
@@ -691,7 +845,21 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
             val snapshot = ClusterSnapshot.fromMap(snapshotMap)
             if (snapshot.leaderUrl.isBlank()) return false
 
+            val redirectedLeader = normalizeUrl(snapshot.leaderUrl)
+            if (allowRedirect &&
+                snapshot.nodes.isEmpty() &&
+                redirectedLeader.isNotBlank() &&
+                redirectedLeader != normalizedLeader &&
+                redirectedLeader != nodeUrl
+            ) {
+                logger.info("Lead registration redirected from $normalizedLeader to active Lead $redirectedLeader.")
+                return joinLeader(redirectedLeader, allowRedirect = false)
+            }
+
             applySnapshot(snapshot)
+            lock.withLock {
+                leaderReachable = true
+            }
             true
         } catch (e: Exception) {
             logger.warning("Failed to join Lead Node at $normalizedLeader: ${e.message}")
@@ -764,7 +932,8 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
                 services = localServices.toList(),
                 term = currentTerm,
                 configVersion = configVersion,
-                routingVersion = routingVersion
+                routingVersion = routingVersion,
+                computePower = computePower
             )
             Quad(leaderUrl, req, transport, lastLeaderContactMs)
         } ?: return
@@ -787,6 +956,7 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
             if (resp != null && resp.accepted) {
                 val needsSync = lock.withLock {
                     lastLeaderContactMs = clock()
+                    leaderReachable = true
                     if (resp.term > currentTerm) {
                         currentTerm = resp.term
                     }
@@ -808,6 +978,24 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
             }
         } catch (_: Exception) {
             // Lead unreachable
+        }
+
+        // If non-electable EDGE_CLIENT, try fallback Lead URLs (e.g. Tailscale/Relay) instead of holding election
+        if (!canElectLeader) {
+            val fallbacks = lock.withLock {
+                leaderReachable = false
+                val all = LinkedHashSet<String>()
+                configuredLeaderUrl?.takeIf { it.isNotBlank() && it != targetLeader && it != nodeUrl }?.let { all.add(it) }
+                leaderFallbackUrls.filter { it.isNotBlank() && it != targetLeader && it != nodeUrl }.forEach { all.add(it) }
+                all.toList()
+            }
+            for (fbUrl in fallbacks) {
+                if (joinLeader(fbUrl)) {
+                    logger.info("EDGE_CLIENT '$nodeId' failed over to alternate Lead URL: $fbUrl")
+                    return
+                }
+            }
+            return
         }
 
         val elapsed = clock() - lock.withLock { lastLeaderContactMs }
@@ -853,7 +1041,10 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
                 term = currentTerm,
                 lastHeartbeatMs = now,
                 status = NodeStatus.UP,
-                version = existing?.version ?: Constants.DEFAULT_SYSTEM_VERSION
+                version = existing?.version ?: Constants.DEFAULT_SYSTEM_VERSION,
+                computePower = req.computePower,
+                cpuCores = existing?.cpuCores ?: 0,
+                totalMemoryMb = existing?.totalMemoryMb ?: 0L
             )
             if (normalizedUrl.isNotBlank() && normalizedUrl != nodeUrl) {
                 seedUrls.add(normalizedUrl)
@@ -980,14 +1171,193 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
     }
 
     // =========================================================================
-    // SERVICE DISCOVERY & ROUTING
+    // NODE DIRECTORY, COMPUTE-AWARE DISPATCHER & PRESET PROFILES
     // =========================================================================
 
     /**
-     * RPC handler on Lead Node: returns healthy node base URLs hosting [serviceName].
+     * RPC & local introspection method: returns the Lead Node's reference table of all known
+     * cluster nodes (compute power, hardware specs, running services, health status, role),
+     * ordered by compute power descending.
+     */
+    fun getNodeDirectory(): List<Map<String, Any?>> = lock.withLock {
+        nodesById.values
+            .sortedWith(
+                compareByDescending<ClusterNodeInfo> { it.status == NodeStatus.UP }
+                    .thenByDescending { it.computePower.weight }
+                    .thenBy { it.nodeId }
+            )
+            .map { node ->
+                linkedMapOf(
+                    "nodeId" to node.nodeId,
+                    "baseUrl" to node.baseUrl,
+                    "role" to node.role.name,
+                    "clusterRole" to node.clusterRole,
+                    "computePower" to node.computePower.name,
+                    "computeWeight" to node.computePower.weight,
+                    "cpuCores" to node.cpuCores,
+                    "totalMemoryMb" to node.totalMemoryMb,
+                    "services" to node.services,
+                    "status" to node.status.name,
+                    "lastHeartbeatMs" to node.lastHeartbeatMs,
+                    "version" to node.version
+                )
+            }
+    }
+
+    /**
+     * Programmatically registers or overrides the preset component configuration JSON
+     * for a given [ComputePower] tier on the Lead Node.
+     */
+    fun registerComputeProfile(power: ComputePower, profileJson: String) {
+        if (profileJson.isBlank()) return
+        lock.withLock {
+            presetProfiles[power] = profileJson
+        }
+    }
+
+    /**
+     * RPC handler on the Lead Node: returns the preset component configuration JSON
+     * matching the requesting citizen node's [computePowerName] (`LOW`, `MEDIUM`, `HIGH`, `SUPER`).
+     *
+     * Resolution order:
+     * 1. In-memory override registered via [registerComputeProfile].
+     * 2. File `${system.home}/${cluster.profiles.dir}/${tier}.json` (default `configs/cluster/profiles/{low,medium,high,super}.json`).
+     * 3. For `SUPER`, falls back to `HIGH` if no dedicated `super.json` exists.
+     */
+    fun getComputeProfile(computePowerName: String?): Map<String, Any?> {
+        val requested = ComputePower.parseOrNull(computePowerName) ?: ComputePower.MEDIUM
+        val resolved = lock.withLock {
+            resolveComputeProfileLocked(requested)
+        }
+        return linkedMapOf(
+            "computePower" to requested.name,
+            "profileFound" to (resolved != null),
+            "profileJson" to (resolved ?: "")
+        )
+    }
+
+    /**
+     * Called by a Worker/Citizen node after joining the Lead Node: fetches the component
+     * configuration JSON matching this node's declared [computePower] via [RemoteService].
+     */
+    fun fetchComputeProfileFromLeader(): String? {
+        val (targetLeader, activeTransport, myPower) = lock.withLock {
+            Triple(leaderUrl ?: configuredLeaderUrl, transport, computePower)
+        }
+        if (targetLeader.isNullOrBlank() || targetLeader == nodeUrl || activeTransport == null) {
+            return null
+        }
+        return try {
+            val raw = activeTransport.invokeClusterMethod(
+                targetLeader,
+                "getComputeProfile",
+                arrayOf(myPower.name)
+            )
+            val map = raw as? Map<*, *> ?: return null
+            val found = (map["profileFound"] as? Boolean)
+                ?: map["profileFound"]?.toString()?.equals("true", ignoreCase = true)
+                ?: false
+            val json = map["profileJson"]?.toString()
+            if (found && !json.isNullOrBlank()) json else null
+        } catch (e: Exception) {
+            logger.warning("Failed to fetch compute profile ($myPower) from Lead Node $targetLeader: ${e.message}")
+            null
+        }
+    }
+
+    private fun resolveComputeProfileLocked(power: ComputePower): String? {
+        presetProfiles[power]?.takeIf { it.isNotBlank() }?.let { return it }
+
+        val fs = PlatformFileSystem()
+        val home = context?.properties?.getProperty(Constants.SYSTEM_HOME)?.takeIf { it.isNotBlank() }
+        val profilesRelDir = context?.properties?.getProperty(Constants.CLUSTER_PROFILES_DIR)
+            ?.takeIf { it.isNotBlank() } ?: "configs/cluster/profiles"
+
+        if (home != null) {
+            val profilesDir = fs.resolve(home, profilesRelDir)
+            val exactFile = fs.resolve(profilesDir, "${power.name.lowercase()}.json")
+            if (fs.exists(exactFile)) {
+                return runCatching { fs.readText(exactFile) }.getOrNull()?.takeIf { it.isNotBlank() }
+            }
+            if (power == ComputePower.SUPER) {
+                presetProfiles[ComputePower.HIGH]?.takeIf { it.isNotBlank() }?.let { return it }
+                val highFile = fs.resolve(profilesDir, "high.json")
+                if (fs.exists(highFile)) {
+                    return runCatching { fs.readText(highFile) }.getOrNull()?.takeIf { it.isNotBlank() }
+                }
+            }
+        } else if (power == ComputePower.SUPER) {
+            presetProfiles[ComputePower.HIGH]?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        return null
+    }
+
+    /**
+     * RPC handler on Lead Node: returns healthy node base URLs hosting [serviceName],
+     * ranked by [ComputePower] weight descending with round-robin balancing across equal-power peers.
      */
     fun lookupServiceRoute(serviceName: String): List<String> = lock.withLock {
-        routingTable[serviceName]?.toList() ?: emptyList()
+        val rawUrls = routingTable[serviceName]?.toList() ?: return@withLock emptyList()
+        rankServiceUrlsLocked(serviceName, rawUrls, advanceRoundRobin = true)
+    }
+
+    /**
+     * RPC dispatcher on Lead Node: selects the optimal target node base URL for [serviceName]
+     * using the node reference table (health, compute power weight, and round-robin balancing)
+     * and returns both the primary dispatched URL and ranked fallback candidates.
+     */
+    fun dispatchService(serviceName: String): Map<String, Any?> = lock.withLock {
+        val rawUrls = routingTable[serviceName]?.toList() ?: emptyList()
+        val ranked = rankServiceUrlsLocked(serviceName, rawUrls, advanceRoundRobin = true)
+        val primaryUrl = ranked.firstOrNull()
+        val primaryNode = if (primaryUrl != null) {
+            nodesById.values.firstOrNull { normalizeUrl(it.baseUrl) == primaryUrl }
+        } else null
+
+        linkedMapOf(
+            "serviceName" to serviceName,
+            "targetUrl" to (primaryUrl ?: ""),
+            "candidates" to ranked,
+            "selectedNodeId" to (primaryNode?.nodeId ?: ""),
+            "selectedComputePower" to (primaryNode?.computePower?.name ?: "")
+        )
+    }
+
+    private fun rankServiceUrlsLocked(
+        serviceName: String,
+        urls: List<String>,
+        advanceRoundRobin: Boolean
+    ): List<String> {
+        if (urls.size <= 1) return urls
+        val nodesByUrl = LinkedHashMap<String, ClusterNodeInfo>()
+        nodesById.values.forEach { node ->
+            val u = normalizeUrl(node.baseUrl)
+            if (u.isNotBlank()) nodesByUrl[u] = node
+        }
+
+        // Group by ComputePower weight descending; rotate within each equal-power tier for load distribution
+        val groupedByWeight = urls.groupBy { url ->
+            val node = nodesByUrl[normalizeUrl(url)]
+            if (node != null && node.status == NodeStatus.UP) node.computePower.weight else 0
+        }.entries.sortedByDescending { it.key }
+
+        val counter = dispatchRoundRobinCounters[serviceName] ?: 0
+        if (advanceRoundRobin) {
+            dispatchRoundRobinCounters[serviceName] = (counter + 1) and 0x7FFFFFFF
+        }
+
+        val result = ArrayList<String>(urls.size)
+        for ((_, tierUrls) in groupedByWeight) {
+            if (tierUrls.size <= 1) {
+                result.addAll(tierUrls)
+            } else {
+                val offset = counter % tierUrls.size
+                for (i in tierUrls.indices) {
+                    result.add(tierUrls[(offset + i) % tierUrls.size])
+                }
+            }
+        }
+        return result
     }
 
     /**
@@ -1000,8 +1370,9 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
 
         val (isLocal, cachedUrls, currentRole, currentLeader, activeTransport) = lock.withLock {
             val local = localServices.contains(serviceName)
-            val cached = routingTable[serviceName]?.filter { it != nodeUrl } ?: emptyList()
-            Quint(local, cached, role, leaderUrl, transport)
+            val rawCached = routingTable[serviceName]?.filter { it != nodeUrl } ?: emptyList()
+            val rankedCached = rankServiceUrlsLocked(serviceName, rawCached, advanceRoundRobin = true)
+            Quint(local, rankedCached, role, leaderUrl, transport)
         }
 
         if (isLocal) return null
@@ -1009,7 +1380,7 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
             return selectBestUrl(cachedUrls)
         }
 
-        // Missing locally -> query Lead Node for routing info
+        // Missing locally -> query Lead Node for dispatched routing info
         if (currentRole == NodeRole.WORKER && !currentLeader.isNullOrBlank() && activeTransport != null) {
             try {
                 val raw = activeTransport.invokeClusterMethod(
@@ -1048,9 +1419,17 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
 
     private fun selectBestUrl(candidates: List<String>): String {
         if (candidates.size == 1) return candidates.first()
+        // Candidates are already ordered by ComputePower weight + round-robin.
+        // Only override with PerformanceTracker if the tracked node is in the same top compute tier.
         val bestTracked = PerformanceTracker.getInstance().getBestNodeUrl()?.let { normalizeUrl(it) }
         if (bestTracked != null && candidates.contains(bestTracked)) {
-            return bestTracked
+            val sameTopTier = lock.withLock {
+                val firstNode = nodesById.values.firstOrNull { normalizeUrl(it.baseUrl) == candidates.first() }
+                val trackedNode = nodesById.values.firstOrNull { normalizeUrl(it.baseUrl) == bestTracked }
+                firstNode == null || trackedNode == null ||
+                    trackedNode.computePower.weight >= firstNode.computePower.weight
+            }
+            if (sameTopTier) return bestTracked
         }
         return candidates.first()
     }
@@ -1267,6 +1646,12 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
             "nodeId" to nodeId,
             "nodeUrl" to nodeUrl,
             "clusterRole" to clusterRole,
+            "canElectLeader" to canElectLeader,
+            "leaderReachable" to leaderReachable,
+            "leaderFallbackUrls" to leaderFallbackUrls.toList(),
+            "computePower" to computePower.name,
+            "cpuCores" to cpuCores,
+            "totalMemoryMb" to totalMemoryMb,
             "standalone" to standalone,
             "role" to role.name,
             "term" to currentTerm,
@@ -1296,7 +1681,10 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
             term = currentTerm,
             lastHeartbeatMs = clock(),
             status = NodeStatus.UP,
-            version = version
+            version = version,
+            computePower = computePower,
+            cpuCores = cpuCores,
+            totalMemoryMb = totalMemoryMb
         )
     }
 
@@ -1372,13 +1760,46 @@ open class ClusterService @kotlin.jvm.JvmOverloads constructor(
     private fun isNodeSpecificProperty(key: String): Boolean {
         return key == Constants.CLUSTER_NODE_ID ||
             key == Constants.CLUSTER_NODE_URL ||
+            key == Constants.CLUSTER_NODE_PORT ||
+            key == Constants.CLUSTER_COMPUTE_POWER ||
             key == Constants.CLUSTER_ROLE ||
+            key == Constants.CLUSTER_CAN_ELECT_LEADER ||
+            key == Constants.CLUSTER_LEADER_FALLBACK_URLS ||
             key == Constants.STANDALONE_MODE ||
             key == Constants.SYSTEM_HOME
     }
 
     private fun normalizeUrl(url: String): String {
         return url.trim().trimEnd('/')
+    }
+
+    private fun extractHost(url: String): String? {
+        val withoutScheme = url.trim()
+            .substringAfter("://", missingDelimiterValue = url.trim())
+            .substringBefore('/')
+            .substringBefore('?')
+        if (withoutScheme.isBlank()) return null
+        // Handle IPv6 bracketed host [::1]:8080
+        return if (withoutScheme.startsWith("[")) {
+            withoutScheme.substringAfter('[').substringBefore(']').takeIf { it.isNotBlank() }
+        } else {
+            withoutScheme.substringBefore(':').takeIf { it.isNotBlank() }
+        }
+    }
+
+    private fun extractPort(url: String): Int {
+        val trimmed = url.trim()
+        val isHttps = trimmed.startsWith("https://", ignoreCase = true)
+        val authority = trimmed
+            .substringAfter("://", missingDelimiterValue = trimmed)
+            .substringBefore('/')
+            .substringBefore('?')
+        val portStr = if (authority.startsWith("[")) {
+            authority.substringAfter("]:", missingDelimiterValue = "")
+        } else {
+            authority.substringAfter(':', missingDelimiterValue = "")
+        }
+        return portStr.toIntOrNull() ?: if (isHttps) 443 else 80
     }
 
     private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)

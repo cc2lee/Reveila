@@ -87,7 +87,7 @@
       "capabilityTier": "capable",
       "safetyReviewCapable": true,
       "cautionMessage": "",
-      "repoPath": "Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf",
+      "repoPath": "bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
       "approxSizeBytes": 4683073952,
       "sha256": "",
       "requiresAuthToken": false
@@ -105,7 +105,7 @@
       "capabilityTier": "capable",
       "safetyReviewCapable": true,
       "cautionMessage": "",
-      "repoPath": "Qwen/Qwen2.5-14B-Instruct-GGUF/resolve/main/qwen2.5-14b-instruct-q4_k_m.gguf",
+      "repoPath": "bartowski/Qwen2.5-14B-Instruct-GGUF/resolve/main/Qwen2.5-14B-Instruct-Q4_K_M.gguf",
       "approxSizeBytes": 8988111584,
       "sha256": "",
       "requiresAuthToken": false
