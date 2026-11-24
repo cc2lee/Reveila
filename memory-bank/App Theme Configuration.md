@@ -113,9 +113,12 @@ All fields are optional and fall back safely to the built-in `DarkAeginColors` /
 }
 ```
 
-### Supported Font Values
+### Supported Font & Mascot Values
 - `fontFamily` / `monoFontFamily`: `"sans-serif"` (or `"sans"`), `"serif"`, `"monospace"` (or `"mono"`), `"cursive"`, `"default"`
 - `titleWeight`: `"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"`, `"extrabold"`, `"black"`
+- `mascotStyle`:
+  - `"robot_dog"` *(default)*: Full Aegin robot-dog animations, paw-pad glow, and ear/chest precision overlays.
+  - `"corporate_logo"`: Disables dog-specific overlays and head-tilt hops, rendering only a clean centered outer thinking halo around the swapped brand icon (`src/commonMain/composeResources/drawable/app_icon.png`).
 
 ---
 

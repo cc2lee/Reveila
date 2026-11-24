@@ -46,10 +46,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -75,6 +78,7 @@ import com.reveila.aegin.ui.theme.AeginPillButtonVariant
 import com.reveila.aegin.ui.theme.AeginVectorIcon
 import com.reveila.aegin.ui.theme.LocalAeginColors
 import com.reveila.aegin.ui.theme.LocalAeginTheme
+import com.reveila.aegin.ui.theme.pillMinWidthAtLeastHeight
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -799,7 +803,12 @@ fun SettingsScreen(
                     .fillMaxSize()
                     .background(theme.bg)
             ) {
-                // Studio Header Bar
+                // Studio Header Bar + Segmented Pill Tab Bar (tinted header pane for light/dark contrast)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(theme.headerBg)
+                ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -849,7 +858,8 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .padding(horizontal = 16.dp)
+                        .padding(top = 4.dp, bottom = 10.dp)
                         .clip(CircleShape)
                         .background(theme.card)
                         .border(1.dp, theme.glassBorder, CircleShape)
@@ -880,12 +890,26 @@ fun SettingsScreen(
                             Text(
                                 text = tabLabel,
                                 color = if (isSelected) resolvedTheme.pillButton.primaryEnabledText else theme.subText,
-                                fontSize = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold
+                                style = androidx.compose.ui.text.TextStyle(
+                                    fontSize = 12.sp,
+                                    lineHeight = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                    lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                                        alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                                        trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                                    )
+                                )
                             )
                         }
                     }
                 }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(theme.border)
+                )
+                } // end Studio Header + Tab Bar Column
 
         // Content
         Column(
@@ -909,7 +933,71 @@ fun SettingsScreen(
                     )
                 }
 
-                // 0b. PROACTIVE ALERTS & CHANNELS (Slack / Microsoft Teams / Email [+ Custom in Individual edition])
+                // 0b. DESKTOP COMPANION PAIRING (Desktop Lead / Pair Desktop)
+                DesktopCompanionPairingCard(
+                    pairedStatus = pairedStatus,
+                    desktopRemoteUrlDraft = desktopRemoteUrlDraft,
+                    onDesktopRemoteUrlChange = { desktopRemoteUrlDraft = it },
+                    pairingInputDraft = pairingInputDraft,
+                    onPairingInputChange = { pairingInputDraft = it },
+                    isPairingBusy = isPairingBusy,
+                    onEnableDesktopLead = {
+                        scope.launch {
+                            isPairingBusy = true
+                            try {
+                                pairedStatus = AeginBridge.enableDesktopLeadMode(
+                                    port = pairedStatus.port,
+                                    remoteUrl = desktopRemoteUrlDraft
+                                )
+                            } catch (e: Exception) {
+                                showAlert("Lead Mode Error", e.message ?: "Failed to start Desktop Lead.")
+                            } finally {
+                                isPairingBusy = false
+                            }
+                        }
+                    },
+                    onDisablePairedMode = {
+                        scope.launch {
+                            isPairingBusy = true
+                            try {
+                                pairedStatus = AeginBridge.disablePairedClusterMode()
+                            } finally {
+                                isPairingBusy = false
+                            }
+                        }
+                    },
+                    onScanWifi = {
+                        scope.launch {
+                            isPairingBusy = true
+                            try {
+                                val found = AeginBridge.discoverLanDesktopLeads()
+                                if (found.isNotEmpty()) {
+                                    pairingInputDraft = found.first()
+                                    showAlert("Desktop Found", "Discovered Aegin Desktop on Wi-Fi: ${found.first()}")
+                                } else {
+                                    showAlert("Not Found", "No Aegin Desktop Lead found on Wi-Fi. Ensure Desktop Lead Mode is enabled on the same network.")
+                                }
+                            } finally {
+                                isPairingBusy = false
+                            }
+                        }
+                    },
+                    onPairDesktop = {
+                        scope.launch {
+                            isPairingBusy = true
+                            try {
+                                pairedStatus = AeginBridge.pairWithDesktop(pairingInputDraft)
+                                showAlert("Paired Mode", pairedStatus.statusMessage)
+                            } catch (e: Exception) {
+                                showAlert("Pairing Failed", e.message ?: "Unable to pair with Desktop.")
+                            } finally {
+                                isPairingBusy = false
+                            }
+                        }
+                    }
+                )
+
+                // 0c. PROACTIVE ALERTS & CHANNELS (Slack / Microsoft Teams / Email [+ Custom in Individual edition])
                 ProactiveAlertChannelsCard(
                     channels = alertChannels,
                     appEdition = appEdition,
@@ -1219,11 +1307,11 @@ fun SettingsScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .weight(1f)
                                 .clip(CircleShape)
                                 .background(theme.primaryGradient)
                                 .clickable(enabled = !isVaultScanning) { handleSaveAndScanVault() }
-                                .padding(12.dp),
+                                .pillMinWidthAtLeastHeight()
+                                .padding(horizontal = 20.dp, vertical = 12.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             if (isVaultScanning) {
@@ -1237,7 +1325,9 @@ fun SettingsScreen(
                                     text = "Save & re-index",
                                     color = Color.White,
                                     fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 13.sp
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -1542,11 +1632,27 @@ fun SettingsScreen(
                         color = theme.subText,
                         fontSize = 12.sp
                     )
+                    val gpuSummary = when {
+                        capabilities.hasDiscreteGpu && capabilities.gpuName.isNotBlank() ->
+                            "${capabilities.gpuName} (${capabilities.gpuVramGb} GB VRAM)"
+                        capabilities.hasUnifiedMemoryGpu ->
+                            "${capabilities.gpuName.ifBlank { "Unified GPU" }} (${capabilities.gpuVramGb} GB)"
+                        capabilities.supportsVulkanCompute -> "Vulkan Available"
+                        else -> "CPU-Only"
+                    }
                     Text(
-                        text = "Processor: ${capabilities.cpuAbi} • Fast Math: ${if (capabilities.supportsSimdDotProd) "Yes" else "No"} • GPU Acceleration: ${if (capabilities.supportsVulkanCompute) "Available" else "Not Available"}",
+                        text = "Processor: ${capabilities.cpuAbi}${if (capabilities.cpuCores > 0) " (${capabilities.cpuCores} cores)" else ""} • Fast Math: ${if (capabilities.supportsSimdDotProd) "Yes" else "No"} • GPU: $gpuSummary",
                         color = theme.subText,
                         fontSize = 12.sp
                     )
+                    if (capabilities.downgradedReason.isNotBlank()) {
+                        Text(
+                            text = "Auto-Adjustment: ${capabilities.downgradedReason}",
+                            color = theme.warning,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                    }
                     Text(
                         text = "Offline Model Storage Folder:",
                         color = theme.text,
@@ -1571,16 +1677,27 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "System Storage Mount Path",
+                        text = "Engine & Companion Health",
                         color = theme.text,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
+                        text = "Edition: ${appEdition.uppercase()} • Companion Mode: ${pairedStatus.mode} • ${if (pairedStatus.isServerRunning || pairedStatus.leaderReachable) "Connected" else "Standalone / Stand-by"}",
+                        color = theme.subText,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = "System Storage Mount Path:",
+                        color = theme.text,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
                         text = storageMountPath,
                         color = theme.subText,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp
+                        fontSize = 11.sp
                     )
                 }
 
@@ -1607,7 +1724,6 @@ fun SettingsScreen(
                     )
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
                             .clip(CircleShape)
                             .background(theme.cloudGradient)
                             .clickable {
@@ -1624,219 +1740,18 @@ fun SettingsScreen(
                                     }
                                 }
                             }
-                            .padding(12.dp),
+                            .pillMinWidthAtLeastHeight()
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "Force Re-Scan Now",
                             color = Color.White,
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 13.sp
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                    }
-                }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(theme.card)
-                        .border(1.dp, theme.border, RoundedCornerShape(12.dp))
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = "Paired Desktop + Mobile Cluster",
-                        color = theme.text,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = pairedStatus.statusMessage,
-                        color = theme.subText,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp
-                    )
-
-                    if (pairedStatus.isDesktopHost) {
-                        OutlinedTextField(
-                            value = desktopRemoteUrlDraft,
-                            onValueChange = { desktopRemoteUrlDraft = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            label = { Text("Optional Remote URL (Tailscale / Relay)", fontSize = 12.sp) },
-                            placeholder = { Text("e.g. http://my-pc.tailnet:8080", fontSize = 12.sp) }
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(CircleShape)
-                                    .background(theme.primaryGradient)
-                                    .clickable(enabled = !isPairingBusy) {
-                                        scope.launch {
-                                            isPairingBusy = true
-                                            try {
-                                                pairedStatus = AeginBridge.enableDesktopLeadMode(
-                                                    port = pairedStatus.port,
-                                                    remoteUrl = desktopRemoteUrlDraft
-                                                )
-                                            } catch (e: Exception) {
-                                                showAlert("Lead Mode Error", e.message ?: "Failed to start Desktop Lead.")
-                                            } finally {
-                                                isPairingBusy = false
-                                            }
-                                        }
-                                    }
-                                    .padding(10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = if (pairedStatus.isServerRunning) "Refresh Lead" else "Enable Desktop Lead",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
-                                )
-                            }
-                            if (pairedStatus.isServerRunning) {
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(CircleShape)
-                                        .background(theme.inputBg)
-                                        .border(1.dp, theme.border, CircleShape)
-                                        .clickable(enabled = !isPairingBusy) {
-                                            scope.launch {
-                                                isPairingBusy = true
-                                                try {
-                                                    pairedStatus = AeginBridge.disablePairedClusterMode()
-                                                } finally {
-                                                    isPairingBusy = false
-                                                }
-                                            }
-                                        }
-                                        .padding(10.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "Disable Lead",
-                                        color = theme.text,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            }
-                        }
-                        if (pairedStatus.pairingPayloadJson.isNotBlank()) {
-                            Text(
-                                text = "PAIRING CODE (PASTE ON MOBILE)",
-                                color = theme.subText,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                            Text(
-                                text = pairedStatus.pairingPayloadJson,
-                                color = theme.primary,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                lineHeight = 15.sp,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(theme.inputBg)
-                                    .padding(10.dp)
-                            )
-                        }
-                    } else {
-                        OutlinedTextField(
-                            value = pairingInputDraft,
-                            onValueChange = { pairingInputDraft = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            maxLines = 4,
-                            label = { Text("Desktop Pairing Code or URL", fontSize = 12.sp) },
-                            placeholder = { Text("Paste pairing JSON from Desktop or http://192.168.1.x:8080", fontSize = 12.sp) }
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(CircleShape)
-                                    .background(theme.inputBg)
-                                    .border(1.dp, theme.border, CircleShape)
-                                    .clickable(enabled = !isPairingBusy) {
-                                        scope.launch {
-                                            isPairingBusy = true
-                                            try {
-                                                val found = AeginBridge.discoverLanDesktopLeads()
-                                                if (found.isNotEmpty()) {
-                                                    pairingInputDraft = found.first()
-                                                    showAlert("Desktop Found", "Discovered Aegin Desktop on Wi-Fi: ${found.first()}")
-                                                } else {
-                                                    showAlert("Not Found", "No Aegin Desktop Lead found on Wi-Fi. Ensure Desktop Lead Mode is enabled on the same network.")
-                                                }
-                                            } finally {
-                                                isPairingBusy = false
-                                            }
-                                        }
-                                    }
-                                    .padding(10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("Scan Wi-Fi", color = theme.text, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(CircleShape)
-                                    .background(theme.primaryGradient)
-                                    .clickable(enabled = !isPairingBusy && pairingInputDraft.isNotBlank()) {
-                                        scope.launch {
-                                            isPairingBusy = true
-                                            try {
-                                                pairedStatus = AeginBridge.pairWithDesktop(pairingInputDraft)
-                                                showAlert("Paired Mode", pairedStatus.statusMessage)
-                                            } catch (e: Exception) {
-                                                showAlert("Pairing Failed", e.message ?: "Unable to pair with Desktop.")
-                                            } finally {
-                                                isPairingBusy = false
-                                            }
-                                        }
-                                    }
-                                    .padding(10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("Pair Desktop", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
-                        }
-                        if (pairedStatus.mode == "MOBILE_PAIRED") {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(CircleShape)
-                                    .background(theme.inputBg)
-                                    .border(1.dp, theme.border, CircleShape)
-                                    .clickable(enabled = !isPairingBusy) {
-                                        scope.launch {
-                                            isPairingBusy = true
-                                            try {
-                                                pairedStatus = AeginBridge.disablePairedClusterMode()
-                                            } finally {
-                                                isPairingBusy = false
-                                            }
-                                        }
-                                    }
-                                    .padding(10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("Unpair (Return to Standalone)", color = theme.subText, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            }
-                        }
                     }
                 }
 
@@ -2991,18 +2906,20 @@ private fun AiSetupCard(
 
         Box(
             modifier = Modifier
-                .fillMaxWidth()
                 .clip(CircleShape)
                 .background(theme.primaryGradient)
                 .clickable { onSaveConfiguration() }
-                .padding(12.dp),
+                .pillMinWidthAtLeastHeight()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = "Save AI configuration",
                 color = Color.White,
                 fontWeight = FontWeight.ExtraBold,
-                fontSize = 13.sp
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -3732,12 +3649,12 @@ private fun EditProviderDialog(
 
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
                     .clip(CircleShape)
                     .border(1.dp, if (canTestConnection) theme.cyan else theme.border, CircleShape)
                     .background(if (canTestConnection) theme.cyan.copy(alpha = 0.1f) else theme.inputBg)
                     .clickable(enabled = canTestConnection) { onTestConnection() }
-                    .padding(11.dp),
+                    .pillMinWidthAtLeastHeight()
+                    .padding(horizontal = 18.dp, vertical = 11.dp),
                 contentAlignment = Alignment.Center
             ) {
                 if (isTestingConnection) {
@@ -3746,14 +3663,16 @@ private fun EditProviderDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = theme.cyan)
-                        Text("Testing connection...", color = theme.cyan, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("Testing connection...", color = theme.cyan, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 } else {
                     Text(
                         text = "🧪 Test connection",
                         color = if (canTestConnection) theme.cyan else theme.subText,
                         fontWeight = FontWeight.ExtraBold,
-                        fontSize = 12.sp
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -3764,25 +3683,25 @@ private fun EditProviderDialog(
             ) {
                 Box(
                     modifier = Modifier
-                        .weight(1f)
                         .clip(CircleShape)
                         .background(theme.primaryGradient)
                         .clickable(enabled = !isTestingConnection) { onSave() }
-                        .padding(12.dp),
+                        .pillMinWidthAtLeastHeight()
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Save", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+                    Text("Save", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Box(
                     modifier = Modifier
-                        .weight(1f)
                         .clip(CircleShape)
                         .border(1.dp, theme.border, CircleShape)
                         .clickable(enabled = !isTestingConnection) { onDismiss() }
-                        .padding(12.dp),
+                        .pillMinWidthAtLeastHeight()
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Cancel", color = theme.subText, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    Text("Cancel", color = theme.subText, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
 
@@ -4356,7 +4275,6 @@ private fun AlertChannelConfigDialog(
                     text = if (isSaving) "Saving..." else "Save Credentials",
                     variant = AeginPillButtonVariant.PRIMARY,
                     enabled = !isSaving,
-                    modifier = Modifier.weight(1f),
                     onClick = {
                         val parsedTo = toCsv.split(',').map { it.trim() }.filter { it.isNotEmpty() }
                         onSave(
@@ -4376,7 +4294,6 @@ private fun AlertChannelConfigDialog(
                 AeginPillButton(
                     text = "Cancel",
                     enabled = !isSaving,
-                    modifier = Modifier.weight(1f),
                     onClick = onDismiss
                 )
             }
@@ -4384,7 +4301,6 @@ private fun AlertChannelConfigDialog(
                 AeginPillButton(
                     text = "Remove Custom Channel",
                     enabled = !isSaving,
-                    modifier = Modifier.fillMaxWidth(),
                     onClick = { onDelete(initial) }
                 )
             }
@@ -4593,7 +4509,6 @@ private fun GovernancePolicyEditorCard(
                         text = if (isSaving) "Saving..." else "Save Policy",
                         variant = AeginPillButtonVariant.PRIMARY,
                         enabled = !isSaving,
-                        modifier = Modifier.weight(1f),
                         onClick = {
                             onSavePolicy(
                                 policy.copy(
@@ -4609,10 +4524,189 @@ private fun GovernancePolicyEditorCard(
                     AeginPillButton(
                         text = "Reset Defaults",
                         enabled = !isSaving,
-                        modifier = Modifier.weight(1f),
                         onClick = onResetDefaults
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopCompanionPairingCard(
+    pairedStatus: com.reveila.aegin.bridge.PairedClusterStatus,
+    desktopRemoteUrlDraft: String,
+    onDesktopRemoteUrlChange: (String) -> Unit,
+    pairingInputDraft: String,
+    onPairingInputChange: (String) -> Unit,
+    isPairingBusy: Boolean,
+    onEnableDesktopLead: () -> Unit,
+    onDisablePairedMode: () -> Unit,
+    onScanWifi: () -> Unit,
+    onPairDesktop: () -> Unit
+) {
+    val theme = LocalAeginColors.current
+    val clipboardManager = LocalClipboardManager.current
+    var copiedFeedback by remember { mutableStateOf(false) }
+
+    LaunchedEffect(copiedFeedback) {
+        if (copiedFeedback) {
+            delay(2000L)
+            copiedFeedback = false
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(theme.card)
+            .border(1.dp, theme.border, RoundedCornerShape(16.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "CLUSTER & NODE CONNECTION",
+                    color = theme.subText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp
+                )
+                Text(
+                    text = pairedStatus.statusMessage,
+                    color = theme.mutedText,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+            }
+            val isLinked = pairedStatus.isServerRunning || pairedStatus.mode == "MOBILE_PAIRED"
+            Text(
+                text = if (isLinked) "CLUSTER ACTIVE" else "STANDALONE",
+                color = if (isLinked) theme.success else theme.mutedText,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
+
+        if (pairedStatus.isDesktopHost) {
+            OutlinedTextField(
+                value = desktopRemoteUrlDraft,
+                onValueChange = onDesktopRemoteUrlChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Optional Remote URL (Tailscale / Relay)", fontSize = 11.sp) },
+                placeholder = { Text("e.g. http://my-pc.tailnet:8080", fontSize = 11.sp) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = theme.text,
+                    unfocusedTextColor = theme.text,
+                    focusedContainerColor = theme.inputBg,
+                    unfocusedContainerColor = theme.inputBg,
+                    focusedBorderColor = theme.primary,
+                    unfocusedBorderColor = theme.border
+                )
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AeginPillButton(
+                    text = if (pairedStatus.isServerRunning) "Refresh Cluster" else "Host Cluster Lead",
+                    variant = AeginPillButtonVariant.PRIMARY,
+                    enabled = !isPairingBusy,
+                    onClick = onEnableDesktopLead
+                )
+                if (pairedStatus.isServerRunning) {
+                    AeginPillButton(
+                        text = "Leave Cluster",
+                        enabled = !isPairingBusy,
+                        onClick = onDisablePairedMode
+                    )
+                }
+            }
+
+            if (pairedStatus.pairingPayloadJson.isNotBlank()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "CLUSTER JOIN CODE (PASTE ON EDGE / WORKER)",
+                        color = theme.subText,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    AeginPillButton(
+                        text = if (copiedFeedback) "Copied ✓" else "Copy",
+                        leadingIcon = if (copiedFeedback) AeginIconType.CHECK else null,
+                        variant = if (copiedFeedback) AeginPillButtonVariant.PRIMARY else AeginPillButtonVariant.SURFACE,
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(pairedStatus.pairingPayloadJson))
+                            copiedFeedback = true
+                        }
+                    )
+                }
+                SelectionContainer {
+                    Text(
+                        text = pairedStatus.pairingPayloadJson,
+                        color = theme.primary,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(theme.inputBg)
+                            .border(1.dp, theme.border, RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                    )
+                }
+            }
+        } else {
+            OutlinedTextField(
+                value = pairingInputDraft,
+                onValueChange = onPairingInputChange,
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 4,
+                label = { Text("Cluster Leader URL or Join Code", fontSize = 11.sp) },
+                placeholder = { Text("Paste join code, LAN URL, or https://my-server.example.com", fontSize = 11.sp) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = theme.text,
+                    unfocusedTextColor = theme.text,
+                    focusedContainerColor = theme.inputBg,
+                    unfocusedContainerColor = theme.inputBg,
+                    focusedBorderColor = theme.primary,
+                    unfocusedBorderColor = theme.border
+                )
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AeginPillButton(
+                    text = "Scan Wi-Fi",
+                    enabled = !isPairingBusy,
+                    onClick = onScanWifi
+                )
+                AeginPillButton(
+                    text = "Join Cluster",
+                    variant = AeginPillButtonVariant.PRIMARY,
+                    enabled = !isPairingBusy && pairingInputDraft.isNotBlank(),
+                    onClick = onPairDesktop
+                )
+            }
+            if (pairedStatus.mode == "MOBILE_PAIRED") {
+                AeginPillButton(
+                    text = "Disconnect (Standalone)",
+                    enabled = !isPairingBusy,
+                    onClick = onDisablePairedMode
+                )
             }
         }
     }

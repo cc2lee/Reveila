@@ -71,7 +71,7 @@ object WindowsMascotTrayRenderer {
     private val baseDogImage: BufferedImage? by lazy {
         val loader = Thread.currentThread().contextClassLoader
         val candidates = listOf(
-            "composeResources/reveila_suite.apps.aegin.generated.resources/drawable/aegin_robot_dog.png",
+            "composeResources/reveila_suite.apps.aegin.generated.resources/drawable/app_icon.png",
             "aegin_icon.png"
         )
         candidates.firstNotNullOfOrNull { path ->

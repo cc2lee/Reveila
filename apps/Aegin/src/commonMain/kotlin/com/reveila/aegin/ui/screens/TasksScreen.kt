@@ -61,6 +61,7 @@ import com.reveila.aegin.ui.PlatformBackHandler
 import com.reveila.aegin.ui.theme.AeginIconType
 import com.reveila.aegin.ui.theme.AeginVectorIcon
 import com.reveila.aegin.ui.theme.LocalAeginColors
+import com.reveila.aegin.ui.theme.pillMinWidthAtLeastHeight
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Instant
@@ -1145,19 +1146,21 @@ fun TasksScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Where Should This Run?", color = theme.subText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         targetOptions.forEach { targetKey ->
                             val selected = taskExecutionTargetInput.equals(targetKey, ignoreCase = true)
                             Box(
                                 modifier = Modifier
-                                    .weight(1f)
                                     .clip(CircleShape)
                                     .background(if (selected) theme.cyan.copy(alpha = 0.2f) else theme.inputBg)
                                     .border(1.dp, if (selected) theme.cyan else theme.border, CircleShape)
                                     .clickable { taskExecutionTargetInput = targetKey }
-                                    .padding(vertical = 8.dp),
+                                    .pillMinWidthAtLeastHeight()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
@@ -1165,7 +1168,8 @@ fun TasksScreen(
                                     color = if (selected) theme.cyan else theme.subText,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.ExtraBold,
-                                    maxLines = 1
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -1175,25 +1179,27 @@ fun TasksScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("How Often", color = theme.subText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         recurrenceOptions.forEach { opt ->
                             val selected = taskRecurrenceInput.equals(opt, ignoreCase = true)
                             Box(
                                 modifier = Modifier
-                                    .weight(1f)
                                     .clip(CircleShape)
                                     .background(if (selected) theme.primary else theme.inputBg)
                                     .border(1.dp, if (selected) theme.primary else theme.border, CircleShape)
                                     .clickable { taskRecurrenceInput = opt }
-                                    .padding(vertical = 8.dp, horizontal = 2.dp),
+                                    .pillMinWidthAtLeastHeight()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = AeginDisplayMapper.taskFrequency(opt),
                                     color = if (selected) Color.White else theme.subText,
-                                    fontSize = 9.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -1255,36 +1261,40 @@ fun TasksScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .weight(1f)
                             .clip(CircleShape)
                             .background(theme.primaryGradient)
                             .clickable { handleSaveTask(runImmediately = false) }
-                            .padding(vertical = 12.dp),
+                            .pillMinWidthAtLeastHeight()
+                            .padding(horizontal = 18.dp, vertical = 12.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = if (editingTaskId == null) "Save Task" else "Save Changes",
                             color = Color.White,
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 12.sp
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     if (editingTaskId == null) {
                         Box(
                             modifier = Modifier
-                                .weight(1f)
                                 .clip(CircleShape)
                                 .background(theme.cyan.copy(alpha = 0.16f))
                                 .border(1.dp, theme.cyan, CircleShape)
                                 .clickable { handleSaveTask(runImmediately = true) }
-                                .padding(vertical = 12.dp),
+                                .pillMinWidthAtLeastHeight()
+                                .padding(horizontal = 18.dp, vertical = 12.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = "⚡ Save & Run",
                                 color = theme.cyan,
                                 fontWeight = FontWeight.ExtraBold,
-                                fontSize = 12.sp
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -1512,26 +1522,26 @@ private fun TaskControlCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(
                         modifier = Modifier
-                            .weight(1f)
                             .clip(CircleShape)
                             .background(theme.success)
                             .clickable(enabled = !isBusy) { onApprove() }
-                            .padding(vertical = 8.dp),
+                            .pillMinWidthAtLeastHeight()
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("✓ Approve & Run", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                        Text("✓ Approve & Run", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     Box(
                         modifier = Modifier
-                            .weight(1f)
                             .clip(CircleShape)
                             .background(theme.danger.copy(alpha = 0.18f))
                             .border(1.dp, theme.danger, CircleShape)
                             .clickable(enabled = !isBusy) { onReject() }
-                            .padding(vertical = 8.dp),
+                            .pillMinWidthAtLeastHeight()
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Decline", color = theme.danger, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                        Text("Decline", color = theme.danger, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }

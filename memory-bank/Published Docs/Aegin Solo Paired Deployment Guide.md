@@ -1,12 +1,12 @@
-# Aegin Solo Paired Deployment Guide
-## Desktop Cluster Lead (`MEDIUM`/`HIGH`) + Mobile Edge Citizen (`LOW`)
+# Aegin Cluster & Paired Deployment Guide
+## Unified Cluster Runtime: Desktop / Home Lab / Cloud VM Lead + Mobile Edge Citizen
 
-This guide walks solo users through pairing **Aegin Desktop** (Windows/macOS/Linux) as the authoritative **Cluster Lead Node** with **Aegin Mobile** (Android) as a lightweight **`LOW`-power `EDGE_CLIENT`** citizen node.
+This guide walks users through connecting **Aegin Mobile** (Android) as a lightweight **`LOW`-power `EDGE_CLIENT`** node to a **Cluster Lead** — whether that Lead is **Aegin Desktop** on home Wi-Fi, a dedicated **GPU Tower / Mac Mini** in a Home AI Lab, a rented **Cloud VM** running headless `Reveila Server` (Spring Boot), or an **Enterprise Fleet**.
 
-With Paired Deployment:
+With Cluster Deployment:
 - **Your phone stays light & battery-friendly** — no need to store or run a 4 GB+ local LLM on mobile.
-- **Your desktop does the heavy lifting** — 7B–14B on-device GGUF inference, private **Safety Guard AI**, full **Knowledge Vault** indexing, and scheduled background **Tasks**.
-- **No static IP required** — automatic zero-config discovery on home Wi-Fi, plus optional seamless away-from-home connectivity over a private mesh VPN (Tailscale/WireGuard) or encrypted relay.
+- **Your Desktop / Server does the heavy lifting** — GPU/VRAM-validated 7B–14B on-device GGUF inference, private **Safety Guard AI**, full **Knowledge Vault** indexing, proactive **Slack / Teams / Email** alerts, and scheduled background **Tasks**.
+- **No static IP required** — automatic zero-config discovery on home Wi-Fi, plus optional seamless away-from-home connectivity over a private mesh VPN (Tailscale/WireGuard) or HTTPS Cloud Server (`node.runtime=server`).
 
 ---
 
@@ -60,13 +60,13 @@ Home routers sit behind NAT/CGNAT, so exposing port `8080` directly to the publi
 
 ## 3. Step-by-Step Setup
 
-### Step 1: Enable Desktop Lead Mode (Aegin Desktop)
-1. Launch **Aegin Desktop** (`.\gradlew :apps:Aegin:run` or `Aegin.bat`).
-2. Open **Settings → Advanced → Paired Desktop + Mobile Cluster**.
-3. *(Optional, for away-from-home 5G access)* Enter your Tailscale or Relay URL in **Optional Remote URL (Tailscale / Relay)** (e.g., `http://100.x.y.z:8080`).
-4. Click **Enable Desktop Lead**.
+### Step 1: Host Cluster Lead (Aegin Desktop or Headless Server)
+1. Launch **Aegin Desktop** (`.\gradlew :apps:Aegin:run` or `Aegin.bat`) — or deploy `Reveila Server` (`node.runtime=server`, Spring Boot/Docker) on an always-on GPU tower, Mac Mini, or Cloud VM.
+2. Open **Settings → Cluster & Node Connection**.
+3. *(Optional, for away-from-home 5G access)* Enter your Tailscale, Relay, or HTTPS Cloud URL in **Optional Remote URL (Tailscale / Relay)** (e.g., `http://100.x.y.z:8080`).
+4. Click **Host Cluster Lead**.
    - Aegin Desktop starts its embedded HTTP cluster server on port `8080`, starts the LAN discovery responder on UDP `41920`, generates a 256-bit `cluster.secret`, and updates `configs/reveila.properties`.
-5. Copy the generated **Pairing Code (JSON)** displayed in the card.
+5. Click **Copy** next to the generated **Cluster Join Code** (or highlight and copy the JSON directly).
 
 #### Windows Firewall Note (One-Time)
 If Windows Defender Firewall blocks incoming LAN connections from your phone, allow TCP `8080` and UDP `41920` on your **Private** network profile (run PowerShell as Administrator):
@@ -75,32 +75,34 @@ New-NetFirewallRule -DisplayName "Aegin Desktop Cluster HTTP" -Direction Inbound
 New-NetFirewallRule -DisplayName "Aegin Desktop LAN Discovery" -Direction Inbound -Protocol UDP -LocalPort 41920 -Profile Private -Action Allow
 ```
 
-### Step 2: Pair Aegin Mobile (Android)
-1. Open **Aegin Mobile** on the same Wi-Fi network as your Desktop.
-2. Go to **Settings → Advanced → Paired Desktop + Mobile Cluster**.
-3. Paste the **Pairing Code (JSON)** copied from Desktop into **Desktop Pairing Code or URL** *(or tap **Scan Wi-Fi** to auto-discover Desktop's LAN URL)*.
-4. Tap **Pair Desktop**.
-   - Aegin Mobile saves `system.standalone=false`, `cluster.role=EDGE_CLIENT`, `cluster.can.elect.leader=false`, `cluster.node.compute.power=LOW`, and registers with Desktop Lead via `RemoteService`.
-   - Status updates to **Paired and connected to Desktop Lead**.
+### Step 2: Join Cluster from Aegin Mobile (Android Phone / Tablet)
+1. Open **Aegin Mobile** on the same Wi-Fi network as your Desktop (or on 5G with Tailscale / Cloud Server URL).
+2. Go to **Settings → Cluster & Node Connection**.
+3. Paste the **Cluster Join Code** copied from Desktop/Server into **Cluster Leader URL or Join Code** *(or tap **Scan Wi-Fi** to auto-discover Desktop's LAN URL)*.
+4. Tap **Join Cluster**.
+   - Aegin Mobile saves `system.standalone=false`, `cluster.role=EDGE_CLIENT`, `cluster.can.elect.leader=false`, `cluster.node.compute.power=LOW`, and registers with the Cluster Lead via `RemoteService`.
+   - Status updates to **CLUSTER ACTIVE**.
 
-### Step 3: Unpairing (Returning to Standalone)
-- On **Mobile**: Open **Settings → Advanced → Paired Desktop + Mobile Cluster** and tap **Unpair (Return to Standalone)**.
-- On **Desktop**: Tap **Disable Lead** to stop the embedded HTTP listener and return to `system.standalone=true`.
+### Step 3: Disconnecting (Returning to Standalone)
+- On **Mobile**: Open **Settings → Cluster & Node Connection** and tap **Disconnect (Standalone)**.
+- On **Desktop**: Tap **Leave Cluster** to stop the embedded HTTP listener and return to `system.standalone=true`.
 
 ---
 
 ## 4. Configuration Reference (`reveila.properties`)
 
-When Paired Deployment is enabled, Aegin manages these keys automatically in `configs/reveila.properties`:
+When Cluster Mode is enabled, Aegin manages these keys automatically in `configs/reveila.properties`:
 
-| Property | Desktop Lead | Mobile Citizen (`EDGE_CLIENT`) |
+| Property | Desktop / Server Lead | Mobile Citizen (`EDGE_CLIENT`) |
 | --- | --- | --- |
-| `system.standalone` | `false` | `false` |
-| `cluster.leader.url` | `http://<desktop-lan-ip>:8080` | `http://<desktop-lan-ip>:8080` |
-| `cluster.leader.fallback.urls` | *(empty)* | `http://<tailscale-ip>:8080` *(optional)* |
-| `cluster.role` | `GENERAL` | `EDGE_CLIENT` |
+| `app.edition` | `individual` \| `enterprise` | `individual` \| `enterprise` |
+| `node.runtime` | `desktop` (embedded HTTP) \| `server` (Spring Boot) | `mobile` |
+| `system.standalone` | `false` *(safe default `true` before joining)* | `false` *(safe default `true` before joining)* |
+| `cluster.leader.url` | `http://<lead-lan-ip>:8080` | `http://<lead-lan-ip>:8080` |
+| `cluster.leader.fallback.urls` | *(empty)* | `http://<tailscale-or-cloud-url>:8080` *(optional)* |
+| `cluster.role` | `GENERAL` / `LEADER` | `EDGE_CLIENT` |
 | `cluster.can.elect.leader` | `true` | `false` |
-| `cluster.node.compute.power` | `AUTO` (`MEDIUM` / `HIGH`) | `LOW` |
+| `cluster.node.compute.power` | `AUTO` *(derived from RAM + detected GPU/VRAM)* | `LOW` |
 | `cluster.secret` | `<256-bit shared token>` | `<same 256-bit shared token>` |
 | `download.base.url` | `http://192.168.1.219:8000` | `http://192.168.1.219:8000` |
 

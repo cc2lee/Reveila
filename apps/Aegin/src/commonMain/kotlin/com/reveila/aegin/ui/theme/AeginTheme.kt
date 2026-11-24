@@ -45,7 +45,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import reveila_suite.apps.aegin.generated.resources.Res
-import reveila_suite.apps.aegin.generated.resources.aegin_robot_dog
+import reveila_suite.apps.aegin.generated.resources.app_icon
 
 @Immutable
 data class AeginColors(
@@ -115,17 +115,17 @@ val LightAeginColors = AeginColors(
     isDark = false,
     bg = Color(0xFFF8FAFC),
     card = Color(0xFFFFFFFF),
-    cardAlt = Color(0xFFF1F5F9),
+    cardAlt = Color(0xFFEFF3F8),
     surfaceElevated = Color(0xFFE2E8F0),
     text = Color(0xFF0F172A),
     subText = Color(0xFF475569),
-    mutedText = Color(0xFF94A3B8),
-    border = Color(0xFFE2E8F0),
-    glassBorder = Color(0x140F172A),
-    headerBg = Color(0xFFF8FAFC),
-    tabBar = Color(0xFFF1F5F9),
-    navBarBg = Color(0xFFFFFFFF),
-    inputBg = Color(0xFFF1F5F9)
+    mutedText = Color(0xFF64748B),
+    border = Color(0xFFCBD5E1),
+    glassBorder = Color(0x380F172A),
+    headerBg = Color(0xFFE6ECF5),
+    tabBar = Color(0xFFE2E8F0),
+    navBarBg = Color(0xFFE6ECF5),
+    inputBg = Color(0xFFFFFFFF)
 )
 
 val LocalAeginColors = staticCompositionLocalOf { DarkAeginColors }
@@ -204,11 +204,19 @@ fun AeginOrbAvatar(
         }
     }
 
+    val isCorporateLogo = LocalAeginTheme.current.isCorporateLogoMascot
+    val isLowDpiDisplay = androidx.compose.ui.platform.LocalDensity.current.density < 2.0f
+    val disableBitmapMotion = isCorporateLogo || isLowDpiDisplay
     val translationYDp: Float
     val rotationDeg: Float
     val scaleFactor: Float
 
     when {
+        disableBitmapMotion -> {
+            translationYDp = 0f
+            rotationDeg = 0f
+            scaleFactor = 1.0f
+        }
         isThinking -> {
             // Brisk excited trot & ear/head wiggle
             val bounceRatio = 1f - kotlin.math.abs(activePhase)
@@ -230,7 +238,11 @@ fun AeginOrbAvatar(
     }
 
     Box(
-        modifier = Modifier.size(size),
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(theme.card)
+            .border(1.dp, theme.glassBorder, CircleShape),
         contentAlignment = Alignment.Center
     ) {
         if (isThinking) {
@@ -261,7 +273,7 @@ fun AeginOrbAvatar(
         }
 
         Image(
-            painter = painterResource(Res.drawable.aegin_robot_dog),
+            painter = painterResource(Res.drawable.app_icon),
             contentDescription = "Aegin",
             contentScale = ContentScale.Fit,
             modifier = Modifier

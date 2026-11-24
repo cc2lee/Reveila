@@ -144,6 +144,7 @@ fun HomeScreen(
     var activeSelection by remember { mutableStateOf("NONE") } // "NONE" | "AUTO" | "LOCAL" | "CLOUD"
     var isLocalReady by remember { mutableStateOf(false) }
     var isCloudReady by remember { mutableStateOf(false) }
+    var isClusterPairedReady by remember { mutableStateOf(false) }
     var isAutoReady by remember { mutableStateOf(false) }
     var cloudProviderName by remember { mutableStateOf("") }
     var isStatusExpanded by remember { mutableStateOf(false) }
@@ -158,6 +159,7 @@ fun HomeScreen(
     val isAutoMode = activeSelection == "AUTO"
     val isLocalMode = activeSelection == "LOCAL"
     val isCloudMode = activeSelection == "CLOUD"
+    val isClusterMode = activeSelection == "CLUSTER"
     val hasNoActiveModel = activeSelection == "NONE"
 
     // Non-blocking background task telemetry & status reporting
@@ -303,9 +305,19 @@ fun HomeScreen(
                 }?.first?.name
             }
 
+            val clusterStatus = try {
+                AeginBridge.getPairedClusterStatus()
+            } catch (_: Exception) {
+                null
+            }
+            val clusterReady = clusterStatus != null &&
+                clusterStatus.mode == "MOBILE_PAIRED" &&
+                clusterStatus.leaderUrl.isNotBlank()
+
             isLocalReady = localAvailable
             isCloudReady = configuredExternals.isNotEmpty()
-            isAutoReady = localAvailable || configuredExternals.isNotEmpty()
+            isClusterPairedReady = clusterReady
+            isAutoReady = localAvailable || configuredExternals.isNotEmpty() || clusterReady
 
             cloudProviderName = findConfiguredExternal(aProv)
                 ?: findConfiguredExternal(wProv)
@@ -320,13 +332,18 @@ fun HomeScreen(
             val matchedExternal = findConfiguredExternal(desiredTarget)
             activeSelection = when {
                 !isAutoReady -> "NONE"
-                desiredTarget.equals("Auto", ignoreCase = true) -> "AUTO"
+                desiredTarget.equals("Auto", ignoreCase = true) -> if (!localAvailable && !isCloudReady && clusterReady) "CLUSTER" else "AUTO"
                 desiredTarget.equals("On-Device Model", ignoreCase = true) ||
-                    desiredTarget.contains("Local", ignoreCase = true) -> if (localAvailable) "LOCAL" else "NONE"
+                    desiredTarget.contains("Local", ignoreCase = true) -> when {
+                    localAvailable -> "LOCAL"
+                    clusterReady -> "CLUSTER"
+                    else -> "NONE"
+                }
                 matchedExternal != null -> {
                     cloudProviderName = matchedExternal
                     "CLOUD"
                 }
+                clusterReady -> "CLUSTER"
                 else -> "NONE"
             }
 
@@ -334,12 +351,14 @@ fun HomeScreen(
                 "AUTO" -> "Auto • Smart routing ready"
                 "LOCAL" -> "On-Device • Private offline AI ready"
                 "CLOUD" -> "Cloud • $cloudProviderName ready"
-                else -> "No AI model configured — open Studio Configuration"
+                "CLUSTER" -> "Cluster • Connected to Lead (${clusterStatus?.leaderUrl?.removePrefix("http://")?.removePrefix("https://").orEmpty()})"
+                else -> "No AI model configured — open Studio Configuration or join a Cluster"
             }
             refreshMainGreetingCard()
         } catch (_: Exception) {
             isLocalReady = false
             isCloudReady = false
+            isClusterPairedReady = false
             isAutoReady = false
             cloudProviderName = ""
             activeSelection = "NONE"
@@ -942,6 +961,11 @@ fun HomeScreen(
         // ─────────────────────────────────────────────────────────────────────
         // 1. TOP HEADER: MODEL PILL (LEFT) • CENTERED ROBOT DOG • TOOLS (RIGHT)
         // ─────────────────────────────────────────────────────────────────────
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(theme.headerBg)
+        ) {
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
@@ -988,6 +1012,7 @@ fun HomeScreen(
                             when {
                                 isAutoMode -> theme.success
                                 isLocalMode -> theme.primary
+                                isClusterMode -> theme.accent
                                 isCloudMode -> theme.cyan
                                 else -> theme.warning
                             }
@@ -997,12 +1022,20 @@ fun HomeScreen(
                     text = when {
                         isAutoMode -> "Auto"
                         isLocalMode -> "Local"
+                        isClusterMode -> "Cluster"
                         isCloudMode -> cloudProviderName.ifBlank { "Cloud" }
                         else -> "No AI Model"
                     },
                     color = if (hasNoActiveModel) theme.subText else theme.text,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
+                    style = TextStyle(
+                        fontSize = 11.sp,
+                        lineHeight = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                            alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                            trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                        )
+                    ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
@@ -1088,6 +1121,13 @@ fun HomeScreen(
                 }
             }
         }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(theme.border)
+        )
+        } // end Top Header Column
 
         // Body container allowing outside taps anywhere below the pill to dismiss the mode drawer
         Box(
@@ -1682,9 +1722,20 @@ fun HomeScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(theme.navBarBg)
+        ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(theme.border)
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
                 .padding(horizontal = 14.dp)
-                .padding(top = 6.dp, bottom = 8.dp),
+                .padding(top = 8.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             HomeQuickActionPillsBar(
@@ -1770,6 +1821,7 @@ fun HomeScreen(
                             text = when {
                                 isAutoMode -> "Ask Aegin (Auto)..."
                                 isLocalMode -> "Ask Aegin (Local)..."
+                                isClusterMode -> "Ask Aegin (Cluster)..."
                                 isCloudMode -> "Ask Aegin ($cloudProviderName)..."
                                 else -> "Configure AI Model in Studio..."
                             },
@@ -1834,51 +1886,66 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                recentSpaces.forEach { spaceItem ->
-                    val isActiveSpace = spaceItem.spaceId == normalizedSpaceId
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(CircleShape)
-                            .background(
-                                if (isActiveSpace) theme.cyan.copy(alpha = 0.16f)
-                                else theme.card.copy(alpha = 0.72f)
-                            )
-                            .border(
-                                width = 1.dp,
-                                color = if (isActiveSpace) theme.cyan.copy(alpha = 0.55f) else theme.glassBorder,
-                                shape = CircleShape
-                            )
-                            .clickable(enabled = !isThinking) {
-                                isStatusExpanded = false
-                                isMenuExpanded = false
-                                onSelectSpace(spaceItem.spaceId, spaceItem.spaceName)
+                Row(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    recentSpaces.forEach { spaceItem ->
+                        val isActiveSpace = spaceItem.spaceId == normalizedSpaceId
+                        Row(
+                            modifier = Modifier
+                                .widthIn(min = 84.dp, max = 180.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isActiveSpace) theme.cyan.copy(alpha = 0.16f)
+                                    else theme.card
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isActiveSpace) theme.cyan.copy(alpha = 0.65f) else theme.glassBorder,
+                                    shape = CircleShape
+                                )
+                                .clickable(enabled = !isThinking) {
+                                    isStatusExpanded = false
+                                    isMenuExpanded = false
+                                    onSelectSpace(spaceItem.spaceId, spaceItem.spaceName)
+                                }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            if (isActiveSpace) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(theme.cyan)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
                             }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        if (isActiveSpace) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(theme.cyan)
+                            Text(
+                                text = spaceItem.spaceName,
+                                color = if (isActiveSpace) theme.text else theme.subText,
+                                style = TextStyle(
+                                    fontSize = 11.sp,
+                                    lineHeight = 11.sp,
+                                    fontWeight = if (isActiveSpace) FontWeight.Bold else FontWeight.Medium,
+                                    lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                                        alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                                        trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                                    )
+                                ),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
                         }
-                        Text(
-                            text = spaceItem.spaceName,
-                            color = if (isActiveSpace) theme.text else theme.subText,
-                            fontSize = 11.sp,
-                            fontWeight = if (isActiveSpace) FontWeight.Bold else FontWeight.Medium,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis
-                        )
                     }
                 }
 
@@ -1899,13 +1966,21 @@ fun HomeScreen(
                     Text(
                         text = "•••",
                         color = theme.cyan,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.ExtraBold,
+                        style = TextStyle(
+                            fontSize = 11.sp,
+                            lineHeight = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                                alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                                trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                            )
+                        ),
                         maxLines = 1
                     )
                 }
             }
-        } // end Section 5 Column
+        } // end Section 5 inner Column
+        } // end Section 5 dock container Column
         } // end inner content Column
 
             if (isStatusExpanded || isMenuExpanded) {

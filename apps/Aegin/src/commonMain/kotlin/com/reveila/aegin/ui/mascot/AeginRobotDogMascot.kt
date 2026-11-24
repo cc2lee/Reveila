@@ -12,9 +12,13 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,6 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -51,7 +57,7 @@ import kotlin.math.sin
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.imageResource
 import reveila_suite.apps.aegin.generated.resources.Res
-import reveila_suite.apps.aegin.generated.resources.aegin_robot_dog
+import reveila_suite.apps.aegin.generated.resources.app_icon
 
 enum class AeginMascotMode(val defaultSize: Dp) {
     SMALL_BADGE(36.dp),
@@ -198,88 +204,128 @@ fun AeginRobotDogMascot(
         else -> coordinationSwing * 1.2f
     }
 
+    val theme = com.reveila.aegin.ui.theme.LocalAeginColors.current
+    val isCorporateLogo = com.reveila.aegin.ui.theme.LocalAeginTheme.current.isCorporateLogoMascot
+    val isLowDpiDisplay = LocalDensity.current.density < 2.0f
+    // Avoid sub-pixel bitmap shimmer on low-DPI desktop displays and keep corporate logos steady.
+    val disableBitmapMotion = isCorporateLogo || isLowDpiDisplay
+    val innerIconPadding = (size.value * 0.11f).dp.coerceAtLeast(3.dp)
+
     Box(
-        modifier = modifier.size(size),
+        modifier = modifier
+            .size(size)
+            .shadow(elevation = 8.dp, shape = CircleShape, clip = false)
+            .clip(CircleShape)
+            .background(theme.card)
+            .border(
+                width = 1.5.dp,
+                color = if (state.isBusy) earGlowColor.copy(alpha = 0.65f) else theme.glassBorder,
+                shape = CircleShape
+            ),
         contentAlignment = Alignment.Center
     ) {
-        // Underlay: Magenta paw-pad thruster glow & ambient coordination signal ring
-        if (showTelemetryEffects) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val w = this.size.width
-                val h = this.size.height
+        // Underlay: Soft drop shadow beneath the icon + ambient coordination signal ring
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = this.size.width
+            val h = this.size.height
 
-                // Magenta paw-pad ground glow
-                drawOval(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFFEC4899).copy(alpha = pawGlowAlpha * (0.7f + 0.3f * verticalBob)),
-                            Color.Transparent
-                        ),
-                        center = Offset(w * 0.48f, h * 0.89f),
-                        radius = w * 0.34f
+            // Soft radial drop shadow beneath the PNG so the icon floats above the circular badge
+            drawOval(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.Black.copy(alpha = if (theme.isDark) 0.45f else 0.24f),
+                        Color.Transparent
                     ),
-                    topLeft = Offset(w * 0.16f, h * 0.78f),
-                    size = Size(w * 0.64f, h * 0.20f)
-                )
+                    center = Offset(w * 0.50f, h * 0.80f),
+                    radius = w * 0.36f
+                ),
+                topLeft = Offset(w * 0.14f, h * 0.64f),
+                size = Size(w * 0.72f, h * 0.28f)
+            )
 
-                // Coordination signal ring behind head when brokering user <-> AI
+            if (showTelemetryEffects) {
+                // Magenta paw-pad ground glow (robot_dog high-DPI only)
+                if (!disableBitmapMotion) {
+                    drawOval(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFFEC4899).copy(alpha = pawGlowAlpha * (0.7f + 0.3f * verticalBob)),
+                                Color.Transparent
+                            ),
+                            center = Offset(w * 0.48f, h * 0.89f),
+                            radius = w * 0.34f
+                        ),
+                        topLeft = Offset(w * 0.16f, h * 0.78f),
+                        size = Size(w * 0.64f, h * 0.20f)
+                    )
+                }
+
+                // Clean centered vector coordination ring when brokering user <-> AI
                 if (phase == AeginMascotPhase.COORDINATING_CLOUD ||
                     phase == AeginMascotPhase.ROUTING_LOCAL ||
                     phase == AeginMascotPhase.ERROR_ALERT
                 ) {
-                    rotate(degrees = gearAngle, pivot = Offset(w * 0.54f, h * 0.42f)) {
+                    val pivot = Offset(w * 0.5f, h * 0.5f)
+                    val inset = w * 0.06f
+                    val ringSize = w - (inset * 2f)
+                    rotate(degrees = gearAngle, pivot = pivot) {
                         drawArc(
-                            color = earGlowColor.copy(alpha = 0.55f),
+                            color = earGlowColor.copy(alpha = 0.65f),
                             startAngle = 0f,
                             sweepAngle = 140f,
                             useCenter = false,
-                            topLeft = Offset(w * 0.12f, h * 0.04f),
-                            size = Size(w * 0.80f, h * 0.80f),
-                            style = Stroke(width = (w * 0.026f).coerceAtLeast(1.5f), cap = StrokeCap.Round)
+                            topLeft = Offset(inset, inset),
+                            size = Size(ringSize, ringSize),
+                            style = Stroke(width = (w * 0.032f).coerceAtLeast(1.8f), cap = StrokeCap.Round)
                         )
                         drawArc(
-                            color = earGlowColor.copy(alpha = 0.35f),
+                            color = earGlowColor.copy(alpha = 0.38f),
                             startAngle = 180f,
                             sweepAngle = 110f,
                             useCenter = false,
-                            topLeft = Offset(w * 0.12f, h * 0.04f),
-                            size = Size(w * 0.80f, h * 0.80f),
-                            style = Stroke(width = (w * 0.026f).coerceAtLeast(1.5f), cap = StrokeCap.Round)
+                            topLeft = Offset(inset, inset),
+                            size = Size(ringSize, ringSize),
+                            style = Stroke(width = (w * 0.032f).coerceAtLeast(1.8f), cap = StrokeCap.Round)
                         )
                     }
                 }
             }
         }
 
-        // Core Robot Puppy Artwork + Articulated Overlays
+        // Core Mascot / Brand Logo Artwork + Optional Robot-Dog Articulated Overlays
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(innerIconPadding)
                 .graphicsLayer {
                     compositingStrategy = CompositingStrategy.ModulateAlpha
-                    translationX = translationXPx
-                    translationY = translationYPx
-                    rotationZ = tiltDegrees
-                    val scalePulse = if (state.isBusy) 1f + (verticalBob * 0.035f) else 1f + (verticalBob * 0.015f)
+                    translationX = if (disableBitmapMotion) 0f else translationXPx
+                    translationY = if (disableBitmapMotion) 0f else translationYPx
+                    rotationZ = if (disableBitmapMotion) 0f else tiltDegrees
+                    val scalePulse = when {
+                        disableBitmapMotion -> 1f
+                        state.isBusy -> 1f + (verticalBob * 0.035f)
+                        else -> 1f + (verticalBob * 0.015f)
+                    }
                     scaleX = scalePulse
                     scaleY = scalePulse
                 }
         ) {
-            val rawDogBitmap = imageResource(Res.drawable.aegin_robot_dog)
+            val rawDogBitmap = imageResource(Res.drawable.app_icon)
             val targetPx = with(LocalDensity.current) { size.roundToPx().coerceAtLeast(32) }
             val prefilteredDogBitmap = remember(rawDogBitmap, targetPx) {
                 downscaleProgressivelyForDisplay(rawDogBitmap, targetPx)
             }
             Image(
                 bitmap = prefilteredDogBitmap,
-                contentDescription = "Aegin Robot Dog (${state.statusLabel})",
+                contentDescription = if (isCorporateLogo) "Brand Assistant (${state.statusLabel})" else "Aegin Robot Dog (${state.statusLabel})",
                 contentScale = ContentScale.Fit,
                 filterQuality = FilterQuality.High,
                 modifier = Modifier.fillMaxSize()
             )
 
-            // Precision overlays aligned to aegin_robot_dog.png ears, ear-hub, and eyes
-            if (showTelemetryEffects) {
+            // Precision overlays aligned to robot dog ears/eyes (skipped for corporate logos and low-DPI desktop displays)
+            if (showTelemetryEffects && !disableBitmapMotion) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = this.size.width
                     val h = this.size.height

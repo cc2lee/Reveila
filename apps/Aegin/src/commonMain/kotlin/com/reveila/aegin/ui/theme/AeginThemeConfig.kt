@@ -38,6 +38,7 @@ data class BrandThemePresetDto(
     val id: String,
     val displayName: String? = null,
     val description: String? = null,
+    val mascotStyle: String? = null,
     val typography: ThemeTypographyDto? = null,
     val pillButton: PillButtonShapeDto? = null,
     val dark: ThemePaletteDto? = null,
@@ -188,8 +189,11 @@ data class ResolvedAeginTheme(
     val isDark: Boolean,
     val colors: AeginColors,
     val pillButton: AeginPillButtonStyle,
-    val typography: AeginTypographyTokens
+    val typography: AeginTypographyTokens,
+    val mascotStyle: String = MASCOT_STYLE_ROBOT_DOG
 ) {
+    val isCorporateLogoMascot: Boolean
+        get() = mascotStyle.equals(MASCOT_STYLE_CORPORATE_LOGO, ignoreCase = true)
     fun toMaterialColorScheme(): ColorScheme {
         return if (isDark) {
             darkColorScheme(
@@ -261,6 +265,8 @@ data class AeginThemeCatalog(
 
 const val DEFAULT_PRESET_ID = "aegin-default"
 const val APP_THEME_RESOURCE_PATH = "files/app_theme.json"
+const val MASCOT_STYLE_ROBOT_DOG = "robot_dog"
+const val MASCOT_STYLE_CORPORATE_LOGO = "corporate_logo"
 
 val LocalAeginTheme = staticCompositionLocalOf {
     AeginThemeConfigLoader.defaultCatalog().resolve(isDark = true)
@@ -344,6 +350,11 @@ object AeginThemeConfigLoader {
     private fun resolvePreset(dto: BrandThemePresetDto): AeginBrandPreset {
         val displayName = dto.displayName?.takeIf { it.isNotBlank() } ?: dto.id
         val description = dto.description?.takeIf { it.isNotBlank() } ?: ""
+        val mascotStyle = if (dto.mascotStyle.equals(MASCOT_STYLE_CORPORATE_LOGO, ignoreCase = true)) {
+            MASCOT_STYLE_CORPORATE_LOGO
+        } else {
+            MASCOT_STYLE_ROBOT_DOG
+        }
         val typography = resolveTypography(dto.typography)
         val darkColors = resolveColors(dto.dark, DarkAeginColors)
         val lightColors = resolveColors(dto.light, LightAeginColors)
@@ -361,7 +372,8 @@ object AeginThemeConfigLoader {
                 isDark = true,
                 colors = darkColors,
                 pillButton = darkPill,
-                typography = typography
+                typography = typography,
+                mascotStyle = mascotStyle
             ),
             light = ResolvedAeginTheme(
                 presetId = dto.id,
@@ -370,7 +382,8 @@ object AeginThemeConfigLoader {
                 isDark = false,
                 colors = lightColors,
                 pillButton = lightPill,
-                typography = typography
+                typography = typography,
+                mascotStyle = mascotStyle
             )
         )
     }

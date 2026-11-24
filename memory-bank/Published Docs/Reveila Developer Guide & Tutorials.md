@@ -262,6 +262,20 @@ Place task files in `${REVEILA_HOME}/tasks/` (see [daily-news.json](../../system
 }
 ```
 
+### 8.4 Per-Model Cost Routing (`configs/settings/llm.json`)
+Configure blended USD per 1M tokens per provider (`"Cost.Per1MTokens"`) and per model (`"Model.Pricing"`) using consistent `Title.Dot.Case` provider keys (`"Api.Key"`, `"Model.Pricing"`, `"Intent.Options"`). In `Auto` mode, `AutoModelRouter` enforces each category's capability floor first and then balances capability, cost, latency, and health.
+
+### 8.5 Proactive Push Alerts & Edition Gating (`configs/settings/channels.json` & `reveila.properties`)
+- Configure **Slack**, **Microsoft Teams**, and **Email** connectors in `configs/settings/channels.json` (or via **Settings → Proactive Alerts & Channels** in Aegin; raw webhook URLs and API keys are encrypted automatically into `SecretManager` as `REF:` placeholders).
+- Set `app.edition=individual` (allows personal `CUSTOM_WEBHOOK` channels and in-app `governance-policy.json` customization) or `app.edition=enterprise` (locks channels to IT-approved entries and makes `governance-policy.json` read-only at the engine layer).
+- Set `node.runtime=mobile | desktop | server` to match the host wrapper (KMP Mobile, KMP Desktop with embedded `DesktopClusterHttpServer`, or Headless Spring Boot/Docker Server for Internet-facing clusters).
+
+### 8.6 Sandboxed AI Document Persistence (`vault_save_document`)
+Agents save generated documents (`.txt`, `.md`, `.json`, `.csv`) via `vault_save_document` (`save` / `save_batch`) rather than shell commands. `VaultPathGuard` confines all writes to `<VaultRoot>/AI-Generated/` and explicitly pinned Knowledge Vault roots, blocking path traversal (`..`) and out-of-root escapes.
+
+### 8.7 Multi-Brand Corporate Theming (`composeResources/files/app_theme.json`)
+Swap or edit `apps/Aegin/src/commonMain/composeResources/files/app_theme.json` to brand Aegin for enterprise customers (dark/light palettes, header/bottom pane contrast, pill button enabled/selected/disabled states, and typography). See `memory-bank/App Theme Configuration.md` for the full schema.
+
 ---
 
 ## 9. Quick Troubleshooting Checklist
