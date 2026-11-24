@@ -1047,18 +1047,9 @@ fun HomeScreen(
                 )
             }
 
-            // Center Top: Single Animated Robot Dog Mascot
+            // Center Top: App Icon / Mascot (non-clickable brand centerpiece)
             Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .clickable {
-                        isMenuExpanded = false
-                        val opening = !isStatusExpanded
-                        isStatusExpanded = opening
-                        if (opening) {
-                            scope.launch { loadActiveMode() }
-                        }
-                    }
+                modifier = Modifier.align(Alignment.Center)
             ) {
                 AeginRobotDogMascot(
                     state = mascotState,

@@ -12,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.view.WindowCompat
 import com.reveila.aegin.bridge.LlamaJniBridge
 import com.reveila.aegin.bridge.PlatformEngineBridge
 import com.reveila.aegin.ui.AeginApp
@@ -45,7 +46,23 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            AeginApp()
+            AeginApp(
+                onDarkThemeChanged = { dark ->
+                    val style = if (dark) {
+                        SystemBarStyle.dark(Color.TRANSPARENT)
+                    } else {
+                        SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+                    }
+                    enableEdgeToEdge(
+                        statusBarStyle = style,
+                        navigationBarStyle = style
+                    )
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = !dark
+                        isAppearanceLightNavigationBars = !dark
+                    }
+                }
+            )
         }
     }
 

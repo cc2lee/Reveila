@@ -103,72 +103,94 @@ fun AeginRobotDogMascot(
         }
     }
 
-    // 2. Continuous ambient & activity loops
-    val infiniteTransition = rememberInfiniteTransition(label = "MascotLiveLoops")
+    val theme = com.reveila.aegin.ui.theme.LocalAeginColors.current
+    val isCorporateLogo = com.reveila.aegin.ui.theme.LocalAeginTheme.current.isCorporateLogoMascot
+    val isLowDpiDisplay = LocalDensity.current.density < 2.0f
+    // Avoid sub-pixel bitmap shimmer on low-DPI desktop displays and keep corporate logos steady.
+    val disableBitmapMotion = isCorporateLogo || isLowDpiDisplay
+    val innerIconPadding = (size.value * 0.11f).dp.coerceAtLeast(3.dp)
 
-    // Vertical breathing / energetic bounce / speaking nod synced with token speed
-    val bounceDuration = when (phase) {
-        AeginMascotPhase.COORDINATING_CLOUD -> 420
-        AeginMascotPhase.ROUTING_LOCAL -> 500
-        AeginMascotPhase.SPEAKING_RESPONSE -> {
-            val tpsBoost = state.tokensPerSecond.coerceIn(0f, 40f)
-            (620 - (tpsBoost * 6f).toInt()).coerceIn(340, 620)
+    // 2. Continuous activity loops — ONLY run while actively working (non-IDLE).
+    // Running 60fps InfiniteTransition while IDLE pegs CPU/RenderThread and causes ANRs on mobile.
+    val isAnimatingActive = phase != AeginMascotPhase.IDLE && !disableBitmapMotion
+    val showRingSpinner = phase == AeginMascotPhase.COORDINATING_CLOUD ||
+        phase == AeginMascotPhase.ROUTING_LOCAL ||
+        phase == AeginMascotPhase.ERROR_ALERT
+
+    var verticalBob = 0f
+    var coordinationSwing = 0f
+    var gearAngle = 0f
+
+    if (isAnimatingActive || (showTelemetryEffects && showRingSpinner)) {
+        val infiniteTransition = rememberInfiniteTransition(label = "MascotLiveLoops")
+
+        if (isAnimatingActive) {
+            val bounceDuration = when (phase) {
+                AeginMascotPhase.COORDINATING_CLOUD -> 420
+                AeginMascotPhase.ROUTING_LOCAL -> 500
+                AeginMascotPhase.SPEAKING_RESPONSE -> {
+                    val tpsBoost = state.tokensPerSecond.coerceIn(0f, 40f)
+                    (620 - (tpsBoost * 6f).toInt()).coerceIn(340, 620)
+                }
+                AeginMascotPhase.LISTENING_USER -> 1100
+                else -> 1800
+            }
+            verticalBob = infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = bounceDuration, easing = FastOutSlowInEasing),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "VerticalBob"
+            ).value
+
+            coordinationSwing = infiniteTransition.animateFloat(
+                initialValue = -1f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(
+                        durationMillis = when (phase) {
+                            AeginMascotPhase.COORDINATING_CLOUD -> 650
+                            AeginMascotPhase.SPEAKING_RESPONSE -> 1100
+                            else -> 2400
+                        },
+                        easing = FastOutSlowInEasing
+                    ),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "CoordinationSwing"
+            ).value
         }
-        AeginMascotPhase.LISTENING_USER -> 1100
-        else -> 1800
+
+        gearAngle = infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(
+                    durationMillis = when (phase) {
+                        AeginMascotPhase.ROUTING_LOCAL -> 1100
+                        AeginMascotPhase.COORDINATING_CLOUD -> 1450
+                        AeginMascotPhase.SPEAKING_RESPONSE -> 2200
+                        else -> 8000
+                    },
+                    easing = LinearEasing
+                ),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "GearRotation"
+        ).value
     }
-    val verticalBob by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = bounceDuration, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "VerticalBob"
-    )
 
-    // Coordination ping-pong sway (simulates looking back & forth between user and AI model)
-    val coordinationSwing by infiniteTransition.animateFloat(
-        initialValue = -1f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = when (phase) {
-                    AeginMascotPhase.COORDINATING_CLOUD -> 650
-                    AeginMascotPhase.SPEAKING_RESPONSE -> 1100
-                    else -> 2400
-                },
-                easing = FastOutSlowInEasing
-            ),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "CoordinationSwing"
-    )
-
-    // Brass inner-ear clockwork gear rotation
-    val gearAngle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = when (phase) {
-                    AeginMascotPhase.ROUTING_LOCAL -> 1100
-                    AeginMascotPhase.COORDINATING_CLOUD -> 1450
-                    AeginMascotPhase.SPEAKING_RESPONSE -> 2200
-                    else -> 8000
-                },
-                easing = LinearEasing
-            ),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "GearRotation"
-    )
-
-    // 3. Natural periodic eye blink (~3.5s when idle so the mascot feels alive)
+    // 3. Natural periodic eye blink (~4s when robot-dog overlays are active)
     var isBlinking by remember { mutableStateOf(false) }
-    LaunchedEffect(phase) {
+    LaunchedEffect(phase, disableBitmapMotion, showTelemetryEffects) {
+        if (disableBitmapMotion || !showTelemetryEffects) {
+            isBlinking = false
+            return@LaunchedEffect
+        }
         while (true) {
-            val waitMs = if (state.isBusy) 4200L else 3500L
+            val waitMs = if (state.isBusy) 4200L else 4500L
             delay(waitMs)
             isBlinking = true
             delay(130L)
@@ -203,13 +225,6 @@ fun AeginRobotDogMascot(
         AeginMascotPhase.SPEAKING_RESPONSE -> coordinationSwing * 2.2f
         else -> coordinationSwing * 1.2f
     }
-
-    val theme = com.reveila.aegin.ui.theme.LocalAeginColors.current
-    val isCorporateLogo = com.reveila.aegin.ui.theme.LocalAeginTheme.current.isCorporateLogoMascot
-    val isLowDpiDisplay = LocalDensity.current.density < 2.0f
-    // Avoid sub-pixel bitmap shimmer on low-DPI desktop displays and keep corporate logos steady.
-    val disableBitmapMotion = isCorporateLogo || isLowDpiDisplay
-    val innerIconPadding = (size.value * 0.11f).dp.coerceAtLeast(3.dp)
 
     Box(
         modifier = modifier
@@ -298,7 +313,6 @@ fun AeginRobotDogMascot(
                 .fillMaxSize()
                 .padding(innerIconPadding)
                 .graphicsLayer {
-                    compositingStrategy = CompositingStrategy.ModulateAlpha
                     translationX = if (disableBitmapMotion) 0f else translationXPx
                     translationY = if (disableBitmapMotion) 0f else translationYPx
                     rotationZ = if (disableBitmapMotion) 0f else tiltDegrees

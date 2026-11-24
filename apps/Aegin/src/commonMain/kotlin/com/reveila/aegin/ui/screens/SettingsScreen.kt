@@ -3956,7 +3956,7 @@ private fun ProactiveAlertChannelsCard(
             }
             if (!isEnterprise) {
                 AeginPillButton(
-                    text = "+ Custom",
+                    text = "Custom",
                     leadingIcon = AeginIconType.PLUS,
                     onClick = onAddCustomChannel
                 )

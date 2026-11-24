@@ -36,7 +36,8 @@ enum class AeginRoute {
 fun AeginApp(
     mascotController: AeginMascotController = remember { AeginMascotController() },
     themeJsonOverride: String? = null,
-    initialPresetId: String? = null
+    initialPresetId: String? = null,
+    onDarkThemeChanged: (Boolean) -> Unit = {}
 ) {
     var themeCatalog by remember(themeJsonOverride) {
         mutableStateOf(
@@ -74,6 +75,10 @@ fun AeginApp(
                 isDark = loaded.defaultIsDark
             }
         }
+    }
+
+    LaunchedEffect(isDark) {
+        onDarkThemeChanged(isDark)
     }
 
     // Non-blocking startup activation of the Reveila background engine

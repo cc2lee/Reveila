@@ -308,7 +308,7 @@ fun FormattedChatText(
                         2 -> 16.sp
                         else -> 15.sp
                     }
-                    val formatted = remember(block.text, theme.cyan) {
+                    val formatted = remember(block.text, theme.cyan, theme.cardAlt, theme.isDark) {
                         buildInlineFormattedString(block.text, theme.cyan, theme.cardAlt, theme.cyan, onOpenUrl)
                     }
                     Text(
@@ -322,7 +322,7 @@ fun FormattedChatText(
                 }
 
                 is ChatBlock.BulletItem -> {
-                    val formatted = remember(block.text, theme.cyan) {
+                    val formatted = remember(block.text, theme.cyan, theme.cardAlt, theme.isDark) {
                         buildInlineFormattedString(block.text, theme.cyan, theme.cardAlt, theme.cyan, onOpenUrl)
                     }
                     Row(
@@ -382,7 +382,7 @@ fun FormattedChatText(
                 }
 
                 is ChatBlock.Paragraph -> {
-                    val formatted = remember(block.text, theme.cyan) {
+                    val formatted = remember(block.text, theme.cyan, theme.cardAlt, theme.isDark) {
                         buildInlineFormattedString(block.text, theme.cyan, theme.cardAlt, theme.cyan, onOpenUrl)
                     }
                     Text(
