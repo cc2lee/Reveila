@@ -318,7 +318,9 @@ enum class AeginIconType {
     BACK,
     DEVICE,
     CLOUD,
-    FOLDERS_STACK
+    FOLDERS_STACK,
+    CLUSTER,
+    CLUSTER_LEAD
 }
 
 /**
@@ -577,6 +579,45 @@ fun AeginVectorIcon(
                     close()
                 }
                 drawPath(frontFolder, color = tint, style = stroke)
+            }
+
+            AeginIconType.CLUSTER -> {
+                // 3-node connected cluster member topology (balanced linked nodes)
+                val top = Offset(w * 0.50f, h * 0.22f)
+                val left = Offset(w * 0.22f, h * 0.76f)
+                val right = Offset(w * 0.78f, h * 0.76f)
+                val nodeR = w * 0.115f
+                drawLine(tint, Offset(top.x - w * 0.06f, top.y + nodeR), Offset(left.x + w * 0.05f, left.y - nodeR), strokeWidth = sw * 0.85f, cap = StrokeCap.Round)
+                drawLine(tint, Offset(top.x + w * 0.06f, top.y + nodeR), Offset(right.x - w * 0.05f, right.y - nodeR), strokeWidth = sw * 0.85f, cap = StrokeCap.Round)
+                drawLine(tint, Offset(left.x + nodeR, left.y), Offset(right.x - nodeR, right.y), strokeWidth = sw * 0.75f, cap = StrokeCap.Round)
+                drawCircle(tint, radius = nodeR, center = top, style = stroke)
+                drawCircle(tint, radius = nodeR, center = left, style = stroke)
+                drawCircle(tint, radius = nodeR, center = right, style = stroke)
+            }
+
+            AeginIconType.CLUSTER_LEAD -> {
+                // Crowned Lead Hub icon: solid primary hub with top crown peak + 2 connected subordinate nodes
+                val hub = Offset(w * 0.50f, h * 0.42f)
+                val left = Offset(w * 0.20f, h * 0.80f)
+                val right = Offset(w * 0.80f, h * 0.80f)
+                val hubR = w * 0.16f
+                val leafR = w * 0.095f
+                // Crown chevron above the lead hub
+                val crown = Path().apply {
+                    moveTo(w * 0.30f, h * 0.24f)
+                    lineTo(w * 0.40f, h * 0.12f)
+                    lineTo(w * 0.50f, h * 0.20f)
+                    lineTo(w * 0.60f, h * 0.12f)
+                    lineTo(w * 0.70f, h * 0.24f)
+                }
+                drawPath(crown, color = tint, style = Stroke(width = sw * 0.85f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                // Spoke connections to subordinate nodes
+                drawLine(tint, Offset(hub.x - hubR * 0.65f, hub.y + hubR * 0.75f), Offset(left.x + leafR * 0.6f, left.y - leafR * 0.7f), strokeWidth = sw * 0.85f, cap = StrokeCap.Round)
+                drawLine(tint, Offset(hub.x + hubR * 0.65f, hub.y + hubR * 0.75f), Offset(right.x - leafR * 0.6f, right.y - leafR * 0.7f), strokeWidth = sw * 0.85f, cap = StrokeCap.Round)
+                // Solid lead hub + hollow leaf nodes
+                drawCircle(tint, radius = hubR, center = hub)
+                drawCircle(tint, radius = leafR, center = left, style = stroke)
+                drawCircle(tint, radius = leafR, center = right, style = stroke)
             }
         }
     }

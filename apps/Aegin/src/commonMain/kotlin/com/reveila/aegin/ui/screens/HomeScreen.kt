@@ -17,11 +17,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -44,6 +46,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -75,6 +79,7 @@ import com.reveila.aegin.bridge.AeginBridge
 import com.reveila.aegin.bridge.AeginDisplayMapper
 import com.reveila.aegin.bridge.ChatToolAttachment
 import com.reveila.aegin.bridge.KnowledgeFileItem
+import com.reveila.aegin.bridge.PairedClusterStatus
 import com.reveila.aegin.bridge.SpaceThreadSummary
 import com.reveila.aegin.bridge.TaskItem
 import com.reveila.aegin.bridge.ToolHubSnapshot
@@ -145,6 +150,8 @@ fun HomeScreen(
     var isLocalReady by remember { mutableStateOf(false) }
     var isCloudReady by remember { mutableStateOf(false) }
     var isClusterPairedReady by remember { mutableStateOf(false) }
+    var pairedClusterStatus by remember { mutableStateOf(PairedClusterStatus()) }
+    var clusterToggleRequested by remember { mutableStateOf(false) }
     var isAutoReady by remember { mutableStateOf(false) }
     var cloudProviderName by remember { mutableStateOf("") }
     var isStatusExpanded by remember { mutableStateOf(false) }
@@ -309,6 +316,9 @@ fun HomeScreen(
                 AeginBridge.getPairedClusterStatus()
             } catch (_: Exception) {
                 null
+            }
+            if (clusterStatus != null) {
+                pairedClusterStatus = clusterStatus
             }
             val clusterReady = clusterStatus != null &&
                 clusterStatus.mode == "MOBILE_PAIRED" &&
@@ -899,6 +909,10 @@ fun HomeScreen(
                 toolSnapshot = AeginBridge.getToolActivitySnapshot()
             } catch (_: Exception) {
             }
+            try {
+                pairedClusterStatus = AeginBridge.getPairedClusterStatus()
+            } catch (_: Exception) {
+            }
             val fastToolTick = isThinking ||
                 toolSnapshot.waitingForUserInput ||
                 toolSnapshot.terminal.status == "RUNNING" ||
@@ -936,6 +950,12 @@ fun HomeScreen(
 
     LaunchedEffect(activeSelection, cloudProviderName) {
         refreshMainGreetingCard()
+    }
+
+    LaunchedEffect(isStatusExpanded) {
+        if (!isStatusExpanded) {
+            clusterToggleRequested = false
+        }
     }
 
     LaunchedEffect(hydratedSpaceId, initialPrompt) {
@@ -980,7 +1000,30 @@ fun HomeScreen(
         ) {
             val isWideDesktop = maxWidth >= 600.dp
             val headerMascotSize = if (isWideDesktop) 72.dp else 54.dp
-            // Very Left: AI Model Type Pill (Tap to expand selection card)
+            val isLeadNode = pairedClusterStatus.mode == "DESKTOP_LEAD" || pairedClusterStatus.isServerRunning
+            val isClusterMember = !isLeadNode && pairedClusterStatus.mode == "MOBILE_PAIRED"
+            val isClusterHealthy = when {
+                isLeadNode -> pairedClusterStatus.isServerRunning && !hasNoActiveModel
+                isClusterMember -> pairedClusterStatus.leaderReachable && !hasNoActiveModel
+                else -> !hasNoActiveModel
+            }
+            val pillIndicatorColor = when {
+                isLeadNode -> if (isClusterHealthy) theme.success else theme.warning
+                isClusterMember -> if (isClusterHealthy) theme.success else theme.warning
+                isAutoMode -> theme.success
+                isLocalMode -> theme.primary
+                isClusterMode -> theme.accent
+                isCloudMode -> theme.cyan
+                else -> theme.warning
+            }
+            val pillBorderColor = when {
+                isStatusExpanded -> theme.primary
+                !isClusterHealthy -> theme.warning.copy(alpha = 0.65f)
+                isLeadNode || isClusterMember -> theme.success.copy(alpha = 0.55f)
+                else -> theme.glassBorder
+            }
+
+            // Very Left: Unified AI Mode + Node/Cluster Role & Health Pill
             Row(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
@@ -989,7 +1032,7 @@ fun HomeScreen(
                     .background(theme.card)
                     .border(
                         width = 1.dp,
-                        color = if (isStatusExpanded) theme.primary else theme.glassBorder,
+                        color = pillBorderColor,
                         shape = CircleShape
                     )
                     .clickable {
@@ -1000,24 +1043,30 @@ fun HomeScreen(
                             scope.launch { loadActiveMode() }
                         }
                     }
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                    .padding(horizontal = 11.dp, vertical = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(7.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                isAutoMode -> theme.success
-                                isLocalMode -> theme.primary
-                                isClusterMode -> theme.accent
-                                isCloudMode -> theme.cyan
-                                else -> theme.warning
-                            }
-                        )
-                )
+                when {
+                    isLeadNode -> AeginVectorIcon(
+                        type = AeginIconType.CLUSTER_LEAD,
+                        tint = pillIndicatorColor,
+                        size = 14.dp,
+                        strokeWidth = 1.5.dp
+                    )
+                    isClusterMember -> AeginVectorIcon(
+                        type = AeginIconType.CLUSTER,
+                        tint = pillIndicatorColor,
+                        size = 13.dp,
+                        strokeWidth = 1.5.dp
+                    )
+                    else -> Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(pillIndicatorColor)
+                    )
+                }
                 Text(
                     text = when {
                         isAutoMode -> "Auto"
@@ -1026,7 +1075,11 @@ fun HomeScreen(
                         isCloudMode -> cloudProviderName.ifBlank { "Cloud" }
                         else -> "No AI Model"
                     },
-                    color = if (hasNoActiveModel) theme.subText else theme.text,
+                    color = when {
+                        hasNoActiveModel -> theme.subText
+                        (isLeadNode || isClusterMember) && !isClusterHealthy -> theme.warning
+                        else -> theme.text
+                    },
                     style = TextStyle(
                         fontSize = 11.sp,
                         lineHeight = 11.sp,
@@ -1873,101 +1926,111 @@ fun HomeScreen(
                 )
             }
 
-            Row(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(top = 2.dp)
             ) {
+                val spaceCount = recentSpaces.size.coerceAtLeast(1)
+                val reservedForOverflowAndGaps = 46.dp + (8.dp * spaceCount)
+                val perPillMaxWidth = ((maxWidth - reservedForOverflowAndGaps) / spaceCount)
+                    .coerceIn(72.dp, if (maxWidth >= 500.dp) 148.dp else 124.dp)
+
                 Row(
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .horizontalScroll(rememberScrollState()),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    recentSpaces.forEach { spaceItem ->
-                        val isActiveSpace = spaceItem.spaceId == normalizedSpaceId
-                        Row(
-                            modifier = Modifier
-                                .widthIn(min = 84.dp, max = 180.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (isActiveSpace) theme.cyan.copy(alpha = 0.16f)
-                                    else theme.card
-                                )
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isActiveSpace) theme.cyan.copy(alpha = 0.65f) else theme.glassBorder,
-                                    shape = CircleShape
-                                )
-                                .clickable(enabled = !isThinking) {
-                                    isStatusExpanded = false
-                                    isMenuExpanded = false
-                                    onSelectSpace(spaceItem.spaceId, spaceItem.spaceName)
-                                }
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            if (isActiveSpace) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(theme.cyan)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                            }
-                            Text(
-                                text = spaceItem.spaceName,
-                                color = if (isActiveSpace) theme.text else theme.subText,
-                                style = TextStyle(
-                                    fontSize = 11.sp,
-                                    lineHeight = 11.sp,
-                                    fontWeight = if (isActiveSpace) FontWeight.Bold else FontWeight.Medium,
-                                    lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
-                                        alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
-                                        trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                    Row(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        recentSpaces.forEach { spaceItem ->
+                            val isActiveSpace = spaceItem.spaceId == normalizedSpaceId
+                            Row(
+                                modifier = Modifier
+                                    .widthIn(min = 60.dp, max = perPillMaxWidth)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isActiveSpace) theme.cyan.copy(alpha = 0.16f)
+                                        else theme.card
                                     )
-                                ),
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isActiveSpace) theme.cyan.copy(alpha = 0.65f) else theme.glassBorder,
+                                        shape = CircleShape
+                                    )
+                                    .clickable(enabled = !isThinking) {
+                                        isStatusExpanded = false
+                                        isMenuExpanded = false
+                                        onSelectSpace(spaceItem.spaceId, spaceItem.spaceName)
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                if (isActiveSpace) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(theme.cyan)
+                                    )
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                }
+                                Text(
+                                    text = spaceItem.spaceName,
+                                    color = if (isActiveSpace) theme.text else theme.subText,
+                                    style = TextStyle(
+                                        fontSize = 11.sp,
+                                        lineHeight = 11.sp,
+                                        fontWeight = if (isActiveSpace) FontWeight.Bold else FontWeight.Medium,
+                                        lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                                            alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                                            trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                                        )
+                                    ),
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                            }
                         }
                     }
-                }
 
-                // "•••" All Spaces Pill
-                Box(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(theme.card)
-                        .border(1.dp, theme.glassBorder, CircleShape)
-                        .clickable {
-                            isStatusExpanded = false
-                            isMenuExpanded = false
-                            onNavigateToSpaces()
-                        }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "•••",
-                        color = theme.cyan,
-                        style = TextStyle(
-                            fontSize = 11.sp,
-                            lineHeight = 11.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
-                                alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
-                                trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
-                            )
-                        ),
-                        maxLines = 1
-                    )
+                    // "•••" All Spaces Pill
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(theme.card)
+                            .border(1.dp, theme.glassBorder, CircleShape)
+                            .clickable {
+                                isStatusExpanded = false
+                                isMenuExpanded = false
+                                onNavigateToSpaces()
+                            }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "•••",
+                            color = theme.cyan,
+                            style = TextStyle(
+                                fontSize = 11.sp,
+                                lineHeight = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                                    alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                                    trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                                )
+                            ),
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         } // end Section 5 inner Column
@@ -1995,6 +2058,16 @@ fun HomeScreen(
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut()
             ) {
+                val isLeadNode = pairedClusterStatus.mode == "DESKTOP_LEAD" || pairedClusterStatus.isServerRunning
+                val isClusterMember = !isLeadNode && pairedClusterStatus.mode == "MOBILE_PAIRED"
+                val isStandalone = !isLeadNode && !isClusterMember
+                val clusterStatusColor = when {
+                    isLeadNode && pairedClusterStatus.isServerRunning -> theme.success
+                    isClusterMember && pairedClusterStatus.leaderReachable -> theme.success
+                    isLeadNode || isClusterMember -> theme.warning
+                    else -> theme.mutedText
+                }
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2069,8 +2142,8 @@ fun HomeScreen(
 
                         IntelligenceLayerTile(
                             icon = AeginIconType.CLOUD,
-                            title = if (isCloudReady && cloudProviderName.isNotBlank()) cloudProviderName else "Cloud",
-                            subtitle = if (isCloudReady) "Cloud Service" else "Not configured",
+                            title = "Cloud",
+                            subtitle = if (isCloudReady && cloudProviderName.isNotBlank()) cloudProviderName else "Not configured",
                             accentColor = theme.cyan,
                             selected = isCloudMode && isCloudReady,
                             enabled = isCloudReady && cloudProviderName.isNotBlank(),
@@ -2085,6 +2158,206 @@ fun HomeScreen(
                                 }
                             }
                         )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(theme.border)
+                    )
+
+                    val isClusterEnabled = !isStandalone || clusterToggleRequested
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            AeginVectorIcon(
+                                type = if (isLeadNode) AeginIconType.CLUSTER_LEAD else AeginIconType.CLUSTER,
+                                tint = if (isStandalone) theme.subText else clusterStatusColor,
+                                size = 14.dp
+                            )
+                            Text(
+                                text = "Cluster Option",
+                                color = theme.subText,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 0.8.sp
+                            )
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Enable Cluster",
+                                color = if (isClusterEnabled) theme.text else theme.subText,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Switch(
+                                checked = isClusterEnabled,
+                                onCheckedChange = { enable ->
+                                    if (enable) {
+                                        clusterToggleRequested = true
+                                    } else {
+                                        clusterToggleRequested = false
+                                        if (!isStandalone) {
+                                            scope.launch {
+                                                try {
+                                                    pairedClusterStatus = AeginBridge.disablePairedClusterMode()
+                                                    loadActiveMode()
+                                                } catch (_: Exception) {
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = if (!isStandalone) clusterStatusColor else theme.primary,
+                                    uncheckedThumbColor = theme.subText,
+                                    uncheckedTrackColor = theme.inputBg,
+                                    uncheckedBorderColor = theme.border
+                                )
+                            )
+                        }
+                    }
+
+                    AnimatedVisibility(
+                        visible = isClusterEnabled,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(IntrinsicSize.Min),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                IntelligenceLayerTile(
+                                    icon = AeginIconType.CLUSTER_LEAD,
+                                    title = "Lead",
+                                    subtitle = when {
+                                        isLeadNode && pairedClusterStatus.isServerRunning -> when {
+                                            pairedClusterStatus.connectedNodesCount > 1 ->
+                                                "Active • ${pairedClusterStatus.connectedNodesCount} nodes incl. self"
+                                            pairedClusterStatus.connectedNodesCount == 1 ->
+                                                "Active • 1 node (self)"
+                                            else -> "Active"
+                                        }
+                                        isLeadNode -> "Paused"
+                                        !pairedClusterStatus.isDesktopHost -> "Desktop only"
+                                        else -> ""
+                                    },
+                                    accentColor = if (isLeadNode && !pairedClusterStatus.isServerRunning) theme.warning else theme.success,
+                                    selected = isLeadNode,
+                                    enabled = pairedClusterStatus.isDesktopHost || isLeadNode,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight(),
+                                    onClick = {
+                                        isStatusExpanded = false
+                                        clusterToggleRequested = false
+                                        onNavigateToSettings()
+                                    }
+                                )
+
+                                IntelligenceLayerTile(
+                                    icon = AeginIconType.CLUSTER,
+                                    title = "Member",
+                                    subtitle = when {
+                                        isClusterMember && pairedClusterStatus.leaderReachable -> "Active • Connected"
+                                        isClusterMember -> "Offline"
+                                        else -> ""
+                                    },
+                                    accentColor = if (isClusterMember && !pairedClusterStatus.leaderReachable) theme.warning else theme.success,
+                                    selected = isClusterMember,
+                                    enabled = true,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight(),
+                                    onClick = {
+                                        isStatusExpanded = false
+                                        clusterToggleRequested = false
+                                        onNavigateToSettings()
+                                    }
+                                )
+                            }
+
+                            val endpoint = pairedClusterStatus.leaderUrl
+                                .ifBlank { pairedClusterStatus.remoteUrl }
+                                .removePrefix("http://")
+                                .removePrefix("https://")
+                            val summaryParts = buildList {
+                                when {
+                                    isLeadNode -> {
+                                        add(if (pairedClusterStatus.isServerRunning) "Lead active" else "Lead paused")
+                                        if (endpoint.isNotBlank()) add(endpoint)
+                                        if (pairedClusterStatus.connectedNodesCount > 0) {
+                                            val n = pairedClusterStatus.connectedNodesCount
+                                            add("$n node${if (n == 1) "" else "s"}")
+                                        }
+                                        if (pairedClusterStatus.remoteUrl.isNotBlank()) add("Relay")
+                                    }
+                                    isClusterMember -> {
+                                        add(if (pairedClusterStatus.leaderReachable) "Connected" else "Lead offline")
+                                        if (endpoint.isNotBlank()) add(endpoint)
+                                        if (pairedClusterStatus.computePower.isNotBlank()) add("${pairedClusterStatus.computePower.lowercase().replaceFirstChar { it.titlecase() }} compute")
+                                    }
+                                    else -> {
+                                        add("Choose Lead or Member to configure")
+                                    }
+                                }
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(theme.inputBg)
+                                    .clickable {
+                                        isStatusExpanded = false
+                                        clusterToggleRequested = false
+                                        onNavigateToSettings()
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isStandalone) theme.mutedText else clusterStatusColor)
+                                    )
+                                    Text(
+                                        text = summaryParts.joinToString(" • "),
+                                        color = theme.subText,
+                                        fontSize = 10.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Text(
+                                    text = "Configure →",
+                                    color = theme.primary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -2553,12 +2826,15 @@ private fun IntelligenceLayerTile(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Text(
-            text = subtitle,
-            color = subColor,
-            fontSize = 10.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        if (subtitle.isNotBlank()) {
+            Text(
+                text = subtitle,
+                color = subColor,
+                fontSize = 10.sp,
+                lineHeight = 13.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
