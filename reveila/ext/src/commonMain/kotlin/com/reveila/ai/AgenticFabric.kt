@@ -57,6 +57,7 @@ open class AgenticFabric : SystemComponent() {
     private var flightRecorder: FlightRecorder? = null
     private var dataService: DataService? = null
     private var secretManager: SecretManager? = null
+    private var instructionStore: AgentInstructionStore? = null
     private var toolCoordinator: ReveilaToolCoordinator? = null
     private var governancePolicy: GovernancePolicy = GovernancePolicy.defaultPolicy()
 
@@ -128,10 +129,23 @@ open class AgenticFabric : SystemComponent() {
             // Optional
         }
 
+        try {
+            val isProxy = context?.getProxy(AgentInstructionStore.COMPONENT_NAME)
+            this.instructionStore = (isProxy?.getInstance() as? AgentInstructionStore) ?: isProxy as? AgentInstructionStore
+        } catch (e: Exception) {
+            // Optional
+        }
+
         // Load Governance Policy from governance-policy.json
         reloadGovernancePolicy()
 
         val home = context?.properties?.getProperty("system.home") ?: "system-home/standard"
+        if (this.instructionStore == null) {
+            this.instructionStore = AgentInstructionStore(
+                configuredDataService = dataService,
+                configuredSystemHome = home
+            ).also { it.loadBootstrapConfigFile() }
+        }
         val coordinator = ReveilaToolCoordinator(
             systemHome = home,
             secretManagerProvider = {
@@ -158,6 +172,16 @@ open class AgenticFabric : SystemComponent() {
                     null
                 }
             },
+            instructionStoreProvider = { getInstructionStore() },
+            autonomousAgentProvider = {
+                try {
+                    val p = context?.getProxy("AutonomousAgent")
+                    (p?.getInstance() as? AutonomousAgent) ?: p as? AutonomousAgent
+                } catch (_: Exception) {
+                    null
+                }
+            },
+            tenantIdProvider = { resolveTenantId() },
             auditLogger = { action, details -> recordAuditLog(action, details) }
         )
         coordinator.registerManifests(metadataRegistry)
@@ -167,6 +191,128 @@ open class AgenticFabric : SystemComponent() {
     }
 
     open fun getToolCoordinator(): ReveilaToolCoordinator? = toolCoordinator
+
+    open fun getInstructionStore(): AgentInstructionStore {
+        val existing = instructionStore
+        if (existing != null) return existing
+        val home = context?.properties?.getProperty("system.home") ?: "system-home/standard"
+        return AgentInstructionStore(
+            configuredDataService = dataService,
+            configuredSystemHome = home
+        ).also {
+            it.loadBootstrapConfigFile()
+            instructionStore = it
+        }
+    }
+
+    private fun resolveTenantId(session: AgentSession? = null, explicitTenantId: String? = null): String {
+        val candidate = explicitTenantId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: session?.get("_tenant_id")?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: context?.properties?.getProperty("reveila.tenant.id")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: AgentInstruction.DEFAULT_TENANT_ID
+        return AgentInstruction.normalizeTenantId(candidate)
+    }
+
+    private fun isRealUserId(raw: String?): Boolean {
+        val norm = raw?.trim()?.lowercase().orEmpty()
+        if (norm.isEmpty()) return false
+        return norm !in setOf("system", "ui-client", "autonomous-agent", "local-agent", "anonymous", "local-user")
+    }
+
+    private fun resolveUserId(session: AgentSession? = null, explicitUserId: String? = null): String {
+        val candidate = explicitUserId?.takeIf { isRealUserId(it) }
+            ?: session?.get("_user_id")?.toString()?.takeIf { isRealUserId(it) }
+            ?: TraceContextHolder.getContext()?.actorId?.takeIf { isRealUserId(it) }
+            ?: context?.properties?.getProperty("reveila.user.id")?.takeIf { isRealUserId(it) }
+            ?: AgentInstruction.DEFAULT_USER_ID
+        return AgentInstruction.normalizeUserId(candidate)
+    }
+
+    private fun buildEffectiveConstraints(
+        baseConstraint: String?,
+        session: AgentSession?,
+        isSmallLocal: Boolean = false
+    ): String? {
+        val tenantId = resolveTenantId(session)
+        val userId = resolveUserId(session)
+        val charBudget = if (isSmallLocal) 1200 else AgentInstructionStore.DEFAULT_PROMPT_CHAR_BUDGET
+        val standing = getInstructionStore().renderForPrompt(
+            tenantId = tenantId,
+            userId = userId,
+            spaceId = session?.spaceId,
+            maxChars = charBudget
+        )
+        val parts = listOfNotNull(
+            baseConstraint?.trim()?.takeIf { it.isNotEmpty() },
+            standing?.trim()?.takeIf { it.isNotEmpty() }
+        )
+        return if (parts.isEmpty()) null else parts.joinToString("\n\n")
+    }
+
+    @kotlin.jvm.JvmOverloads
+    open fun listStandingInstructions(
+        spaceId: String? = null,
+        tenantId: String? = null,
+        userId: String? = null,
+        includeDisabled: Boolean = false
+    ): List<Map<String, Any?>> {
+        return getInstructionStore().listInstructions(
+            tenantId = resolveTenantId(explicitTenantId = tenantId),
+            userId = resolveUserId(explicitUserId = userId),
+            spaceId = spaceId,
+            includeDisabled = includeDisabled
+        ).map { it.toMap() }
+    }
+
+    @kotlin.jvm.JvmOverloads
+    open fun saveStandingInstruction(
+        text: String,
+        scope: String = "USER_GLOBAL",
+        spaceId: String? = null,
+        category: String? = null,
+        blockedPatterns: List<String> = emptyList(),
+        priority: Int = 100,
+        locked: Boolean = false,
+        tenantId: String? = null,
+        userId: String? = null,
+        deviceId: String? = null
+    ): Map<String, Any?> {
+        val saved = getInstructionStore().addInstruction(
+            text = text,
+            tenantId = resolveTenantId(explicitTenantId = tenantId),
+            userId = resolveUserId(explicitUserId = userId),
+            scope = InstructionScope.fromRawOrDefault(scope),
+            spaceId = spaceId,
+            category = category?.takeIf { it.isNotBlank() }?.let { InstructionCategory.fromRawOrDefault(it) },
+            blockedPatterns = blockedPatterns,
+            priority = priority,
+            locked = locked,
+            deviceId = deviceId
+        )
+        recordAuditLog("STANDING_INSTRUCTION_SAVED", "id=${saved.id} tenant=${saved.tenantId} user=${saved.userId} scope=${saved.scope}")
+        return saved.toMap()
+    }
+
+    @kotlin.jvm.JvmOverloads
+    open fun removeStandingInstruction(
+        id: String,
+        tenantId: String? = null,
+        userId: String? = null,
+        isTenantAdmin: Boolean = false,
+        deviceId: String? = null
+    ): Boolean {
+        val removed = getInstructionStore().removeInstruction(
+            id = id,
+            tenantId = resolveTenantId(explicitTenantId = tenantId),
+            userId = resolveUserId(explicitUserId = userId),
+            isTenantAdmin = isTenantAdmin,
+            deviceId = deviceId
+        )
+        if (removed) {
+            recordAuditLog("STANDING_INSTRUCTION_REMOVED", "id=$id")
+        }
+        return removed
+    }
 
     open fun askAgent(userIntent: String, sessionId: String?, systemPrompt: String?): Map<String, Any?> {
         return askAgentWithMode(userIntent, sessionId, systemPrompt, assistantMode = null)
@@ -317,12 +463,17 @@ open class AgenticFabric : SystemComponent() {
             ?: context?.properties?.getProperty("ai.llm.model.name")?.takeIf { it.isNotBlank() }
             ?: LocalLlamaProvider.nativeDelegate?.getLoadedModelPath()
 
+        val streamingConstraints = buildEffectiveConstraints(
+            baseConstraint = null,
+            session = session,
+            isSmallLocal = PromptTemplateRegistry.isSmallLocalModel(activeModel, systemHome)
+        )
         val rendered = Prompt.buildSystemPrompt(
             role = "Aegin, a sovereign on-device AI assistant in the '$activeSpaceName' Space",
             spaceName = activeSpaceName,
             tools = emptyList(),
             vaultContext = ragSnippets,
-            constraints = null,
+            constraints = streamingConstraints,
             modelName = activeModel,
             systemHome = systemHome,
             mode = PromptMode.CONVERSATIONAL
@@ -682,7 +833,12 @@ open class AgenticFabric : SystemComponent() {
         }
 
         var intentBuffer = intent
-        val responseValidator = AiResponseValidator(governancePolicy)
+        val activeSafetyRules = getInstructionStore().getActiveSafetyInstructions(
+            tenantId = resolveTenantId(session),
+            userId = resolveUserId(session, explicitUserId = actorId),
+            spaceId = session.spaceId
+        )
+        val responseValidator = AiResponseValidator(governancePolicy, activeSafetyRules)
         return executeAgenticLoop(
             session = session,
             initialIntentBuffer = intentBuffer,
@@ -1215,6 +1371,11 @@ open class AgenticFabric : SystemComponent() {
 
         session.addMessage(ReveilaMessage.tool("Authorized tool execution returned: $combinedResults", spaceId = session.spaceId))
         val resumePrompt = "Authorized tool execution finished with results: $combinedResults | Original reasoning: ${pending.originalReasoning} | Continue and provide the next step or final response."
+        val resumeSafetyRules = getInstructionStore().getActiveSafetyInstructions(
+            tenantId = resolveTenantId(session),
+            userId = resolveUserId(session, explicitUserId = pending.actorId),
+            spaceId = session.spaceId
+        )
         val loopResult = executeAgenticLoop(
             session = session,
             initialIntentBuffer = resumePrompt,
@@ -1222,7 +1383,7 @@ open class AgenticFabric : SystemComponent() {
             traceId = traceId,
             actorId = pending.actorId,
             dummyPlugin = dummyPlugin,
-            responseValidator = AiResponseValidator(governancePolicy),
+            responseValidator = AiResponseValidator(governancePolicy, resumeSafetyRules),
             persistInitialUserTurn = false
         )
         val answer = interpretAiResponse(loopResult)
@@ -1897,12 +2058,17 @@ open class AgenticFabric : SystemComponent() {
             systemHome = systemHome
         )
 
+        val effectiveConstraints = buildEffectiveConstraints(
+            baseConstraint = "Always follow governance policy boundaries and preserve confidentiality.",
+            session = session,
+            isSmallLocal = isOnDevice && PromptTemplateRegistry.isSmallLocalModel(activeModel, systemHome)
+        )
         val renderedPrompt = Prompt.buildSystemPrompt(
             role = "Reveila Sovereign AI Agent (Space: ${session.spaceName})",
             spaceName = session.spaceName,
             tools = if (promptMode == PromptMode.AGENTIC_JSON) tools else emptyList(),
             vaultContext = searchKnowledgeVault(userPrompt),
-            constraints = "Always follow governance policy boundaries and preserve confidentiality.",
+            constraints = effectiveConstraints,
             modelName = activeModel,
             systemHome = systemHome,
             mode = promptMode

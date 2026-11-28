@@ -1,6 +1,9 @@
 package com.reveila.ai
 
 import com.reveila.system.Constants
+import com.reveila.system.platform.PlatformSystem
+import com.reveila.util.TimeFormat
+import kotlinx.datetime.TimeZone
 
 data class RenderedPrompt(
     val systemPrompt: String,
@@ -141,8 +144,15 @@ $formattedTools
             }
 
             val cleanConstraints = constraints?.trim()?.takeIf { it.isNotEmpty() }
+            val currentLocalTimeLine = try {
+                val nowStr = TimeFormat.timestamp(PlatformSystem.currentTimeMillis()).substringBefore(".")
+                val tz = TimeZone.currentSystemDefault().id
+                "Current local date/time: $nowStr ($tz). Use this to resolve relative dates/times for reminders and scheduled tasks."
+            } catch (_: Exception) {
+                null
+            }
             val presentationGuidance = ResponsePresentationService.formatPromptGuidance(DeviceFormFactor.COMPACT_MOBILE)
-            val mergedConstraints = listOfNotNull(cleanConstraints, presentationGuidance).joinToString("\n")
+            val mergedConstraints = listOfNotNull(currentLocalTimeLine, cleanConstraints, presentationGuidance).joinToString("\n")
             val constraintsValue = mergedConstraints.ifBlank { "No additional rules" }
             val constraintsLine = "Additional rules:\n$mergedConstraints"
 

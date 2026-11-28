@@ -23,6 +23,7 @@ class EnterpriseChannelHub(
     private val adapters: Map<ChannelType, EnterpriseChannelAdapter> = mapOf(
         ChannelType.SLACK to SlackChannelAdapter(),
         ChannelType.MICROSOFT_TEAMS to TeamsChannelAdapter(),
+        ChannelType.WHATSAPP to WhatsAppChannelAdapter(),
         ChannelType.EMAIL to EmailChannelAdapter(),
         ChannelType.CUSTOM_WEBHOOK to CustomWebhookChannelAdapter()
     )

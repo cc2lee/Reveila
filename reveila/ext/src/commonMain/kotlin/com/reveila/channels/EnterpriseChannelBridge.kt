@@ -5,6 +5,7 @@ import com.reveila.util.json.JsonUtil
 enum class ChannelType {
     SLACK,
     MICROSOFT_TEAMS,
+    WHATSAPP,
     EMAIL,
     CUSTOM_WEBHOOK;
 
@@ -13,6 +14,7 @@ enum class ChannelType {
             return when (raw?.trim()?.uppercase()?.replace("-", "_")) {
                 "SLACK" -> SLACK
                 "TEAMS", "MS_TEAMS", "MICROSOFT_TEAMS", "MSTEAMS" -> MICROSOFT_TEAMS
+                "WHATSAPP", "WA", "WHATSAPP_CLOUD" -> WHATSAPP
                 "EMAIL", "MAIL", "SMTP", "EMAIL_WEBHOOK" -> EMAIL
                 "CUSTOM", "CUSTOM_WEBHOOK", "WEBHOOK", "DISCORD", "TELEGRAM", "NTFY" -> CUSTOM_WEBHOOK
                 else -> null

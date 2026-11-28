@@ -71,6 +71,12 @@ class DesktopClusterHttpServer(
         httpServer.createContext("/api/components/") { exchange ->
             handleComponentInvoke(exchange)
         }
+        httpServer.createContext("/api/cluster/instructions/sync") { exchange ->
+            handleInstructionSync(exchange)
+        }
+        httpServer.createContext("/api/channels/") { exchange ->
+            handleChannelWebhook(exchange)
+        }
 
         httpServer.start()
         this.server = httpServer
@@ -186,6 +192,105 @@ class DesktopClusterHttpServer(
         } catch (e: Exception) {
             val errJson = JsonUtil.toJsonString(mapOf("error" to (e.message ?: "Invocation failed")))
             sendJson(exchange, 500, errJson)
+        }
+    }
+
+    private fun handleInstructionSync(exchange: HttpExchange) {
+        try {
+            if (!"POST".equals(exchange.requestMethod, ignoreCase = true)) {
+                sendJson(exchange, 405, """{"error":"Method not allowed"}""")
+                return
+            }
+
+            val expectedSecret = clusterSecret.trim()
+            if (expectedSecret.isNotEmpty()) {
+                val provided = exchange.requestHeaders.getFirst("X-Reveila-Cluster-Token")?.trim().orEmpty()
+                if (provided != expectedSecret) {
+                    sendJson(exchange, 403, """{"error":"Forbidden: invalid cluster token"}""")
+                    return
+                }
+            }
+
+            val body = exchange.requestBody.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val parsed = if (body.isBlank()) emptyMap() else JsonUtil.parseJsonStringToMap(body)
+            val remoteIp = exchange.remoteAddress?.address?.hostAddress ?: "127.0.0.1"
+
+            val result = engine.invoke(
+                "AgentInstructionStore",
+                "handleSyncRequest",
+                arrayOf<Any?>(parsed),
+                remoteIp,
+                subject
+            )
+            sendJson(exchange, 200, JsonUtil.toJsonString(result))
+        } catch (e: Exception) {
+            sendJson(exchange, 500, JsonUtil.toJsonString(mapOf("ok" to false, "error" to (e.message ?: "Instruction sync failed"))))
+        }
+    }
+
+    private fun handleChannelWebhook(exchange: HttpExchange) {
+        try {
+            // Path: /api/channels/{channel}/webhook
+            val path = exchange.requestURI.path ?: ""
+            val channel = path.removePrefix("/api/channels/").removeSuffix("/webhook").trim('/')
+            if (channel.isEmpty() || channel.contains("/")) {
+                sendJson(exchange, 400, """{"error":"Invalid channel webhook path"}""")
+                return
+            }
+            val remoteIp = exchange.remoteAddress?.address?.hostAddress ?: "127.0.0.1"
+            val queryParams = (exchange.requestURI.rawQuery ?: "")
+                .split('&')
+                .filter { it.isNotBlank() }
+                .associate { pair ->
+                    val idx = pair.indexOf('=')
+                    if (idx >= 0) {
+                        java.net.URLDecoder.decode(pair.substring(0, idx), "UTF-8") to
+                            java.net.URLDecoder.decode(pair.substring(idx + 1), "UTF-8")
+                    } else {
+                        java.net.URLDecoder.decode(pair, "UTF-8") to ""
+                    }
+                }
+
+            if ("GET".equals(exchange.requestMethod, ignoreCase = true)) {
+                val res = engine.invoke(
+                    "InboundChannelGateway",
+                    "verifyWebhookChallenge",
+                    arrayOf<Any?>(channel, queryParams["hub.verify_token"], queryParams["hub.challenge"]),
+                    remoteIp,
+                    subject
+                )
+                val map = res as? Map<*, *>
+                val ok = map?.get("ok") == true
+                if (!ok) {
+                    sendJson(exchange, 403, JsonUtil.toJsonString(mapOf("error" to (map?.get("error") ?: "Forbidden"))))
+                } else {
+                    val challenge = map?.get("challenge")?.toString().orEmpty().toByteArray(Charsets.UTF_8)
+                    exchange.responseHeaders.set("Content-Type", "text/plain; charset=utf-8")
+                    exchange.sendResponseHeaders(200, challenge.size.toLong())
+                    exchange.responseBody.use { it.write(challenge) }
+                }
+                return
+            }
+
+            if (!"POST".equals(exchange.requestMethod, ignoreCase = true)) {
+                sendJson(exchange, 405, """{"error":"Method not allowed"}""")
+                return
+            }
+
+            val body = exchange.requestBody.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val parsed = if (body.isBlank()) emptyMap() else JsonUtil.parseJsonStringToMap(body)
+            val autoReply = queryParams["autoReply"]?.equals("true", ignoreCase = true) == true
+
+            val result = engine.invoke(
+                "InboundChannelGateway",
+                "handleInboundWebhook",
+                arrayOf<Any?>(channel, parsed, autoReply),
+                remoteIp,
+                subject
+            )
+            sendJson(exchange, 200, JsonUtil.toJsonString(result))
+        } catch (e: Exception) {
+            sendJson(exchange, 500, JsonUtil.toJsonString(mapOf("ok" to false, "error" to (e.message ?: "Channel webhook failed"))))
         }
     }
 

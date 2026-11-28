@@ -5,7 +5,10 @@ This folder contains the architectural brain of the project. It tracks decisions
 > **Note on Confidential Architectural Artifacts:**
 > Additional confidential architectural artifacts (such as GTM strategy and personal editions) are stored outside the main workspace at `c:\IDE\Projects\Misc\Reveila`. AI assistants should reference both this `memory-bank` and the external `Misc/Reveila` directory when gathering context.
 
-## 🗺️ System Maps
+## 🗺️ System Maps & Guides
+* [Platform Overview & Architecture](./Publish/Reveila%20Platform%20Overview%20%26%20Architecture.md) - High-level platform introduction and architecture.
+* [User Guide](./Publish/User%20Guide.md) - End-user setup, cluster pairing, and usage handbook for Reveila-Suite & the Aegin App.
+* [Developer Guide & Tutorials](./Publish/Reveila%20Developer%20Guide%20%26%20Tutorials.md) - Developer onboarding, plugin development, and tutorials.
 * [System Context Map](./system-map.md) - High-level overview of Java, Android, and Web interaction.
 
 ## 📝 Architectural Decision Records (ADR)

@@ -6,11 +6,25 @@ import com.reveila.safety.GovernancePolicy
 /**
  * Validates and sanitizes outgoing LLM model responses.
  * Detects infinite repetition loops, hallucinatory echoes,
- * and executes runtime Data Loss Prevention (DLP) against governance policies.
+ * executes runtime Data Loss Prevention (DLP) against governance policies,
+ * and deterministically enforces active standing [InstructionCategory.SAFETY] rules.
  */
 open class AiResponseValidator(
-    private val policy: GovernancePolicy = GovernancePolicy.defaultPolicy()
+    private val policy: GovernancePolicy = GovernancePolicy.defaultPolicy(),
+    private val safetyRules: List<AgentInstruction> = emptyList()
 ) {
+
+    companion object {
+        private val ADULT_SEXUAL_RULE_SIGNALS = listOf(
+            "adult sexual", "sexual topic", "sexual content", "nsfw", "explicit sexual",
+            "porn", "erotic", "adult content", "sexually explicit"
+        )
+
+        private val ADULT_SEXUAL_CONTENT_REGEX = Regex(
+            "\\b(?:porn(?:ography|ographic)?|nsfw|erotic(?:a)?|sexually\\s+explicit|explicit\\s+sex(?:ual)?|orgasm|intercourse|fetish(?:es)?|bdsm|hentai|strip\\s+club|adult\\s+video|xxx)\\b",
+            RegexOption.IGNORE_CASE
+        )
+    }
 
     data class ResponseValidationResult(
         val isValid: Boolean,
@@ -25,7 +39,7 @@ open class AiResponseValidator(
     private val platformCrypto = PlatformCryptographer()
 
     /**
-     * Validates and sanitizes the LLM response against DLP and loop detection rules.
+     * Validates and sanitizes the LLM response against DLP, standing safety rules, and loop detection.
      */
     open fun validateAndSanitize(agentResponse: String?): ResponseValidationResult {
         if (agentResponse.isNullOrBlank()) {
@@ -66,6 +80,19 @@ open class AiResponseValidator(
             )
         }
 
+        // 3. Deterministic Standing Safety Instruction Enforcement (Defense-in-Depth)
+        val safetyViolation = evaluateStandingSafetyRules(eval.sanitizedResponse)
+        if (safetyViolation != null) {
+            return ResponseValidationResult(
+                isValid = false,
+                sanitizedContent = "[Response blocked by standing safety instruction]",
+                isBlocked = true,
+                isRepeating = false,
+                riskScore = 1.0,
+                reasoning = "STANDING_SAFETY_VIOLATION: Blocked by instruction [${safetyViolation.id}] - ${safetyViolation.text}"
+            )
+        }
+
         return ResponseValidationResult(
             isValid = true,
             sanitizedContent = eval.sanitizedResponse,
@@ -74,6 +101,36 @@ open class AiResponseValidator(
             riskScore = eval.riskScore,
             reasoning = eval.reasoning
         )
+    }
+
+    private fun evaluateStandingSafetyRules(text: String): AgentInstruction? {
+        if (safetyRules.isEmpty()) return null
+        val lowerResponse = text.lowercase()
+
+        for (rule in safetyRules) {
+            if (!rule.enabled || rule.deleted || rule.category != InstructionCategory.SAFETY) continue
+
+            // Check explicit blocked patterns/keywords attached to the rule
+            for (rawPat in rule.blockedPatterns) {
+                val pat = rawPat.trim()
+                if (pat.isEmpty()) continue
+                val matched = try {
+                    Regex(pat, RegexOption.IGNORE_CASE).containsMatchIn(text)
+                } catch (_: Exception) {
+                    lowerResponse.contains(pat.lowercase())
+                }
+                if (matched) return rule
+            }
+
+            // Built-in deterministic topic guard when user creates an adult/sexual safety rule
+            val lowerRule = rule.text.lowercase()
+            if (ADULT_SEXUAL_RULE_SIGNALS.any { lowerRule.contains(it) }) {
+                if (ADULT_SEXUAL_CONTENT_REGEX.containsMatchIn(text)) {
+                    return rule
+                }
+            }
+        }
+        return null
     }
 
     /**

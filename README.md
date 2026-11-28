@@ -4,6 +4,16 @@ Reveila-Suite is a cross-platform, multi-tenant **Agentic AI Execution Fabric** 
 
 ---
 
+## 📚 Official Documentation
+
+Start here to explore, set up, or build on **Reveila-Suite** and the **Aegin App**:
+
+1. **[Reveila Platform Overview & Architecture](memory-bank/Publish/Reveila%20Platform%20Overview%20%26%20Architecture.md)** — High-level platform introduction, Sovereign AI philosophy, and core architectural design.
+2. **[Reveila-Suite & Aegin App User Guide](memory-bank/Publish/User%20Guide.md)** — End-user setup (Standalone, Desktop Lead + Mobile Cluster Pairing, Headless Server), Assistant chat, standing instructions, reminders & recurring tasks, Knowledge Vault, and connecting Teams, WhatsApp, Slack & Email.
+3. **[Reveila Developer Guide & Tutorials](memory-bank/Publish/Reveila%20Developer%20Guide%20%26%20Tutorials.md)** — Developer onboarding, building plugins/tools, extending the KMP runtime, and hands-on tutorials.
+
+---
+
 ## 📑 Table of Contents
 
 - [🏛️ The "Sovereign Mode" Experience](#️-the-sovereign-mode-experience)
@@ -12,7 +22,7 @@ Reveila-Suite is a cross-platform, multi-tenant **Agentic AI Execution Fabric** 
 - [🛠️ Technology Stack & Runtime Ecosystem](#️-technology-stack--runtime-ecosystem)
 - [🧠 Agentic AI Architecture & Execution Fabric](#-agentic-ai-architecture--execution-fabric)
   - [🔄 The "AI Loop" Stateful Session Management](#-the-ai-loop-stateful-session-management)
-  - [🌉 LangChain4j Translation & The Message Chain Pattern](#-langchain4j-translation--the-message-chain-pattern)
+  - [🌉 Native KMP LLM Providers & The Message Chain Pattern](#-native-kmp-llm-providers--the-message-chain-pattern)
   - [📊 Prompt Standardization & Structural Security](#-prompt-standardization--structural-security)
   - [💾 Context Optimization & Memory Footprint Controls](#-context-optimization--memory-footprint-controls)
   - [🚀 Execution Configurations: Personal vs. Enterprise](#-execution-configurations-personal-vs-enterprise)
@@ -129,7 +139,7 @@ graph TB
 | **Core Multiplatform Engine (`reveila:core`)** | **Kotlin Multiplatform (KMP)**, Kotlin 2.x, Java 17/21 Bytecode, Native C/C++ (`reveila_core.dll`, `.h`, Apple Frameworks), Gradle (Kotlin DSL) | Universal (JVM, Android, Windows, macOS, Linux) |
 | **Enterprise Server (Mode A)** | **Spring Boot 3.5.x**, Spring Security, Hibernate/JPA, HikariCP, PostgreSQL (NOTIFY/LISTEN Mesh), H2 | Cloud VMs, Containers, Elastic Kubernetes Clusters |
 | **Sovereign Client Runtimes (Mode B)** | **Android ART** (SDK 34+, Android 14+ Security), React Native (Expo SDK), Windows Native (Win32), Node.js | Flagship Mobile, Air-Gapped Workstations |
-| **Agentic AI & Inference Engine** | **LangChain4j**, Ollama (Local LLM), OpenAI / Gemini APIs, Prompt Firewalls (Markdown + XML) | Embedded Local Edge & Enterprise Server |
+| **Agentic AI & Inference Engine** | **Native Pure-KMP `LlmProvider` Engine**, On-Device GGUF (`LocalLlamaProvider`), OpenAI / Gemini APIs, Prompt Firewalls (Markdown + XML) | Embedded Local Edge (Android/iOS/Desktop) & Enterprise Server |
 | **Sandboxing & Tool Runtimes** | **Wasmtime** (WebAssembly), Docker Guarded Runtime, Playwright, Xterm.js / node-pty | Isolated Workspaces & Micro-VM Sandboxes |
 | **Enterprise & Local Storage Fabrics** | PostgreSQL (Central Registry Ledger), MongoDB, SQLite (Native Extensions), DuckDB, ChromaDB | Distributed Cloud DB & Sovereign Local Vector Stores |
 
@@ -157,16 +167,16 @@ Agent activities are grouped into isolated, stateful sessions. These sessions ar
         [Tool Output Result Matrix Recovers] ─── (Loops back to stabilize)
 ```
 
-### 🌉 LangChain4j Translation & The Message Chain Pattern
+### 🌉 Native KMP LLM Providers & The Message Chain Pattern
 
-The engine integrates `LangChain4j` to act as an infrastructure abstraction driver layer between core domain interfaces and external inference models (e.g., cloud endpoints like OpenAI/Gemini vs. local targets like Ollama). It manages low-level API serialization, enforces structural Java object mappings from raw model outputs, and permits swapping providers by tweaking single application property definitions.
+The engine implements a zero-external-framework, pure **Kotlin Multiplatform (`com.reveila.ai`)** abstraction layer (`LlmProvider`, `BaseLlmProvider`, `OpenAiLlmProvider`, `GeminiLlmProvider`, and `LocalLlamaProvider`) so the exact same AI runtime executes seamlessly on **Android OS, iOS, Desktop, and JVM Server** without JVM-only library incompatibilities. It manages API serialization, structured JSON outputs, and dynamic provider routing across local on-device GGUF models and cloud endpoints.
 
-To preserve accurate reasoning histories across multi-turn execution loops, the system maintains a chronologically ordered state array (`dev.langchain4j.memory.ChatMemory`). The `processLoop()` method in `AgenticFabric.java` explicitly pieces this array together on every turn, injecting four critical discrete roles:
+To preserve accurate reasoning histories across multi-turn execution loops and isolated Spaces, the system maintains a chronologically ordered, Space-aware state list (`ReveilaChatMemory` holding `ReveilaMessage` entries). `AgenticFabric.kt` assembles this message chain on every turn across four discrete roles (`LlmRole`):
 
-1. **SystemMessage:** Contains core operational instructions, perimeter rules, and tools structured via the Model Context Protocol (MCP).
-2. **UserMessage:** The raw incoming intent statement provided by the user.
-3. **AiMessage:** Captures the LLM's explicit reasoning steps and generated tool-call parameters.
-4. **ToolExecutionResultMessage:** Binds the execution result payload (e.g., PowerShell runtime output or REST data logs) back into the conversation context block.
+1. **SYSTEM (`ReveilaMessage.system`):** Contains core operational instructions, standing user/tenant rules, perimeter constraints, Knowledge Vault context, and tools structured via the Model Context Protocol (MCP).
+2. **USER (`ReveilaMessage.user`):** The raw incoming intent statement provided by the user.
+3. **ASSISTANT (`ReveilaMessage.assistant`):** Captures the LLM's explicit reasoning steps and generated tool-call parameters.
+4. **TOOL (`ReveilaMessage.tool`):** Binds the execution result payload (e.g., terminal output, browser results, or Knowledge Vault excerpts) back into the conversation context block.
 
 ### 📊 Prompt Standardization & Structural Security
 

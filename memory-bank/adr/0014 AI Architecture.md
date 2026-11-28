@@ -198,7 +198,7 @@ Return your response as a valid JSON document with only the following keys:
 
 ## 6. The Native Message Chain Pattern
 
-The multiplatform message chain replaces external dependencies (e.g. LangChain4j) with native Kotlin types:
+The multiplatform message chain uses native pure-Kotlin types (portable across JVM, Android, Desktop, and Apple):
 - `ReveilaMessage.system(content)`: Base system instructions, tool catalogs, and dynamic RAG snippets.
 - `ReveilaMessage.user(content)`: Initial user intent or feedback turn.
 - `ReveilaMessage.assistant(content)`: Model's structured JSON reasoning and requested tool calls.

@@ -24,9 +24,17 @@ import com.reveila.system.UserPrincipal
 import com.reveila.system.io.PlatformFileSystem
 import com.reveila.system.platform.PlatformSystem
 import com.reveila.tools.ToolActivityHub
+import com.reveila.util.TimeFormat
 import com.reveila.util.Uuid
 import com.reveila.util.json.JsonUtil
 import kotlin.jvm.JvmOverloads
+import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -341,20 +349,25 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
                 }
 
                 val lastRunAt = (taskDef["lastRunAt"] as? Number)?.toLong() ?: 0L
+                val nextRunAtMs = (taskDef["nextRunAtMs"] as? Number)?.toLong() ?: 0L
                 val frequency = (taskDef["frequency"] as? String)?.lowercase() ?: "daily"
-                val intervalMs = when {
-                    frequency.contains("once") -> Long.MAX_VALUE
-                    frequency.contains("min") -> 15 * 60 * 1000L
-                    frequency.contains("hour") -> 60 * 60 * 1000L
-                    frequency.contains("week") -> 7 * 24 * 60 * 60 * 1000L
-                    else -> 24 * 60 * 60 * 1000L
-                }
+                val intervalMs = computeIntervalMs(frequency)
 
-                if (lastRunAt > 0L && (now - lastRunAt) < intervalMs) {
+                if (nextRunAtMs > 0L) {
+                    if (now < nextRunAtMs) {
+                        continue
+                    }
+                } else if (lastRunAt > 0L && (now - lastRunAt) < intervalMs) {
                     continue
                 }
 
-                dispatchTaskToSandbox(file, taskDef, triggeredManually = false, approvedByUser = false)
+                val taskType = (taskDef["taskType"] as? String)?.uppercase() ?: "AGENT_TASK"
+                val taskIntent = (taskDef["intent"] as? String)?.lowercase() ?: ""
+                if (taskType == "REMINDER" || taskIntent == "reminder.notify") {
+                    executeReminderDirect(file, taskDef, now)
+                } else {
+                    dispatchTaskToSandbox(file, taskDef, triggeredManually = false, approvedByUser = false)
+                }
             } catch (e: Exception) {
                 logger.severe("Failed to scan autonomous task: $file. Error: ${e.message}")
             }
@@ -788,6 +801,12 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
                 latestDef["approvalReason"] = escalatedReason
             }
             latestDef["lastRunAt"] = PlatformSystem.currentTimeMillis()
+            if (freq != "once" && enabled && finalStatus != "WAITING_APPROVAL") {
+                val nowMs = (latestDef["lastRunAt"] as? Number)?.toLong() ?: PlatformSystem.currentTimeMillis()
+                latestDef["nextRunAtMs"] = computeNextRunAtMs(freq, nowMs)
+            } else if (freq == "once") {
+                latestDef["nextRunAtMs"] = 0L
+            }
             latestDef["lastResult"] = answerText
             if (capturedToolAttachment != null) {
                 latestDef["lastToolAttachment"] = capturedToolAttachment
@@ -1103,7 +1122,13 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         requiresApproval: Boolean,
         executionTarget: String = "auto",
         actorId: String = "",
-        sourceUrl: String = ""
+        sourceUrl: String = "",
+        taskType: String = "AGENT_TASK",
+        scheduledAtMs: Long = 0L,
+        replyChannel: String = "",
+        replyTarget: String = "",
+        tenantId: String = "",
+        userId: String = ""
     ): String {
         val fs = PlatformFileSystem()
         val tasksDir = resolveTasksDir()
@@ -1124,11 +1149,15 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         globalEmergencyStopped = false
         killedTaskIds.remove(taskId)
 
-        val cleanIntent = intent.trim().ifBlank { "auto" }
-        val cleanTarget = TaskCapabilityRouter.normalizeExecutionTarget(executionTarget)
-        val cleanFreq = frequency.ifBlank { "daily" }
-        val cleanTime = scheduleTime.ifBlank { "08:00" }
-        val needsHitl = requiresApproval || isApprovalRequiredForPrompt(prompt)
+        val cleanType = taskType.trim().uppercase().ifBlank { "AGENT_TASK" }
+        val isReminder = cleanType == "REMINDER" || intent.equals("reminder.notify", ignoreCase = true)
+        val cleanIntent = intent.trim().ifBlank { if (isReminder) "reminder.notify" else "auto" }
+        val cleanTarget = TaskCapabilityRouter.normalizeExecutionTarget(if (isReminder) "local" else executionTarget)
+        val cleanFreq = frequency.ifBlank { if (isReminder) "once" else "daily" }
+        val cleanTime = scheduleTime.ifBlank {
+            if (scheduledAtMs > 0L) formatHourMinute(scheduledAtMs) else "08:00"
+        }
+        val needsHitl = if (isReminder) false else (requiresApproval || isApprovalRequiredForPrompt(prompt))
         val resolvedTitle = title.ifBlank { formatTaskTitle(taskId, prompt) }
         val initiator = resolveActorId(actorId)
         val activeCtx = TraceContextHolder.getContext()
@@ -1143,14 +1172,26 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             localProvider = resolveLlmFactory()?.getProvider("On-Device Model")
         )
 
+        val scheduleSummary = if (scheduledAtMs > 0L) {
+            "Scheduled ($cleanFreq at ${TimeFormat.timestamp(scheduledAtMs).substringBefore(".")})"
+        } else {
+            "Scheduled ($cleanFreq at $cleanTime)"
+        }
+
         val taskMap = linkedMapOf<String, Any?>(
             "taskId" to taskId,
             "title" to resolvedTitle,
+            "taskType" to cleanType,
             "intent" to cleanIntent,
             "prompt" to prompt,
             "sourceUrl" to sourceUrl.trim(),
             "frequency" to cleanFreq,
             "scheduleTime" to cleanTime,
+            "nextRunAtMs" to scheduledAtMs,
+            "replyChannel" to replyChannel.trim(),
+            "replyTarget" to replyTarget.trim(),
+            "tenantId" to tenantId.trim(),
+            "userId" to userId.trim(),
             "executionTarget" to cleanTarget,
             "enabled" to true,
             "status" to if (needsHitl) "WAITING_APPROVAL" else "ACTIVE",
@@ -1165,16 +1206,16 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
             "routeTarget" to assessment.targetRoute,
             "taskCategory" to assessment.taskCategory,
             "routingReason" to assessment.reason,
-            "currentStep" to if (needsHitl) "Waiting for user approval" else "Scheduled ($cleanFreq at $cleanTime) • ${assessment.taskCategory}",
+            "currentStep" to if (needsHitl) "Waiting for user approval" else "$scheduleSummary • ${if (isReminder) "REMINDER" else assessment.taskCategory}",
             "createdAt" to PlatformSystem.currentTimeMillis(),
             "lastRunAt" to 0L,
-            "lastResult" to if (needsHitl) "Waiting for user approval." else "Scheduled ($cleanFreq at $cleanTime). ${assessment.reason}"
+            "lastResult" to if (needsHitl) "Waiting for user approval." else "$scheduleSummary."
         )
 
         recordTaskCommandEvent(
             taskDef = taskMap,
-            action = "TASK_CREATED",
-            details = "Created task [$taskId] ($resolvedTitle) - executionTarget=$cleanTarget, category=${assessment.taskCategory}",
+            action = if (isReminder) "REMINDER_CREATED" else "TASK_CREATED",
+            details = "Created $cleanType [$taskId] ($resolvedTitle) - freq=$cleanFreq, nextRunAtMs=$scheduledAtMs",
             actorId = initiator,
             actorType = "USER",
             explicitSpanId = rootSpanId,
@@ -1182,6 +1223,136 @@ open class AutonomousAgent : SystemComponent(), KillSwitch {
         )
         fs.writeText(filePath, JsonUtil.toPrettyJsonString(taskMap), append = false)
         return JsonUtil.toJsonString(taskMap)
+    }
+
+    /**
+     * Convenience entry point to schedule a direct proactive reminder at an exact date/time
+     * without requiring an LLM inference loop when the reminder fires.
+     */
+    @JvmOverloads
+    open fun createReminder(
+        title: String,
+        message: String,
+        scheduledAtMs: Long,
+        frequency: String = "once",
+        replyChannel: String = "",
+        replyTarget: String = "",
+        actorId: String = "",
+        tenantId: String = "",
+        userId: String = ""
+    ): String {
+        return createTaskWithIntent(
+            title = title.ifBlank { formatTaskTitle("reminder", message) },
+            intent = "reminder.notify",
+            prompt = message,
+            frequency = frequency.ifBlank { "once" },
+            scheduleTime = if (scheduledAtMs > 0L) formatHourMinute(scheduledAtMs) else "08:00",
+            requiresApproval = false,
+            executionTarget = "local",
+            actorId = actorId,
+            taskType = "REMINDER",
+            scheduledAtMs = scheduledAtMs,
+            replyChannel = replyChannel,
+            replyTarget = replyTarget,
+            tenantId = tenantId,
+            userId = userId
+        )
+    }
+
+    /**
+     * Lists all persisted autonomous tasks and reminders from `${REVEILA_HOME}/tasks`.
+     */
+    open fun listTasks(): List<Map<String, Any?>> {
+        val fs = PlatformFileSystem()
+        val tasksDir = resolveTasksDir()
+        val files = fs.listRelativePaths(tasksDir, "json")
+        return files.mapNotNull { rel ->
+            try {
+                JsonUtil.parseJsonStringToMap(fs.readText(fs.resolve(tasksDir, rel)))
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun executeReminderDirect(
+        filePath: String,
+        taskDef: MutableMap<String, Any?>,
+        now: Long
+    ) {
+        val fs = PlatformFileSystem()
+        val taskId = (taskDef["taskId"] as? String) ?: "reminder"
+        val title = (taskDef["title"] as? String) ?: "Reminder"
+        val message = (taskDef["prompt"] as? String).orEmpty()
+        val freq = (taskDef["frequency"] as? String)?.lowercase() ?: "once"
+        val replyChannel = (taskDef["replyChannel"] as? String)?.trim().orEmpty()
+        val isOneTime = freq.contains("once")
+
+        taskDef["lastRunAt"] = now
+        taskDef["status"] = if (isOneTime) "COMPLETED" else "ACTIVE"
+        taskDef["enabled"] = !isOneTime
+        taskDef["nextRunAtMs"] = if (isOneTime) 0L else computeNextRunAtMs(freq, now)
+        taskDef["currentStep"] = "Reminder delivered at ${TimeFormat.timestamp(now).substringBefore(".")}"
+        taskDef["lastResult"] = "Reminder: $message"
+        fs.writeText(filePath, JsonUtil.toPrettyJsonString(taskDef), append = false)
+
+        val eventId = "rem-$now-${Uuid.randomUuid().take(4)}"
+        val alert = ProactiveAlertMessage(
+            eventId = eventId,
+            taskId = taskId,
+            title = "Reminder: $title",
+            status = "COMPLETED",
+            summary = message,
+            severity = AlertSeverity.INFO,
+            timestampMs = now,
+            metadata = linkedMapOf(
+                "taskType" to "REMINDER",
+                "replyChannel" to replyChannel,
+                "replyTarget" to (taskDef["replyTarget"]?.toString().orEmpty())
+            )
+        )
+        try {
+            val deliveries = channelHub.dispatchAlert(alert)
+            proactiveAlertListener?.invoke(alert, deliveries)
+        } catch (e: Exception) {
+            logger.warning("Failed to broadcast reminder [$taskId] to channels: ${e.message}")
+        }
+
+        recordTaskCommandEvent(
+            taskDef = taskDef,
+            action = "REMINDER_DELIVERED",
+            details = "Delivered reminder [$taskId] ($title): $message",
+            actorId = "autonomous-agent",
+            actorType = "AGENT"
+        )
+    }
+
+    private fun computeIntervalMs(frequency: String): Long = when {
+        frequency.contains("once") -> Long.MAX_VALUE
+        frequency.contains("min") -> {
+            val mins = Regex("(\\d+)").find(frequency)?.groupValues?.get(1)?.toLongOrNull() ?: 15L
+            mins.coerceAtLeast(1L) * 60_000L
+        }
+        frequency.contains("hour") -> {
+            val hrs = Regex("(\\d+)").find(frequency)?.groupValues?.get(1)?.toLongOrNull() ?: 1L
+            hrs.coerceAtLeast(1L) * 60 * 60 * 1000L
+        }
+        frequency.contains("week") -> 7 * 24 * 60 * 60 * 1000L
+        else -> 24 * 60 * 60 * 1000L
+    }
+
+    private fun computeNextRunAtMs(frequency: String, fromMs: Long): Long {
+        val interval = computeIntervalMs(frequency.lowercase())
+        return if (interval == Long.MAX_VALUE) 0L else fromMs + interval
+    }
+
+    private fun formatHourMinute(epochMs: Long): String {
+        return try {
+            val ldt = Instant.fromEpochMilliseconds(epochMs).toLocalDateTime(TimeZone.currentSystemDefault())
+            "${ldt.hour.toString().padStart(2, '0')}:${ldt.minute.toString().padStart(2, '0')}"
+        } catch (_: Exception) {
+            "08:00"
+        }
     }
 
     open fun updateTask(

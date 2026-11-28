@@ -8,7 +8,7 @@ Instead of scanning PDFs, we scan the **Manifest JSONs**. The same Vector Databa
 
 ### **The 3-Step Retrieval Pipeline**
 
-To make this work in the **LangChain4j 1.x** environment, we implement a dynamic retrieval step before the LLM call:
+To make this work in Reveila's **native pure-KMP AI runtime** (`com.reveila.ai`), we implement a dynamic retrieval step before the LLM call:
 
 #### **1. Tool Indexing (The Background Job)**
 Every time a new plugin is registered in the Montgomery cluster:
@@ -38,12 +38,12 @@ For an enterprise architect, simple vector search sometimes fails on technical k
 
 ---
 
-### **Implementation in LangChain4j**
+### **Implementation in Reveila (`DynamicToolProvider`)**
 
-We can implement this using a custom **`ToolProvider`**. Instead of a static map, the provider calls the Vector Store at runtime:
+We implement this using Reveila's native **`DynamicToolProvider`** (`com.reveila.ai.DynamicToolProvider`). Instead of injecting every registered tool statically, the provider queries the vector store and metadata registry at runtime:
 
-```java
-public class DynamicToolProvider implements ToolProvider {}
+```kotlin
+open class DynamicToolProvider : SystemComponent() { ... }
 ```
 
 ### "Rerank" tools?
@@ -72,22 +72,19 @@ Instead of just one vector search, we should implement a **"Search & Judge"** ar
 
 ---
 
-### **Technical Implementation in LangChain4j**
+### **Technical Implementation in Reveila (`ToolScoringModel`)**
 
-Since we're on **version 0.35.0 (or 1.x)**, we can use the `OnnxScoringModel` to run this reranking locally on the Montgomery server (or even the S23 Ultra) using **ONNX**.
+Reveila uses its native KMP **`ToolScoringModel`** (`com.reveila.ai.ToolScoringModel` / `LlmScoringModel`) so reranking works identically across JVM servers, Desktop, and Android without JVM-only third-party SDK dependencies:
 
-```java
+```kotlin
 // 1. Initial Vector Retrieval
-List<ToolSpecification> candidates = toolVectorStore.findRelevant(userIntent, 50);
+val candidates: List<LlmTool> = dynamicToolProvider.findRelevantCandidates(userIntent, 50)
 
-// 2. Local Reranking (The "Judge")
-ScoringModel reranker = new OnnxScoringModel("bge-reranker-v2-m3.onnx");
-List<Double> scores = reranker.scoreAll(userIntent, candidates.stream()
-    .map(ToolSpecification::description)
-    .collect(toList()));
+// 2. Local / Lightweight Reranking (The "Judge")
+val scores: List<Double> = toolScoringModel.scoreAll(userIntent, candidates.map { it.description.orEmpty() })
 
 // 3. Select Top 5 for the Prompt
-List<ToolSpecification> bestTools = sortAndLimit(candidates, scores, 5);
+val bestTools: List<LlmTool> = sortAndLimit(candidates, scores, 5)
 ```
 
 ---

@@ -34,6 +34,9 @@ class ReveilaToolCoordinator(
     private val secretManagerProvider: () -> SecretManager?,
     private val downloadManagerProvider: () -> ResumableDownloadManager?,
     private val knowledgeVaultProvider: () -> KnowledgeVault? = { null },
+    private val instructionStoreProvider: () -> AgentInstructionStore? = { null },
+    private val autonomousAgentProvider: () -> AutonomousAgent? = { null },
+    private val tenantIdProvider: () -> String = { AgentInstruction.DEFAULT_TENANT_ID },
     private val auditLogger: (action: String, details: String) -> Unit = { _, _ -> }
 ) {
     data class PendingToolExecution(
@@ -182,6 +185,12 @@ class ReveilaToolCoordinator(
     val enterpriseChannelTool = com.reveila.channels.EnterpriseChannelTool(
         hubProvider = { enterpriseChannelHub }
     )
+    val agentInstructionTool = com.reveila.tools.AgentInstructionTool(
+        storeProvider = instructionStoreProvider
+    )
+    val taskSchedulerTool = com.reveila.tools.TaskSchedulerTool(
+        autonomousAgentProvider = autonomousAgentProvider
+    )
 
     private val toolsByName: MutableMap<String, ReveilaTool> by lazy {
         linkedMapOf(
@@ -189,6 +198,8 @@ class ReveilaToolCoordinator(
             knowledgeVaultTool.getName() to knowledgeVaultTool,
             vaultDocumentTool.getName() to vaultDocumentTool,
             enterpriseChannelTool.getName() to enterpriseChannelTool,
+            agentInstructionTool.getName() to agentInstructionTool,
+            taskSchedulerTool.getName() to taskSchedulerTool,
             downloadTool.getName() to downloadTool,
             terminalTool.getName() to terminalTool,
             secretManagerTool.getName() to secretManagerTool,
@@ -226,6 +237,8 @@ class ReveilaToolCoordinator(
             "shell", "bash", "powershell", "script" -> "terminal"
             "secret", "secrets", "secretmanager", "vault" -> "secret_manager"
             "password", "passwords", "passwordmanager" -> "password_manager"
+            "instructions", "standing_instructions", "user_instructions", "remember", "memory_rules", "agent_instructions" -> "manage_instructions"
+            "tasks", "task_scheduler", "schedule_task", "reminder", "reminders", "remind", "create_reminder", "schedule" -> "manage_tasks"
             else -> clean
         }
     }
@@ -387,7 +400,15 @@ class ReveilaToolCoordinator(
             "secret manager", "store secret", "save secret", "save credential", "password manager",
             "stored password", "api token", "list secrets", "list permissions",
             "analyze folder", "cause-effect", "cause and effect", "relationship", "top 5 expenses",
-            "expenses", "invoices", "bills"
+            "expenses", "invoices", "bills",
+            "standing instruction", "my instructions", "remember to always", "always format",
+            "never include", "forget instruction", "remove instruction", "from now on always",
+            "from now on never",
+            "remind me", "set a reminder", "reminder", "recurring task", "repeating task",
+            "schedule a ", "every day at", "every morning", "every week", "every monday",
+            "every tuesday", "every wednesday", "every thursday", "every friday",
+            "my tasks", "my reminders", "list tasks", "list reminders",
+            "pause task", "resume task", "cancel task", "cancel reminder", "delete task", "delete reminder"
         )
         if (toolKeywords.any { lower.contains(it) }) return true
         val vault = knowledgeVaultProvider()
@@ -478,6 +499,23 @@ class ReveilaToolCoordinator(
             ?: throw IllegalArgumentException("Unknown tool '$rawName'")
 
         val args = extractArguments(toolCallObj)
+        if (toolName == "manage_instructions" || toolName == "manage_tasks") {
+            val sessionTenant = session.get("_tenant_id")?.toString()?.takeIf { it.isNotBlank() }
+                ?: tenantIdProvider()
+            val nonUserSentinels = setOf("system", "ui-client", "autonomous-agent", "local-agent", "anonymous")
+            val sessionUser = actorId.trim().takeIf { it.isNotEmpty() && it.lowercase() !in nonUserSentinels }
+                ?: session.get("_user_id")?.toString()?.trim()?.takeIf { it.isNotEmpty() && it.lowercase() !in nonUserSentinels }
+                ?: AgentInstruction.DEFAULT_USER_ID
+            args["_authenticatedTenantId"] = sessionTenant
+            args["_authenticatedUserId"] = sessionUser
+            args["_authenticatedSpaceId"] = session.spaceId
+            session.get("_reply_channel")?.toString()?.takeIf { it.isNotBlank() }?.let {
+                args["_replyChannel"] = it
+            }
+            session.get("_reply_target")?.toString()?.takeIf { it.isNotBlank() }?.let {
+                args["_replyTarget"] = it
+            }
+        }
         val action = (args["action"] as? String)?.lowercase()?.trim() ?: inferDefaultAction(toolName, args)
 
         // Yield gracefully if the user is actively controlling this tool window
@@ -939,11 +977,19 @@ class ReveilaToolCoordinator(
         }
         "secret_manager" -> if (args.containsKey("value")) "store" else "list"
         "password_manager" -> "list"
+        "manage_instructions" -> if (args.containsKey("text") || args.containsKey("instruction") || args.containsKey("rule")) "add" else "list"
+        "manage_tasks" -> when {
+            args.containsKey("scheduledAt") || args.containsKey("scheduledAtMs") || args.containsKey("delayMinutes") -> "create_reminder"
+            args.containsKey("prompt") || args.containsKey("message") -> "create_task"
+            else -> "list"
+        }
         else -> "status"
     }
 
     private fun isReadOnlyAction(toolName: String, action: String): Boolean = when (toolName) {
         "knowledge_vault" -> true
+        "manage_instructions" -> true
+        "manage_tasks" -> true
         "virtual_browser" -> action in setOf("snapshot", "status", "read")
         "resumable_download" -> action in setOf("status", "check_storage", "list_incomplete")
         "terminal" -> action == "status"
@@ -1067,6 +1113,32 @@ class ReveilaToolCoordinator(
                 "command" to mapOf("type" to "string"),
                 "workingDir" to mapOf("type" to "string"),
                 "timeoutSeconds" to mapOf("type" to "integer")
+            )
+            "manage_instructions" -> mapOf(
+                "action" to mapOf("type" to "string"),
+                "id" to mapOf("type" to "string"),
+                "text" to mapOf("type" to "string"),
+                "scope" to mapOf("type" to "string"),
+                "spaceId" to mapOf("type" to "string"),
+                "category" to mapOf("type" to "string"),
+                "enabled" to mapOf("type" to "boolean"),
+                "priority" to mapOf("type" to "integer"),
+                "blockedPatterns" to mapOf("type" to "array")
+            )
+            "manage_tasks" -> mapOf(
+                "action" to mapOf("type" to "string"),
+                "taskId" to mapOf("type" to "string"),
+                "title" to mapOf("type" to "string"),
+                "prompt" to mapOf("type" to "string"),
+                "message" to mapOf("type" to "string"),
+                "frequency" to mapOf("type" to "string"),
+                "scheduleTime" to mapOf("type" to "string"),
+                "scheduledAt" to mapOf("type" to "string"),
+                "scheduledAtMs" to mapOf("type" to "integer"),
+                "delayMinutes" to mapOf("type" to "integer"),
+                "requiresApproval" to mapOf("type" to "boolean"),
+                "replyChannel" to mapOf("type" to "string"),
+                "replyTarget" to mapOf("type" to "string")
             )
             else -> mapOf(
                 "action" to mapOf("type" to "string"),
